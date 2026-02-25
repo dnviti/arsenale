@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Language
+
+Always respond and work in English, even if the user's prompt is written in another language.
+
 ## Development Commands
 
 ```bash
