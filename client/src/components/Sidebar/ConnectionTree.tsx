@@ -20,6 +20,7 @@ import {
   Delete as DeleteIcon,
   CreateNewFolder as CreateNewFolderIcon,
   Add as AddIcon,
+  SwitchAccount as SwitchAccountIcon,
   DriveFileMove as MoveIcon,
   Search as SearchIcon,
   Clear as ClearIcon,
@@ -100,10 +101,11 @@ interface ConnectionItemProps {
   onDelete: (conn: ConnectionData) => void;
   onMove: (conn: ConnectionData) => void;
   onShare: (conn: ConnectionData) => void;
+  onConnectAs: (conn: ConnectionData) => void;
   onToggleFavorite?: (conn: ConnectionData) => void;
 }
 
-function ConnectionItem({ conn, depth, compact, onEdit, onDelete, onMove, onShare, onToggleFavorite }: ConnectionItemProps) {
+function ConnectionItem({ conn, depth, compact, onEdit, onDelete, onMove, onShare, onConnectAs, onToggleFavorite }: ConnectionItemProps) {
   const openTab = useTabsStore((s) => s.openTab);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
 
@@ -143,6 +145,11 @@ function ConnectionItem({ conn, depth, compact, onEdit, onDelete, onMove, onShar
   const handleShare = () => {
     handleCloseMenu();
     onShare(conn);
+  };
+
+  const handleConnectAs = () => {
+    handleCloseMenu();
+    onConnectAs(conn);
   };
 
   return (
@@ -193,6 +200,10 @@ function ConnectionItem({ conn, depth, compact, onEdit, onDelete, onMove, onShar
           <ListItemIcon><ConnectIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Connect</ListItemText>
         </MenuItem>
+        <MenuItem onClick={handleConnectAs}>
+          <ListItemIcon><SwitchAccountIcon fontSize="small" /></ListItemIcon>
+          <ListItemText>Connect As...</ListItemText>
+        </MenuItem>
         <MenuItem onClick={handleOpenInNewWindow}>
           <ListItemIcon><OpenInNewIcon fontSize="small" /></ListItemIcon>
           <ListItemText>Open in New Window</ListItemText>
@@ -241,6 +252,7 @@ interface FolderItemProps {
   onDeleteConnection: (conn: ConnectionData) => void;
   onMoveConnection: (conn: ConnectionData) => void;
   onShareConnection: (conn: ConnectionData) => void;
+  onConnectAsConnection: (conn: ConnectionData) => void;
   onToggleFavorite: (conn: ConnectionData) => void;
   onCreateConnection: (folderId: string) => void;
   onCreateFolder: (parentId?: string) => void;
@@ -250,7 +262,7 @@ interface FolderItemProps {
 
 function FolderItem({
   node, connections, folderMap, depth, compact,
-  onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection, onToggleFavorite,
+  onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection, onConnectAsConnection, onToggleFavorite,
   onCreateConnection, onCreateFolder, onEditFolder, onDeleteFolder,
 }: FolderItemProps) {
   const [open, setOpen] = useState(true);
@@ -325,6 +337,7 @@ function FolderItem({
               onDeleteConnection={onDeleteConnection}
               onMoveConnection={onMoveConnection}
               onShareConnection={onShareConnection}
+              onConnectAsConnection={onConnectAsConnection}
               onToggleFavorite={onToggleFavorite}
               onCreateConnection={onCreateConnection}
               onCreateFolder={onCreateFolder}
@@ -342,6 +355,7 @@ function FolderItem({
               onDelete={onDeleteConnection}
               onMove={onMoveConnection}
               onShare={onShareConnection}
+              onConnectAs={onConnectAsConnection}
               onToggleFavorite={onToggleFavorite}
             />
           ))}
@@ -356,12 +370,13 @@ function FolderItem({
 interface ConnectionTreeProps {
   onEditConnection: (conn: ConnectionData) => void;
   onShareConnection: (conn: ConnectionData) => void;
+  onConnectAsConnection: (conn: ConnectionData) => void;
   onCreateConnection: (folderId?: string) => void;
   onCreateFolder: (parentId?: string) => void;
   onEditFolder: (folder: Folder) => void;
 }
 
-export default function ConnectionTree({ onEditConnection, onShareConnection, onCreateConnection, onCreateFolder, onEditFolder }: ConnectionTreeProps) {
+export default function ConnectionTree({ onEditConnection, onShareConnection, onConnectAsConnection, onCreateConnection, onCreateFolder, onEditFolder }: ConnectionTreeProps) {
   const ownConnections = useConnectionsStore((s) => s.ownConnections);
   const sharedConnections = useConnectionsStore((s) => s.sharedConnections);
   const folders = useConnectionsStore((s) => s.folders);
@@ -537,6 +552,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
                   onDelete={setDeleteTarget}
                   onMove={handleOpenMoveDialog}
                   onShare={onShareConnection}
+                  onConnectAs={onConnectAsConnection}
                   onToggleFavorite={handleToggleFavorite}
                 />
               ))}
@@ -568,6 +584,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
                   onDelete={setDeleteTarget}
                   onMove={handleOpenMoveDialog}
                   onShare={onShareConnection}
+                  onConnectAs={onConnectAsConnection}
                   onToggleFavorite={conn.isOwner ? handleToggleFavorite : undefined}
                 />
               ))}
@@ -594,6 +611,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
             onDeleteConnection={setDeleteTarget}
             onMoveConnection={handleOpenMoveDialog}
             onShareConnection={onShareConnection}
+            onConnectAsConnection={onConnectAsConnection}
             onToggleFavorite={handleToggleFavorite}
             onCreateConnection={onCreateConnection}
             onCreateFolder={onCreateFolder}
@@ -611,6 +629,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
             onDelete={setDeleteTarget}
             onMove={handleOpenMoveDialog}
             onShare={onShareConnection}
+            onConnectAs={onConnectAsConnection}
             onToggleFavorite={handleToggleFavorite}
           />
         ))}
@@ -639,6 +658,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
                 onDelete={setDeleteTarget}
                 onMove={handleOpenMoveDialog}
                 onShare={onShareConnection}
+                onConnectAs={onConnectAsConnection}
                 onToggleFavorite={handleToggleFavorite}
               />
             ))}

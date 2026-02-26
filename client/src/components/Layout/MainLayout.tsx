@@ -18,6 +18,7 @@ import TabPanel from '../Tabs/TabPanel';
 import ConnectionDialog from '../Dialogs/ConnectionDialog';
 import FolderDialog from '../Dialogs/FolderDialog';
 import ShareDialog from '../Dialogs/ShareDialog';
+import ConnectAsDialog from '../Dialogs/ConnectAsDialog';
 import VaultUnlockDialog from '../Dialogs/VaultUnlockDialog';
 import VaultLockedOverlay from '../Overlays/VaultLockedOverlay';
 import { useAuthStore } from '../../store/authStore';
@@ -51,6 +52,7 @@ export default function MainLayout() {
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
   const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
   const [shareTarget, setShareTarget] = useState<ConnectionData | null>(null);
+  const [connectAsTarget, setConnectAsTarget] = useState<ConnectionData | null>(null);
   const [vaultDialogOpen, setVaultDialogOpen] = useState(false);
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -176,6 +178,7 @@ export default function MainLayout() {
           <ConnectionTree
             onEditConnection={handleEditConnection}
             onShareConnection={handleShareConnection}
+            onConnectAsConnection={setConnectAsTarget}
             onCreateConnection={handleCreateConnection}
             onCreateFolder={handleCreateFolder}
             onEditFolder={handleEditFolder}
@@ -206,6 +209,11 @@ export default function MainLayout() {
         onClose={() => setShareTarget(null)}
         connectionId={shareTarget?.id ?? ''}
         connectionName={shareTarget?.name ?? ''}
+      />
+      <ConnectAsDialog
+        open={!!connectAsTarget}
+        onClose={() => setConnectAsTarget(null)}
+        connection={connectAsTarget}
       />
       <VaultUnlockDialog
         open={vaultDialogOpen}

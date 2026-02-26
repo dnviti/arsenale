@@ -3,17 +3,19 @@ import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import Guacamole from 'guacamole-common-js';
 import api from '../../api/client';
+import type { CredentialOverride } from '../../store/tabsStore';
 import FileBrowser from './FileBrowser';
-import FloatingToolbar, { ToolbarAction } from './FloatingToolbar';
+import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
 
 interface RdpViewerProps {
   connectionId: string;
   tabId: string;
   isActive?: boolean;
   enableDrive?: boolean;
+  credentials?: CredentialOverride;
 }
 
-export default function RdpViewer({ connectionId, tabId, isActive = true, enableDrive = false }: RdpViewerProps) {
+export default function RdpViewer({ connectionId, tabId, isActive = true, enableDrive = false, credentials }: RdpViewerProps) {
   const displayRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<Guacamole.Client | null>(null);
   const activeRef = useRef(isActive);
@@ -55,7 +57,10 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
     async function connect() {
       try {
         // Get RDP token from server
-        const res = await api.post('/sessions/rdp', { connectionId });
+        const res = await api.post('/sessions/rdp', {
+          connectionId,
+          ...(credentials && { username: credentials.username, password: credentials.password }),
+        });
         const { token } = res.data;
 
         if (cancelled) return;

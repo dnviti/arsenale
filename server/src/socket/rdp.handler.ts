@@ -9,7 +9,12 @@ import { z } from 'zod';
 
 const sessionSchema = z.object({
   connectionId: z.string().uuid(),
-});
+  username: z.string().min(1).optional(),
+  password: z.string().min(1).optional(),
+}).refine(
+  (data) => (!data.username && !data.password) || (data.username && data.password),
+  { message: 'Both username and password must be provided together' },
+);
 
 const router = Router();
 
@@ -17,14 +22,23 @@ router.use(authenticate);
 
 router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { connectionId } = sessionSchema.parse(req.body);
+    const { connectionId, username: overrideUser, password: overridePass } = sessionSchema.parse(req.body);
     const conn = await getConnection(req.user!.userId, connectionId);
 
     if (conn.type !== 'RDP') {
       throw new AppError('Not an RDP connection', 400);
     }
 
-    const creds = await getConnectionCredentials(req.user!.userId, connectionId);
+    let username: string;
+    let password: string;
+    if (overrideUser && overridePass) {
+      username = overrideUser;
+      password = overridePass;
+    } else {
+      const creds = await getConnectionCredentials(req.user!.userId, connectionId);
+      username = creds.username;
+      password = creds.password;
+    }
 
     const enableDrive = conn.enableDrive ?? false;
     const drivePath = enableDrive
@@ -34,8 +48,8 @@ router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) 
     const token = generateGuacamoleToken({
       host: conn.host,
       port: conn.port,
-      username: creds.username,
-      password: creds.password,
+      username,
+      password,
       enableDrive,
       drivePath,
     });

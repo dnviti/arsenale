@@ -3,17 +3,23 @@ import { ConnectionData } from '../api/connections.api';
 import { addRecentConnection } from '../utils/recentConnections';
 import { useAuthStore } from './authStore';
 
+export interface CredentialOverride {
+  username: string;
+  password: string;
+}
+
 export interface Tab {
   id: string;
   connection: ConnectionData;
   active: boolean;
+  credentials?: CredentialOverride;
 }
 
 interface TabsState {
   tabs: Tab[];
   activeTabId: string | null;
   recentTick: number;
-  openTab: (connection: ConnectionData) => void;
+  openTab: (connection: ConnectionData, credentials?: CredentialOverride) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
 }
@@ -23,7 +29,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   activeTabId: null,
   recentTick: 0,
 
-  openTab: (connection) => {
+  openTab: (connection, credentials) => {
     const { tabs } = get();
 
     // Track as recent
@@ -32,15 +38,17 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       addRecentConnection(userId, connection.id);
     }
 
-    // Check if already open
-    const existing = tabs.find((t) => t.connection.id === connection.id);
-    if (existing) {
-      set((state) => ({ activeTabId: existing.id, recentTick: state.recentTick + 1 }));
-      return;
+    // Only reuse existing tab when no credential override
+    if (!credentials) {
+      const existing = tabs.find((t) => t.connection.id === connection.id);
+      if (existing) {
+        set((state) => ({ activeTabId: existing.id, recentTick: state.recentTick + 1 }));
+        return;
+      }
     }
 
     const tabId = `tab-${connection.id}-${Date.now()}`;
-    const newTab: Tab = { id: tabId, connection, active: true };
+    const newTab: Tab = { id: tabId, connection, active: true, credentials };
     set((state) => ({
       tabs: [...tabs.map((t) => ({ ...t, active: false })), newTab],
       activeTabId: tabId,
