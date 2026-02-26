@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AppBar, Toolbar, Typography, IconButton, Box, Chip, Menu, MenuItem,
@@ -29,6 +29,7 @@ import { ConnectionData } from '../../api/connections.api';
 import type { Folder } from '../../store/connectionsStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import { useThemeStore } from '../../store/themeStore';
+import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 
 const SIDEBAR_WIDTH = 280;
 
@@ -44,6 +45,14 @@ export default function MainLayout() {
   const clearNotification = useNotificationStore((s) => s.clear);
   const themeMode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggle);
+  const fetchTerminalDefaults = useTerminalSettingsStore((s) => s.fetchDefaults);
+  const terminalDefaultsLoaded = useTerminalSettingsStore((s) => s.loaded);
+
+  useEffect(() => {
+    if (!terminalDefaultsLoaded) {
+      fetchTerminalDefaults();
+    }
+  }, [terminalDefaultsLoaded, fetchTerminalDefaults]);
 
   const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<ConnectionData | null>(null);

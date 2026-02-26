@@ -40,7 +40,7 @@ export default function TabPanel() {
           }}
         >
           {tab.connection.type === 'SSH' ? (
-            <SshTerminal connectionId={tab.connection.id} tabId={tab.id} credentials={tab.credentials} />
+            <SshTerminal connectionId={tab.connection.id} tabId={tab.id} credentials={tab.credentials} sshTerminalConfig={tab.connection.sshTerminalConfig} />
           ) : (
             <RdpViewer connectionId={tab.connection.id} tabId={tab.id} isActive={tab.id === activeTabId} enableDrive={tab.connection.enableDrive} credentials={tab.credentials} />
           )}

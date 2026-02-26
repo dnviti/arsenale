@@ -7,6 +7,9 @@ import {
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import { useAuthStore } from '../store/authStore';
 import { getProfile, updateProfile, changePassword, uploadAvatar } from '../api/user.api';
+import { useTerminalSettingsStore } from '../store/terminalSettingsStore';
+import type { SshTerminalConfig } from '../constants/terminalThemes';
+import TerminalSettingsSection from '../components/Settings/TerminalSettingsSection';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -31,6 +34,12 @@ export default function SettingsPage() {
   const [passwordError, setPasswordError] = useState('');
   const [passwordSuccess, setPasswordSuccess] = useState('');
 
+  // SSH Terminal defaults
+  const { userDefaults, fetchDefaults, updateDefaults, loading: sshLoading } = useTerminalSettingsStore();
+  const [sshConfig, setSshConfig] = useState<Partial<SshTerminalConfig>>({});
+  const [sshError, setSshError] = useState('');
+  const [sshSuccess, setSshSuccess] = useState('');
+
   useEffect(() => {
     getProfile().then((profile) => {
       setUsername(profile.username ?? '');
@@ -39,7 +48,23 @@ export default function SettingsPage() {
     }).catch(() => {
       setProfileError('Failed to load profile');
     });
+    fetchDefaults();
   }, []);
+
+  useEffect(() => {
+    if (userDefaults) setSshConfig(userDefaults);
+  }, [userDefaults]);
+
+  const handleSaveSshDefaults = async () => {
+    setSshError('');
+    setSshSuccess('');
+    try {
+      await updateDefaults(sshConfig);
+      setSshSuccess('SSH terminal defaults saved');
+    } catch {
+      setSshError('Failed to save SSH defaults');
+    }
+  };
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -120,7 +145,7 @@ export default function SettingsPage() {
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ flex: 1, overflow: 'auto', p: 3, maxWidth: 600, mx: 'auto', width: '100%' }}>
+      <Box sx={{ flex: 1, overflow: 'auto', p: 3, maxWidth: 700, mx: 'auto', width: '100%' }}>
         {/* Profile Section */}
         <Card sx={{ mb: 3 }}>
           <CardContent>
@@ -165,6 +190,29 @@ export default function SettingsPage() {
                 {profileLoading ? 'Saving...' : 'Save Profile'}
               </Button>
             </Box>
+          </CardContent>
+        </Card>
+
+        {/* SSH Terminal Defaults Section */}
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>SSH Terminal Defaults</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              These settings apply to all SSH sessions unless overridden per connection.
+            </Typography>
+
+            {sshError && <Alert severity="error" sx={{ mb: 2 }}>{sshError}</Alert>}
+            {sshSuccess && <Alert severity="success" sx={{ mb: 2 }}>{sshSuccess}</Alert>}
+
+            <TerminalSettingsSection value={sshConfig} onChange={setSshConfig} mode="global" />
+            <Button
+              variant="contained"
+              disabled={sshLoading}
+              onClick={handleSaveSshDefaults}
+              sx={{ mt: 2 }}
+            >
+              {sshLoading ? 'Saving...' : 'Save SSH Defaults'}
+            </Button>
           </CardContent>
         </Card>
 

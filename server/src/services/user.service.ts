@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import {
   generateSalt,
@@ -16,7 +16,7 @@ const MAX_AVATAR_SIZE = 200 * 1024; // ~200KB base64
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, username: true, avatarData: true, createdAt: true },
+    select: { id: true, email: true, username: true, avatarData: true, sshDefaults: true, createdAt: true },
   });
   if (!user) throw new AppError('User not found', 404);
   return user;
@@ -102,6 +102,15 @@ export async function changePassword(
   await prisma.refreshToken.deleteMany({ where: { userId } });
 
   return { success: true };
+}
+
+export async function updateSshDefaults(userId: string, sshDefaults: Prisma.InputJsonValue) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { sshDefaults },
+    select: { id: true, sshDefaults: true },
+  });
+  return user;
 }
 
 export async function uploadAvatar(userId: string, avatarData: string) {

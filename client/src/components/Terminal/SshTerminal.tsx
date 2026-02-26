@@ -6,7 +6,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../../store/authStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 import type { CredentialOverride } from '../../store/tabsStore';
+import type { SshTerminalConfig } from '../../constants/terminalThemes';
+import { mergeTerminalConfig, toXtermOptions } from '../../constants/terminalThemes';
 import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
 import SftpBrowser from '../SSH/SftpBrowser';
 import '@xterm/xterm/css/xterm.css';
@@ -15,9 +18,10 @@ interface SshTerminalProps {
   connectionId: string;
   tabId: string;
   credentials?: CredentialOverride;
+  sshTerminalConfig?: Partial<SshTerminalConfig> | null;
 }
 
-export default function SshTerminal({ connectionId, tabId, credentials }: SshTerminalProps) {
+export default function SshTerminal({ connectionId, tabId, credentials, sshTerminalConfig }: SshTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -26,6 +30,21 @@ export default function SshTerminal({ connectionId, tabId, credentials }: SshTer
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [error, setError] = useState('');
   const accessToken = useAuthStore((s) => s.accessToken);
+  const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
+
+  // Compute xterm options from merged config (applied at mount only)
+  const xtermOptions = useMemo(
+    () => toXtermOptions(mergeTerminalConfig(userDefaults, sshTerminalConfig)),
+    [userDefaults, sshTerminalConfig],
+  );
+  const xtermOptionsRef = useRef(xtermOptions);
+  xtermOptionsRef.current = xtermOptions;
+
+  // Resolve bell style for onBell handler
+  const bellStyleRef = useRef(
+    mergeTerminalConfig(userDefaults, sshTerminalConfig).bellStyle,
+  );
+  bellStyleRef.current = mergeTerminalConfig(userDefaults, sshTerminalConfig).bellStyle;
 
   const sftpOpen = useUiPreferencesStore((s) => s.sshSftpBrowserOpen);
   const togglePref = useUiPreferencesStore((s) => s.toggle);
@@ -57,16 +76,7 @@ export default function SshTerminal({ connectionId, tabId, credentials }: SshTer
   useEffect(() => {
     if (!termRef.current) return;
 
-    const terminal = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: {
-        background: '#1a1a2e',
-        foreground: '#e0e0e0',
-        cursor: '#2196f3',
-      },
-    });
+    const terminal = new Terminal(xtermOptionsRef.current);
 
     const fitAddon = new FitAddon();
     terminal.loadAddon(fitAddon);
@@ -112,6 +122,19 @@ export default function SshTerminal({ connectionId, tabId, credentials }: SshTer
       }
 
       return true;
+    });
+
+    // Bell handler
+    terminal.onBell(() => {
+      if (bellStyleRef.current === 'sound') {
+        try { new Audio('data:audio/wav;base64,UklGRl9vT19teleVhZUAAQABADS...').play().catch(() => {}); } catch { /* ignore */ }
+      } else if (bellStyleRef.current === 'visual') {
+        const el = termRef.current;
+        if (el) {
+          el.style.outline = '2px solid #ff9800';
+          setTimeout(() => { el.style.outline = ''; }, 150);
+        }
+      }
     });
 
     socket.on('connect', () => {

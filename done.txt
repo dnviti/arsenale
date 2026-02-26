@@ -171,6 +171,30 @@
     MODIFICATO: client/src/store/authStore.ts
 
 
+------------------------------------------------------------------------------
+[x] CRED-006 — Connessione con credenziali alternative (tasto destro)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: CTX-003 (completato), USER-007 (completato)
+  COMPLETATO: Connect As dialog with 3 credential modes, override support in SSH/RDP handlers
+
+  DESCRIZIONE:
+  Aggiungere voce "Connect As..." nel context menu che permette di
+  scegliere con quali credenziali connettersi:
+    1. Usa account configurato nel profilo utente
+    2. Inserisci username e password manualmente
+    3. Usa credenziali salvate nella connessione (default)
+
+  FILE COINVOLTI:
+    CREATO:  client/src/components/Dialogs/ConnectAsDialog.tsx
+    MODIFICATO: client/src/components/Sidebar/ConnectionTree.tsx
+    MODIFICATO: client/src/store/tabsStore.ts
+    MODIFICATO: client/src/components/Terminal/SshTerminal.tsx
+    MODIFICATO: client/src/components/RDP/RdpViewer.tsx
+    MODIFICATO: server/src/socket/ssh.handler.ts
+    MODIFICATO: server/src/socket/rdp.handler.ts
+
+
 ================================================================================
   SEZIONE B — TASK AGGIUNTIVI SUGGERITI
 ================================================================================

@@ -131,92 +131,6 @@
     MODIFICARE: client/src/components/Layout/MainLayout.tsx (badge)
 
 
-------------------------------------------------------------------------------
-[ ] SSHUI-027 — Personalizzazione terminale SSH (font, temi, opzioni)
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: USER-007 (pagina impostazioni per configurazione globale)
-
-  DESCRIZIONE:
-  Permettere la personalizzazione dell'aspetto e del comportamento del
-  terminale SSH. Attualmente tutti i parametri sono hard-coded in
-  SshTerminal.tsx (font 14px Menlo, tema scuro fisso, cursore blu).
-  Due livelli di configurazione:
-    - Impostazioni globali: nell'account utente (SettingsPage), salvate
-      nel modello User, si applicano a tutte le connessioni SSH
-    - Override per connessione: nel dialog di modifica connessione,
-      salvate nel modello Connection, sovrascrivono i default globali
-
-  OPZIONI DI PERSONALIZZAZIONE:
-    - Font family (Menlo, Fira Code, JetBrains Mono, Cascadia Code,
-      Consolas, monospace)
-    - Font size (10–24px, default 14)
-    - Line height (1.0–2.0, default 1.0)
-    - Letter spacing (0–5px, default 0)
-    - Cursor style (block, underline, bar — default block)
-    - Cursor blink (on/off, default on)
-    - Color theme — preset: Default Dark, Dracula, Solarized Dark,
-      Solarized Light, Monokai, Nord, One Dark, Gruvbox, GitHub Dark;
-      oppure personalizzato con color picker per background, foreground,
-      cursor, e 16 colori ANSI
-    - Scrollback lines (100–10000, default 1000)
-    - Bell style (none, sound, visual — default none)
-
-  DETTAGLI TECNICI:
-  Risoluzione configurazione a runtime (SshTerminal.tsx):
-    1. Partire dai fallback hard-coded (valori attuali)
-    2. Sovrascrivere con i default globali dell'utente (User.sshDefaults)
-    3. Sovrascrivere con gli override della connessione (Connection.sshTerminalConfig)
-    4. Applicare la configurazione risultante a new Terminal(options)
-
-  Backend:
-    1. Aggiungere campo sshDefaults Json? al modello User (schema.prisma)
-       - Contiene le preferenze terminale globali dell'utente
-       - Letto/scritto tramite GET/PUT /api/user/profile (estendere)
-    2. Aggiungere campo sshTerminalConfig Json? al modello Connection
-       - Contiene solo i campi sovrascritti (override sparso)
-       - Pass-through nel CRUD connessioni (create/update)
-
-  Frontend — Impostazioni globali (account utente):
-    1. Creare client/src/store/terminalSettingsStore.ts (Zustand)
-       - fetchDefaults(): carica da profilo utente
-       - updateDefaults(settings): salva nel profilo utente
-       - getMergedConfig(connection): risolve fallback → globali → override
-    2. Creare client/src/components/Settings/TerminalSettingsSection.tsx
-       - Componente riutilizzabile con tutti i controlli (select, slider,
-         color picker, toggle) per le opzioni terminale
-       - Props: values, onChange, showUseDefaultToggle (per modalita' override)
-    3. Aggiungere sezione "SSH Terminal" in SettingsPage.tsx
-       - Usa TerminalSettingsSection con i default globali
-       - Preview live del terminale con le impostazioni correnti
-
-  Frontend — Override per connessione:
-    4. Aggiungere sezione collassabile "Terminal Appearance" in
-       ConnectionDialog.tsx (visibile solo quando type=SSH)
-       - Usa TerminalSettingsSection con showUseDefaultToggle=true
-       - Ogni campo ha checkbox "Use default" — solo i campi sovrascritti
-         vengono salvati in sshTerminalConfig
-    5. Modificare SshTerminal.tsx:
-       - Importare terminalSettingsStore
-       - Chiamare getMergedConfig(connection) per ottenere configurazione
-       - Passare risultato a new Terminal({ ...mergedConfig })
-
-  FILE COINVOLTI:
-    MODIFICARE: server/prisma/schema.prisma
-                (aggiungere sshDefaults a User, sshTerminalConfig a Connection)
-    CREARE:  client/src/store/terminalSettingsStore.ts
-    CREARE:  client/src/components/Settings/TerminalSettingsSection.tsx
-    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
-                (leggere configurazione dal store invece di valori hard-coded)
-    MODIFICARE: client/src/pages/SettingsPage.tsx
-                (aggiungere sezione SSH Terminal)
-    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx
-                (aggiungere sezione Terminal Appearance per SSH)
-    MODIFICARE: client/src/api/user.api.ts (estendere tipi profilo)
-    MODIFICARE: client/src/api/connections.api.ts (estendere ConnectionData)
-    MODIFICARE: server/src/services/user.service.ts (gestire sshDefaults)
-    MODIFICARE: server/src/services/connection.service.ts (pass-through sshTerminalConfig)
-
 
 ------------------------------------------------------------------------------
 [ ] RDPSET-028 — Personalizzazione sessioni RDP (qualita', risoluzione, opzioni)
@@ -1035,14 +949,14 @@
     4. SHR-005   Condivisione dal context menu                  [COMPLETATO]
     5. CLIP-017  Clipboard RDP e SSH (quick win, solo frontend) [COMPLETATO]
     6. USER-007  Pannello utente (necessario per CRED-006)      [COMPLETATO]
-    7. CRED-006  Connessione con credenziali alternative        [IN CORSO]
+    7. CRED-006  Connessione con credenziali alternative        [COMPLETATO]
 
   Fase 3 — Miglioramenti UX:
     8. SEARCH-009  Barra di ricerca                             [COMPLETATO]
     9. THEME-011   Tema scuro/chiaro                            [COMPLETATO]
    10. FAVS-014    Preferiti e recenti                          [COMPLETATO]
    11. RDPFS-018   Drive redirection RDP (file transfer)        [COMPLETATO]
-   12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni)
+   12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni) [IN CORSO]
    13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione)
    14. SFTP-019    Trasferimento file SFTP (SSH)
 

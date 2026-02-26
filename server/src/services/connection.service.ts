@@ -1,4 +1,4 @@
-import { PrismaClient, ConnectionType } from '@prisma/client';
+import { Prisma, PrismaClient, ConnectionType } from '@prisma/client';
 import { encrypt, decrypt, getMasterKey } from './crypto.service';
 import { AppError } from '../middleware/error.middleware';
 
@@ -20,6 +20,7 @@ export interface CreateConnectionInput {
   description?: string;
   folderId?: string;
   enableDrive?: boolean;
+  sshTerminalConfig?: Prisma.InputJsonValue | null;
 }
 
 export interface UpdateConnectionInput {
@@ -32,6 +33,7 @@ export interface UpdateConnectionInput {
   description?: string | null;
   folderId?: string | null;
   enableDrive?: boolean;
+  sshTerminalConfig?: Prisma.InputJsonValue | null;
 }
 
 export async function createConnection(userId: string, input: CreateConnectionInput) {
@@ -55,6 +57,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
       passwordTag: encPassword.tag,
       description: input.description || null,
       enableDrive: input.enableDrive ?? false,
+      sshTerminalConfig: input.sshTerminalConfig ?? undefined,
       userId,
     },
   });
@@ -68,6 +71,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
     folderId: connection.folderId,
     description: connection.description,
     enableDrive: connection.enableDrive,
+    sshTerminalConfig: connection.sshTerminalConfig,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
   };
@@ -93,6 +97,7 @@ export async function updateConnection(
   if (input.description !== undefined) data.description = input.description;
   if (input.folderId !== undefined) data.folderId = input.folderId;
   if (input.enableDrive !== undefined) data.enableDrive = input.enableDrive;
+  if (input.sshTerminalConfig !== undefined) data.sshTerminalConfig = input.sshTerminalConfig;
 
   if (input.username !== undefined) {
     const enc = encrypt(input.username, masterKey);
@@ -122,6 +127,7 @@ export async function updateConnection(
     folderId: updated.folderId,
     description: updated.description,
     enableDrive: updated.enableDrive,
+    sshTerminalConfig: updated.sshTerminalConfig,
     createdAt: updated.createdAt,
     updatedAt: updated.updatedAt,
   };
@@ -152,6 +158,7 @@ export async function getConnection(userId: string, connectionId: string) {
       folderId: connection.folderId,
       description: connection.description,
       enableDrive: connection.enableDrive,
+      sshTerminalConfig: connection.sshTerminalConfig,
       isOwner: true,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
@@ -173,6 +180,7 @@ export async function getConnection(userId: string, connectionId: string) {
       folderId: null,
       description: shared.connection.description,
       enableDrive: shared.connection.enableDrive,
+      sshTerminalConfig: shared.connection.sshTerminalConfig,
       isOwner: false,
       permission: shared.permission,
       createdAt: shared.connection.createdAt,
@@ -196,6 +204,7 @@ export async function listConnections(userId: string) {
       description: true,
       isFavorite: true,
       enableDrive: true,
+      sshTerminalConfig: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -214,6 +223,7 @@ export async function listConnections(userId: string) {
           port: true,
           description: true,
           enableDrive: true,
+          sshTerminalConfig: true,
           createdAt: true,
           updatedAt: true,
         },

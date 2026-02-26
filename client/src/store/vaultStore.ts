@@ -14,7 +14,7 @@ interface VaultState {
   stopPolling: () => void;
 }
 
-export const useVaultStore = create<VaultState>((set) => ({
+export const useVaultStore = create<VaultState>((set, get) => ({
   unlocked: false,
   initialized: false,
 

@@ -1,10 +1,12 @@
 import api from './client';
+import type { SshTerminalConfig } from '../constants/terminalThemes';
 
 export interface UserProfile {
   id: string;
   email: string;
   username: string | null;
   avatarData: string | null;
+  sshDefaults: Partial<SshTerminalConfig> | null;
   createdAt: string;
 }
 
@@ -20,6 +22,13 @@ export async function updateProfile(data: { username?: string; email?: string })
 
 export async function changePassword(oldPassword: string, newPassword: string): Promise<{ success: boolean }> {
   const res = await api.put('/user/password', { oldPassword, newPassword });
+  return res.data;
+}
+
+export async function updateSshDefaults(
+  data: Partial<SshTerminalConfig>
+): Promise<{ id: string; sshDefaults: Partial<SshTerminalConfig> }> {
+  const res = await api.put('/user/ssh-defaults', data);
   return res.data;
 }
 

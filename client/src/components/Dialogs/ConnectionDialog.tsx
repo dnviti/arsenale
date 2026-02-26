@@ -2,10 +2,15 @@ import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
   FormControl, InputLabel, Select, MenuItem, Box, Alert,
-  FormControlLabel, Checkbox,
+  FormControlLabel, Checkbox, Accordion, AccordionSummary, AccordionDetails, Typography,
 } from '@mui/material';
+import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData } from '../../api/connections.api';
 import { useConnectionsStore } from '../../store/connectionsStore';
+import type { SshTerminalConfig } from '../../constants/terminalThemes';
+import { mergeTerminalConfig } from '../../constants/terminalThemes';
+import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
+import TerminalSettingsSection from '../Settings/TerminalSettingsSection';
 
 interface ConnectionDialogProps {
   open: boolean;
@@ -23,9 +28,11 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
   const [password, setPassword] = useState('');
   const [description, setDescription] = useState('');
   const [enableDrive, setEnableDrive] = useState(false);
+  const [sshTerminalConfig, setSshTerminalConfig] = useState<Partial<SshTerminalConfig>>({});
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
+  const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
 
   const isEditMode = Boolean(connection);
 
@@ -39,6 +46,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
       setPassword('');
       setDescription(connection.description || '');
       setEnableDrive(connection.enableDrive ?? false);
+      setSshTerminalConfig(
+        (connection.sshTerminalConfig as Partial<SshTerminalConfig>) ?? {}
+      );
     } else if (open && !connection) {
       setName('');
       setType('SSH');
@@ -48,6 +58,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
       setPassword('');
       setDescription('');
       setEnableDrive(false);
+      setSshTerminalConfig({});
     }
   }, [open, connection]);
 
@@ -78,6 +89,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
           port: parseInt(port, 10),
           description: description || null,
           enableDrive,
+          ...(type === 'SSH' && {
+            sshTerminalConfig: Object.keys(sshTerminalConfig).length > 0 ? sshTerminalConfig : null,
+          }),
         };
         if (username) data.username = username;
         if (password) data.password = password;
@@ -93,6 +107,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
           description: description || undefined,
           enableDrive,
           ...(folderId ? { folderId } : {}),
+          ...(type === 'SSH' && Object.keys(sshTerminalConfig).length > 0 && {
+            sshTerminalConfig,
+          }),
         };
         await createConnection(data);
       }
@@ -117,6 +134,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
     setPassword('');
     setDescription('');
     setEnableDrive(false);
+    setSshTerminalConfig({});
     setError('');
     onClose();
   };
@@ -196,6 +214,21 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
               }
               label="Enable file sharing (drive redirection)"
             />
+          )}
+          {type === 'SSH' && (
+            <Accordion variant="outlined" disableGutters>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2">Terminal Appearance</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <TerminalSettingsSection
+                  value={sshTerminalConfig}
+                  onChange={setSshTerminalConfig}
+                  mode="connection"
+                  resolvedDefaults={mergeTerminalConfig(userDefaults)}
+                />
+              </AccordionDetails>
+            </Accordion>
           )}
         </Box>
       </DialogContent>

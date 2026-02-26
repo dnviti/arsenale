@@ -1,4 +1,5 @@
 import api from './client';
+import type { SshTerminalConfig } from '../constants/terminalThemes';
 
 export interface ConnectionInput {
   name: string;
@@ -10,6 +11,7 @@ export interface ConnectionInput {
   description?: string;
   folderId?: string;
   enableDrive?: boolean;
+  sshTerminalConfig?: Partial<SshTerminalConfig>;
 }
 
 export interface ConnectionData {
@@ -22,6 +24,7 @@ export interface ConnectionData {
   description: string | null;
   isFavorite: boolean;
   enableDrive: boolean;
+  sshTerminalConfig?: Partial<SshTerminalConfig> | null;
   isOwner: boolean;
   permission?: string;
   sharedBy?: string;
@@ -54,6 +57,7 @@ export interface ConnectionUpdate {
   description?: string | null;
   folderId?: string | null;
   enableDrive?: boolean;
+  sshTerminalConfig?: Partial<SshTerminalConfig> | null;
 }
 
 export async function updateConnection(
