@@ -19,6 +19,7 @@ export interface CreateConnectionInput {
   password: string;
   description?: string;
   folderId?: string;
+  enableDrive?: boolean;
 }
 
 export interface UpdateConnectionInput {
@@ -28,8 +29,9 @@ export interface UpdateConnectionInput {
   port?: number;
   username?: string;
   password?: string;
-  description?: string;
+  description?: string | null;
   folderId?: string | null;
+  enableDrive?: boolean;
 }
 
 export async function createConnection(userId: string, input: CreateConnectionInput) {
@@ -52,6 +54,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
       passwordIV: encPassword.iv,
       passwordTag: encPassword.tag,
       description: input.description || null,
+      enableDrive: input.enableDrive ?? false,
       userId,
     },
   });
@@ -64,6 +67,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
     port: connection.port,
     folderId: connection.folderId,
     description: connection.description,
+    enableDrive: connection.enableDrive,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
   };
@@ -88,6 +92,7 @@ export async function updateConnection(
   if (input.port !== undefined) data.port = input.port;
   if (input.description !== undefined) data.description = input.description;
   if (input.folderId !== undefined) data.folderId = input.folderId;
+  if (input.enableDrive !== undefined) data.enableDrive = input.enableDrive;
 
   if (input.username !== undefined) {
     const enc = encrypt(input.username, masterKey);
@@ -116,6 +121,7 @@ export async function updateConnection(
     port: updated.port,
     folderId: updated.folderId,
     description: updated.description,
+    enableDrive: updated.enableDrive,
     createdAt: updated.createdAt,
     updatedAt: updated.updatedAt,
   };
@@ -145,6 +151,7 @@ export async function getConnection(userId: string, connectionId: string) {
       port: connection.port,
       folderId: connection.folderId,
       description: connection.description,
+      enableDrive: connection.enableDrive,
       isOwner: true,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
@@ -165,6 +172,7 @@ export async function getConnection(userId: string, connectionId: string) {
       port: shared.connection.port,
       folderId: null,
       description: shared.connection.description,
+      enableDrive: shared.connection.enableDrive,
       isOwner: false,
       permission: shared.permission,
       createdAt: shared.connection.createdAt,
@@ -187,6 +195,7 @@ export async function listConnections(userId: string) {
       folderId: true,
       description: true,
       isFavorite: true,
+      enableDrive: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -204,6 +213,7 @@ export async function listConnections(userId: string) {
           host: true,
           port: true,
           description: true,
+          enableDrive: true,
           createdAt: true,
           updatedAt: true,
         },

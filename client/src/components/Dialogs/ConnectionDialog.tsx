@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
   FormControl, InputLabel, Select, MenuItem, Box, Alert,
+  FormControlLabel, Checkbox,
 } from '@mui/material';
 import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData } from '../../api/connections.api';
 import { useConnectionsStore } from '../../store/connectionsStore';
@@ -21,6 +22,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [description, setDescription] = useState('');
+  const [enableDrive, setEnableDrive] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
@@ -36,6 +38,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
       setUsername('');
       setPassword('');
       setDescription(connection.description || '');
+      setEnableDrive(connection.enableDrive ?? false);
     } else if (open && !connection) {
       setName('');
       setType('SSH');
@@ -44,6 +47,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
       setUsername('');
       setPassword('');
       setDescription('');
+      setEnableDrive(false);
     }
   }, [open, connection]);
 
@@ -73,6 +77,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
           host,
           port: parseInt(port, 10),
           description: description || null,
+          enableDrive,
         };
         if (username) data.username = username;
         if (password) data.password = password;
@@ -86,6 +91,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
           username,
           password,
           description: description || undefined,
+          enableDrive,
           ...(folderId ? { folderId } : {}),
         };
         await createConnection(data);
@@ -110,6 +116,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
     setUsername('');
     setPassword('');
     setDescription('');
+    setEnableDrive(false);
     setError('');
     onClose();
   };
@@ -179,6 +186,17 @@ export default function ConnectionDialog({ open, onClose, connection, folderId }
             multiline
             rows={2}
           />
+          {type === 'RDP' && (
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={enableDrive}
+                  onChange={(e) => setEnableDrive(e.target.checked)}
+                />
+              }
+              label="Enable file sharing (drive redirection)"
+            />
+          )}
         </Box>
       </DialogContent>
       <DialogActions>

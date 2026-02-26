@@ -13,6 +13,7 @@ const createSchema = z.object({
   password: z.string(),
   description: z.string().optional(),
   folderId: z.string().uuid().optional(),
+  enableDrive: z.boolean().optional(),
 });
 
 const updateSchema = z.object({
@@ -24,6 +25,7 @@ const updateSchema = z.object({
   password: z.string().optional(),
   description: z.string().nullable().optional(),
   folderId: z.string().uuid().nullable().optional(),
+  enableDrive: z.boolean().optional(),
 });
 
 export async function create(req: AuthRequest, res: Response, next: NextFunction) {

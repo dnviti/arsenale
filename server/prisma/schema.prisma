@@ -57,6 +57,7 @@ model Connection {
   passwordTag       String
   description       String?
   isFavorite        Boolean        @default(false)
+  enableDrive       Boolean        @default(false)
   userId            String
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt

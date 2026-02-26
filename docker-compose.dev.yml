@@ -3,6 +3,8 @@ services:
     image: guacamole/guacd
     ports:
       - "4822:4822"
+    volumes:
+      - ./data/drive:/guacd-drive
     restart: unless-stopped
 
   postgres:

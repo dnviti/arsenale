@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from 'express';
+import path from 'path';
 import { AuthRequest } from '../types';
 import { authenticate } from '../middleware/auth.middleware';
 import { getConnection, getConnectionCredentials } from '../services/connection.service';
@@ -25,14 +26,21 @@ router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) 
 
     const creds = await getConnectionCredentials(req.user!.userId, connectionId);
 
+    const enableDrive = conn.enableDrive ?? false;
+    const drivePath = enableDrive
+      ? path.posix.join('/guacd-drive', req.user!.userId)
+      : undefined;
+
     const token = generateGuacamoleToken({
       host: conn.host,
       port: conn.port,
       username: creds.username,
       password: creds.password,
+      enableDrive,
+      drivePath,
     });
 
-    res.json({ token });
+    res.json({ token, enableDrive });
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
     next(err);

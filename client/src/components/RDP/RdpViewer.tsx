@@ -1,21 +1,42 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
+import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import Guacamole from 'guacamole-common-js';
 import api from '../../api/client';
+import FileBrowser from './FileBrowser';
+import FloatingToolbar, { ToolbarAction } from './FloatingToolbar';
 
 interface RdpViewerProps {
   connectionId: string;
   tabId: string;
   isActive?: boolean;
+  enableDrive?: boolean;
 }
 
-export default function RdpViewer({ connectionId, tabId, isActive = true }: RdpViewerProps) {
+export default function RdpViewer({ connectionId, tabId, isActive = true, enableDrive = false }: RdpViewerProps) {
   const displayRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<Guacamole.Client | null>(null);
   const activeRef = useRef(isActive);
   const keyboardRef = useRef<Guacamole.Keyboard | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [error, setError] = useState('');
+  const [fileBrowserOpen, setFileBrowserOpen] = useState(false);
+
+  // Build toolbar actions list — extensible for future tools
+  const toolbarActions = useMemo<ToolbarAction[]>(() => {
+    const actions: ToolbarAction[] = [];
+    if (enableDrive) {
+      actions.push({
+        id: 'shared-drive',
+        icon: <FolderOpenIcon fontSize="small" />,
+        tooltip: 'Shared Drive',
+        onClick: () => setFileBrowserOpen((prev) => !prev),
+        active: fileBrowserOpen,
+      });
+    }
+    return actions;
+  }, [enableDrive, fileBrowserOpen]);
 
   // Keep activeRef in sync with prop; release keys and blur on tab switch
   useEffect(() => {
@@ -226,7 +247,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true }: RdpV
   }, []);
 
   return (
-    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <Box ref={containerRef} sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       {status === 'connecting' && (
         <Box
           sx={{
@@ -251,17 +272,25 @@ export default function RdpViewer({ connectionId, tabId, isActive = true }: RdpV
           {error}
         </Alert>
       )}
-      <Box
-        ref={displayRef}
-        tabIndex={-1}
-        sx={{
-          flex: 1,
-          overflow: 'hidden',
-          cursor: status === 'connected' ? 'none' : 'default',
-          outline: 'none',
-          '& > div': { width: '100% !important', height: '100% !important' },
-        }}
-      />
+      {toolbarActions.length > 0 && status === 'connected' && (
+        <FloatingToolbar actions={toolbarActions} containerRef={containerRef} />
+      )}
+      <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+        <Box
+          ref={displayRef}
+          tabIndex={-1}
+          sx={{
+            flex: 1,
+            overflow: 'hidden',
+            cursor: status === 'connected' ? 'none' : 'default',
+            outline: 'none',
+            '& > div': { width: '100% !important', height: '100% !important' },
+          }}
+        />
+        {enableDrive && (
+          <FileBrowser open={fileBrowserOpen} onClose={() => setFileBrowserOpen(false)} />
+        )}
+      </Box>
     </Box>
   );
 }

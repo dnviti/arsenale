@@ -571,7 +571,7 @@
 
 
 ------------------------------------------------------------------------------
-[ ] RDPFS-018 — Condivisione file/cartelle via drive redirection (RDP)
+[~] RDPFS-018 — Condivisione file/cartelle via drive redirection (RDP)
 ------------------------------------------------------------------------------
   Priorita: MEDIA
   Dipendenze: Nessuna

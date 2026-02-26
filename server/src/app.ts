@@ -7,6 +7,7 @@ import foldersRoutes from './routes/folders.routes';
 import sharingRoutes from './routes/sharing.routes';
 import sessionsRoutes from './socket/rdp.handler';
 import userRoutes from './routes/user.routes';
+import filesRoutes from './routes/files.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 const app = express();
@@ -22,6 +23,7 @@ app.use('/api/folders', foldersRoutes);
 app.use('/api/connections', sharingRoutes);
 app.use('/api/sessions', sessionsRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/files', filesRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

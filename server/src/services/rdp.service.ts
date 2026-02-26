@@ -6,6 +6,8 @@ export interface RdpConnectionParams {
   port: number;
   username: string;
   password: string;
+  enableDrive?: boolean;
+  drivePath?: string;
 }
 
 /**
@@ -22,21 +24,30 @@ export function getGuacamoleKey(): Buffer {
  * This matches guacamole-lite's decryptToken() expectations.
  */
 export function generateGuacamoleToken(params: RdpConnectionParams): string {
+  const settings: Record<string, string> = {
+    hostname: params.host,
+    port: String(params.port),
+    username: params.username,
+    password: params.password,
+    security: 'nla',
+    'ignore-cert': 'true',
+    'enable-wallpaper': 'false',
+    'enable-theming': 'true',
+    'enable-font-smoothing': 'true',
+    'resize-method': 'display-update',
+  };
+
+  if (params.enableDrive && params.drivePath) {
+    settings['enable-drive'] = 'true';
+    settings['drive-name'] = 'Shared';
+    settings['drive-path'] = params.drivePath;
+    settings['create-drive-path'] = 'true';
+  }
+
   const connectionConfig = {
     connection: {
       type: 'rdp',
-      settings: {
-        hostname: params.host,
-        port: String(params.port),
-        username: params.username,
-        password: params.password,
-        security: 'nla',
-        'ignore-cert': 'true',
-        'enable-wallpaper': 'false',
-        'enable-theming': 'true',
-        'enable-font-smoothing': 'true',
-        'resize-method': 'display-update',
-      },
+      settings,
     },
   };
 

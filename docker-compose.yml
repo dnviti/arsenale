@@ -16,6 +16,8 @@ services:
 
   guacd:
     image: guacamole/guacd
+    volumes:
+      - rdm_drive:/guacd-drive
     restart: unless-stopped
 
   server:
@@ -39,6 +41,9 @@ services:
       PORT: 3001
       GUACAMOLE_WS_PORT: 3002
       VAULT_TTL_MINUTES: ${VAULT_TTL_MINUTES:-30}
+      DRIVE_BASE_PATH: /guacd-drive
+    volumes:
+      - rdm_drive:/guacd-drive
     restart: unless-stopped
 
   client:
@@ -53,3 +58,4 @@ services:
 
 volumes:
   pgdata:
+  rdm_drive:

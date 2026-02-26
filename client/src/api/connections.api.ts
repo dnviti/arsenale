@@ -9,6 +9,7 @@ export interface ConnectionInput {
   password: string;
   description?: string;
   folderId?: string;
+  enableDrive?: boolean;
 }
 
 export interface ConnectionData {
@@ -20,6 +21,7 @@ export interface ConnectionData {
   folderId: string | null;
   description: string | null;
   isFavorite: boolean;
+  enableDrive: boolean;
   isOwner: boolean;
   permission?: string;
   sharedBy?: string;
@@ -51,6 +53,7 @@ export interface ConnectionUpdate {
   password?: string;
   description?: string | null;
   folderId?: string | null;
+  enableDrive?: boolean;
 }
 
 export async function updateConnection(

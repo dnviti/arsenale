@@ -15,4 +15,7 @@ export const config = {
   vaultTtlMinutes: parseInt(process.env.VAULT_TTL_MINUTES || '30', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: (process.env.LOG_LEVEL || 'info') as 'error' | 'warn' | 'info' | 'debug',
+  driveBasePath: process.env.DRIVE_BASE_PATH || path.resolve(__dirname, '../../data/drive'),
+  fileUploadMaxSize: parseInt(process.env.FILE_UPLOAD_MAX_SIZE || String(10 * 1024 * 1024), 10),
+  userDriveQuota: parseInt(process.env.USER_DRIVE_QUOTA || String(100 * 1024 * 1024), 10),
 };
