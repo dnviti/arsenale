@@ -2,6 +2,7 @@ import http from 'http';
 import app from './app';
 import { config } from './config';
 import { setupSocketIO } from './socket';
+import { logger, toGuacamoleLogLevel } from './utils/logger';
 
 async function main() {
   const server = http.createServer(app);
@@ -26,23 +27,23 @@ async function main() {
             key: getGuacamoleKey(),
           },
           log: {
-            level: config.nodeEnv === 'development' ? 'DEBUG' : 'ERRORS',
+            level: toGuacamoleLogLevel(config.logLevel),
           },
         }
       );
 
       guacServer.on('error', (clientConnection: unknown, error: unknown) => {
-        console.error(
+        logger.error(
           'Guacamole connection error:',
           error instanceof Error ? error.message : error
         );
       });
 
-      console.log(
+      logger.info(
         `Guacamole WebSocket server listening on port ${config.guacamoleWsPort}`
       );
     } catch (err) {
-      console.warn(
+      logger.warn(
         'guacamole-lite not available. RDP connections will not work.',
         err instanceof Error ? err.message : err
       );
@@ -50,9 +51,9 @@ async function main() {
   }
 
   server.listen(config.port, () => {
-    console.log(`Server running on port ${config.port}`);
-    console.log(`Environment: ${config.nodeEnv}`);
+    logger.info(`Server running on port ${config.port}`);
+    logger.info(`Environment: ${config.nodeEnv}`);
   });
 }
 
-main().catch(console.error);
+main().catch((err) => logger.error(err));

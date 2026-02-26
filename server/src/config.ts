@@ -14,4 +14,5 @@ export const config = {
   guacamoleSecret: process.env.GUACAMOLE_SECRET || 'dev-guac-secret',
   vaultTtlMinutes: parseInt(process.env.VAULT_TTL_MINUTES || '30', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
+  logLevel: (process.env.LOG_LEVEL || 'info') as 'error' | 'warn' | 'info' | 'debug',
 };
