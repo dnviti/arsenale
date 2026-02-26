@@ -143,3 +143,5 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+client/dist-node/vite.config.d.ts.map
+client/dist-node/vite.config.d.ts
