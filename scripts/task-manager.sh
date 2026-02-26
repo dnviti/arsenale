@@ -18,13 +18,19 @@ if [ -z "$PROJECT_ROOT" ]; then
 fi
 
 TODO_FILE="$PROJECT_ROOT/to-do.txt"
+PROGRESS_FILE="$PROJECT_ROOT/progressing.txt"
+DONE_FILE="$PROJECT_ROOT/done.txt"
 
 if [ ! -f "$TODO_FILE" ]; then
   exit 0
 fi
 
-# Sanitizza il file (rimuovi \r Windows) in una variabile
+# Sanitizza i file (rimuovi \r Windows) in variabili
 TODO_CONTENT="$(tr -d '\r' < "$TODO_FILE")"
+PROGRESS_CONTENT=""
+DONE_CONTENT=""
+[ -f "$PROGRESS_FILE" ] && PROGRESS_CONTENT="$(tr -d '\r' < "$PROGRESS_FILE")"
+[ -f "$DONE_FILE" ] && DONE_CONTENT="$(tr -d '\r' < "$DONE_FILE")"
 
 # ---------------------------------------------------------------------------
 # Mappa: pattern file -> codice task
@@ -95,15 +101,31 @@ declare -A TASK_NAMES=(
 get_task_status() {
   local code="$1"
   local line
+
+  # Search in done.txt first (completed)
+  if [ -n "$DONE_CONTENT" ]; then
+    line=$(echo "$DONE_CONTENT" | grep -E "^\[x\] ${code}" | head -1)
+    if [ -n "$line" ]; then
+      echo "COMPLETATO"
+      return
+    fi
+  fi
+
+  # Search in progressing.txt (in-progress)
+  if [ -n "$PROGRESS_CONTENT" ]; then
+    line=$(echo "$PROGRESS_CONTENT" | grep -E "^\[~\] ${code}" | head -1)
+    if [ -n "$line" ]; then
+      echo "IN CORSO"
+      return
+    fi
+  fi
+
+  # Search in to-do.txt (pending/blocked)
   line=$(echo "$TODO_CONTENT" | grep -E "^\[.\] ${code}" | head -1)
   if [ -z "$line" ]; then
     line=$(echo "$TODO_CONTENT" | grep -B1 "$code" | grep -E '^\[' | head -1)
   fi
-  if echo "$line" | grep -q '\[x\]'; then
-    echo "COMPLETATO"
-  elif echo "$line" | grep -q '\[~\]'; then
-    echo "IN CORSO"
-  elif echo "$line" | grep -q '\[!\]'; then
+  if echo "$line" | grep -q '\[!\]'; then
     echo "BLOCCATO"
   elif echo "$line" | grep -q '\[ \]'; then
     echo "DA FARE"
@@ -118,8 +140,9 @@ get_task_status() {
 show_summary() {
   local done progress todo blocked total pct
 
-  done=$(echo "$TODO_CONTENT" | grep -cE '^\[x\] [A-Z0-9]' || true)
-  progress=$(echo "$TODO_CONTENT" | grep -cE '^\[~\] [A-Z0-9]' || true)
+  # Count from the correct files
+  done=$(echo "$DONE_CONTENT" | grep -cE '^\[x\] [A-Z0-9]' || true)
+  progress=$(echo "$PROGRESS_CONTENT" | grep -cE '^\[~\] [A-Z0-9]' || true)
   todo=$(echo "$TODO_CONTENT" | grep -cE '^\[ \] [A-Z0-9]' || true)
   blocked=$(echo "$TODO_CONTENT" | grep -cE '^\[!\] [A-Z0-9]' || true)
 

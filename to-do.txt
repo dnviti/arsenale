@@ -10,48 +10,6 @@
   SEZIONE A — TASK RICHIESTI (Core Features)
 ================================================================================
 
-------------------------------------------------------------------------------
-[ ] CRED-006 — Connessione con credenziali alternative (tasto destro)
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: CTX-003 (completato), USER-007 (per opzione "account utente")
-
-  DESCRIZIONE:
-  Aggiungere voce "Connect As..." nel context menu che permette di
-  scegliere con quali credenziali connettersi:
-    1. Usa account configurato nel profilo utente
-    2. Inserisci username e password manualmente
-    3. Usa credenziali salvate nella connessione (default)
-
-  DETTAGLI TECNICI:
-  Frontend DA IMPLEMENTARE:
-    1. Creare client/src/components/Dialogs/ConnectAsDialog.tsx
-       - Radio group con le 3 opzioni
-       - Opzione 1: usa username/password dal profilo utente
-         (richiede USER-007 per avere username nel profilo)
-       - Opzione 2: mostra campi username + password da compilare
-       - Opzione 3: "Usa credenziali salvate" (selezionato di default)
-       - Bottone "Connect" che apre il tab con le credenziali scelte
-    2. Aggiungere voce "Connect As..." nel context menu
-    3. Modificare tabsStore.ts per supportare credenziali override:
-       - Tab.credentials?: { username: string, password: string }
-    4. Modificare SshTerminal.tsx e RdpViewer.tsx:
-       - Passare credenziali override alla sessione
-    5. Backend: modificare POST /api/sessions/rdp e /api/sessions/ssh
-       - Accettare parametri opzionali username/password override
-       - Se forniti, usare quelli invece di decifrare dalla connessione
-
-  FILE COINVOLTI:
-    CREARE:  client/src/components/Dialogs/ConnectAsDialog.tsx
-    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx
-    MODIFICARE: client/src/store/tabsStore.ts
-    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
-    MODIFICARE: client/src/components/RDP/RdpViewer.tsx
-    MODIFICARE: server/src/services/ssh.service.ts
-    MODIFICARE: server/src/services/rdp.service.ts
-    MODIFICARE: server/src/controllers/session.controller.ts (o equivalente)
-
-
 ================================================================================
   SEZIONE B — TASK AGGIUNTIVI SUGGERITI
 ================================================================================
@@ -401,7 +359,7 @@
 
 
 ------------------------------------------------------------------------------
-[ ] SFTP-019 — Trasferimento file via SFTP (SSH)
+[~] SFTP-019 — Trasferimento file via SFTP (SSH)
 ------------------------------------------------------------------------------
   Priorita: MEDIA
   Dipendenze: Nessuna
@@ -1074,16 +1032,16 @@
     3. EDIT-008 Verificare/completare modifica connessioni      [COMPLETATO]
 
   Fase 2 — Context menu completo + clipboard:
-    4. SHR-005   Condivisione dal context menu                  [IN CORSO]
-    5. CLIP-017  Clipboard RDP e SSH (quick win, solo frontend) [IN CORSO]
-    6. USER-007  Pannello utente (necessario per CRED-006)      [IN CORSO]
-    7. CRED-006  Connessione con credenziali alternative
+    4. SHR-005   Condivisione dal context menu                  [COMPLETATO]
+    5. CLIP-017  Clipboard RDP e SSH (quick win, solo frontend) [COMPLETATO]
+    6. USER-007  Pannello utente (necessario per CRED-006)      [COMPLETATO]
+    7. CRED-006  Connessione con credenziali alternative        [IN CORSO]
 
   Fase 3 — Miglioramenti UX:
-    8. SEARCH-009  Barra di ricerca                             [IN CORSO]
-    9. THEME-011   Tema scuro/chiaro                            [IN CORSO]
-   10. FAVS-014    Preferiti e recenti                          [IN CORSO]
-   11. RDPFS-018   Drive redirection RDP (file transfer)        [IN CORSO]
+    8. SEARCH-009  Barra di ricerca                             [COMPLETATO]
+    9. THEME-011   Tema scuro/chiaro                            [COMPLETATO]
+   10. FAVS-014    Preferiti e recenti                          [COMPLETATO]
+   11. RDPFS-018   Drive redirection RDP (file transfer)        [COMPLETATO]
    12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni)
    13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione)
    14. SFTP-019    Trasferimento file SFTP (SSH)

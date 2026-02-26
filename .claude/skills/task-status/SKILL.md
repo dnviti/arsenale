@@ -1,8 +1,7 @@
 ---
 name: task-status
-description: Show the current status of all project tasks from to-do.txt, including summary counts, in-progress tasks, and next recommended tasks.
+description: Show the current status of all project tasks, including summary counts, in-progress tasks, and next recommended tasks.
 disable-model-invocation: true
-allowed-tools: Bash, Read
 ---
 
 # Task Status Report
@@ -13,19 +12,19 @@ You are a task status reporter. Analyze the data below and present a clear, well
 
 !`bash scripts/task-manager.sh`
 
-## In-Progress Tasks
+## In-Progress Tasks (from progressing.txt)
 
-!`grep '^\[~\]' to-do.txt | tr -d '\r'`
+!`grep '^\[~\]' progressing.txt 2>/dev/null | tr -d '\r'`
 
-## Completed Tasks
+## Completed Tasks (from done.txt)
 
-!`grep '^\[x\]' to-do.txt | tr -d '\r'`
+!`grep '^\[x\]' done.txt 2>/dev/null | tr -d '\r'`
 
 ## Blocked Tasks
 
-!`grep '^\[!\]' to-do.txt | tr -d '\r'`
+!`grep '^\[!\]' to-do.txt 2>/dev/null | tr -d '\r'`
 
-## Pending Tasks
+## Pending Tasks (from to-do.txt)
 
 !`grep '^\[ \]' to-do.txt | tr -d '\r'`
 

@@ -103,7 +103,6 @@
   - Dialog conferma eliminazione: OK
 
   DA AGGIUNGERE (nelle prossime task):
-  - Voce "Share" (SHR-005)
   - Voce "Connect As..." (CRED-006)
 
 
@@ -124,6 +123,52 @@
   - Dialog di conferma con nome connessione: OK
   - Chiamata API deleteConnection + refresh lista: OK
   - Icona rossa per indicare azione distruttiva: OK
+
+
+------------------------------------------------------------------------------
+[x] SHR-005 — Condivisione connessioni dal menu contestuale (view/edit)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: CTX-003 (completato)
+  COMPLETATO: Share menu in context menu, ShareDialog wired with READ_ONLY/FULL_ACCESS permission controls
+
+  DESCRIZIONE:
+  Aggiungere voce "Share" nel context menu per condividere connessioni
+  con altri utenti. Due livelli di permesso:
+    - READ_ONLY (View): il destinatario puo' solo aprire la connessione,
+      NON vede la password ne' puo' modificare le impostazioni
+    - FULL_ACCESS (Edit): il destinatario puo' anche modificare la
+      connessione e visualizzare le credenziali decifrate
+
+  FILE COINVOLTI:
+    MODIFICATO: client/src/components/Sidebar/ConnectionTree.tsx
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx
+    MODIFICATO: client/src/components/Dialogs/ShareDialog.tsx
+
+
+------------------------------------------------------------------------------
+[x] USER-007 — Pannello amministrazione utente
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Settings page with profile/avatar management, password change with vault re-keying, backend API
+
+  DESCRIZIONE:
+  Creare una pagina completa di impostazioni utente accessibile dal menu
+  account in alto a destra. Include modifica profilo (username, email,
+  avatar) e cambio password con ri-cifratura vault.
+
+  FILE COINVOLTI:
+    CREATO:  server/src/routes/user.routes.ts
+    CREATO:  server/src/controllers/user.controller.ts
+    CREATO:  server/src/services/user.service.ts
+    CREATO:  client/src/pages/SettingsPage.tsx
+    CREATO:  client/src/api/user.api.ts
+    MODIFICATO: server/prisma/schema.prisma
+    MODIFICATO: server/src/app.ts
+    MODIFICATO: client/src/App.tsx
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx
+    MODIFICATO: client/src/store/authStore.ts
 
 
 ================================================================================
@@ -199,3 +244,99 @@
     MODIFICATO: server/src/index.ts (usa logger + toGuacamoleLogLevel)
     MODIFICATO: server/src/middleware/error.middleware.ts (usa logger)
     MODIFICATO: .env.example (LOG_LEVEL)
+
+
+------------------------------------------------------------------------------
+[x] SEARCH-009 — Barra di ricerca connessioni nella sidebar
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Search TextField in sidebar, filters by name/host/type/description, ESC to clear
+
+  DESCRIZIONE:
+  Campo di ricerca nella sidebar che filtra connessioni in tempo reale
+  per nome, host o tipo. Utile quando si hanno molte connessioni.
+
+  FILE COINVOLTI:
+    MODIFICATO: client/src/components/Sidebar/ConnectionTree.tsx
+
+
+------------------------------------------------------------------------------
+[x] THEME-011 — Toggle tema scuro/chiaro
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+  COMPLETATO: Zustand themeStore + light/dark MUI themes + AppBar toggle + localStorage persistence
+
+  DESCRIZIONE:
+  Permettere all'utente di scegliere tra tema scuro e chiaro.
+
+  FILE COINVOLTI:
+    CREATO:  client/src/store/themeStore.ts
+    CREATO:  client/src/theme.ts
+    MODIFICATO: client/src/main.tsx (ThemeProvider dinamico)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (toggle button)
+
+
+------------------------------------------------------------------------------
+[x] FAVS-014 — Connessioni preferite e recenti
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+  COMPLETATO: isFavorite DB field + toggle endpoint + star icons + collapsible Favorites/Recent sections
+
+  DESCRIZIONE:
+  Sezione "Preferiti" e "Recenti" nella sidebar per accesso rapido
+  alle connessioni piu' usate.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (isFavorite su Connection)
+    MODIFICATO: server/src/routes/connections.routes.ts (PATCH /:id/favorite)
+    MODIFICATO: server/src/controllers/connection.controller.ts
+    MODIFICATO: server/src/services/connection.service.ts
+    MODIFICATO: client/src/api/connections.api.ts
+    MODIFICATO: client/src/store/connectionsStore.ts
+    MODIFICATO: client/src/components/Sidebar/ConnectionTree.tsx
+    CREATO:  client/src/utils/recentConnections.ts
+
+
+------------------------------------------------------------------------------
+[x] CLIP-017 — Clipboard (copy/paste) per connessioni RDP e SSH
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: RDP clipboard via Guacamole StringReader/Writer, SSH Ctrl+Shift+C/V custom key handler
+
+  DESCRIZIONE:
+  Abilitare il copia/incolla bidirezionale tra il browser e le sessioni
+  remote (RDP e SSH).
+
+  FILE COINVOLTI:
+    MODIFICATO: client/src/components/RDP/RdpViewer.tsx
+    MODIFICATO: client/src/components/Terminal/SshTerminal.tsx
+
+
+------------------------------------------------------------------------------
+[x] RDPFS-018 — Condivisione file/cartelle via drive redirection (RDP)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Drive redirection params, file API with multer, FileBrowser UI, docker volumes
+
+  DESCRIZIONE:
+  Abilitare la drive redirection di guacd per permettere il trasferimento
+  di file tra il browser e la sessione RDP.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/services/rdp.service.ts
+    MODIFICATO: docker-compose.dev.yml
+    MODIFICATO: docker-compose.yml
+    MODIFICATO: docker-compose.prod.yml
+    MODIFICATO: server/src/app.ts
+    MODIFICATO: server/src/config.ts
+    CREATO:  server/src/routes/files.routes.ts
+    CREATO:  server/src/controllers/files.controller.ts
+    CREATO:  server/src/services/file.service.ts
+    CREATO:  client/src/components/FileTransfer/FileBrowser.tsx
+    CREATO:  client/src/api/files.api.ts
+    CREATO:  client/src/components/shared/FloatingToolbar.tsx
