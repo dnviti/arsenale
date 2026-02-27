@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import { AppError } from '../middleware/error.middleware';
+import * as auditService from '../services/audit.service';
 import * as totpService from '../services/totp.service';
 import prisma from '../lib/prisma';
 
@@ -32,6 +33,7 @@ export async function verify(req: AuthRequest, res: Response, next: NextFunction
   try {
     const { code } = codeSchema.parse(req.body);
     await totpService.verifyAndEnable(req.user!.userId, code);
+    auditService.log({ userId: req.user!.userId, action: 'TOTP_ENABLE', ipAddress: req.ip });
     res.json({ enabled: true });
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError('Invalid code format', 400));
@@ -44,6 +46,7 @@ export async function disable(req: AuthRequest, res: Response, next: NextFunctio
   try {
     const { code } = codeSchema.parse(req.body);
     await totpService.disable(req.user!.userId, code);
+    auditService.log({ userId: req.user!.userId, action: 'TOTP_DISABLE', ipAddress: req.ip });
     res.json({ enabled: false });
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError('Invalid code format', 400));

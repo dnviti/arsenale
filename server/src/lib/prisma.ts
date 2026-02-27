@@ -8,4 +8,4 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 export default prisma;
-export { Prisma, ConnectionType, Permission } from '../generated/prisma/client';
+export { Prisma, ConnectionType, Permission, AuditAction } from '../generated/prisma/client';

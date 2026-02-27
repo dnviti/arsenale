@@ -7,12 +7,24 @@ import prisma from './lib/prisma';
 
 async function runStartupMigrations() {
   // Mark existing users without emailVerified as verified so they aren't locked out
-  const result = await prisma.user.updateMany({
+  const emailResult = await prisma.user.updateMany({
     where: { emailVerified: false, emailVerifyToken: null },
     data: { emailVerified: true },
   });
-  if (result.count > 0) {
-    logger.info(`Startup migration: marked ${result.count} existing user(s) as email-verified`);
+  if (emailResult.count > 0) {
+    logger.info(`Startup migration: marked ${emailResult.count} existing user(s) as email-verified`);
+  }
+
+  // Ensure existing users with a password have vaultSetupComplete = true
+  const vaultResult = await prisma.user.updateMany({
+    where: {
+      vaultSetupComplete: false,
+      passwordHash: { not: null },
+    },
+    data: { vaultSetupComplete: true },
+  });
+  if (vaultResult.count > 0) {
+    logger.info(`Startup migration: marked ${vaultResult.count} user(s) as vault-setup-complete`);
   }
 }
 

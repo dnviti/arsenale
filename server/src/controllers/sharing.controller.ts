@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import * as sharingService from '../services/sharing.service';
+import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 
 const shareSchema = z.object({
@@ -22,6 +23,12 @@ export async function share(req: AuthRequest, res: Response, next: NextFunction)
       email,
       permission
     );
+    auditService.log({
+      userId: req.user!.userId, action: 'SHARE_CONNECTION',
+      targetType: 'Connection', targetId: req.params.id as string,
+      details: { sharedWith: email, permission },
+      ipAddress: req.ip,
+    });
     res.status(201).json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
@@ -36,6 +43,12 @@ export async function unshare(req: AuthRequest, res: Response, next: NextFunctio
       req.params.id as string,
       req.params.userId as string
     );
+    auditService.log({
+      userId: req.user!.userId, action: 'UNSHARE_CONNECTION',
+      targetType: 'Connection', targetId: req.params.id as string,
+      details: { targetUserId: req.params.userId },
+      ipAddress: req.ip,
+    });
     res.json(result);
   } catch (err) {
     next(err);
@@ -51,6 +64,12 @@ export async function updatePermission(req: AuthRequest, res: Response, next: Ne
       req.params.userId as string,
       permission
     );
+    auditService.log({
+      userId: req.user!.userId, action: 'UPDATE_SHARE_PERMISSION',
+      targetType: 'Connection', targetId: req.params.id as string,
+      details: { targetUserId: req.params.userId, permission },
+      ipAddress: req.ip,
+    });
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));

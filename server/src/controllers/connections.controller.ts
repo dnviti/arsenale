@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import * as connectionService from '../services/connection.service';
+import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 
 const sshTerminalConfigSchema = z.object({
@@ -47,6 +48,12 @@ export async function create(req: AuthRequest, res: Response, next: NextFunction
   try {
     const data = createSchema.parse(req.body);
     const result = await connectionService.createConnection(req.user!.userId, data);
+    auditService.log({
+      userId: req.user!.userId, action: 'CREATE_CONNECTION',
+      targetType: 'Connection', targetId: result.id,
+      details: { name: data.name, type: data.type, host: data.host },
+      ipAddress: req.ip,
+    });
     res.status(201).json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
@@ -62,6 +69,12 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
       req.params.id as string,
       data
     );
+    auditService.log({
+      userId: req.user!.userId, action: 'UPDATE_CONNECTION',
+      targetType: 'Connection', targetId: req.params.id as string,
+      details: { fields: Object.keys(data) },
+      ipAddress: req.ip,
+    });
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
@@ -72,6 +85,11 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
 export async function remove(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const result = await connectionService.deleteConnection(req.user!.userId, req.params.id as string);
+    auditService.log({
+      userId: req.user!.userId, action: 'DELETE_CONNECTION',
+      targetType: 'Connection', targetId: req.params.id as string,
+      ipAddress: req.ip,
+    });
     res.json(result);
   } catch (err) {
     next(err);

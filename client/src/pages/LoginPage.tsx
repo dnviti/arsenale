@@ -7,6 +7,7 @@ import { loginApi, verifyTotpApi } from '../api/auth.api';
 import { resendVerificationEmail } from '../api/email.api';
 import { useAuthStore } from '../store/authStore';
 import { useVaultStore } from '../store/vaultStore';
+import OAuthButtons from '../components/OAuthButtons';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -35,6 +36,12 @@ export default function LoginPage() {
     if (verifyError) {
       setError(verifyError);
       searchParams.delete('verifyError');
+      setSearchParams(searchParams, { replace: true });
+    }
+    const oauthError = searchParams.get('error');
+    if (oauthError) {
+      setError(decodeURIComponent(oauthError));
+      searchParams.delete('error');
       setSearchParams(searchParams, { replace: true });
     }
   }, []);
@@ -165,6 +172,7 @@ export default function LoginPage() {
 
           {step === 'credentials' ? (
             <Box component="form" onSubmit={handleSubmit}>
+              <OAuthButtons mode="login" />
               <TextField
                 fullWidth
                 label="Email"

@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import * as userService from '../services/user.service';
+import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 
 const updateProfileSchema = z.object({
@@ -67,6 +68,11 @@ export async function updateProfile(req: AuthRequest, res: Response, next: NextF
   try {
     const data = updateProfileSchema.parse(req.body);
     const result = await userService.updateProfile(req.user!.userId, data);
+    auditService.log({
+      userId: req.user!.userId, action: 'PROFILE_UPDATE',
+      details: { fields: Object.keys(data) },
+      ipAddress: req.ip,
+    });
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
@@ -78,6 +84,7 @@ export async function changePassword(req: AuthRequest, res: Response, next: Next
   try {
     const { oldPassword, newPassword } = changePasswordSchema.parse(req.body);
     const result = await userService.changePassword(req.user!.userId, oldPassword, newPassword);
+    auditService.log({ userId: req.user!.userId, action: 'PASSWORD_CHANGE', ipAddress: req.ip });
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));

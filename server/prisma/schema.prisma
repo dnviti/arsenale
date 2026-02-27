@@ -8,30 +8,57 @@ datasource db {
 }
 
 model User {
-  id                String   @id @default(uuid())
-  email             String   @unique
-  username          String?
-  avatarData        String?
-  passwordHash      String
-  vaultSalt         String
-  encryptedVaultKey String
-  vaultKeyIV        String
-  vaultKeyTag       String
-  sshDefaults       Json?
-  rdpDefaults       Json?
-  totpSecret        String?
-  totpEnabled       Boolean  @default(false)
-  emailVerified     Boolean  @default(false)
-  emailVerifyToken  String?  @unique
-  emailVerifyExpiry DateTime?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  email              String   @unique
+  username           String?
+  avatarData         String?
+  passwordHash       String?
+  vaultSalt          String?
+  encryptedVaultKey  String?
+  vaultKeyIV         String?
+  vaultKeyTag        String?
+  vaultSetupComplete Boolean  @default(true)
+  sshDefaults        Json?
+  rdpDefaults        Json?
+  totpSecret         String?
+  totpEnabled        Boolean  @default(false)
+  emailVerified      Boolean  @default(false)
+  emailVerifyToken   String?  @unique
+  emailVerifyExpiry  DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  connections  Connection[]
-  folders      Folder[]
-  sharedWithMe SharedConnection[] @relation("SharedWith")
-  sharedByMe   SharedConnection[] @relation("SharedBy")
+  connections   Connection[]
+  folders       Folder[]
+  sharedWithMe  SharedConnection[] @relation("SharedWith")
+  sharedByMe    SharedConnection[] @relation("SharedBy")
   refreshTokens RefreshToken[]
+  oauthAccounts OAuthAccount[]
+  auditLogs     AuditLog[]
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  MICROSOFT
+  GITHUB
+}
+
+model OAuthAccount {
+  id             String       @id @default(uuid())
+  userId         String
+  provider       AuthProvider
+  providerUserId String
+  providerEmail  String?
+  accessToken    String?
+  refreshToken   String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
 }
 
 model Folder {
@@ -115,4 +142,48 @@ model RefreshToken {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+enum AuditAction {
+  LOGIN
+  LOGIN_OAUTH
+  LOGIN_TOTP
+  LOGOUT
+  REGISTER
+  VAULT_UNLOCK
+  VAULT_LOCK
+  VAULT_SETUP
+  CREATE_CONNECTION
+  UPDATE_CONNECTION
+  DELETE_CONNECTION
+  SHARE_CONNECTION
+  UNSHARE_CONNECTION
+  UPDATE_SHARE_PERMISSION
+  CREATE_FOLDER
+  UPDATE_FOLDER
+  DELETE_FOLDER
+  PASSWORD_CHANGE
+  PROFILE_UPDATE
+  TOTP_ENABLE
+  TOTP_DISABLE
+  OAUTH_LINK
+  OAUTH_UNLINK
+  PASSWORD_REVEAL
+}
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  userId     String
+  action     AuditAction
+  targetType String?
+  targetId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
 }

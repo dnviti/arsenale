@@ -5,6 +5,15 @@ export interface AuthPayload {
   email: string;
 }
 
+// Merge AuthPayload into Express.User so passport's global
+// req.user augmentation stays compatible with AuthRequest.
+declare global {
+  namespace Express {
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+    interface User extends AuthPayload {}
+  }
+}
+
 export interface AuthRequest extends Request {
   user?: AuthPayload;
 }

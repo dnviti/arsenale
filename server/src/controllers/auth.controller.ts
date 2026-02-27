@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import * as authService from '../services/auth.service';
+import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 import { config } from '../config';
 
@@ -21,8 +22,9 @@ const refreshSchema = z.object({
 export async function register(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password } = registerSchema.parse(req.body);
-    const user = await authService.register(email, password);
-    res.status(201).json(user);
+    const result = await authService.register(email, password);
+    auditService.log({ userId: result.userId, action: 'REGISTER', ipAddress: req.ip });
+    res.status(201).json({ message: result.message });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(new AppError(err.issues[0].message, 400));
@@ -47,6 +49,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     if (result.requiresTOTP) {
       res.json({ requiresTOTP: true, tempToken: result.tempToken });
     } else {
+      auditService.log({ userId: result.user.id, action: 'LOGIN', ipAddress: req.ip });
       res.json({
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
@@ -71,6 +74,7 @@ export async function verifyTotp(req: Request, res: Response, next: NextFunction
   try {
     const { tempToken, code } = verifyTotpSchema.parse(req.body);
     const result = await authService.verifyTotp(tempToken, code);
+    auditService.log({ userId: result.user.id, action: 'LOGIN_TOTP', ipAddress: req.ip });
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -104,7 +108,10 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 export async function logout(req: Request, res: Response, next: NextFunction) {
   try {
     const { refreshToken } = refreshSchema.parse(req.body);
-    await authService.logout(refreshToken);
+    const userId = await authService.logout(refreshToken);
+    if (userId) {
+      auditService.log({ userId, action: 'LOGOUT', ipAddress: req.ip });
+    }
     res.json({ success: true });
   } catch (err) {
     next(err);

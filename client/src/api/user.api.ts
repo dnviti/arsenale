@@ -9,6 +9,9 @@ export interface UserProfile {
   avatarData: string | null;
   sshDefaults: Partial<SshTerminalConfig> | null;
   rdpDefaults: Partial<RdpSettings> | null;
+  hasPassword: boolean;
+  vaultSetupComplete: boolean;
+  oauthAccounts: { id: string; provider: string; providerEmail: string | null }[];
   createdAt: string;
 }
 

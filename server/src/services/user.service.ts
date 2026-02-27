@@ -14,10 +14,18 @@ const MAX_AVATAR_SIZE = 200 * 1024; // ~200KB base64
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, username: true, avatarData: true, sshDefaults: true, rdpDefaults: true, createdAt: true },
+    select: {
+      id: true, email: true, username: true, avatarData: true,
+      sshDefaults: true, rdpDefaults: true, createdAt: true,
+      vaultSetupComplete: true, passwordHash: true,
+      oauthAccounts: {
+        select: { provider: true, providerEmail: true, createdAt: true },
+      },
+    },
   });
   if (!user) throw new AppError('User not found', 404);
-  return user;
+  const { passwordHash, ...rest } = user;
+  return { ...rest, hasPassword: !!passwordHash };
 }
 
 export async function updateProfile(
@@ -51,6 +59,11 @@ export async function changePassword(
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError('User not found', 404);
 
+  // OAuth-only users cannot change password
+  if (!user.passwordHash) {
+    throw new AppError('Cannot change password for OAuth-only accounts.', 400);
+  }
+
   // 1. Verify old password
   const valid = await bcrypt.compare(oldPassword, user.passwordHash);
   if (!valid) throw new AppError('Current password is incorrect', 401);
@@ -59,6 +72,9 @@ export async function changePassword(
   const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
 
   // 3. Derive old key and decrypt master key
+  if (!user.vaultSalt || !user.encryptedVaultKey || !user.vaultKeyIV || !user.vaultKeyTag) {
+    throw new AppError('Vault is not set up.', 400);
+  }
   const oldDerivedKey = await deriveKeyFromPassword(oldPassword, user.vaultSalt);
   const masterKey = decryptMasterKey(
     {

@@ -9,6 +9,7 @@ import {
   LockOpen as LockOpenIcon,
   AccountCircle,
   Settings as SettingsIcon,
+  History as HistoryIcon,
   DarkMode,
   LightMode,
 } from '@mui/icons-material';
@@ -166,6 +167,10 @@ export default function MainLayout() {
             <MenuItem onClick={() => { setAnchorEl(null); navigate('/settings'); }}>
               <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
               Settings
+            </MenuItem>
+            <MenuItem onClick={() => { setAnchorEl(null); navigate('/audit-log'); }}>
+              <HistoryIcon fontSize="small" sx={{ mr: 1 }} />
+              Activity Log
             </MenuItem>
             <MenuItem onClick={handleLogout}>Logout</MenuItem>
           </Menu>

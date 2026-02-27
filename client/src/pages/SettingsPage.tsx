@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AppBar, Toolbar, Typography, Box, Card, CardContent, TextField, Button,
   Alert, Avatar, IconButton, Stack,
@@ -14,12 +14,15 @@ import { useRdpSettingsStore } from '../store/rdpSettingsStore';
 import type { RdpSettings } from '../constants/rdpDefaults';
 import RdpSettingsSection from '../components/Settings/RdpSettingsSection';
 import TwoFactorSection from '../components/Settings/TwoFactorSection';
+import LinkedAccountsSection from '../components/Settings/LinkedAccountsSection';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuthStore((s) => s.user);
   const updateUser = useAuthStore((s) => s.updateUser);
   const authLogout = useAuthStore((s) => s.logout);
+  const [hasPassword, setHasPassword] = useState(true);
 
   // Profile form
   const [username, setUsername] = useState('');
@@ -55,11 +58,19 @@ export default function SettingsPage() {
       setUsername(profile.username ?? '');
       setEmail(profile.email);
       setAvatarPreview(profile.avatarData);
+      setHasPassword(profile.hasPassword);
     }).catch(() => {
       setProfileError('Failed to load profile');
     });
     fetchDefaults();
     fetchRdpDefaults();
+
+    const linked = searchParams.get('linked');
+    if (linked) {
+      setProfileSuccess(`${linked.charAt(0).toUpperCase() + linked.slice(1)} account linked successfully`);
+      searchParams.delete('linked');
+      setSearchParams(searchParams, { replace: true });
+    }
   }, []);
 
   useEffect(() => {
@@ -270,8 +281,13 @@ export default function SettingsPage() {
           <TwoFactorSection />
         </Box>
 
+        {/* Linked Accounts */}
+        <Box sx={{ mb: 3 }}>
+          <LinkedAccountsSection hasPassword={hasPassword} />
+        </Box>
+
         {/* Change Password */}
-        <Card>
+        {hasPassword && (<Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>Change Password</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -307,7 +323,7 @@ export default function SettingsPage() {
               </Button>
             </Box>
           </CardContent>
-        </Card>
+        </Card>)}
       </Box>
     </Box>
   );

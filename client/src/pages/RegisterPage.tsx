@@ -5,6 +5,7 @@ import {
 } from '@mui/material';
 import { registerApi } from '../api/auth.api';
 import { resendVerificationEmail } from '../api/email.api';
+import OAuthButtons from '../components/OAuthButtons';
 
 export default function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -119,6 +120,7 @@ export default function RegisterPage() {
               </Typography>
               {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
               <Box component="form" onSubmit={handleSubmit}>
+                <OAuthButtons mode="register" />
                 <TextField
                   fullWidth
                   label="Email"

@@ -6,6 +6,7 @@ interface User {
   email: string;
   username: string | null;
   avatarData: string | null;
+  vaultSetupComplete?: boolean;
 }
 
 interface AuthState {

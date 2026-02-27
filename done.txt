@@ -471,3 +471,107 @@
     MODIFICATO: client/src/api/auth.api.ts (loginApi type, verifyTotpApi)
     MODIFICATO: client/src/pages/LoginPage.tsx (two-phase login)
     MODIFICATO: client/src/pages/SettingsPage.tsx (TwoFactorSection)
+
+
+------------------------------------------------------------------------------
+[x] EMAIL-030 — Verifica email alla registrazione account
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Full email verification flow — nodemailer SMTP transport, verification token generation (32-byte hex, 24h expiry), verify-email/resend-verification endpoints, RegisterPage post-registration message with 60s resend countdown, LoginPage ?verified=true snackbar and 403 handling with resend, dev mode console logging fallback
+
+  DESCRIZIONE:
+  Implementare un sistema di verifica email durante la registrazione.
+  Dopo la registrazione, l'utente riceve un'email con un link di conferma.
+  Finche' l'email non e' verificata, l'utente NON puo' effettuare il login.
+  Include un meccanismo di re-invio dell'email e scadenza del token.
+
+  FILE COINVOLTI:
+    CREATO:  server/src/services/email.service.ts
+    CREATO:  client/src/api/email.api.ts
+    MODIFICATO: server/prisma/schema.prisma (emailVerified, emailVerifyToken, emailVerifyExpiry on User)
+    MODIFICATO: server/src/config.ts (smtp config + clientUrl)
+    MODIFICATO: server/src/services/auth.service.ts (token generation, sendVerificationEmail, 403 on unverified login)
+    MODIFICATO: server/src/controllers/auth.controller.ts (verifyEmail, resendVerification handlers)
+    MODIFICATO: server/src/routes/auth.routes.ts (GET /verify-email, POST /resend-verification)
+    MODIFICATO: client/src/pages/RegisterPage.tsx (post-registration message, resend button with 60s countdown)
+    MODIFICATO: client/src/pages/LoginPage.tsx (?verified=true snackbar, 403 handling with resend)
+    MODIFICATO: .env.example (SMTP vars + CLIENT_URL)
+    MODIFICATO: server/package.json (nodemailer)
+
+
+------------------------------------------------------------------------------
+[x] OAUTH-029 — Autenticazione OAuth (Google, Microsoft, GitHub)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Full OAuth 2.0 authentication with Google, Microsoft, GitHub via Passport.js Authorization Code flow. OAuthAccount model with AuthProvider enum, nullable passwordHash for OAuth-only users, vault setup flow for new OAuth users, account linking/unlinking in Settings, OAuthButtons on Login/Register pages, OAuthCallbackPage with token handling, VaultSetupPage for vault password, LinkedAccountsSection in Settings, environment-based provider configuration
+
+  DESCRIZIONE:
+  Aggiungere il supporto per l'autenticazione tramite OAuth 2.0 con tre
+  provider: Google, Microsoft e GitHub. Utilizza il flusso Authorization
+  Code (server-side, piu' sicuro). Gli utenti OAuth al primo accesso
+  devono impostare una "vault password" per cifrare le credenziali delle
+  connessioni (stesse garanzie di sicurezza degli utenti email/password).
+  Gli utenti esistenti con email/password possono collegare account OAuth
+  dalla pagina impostazioni. Il campo passwordHash diventa nullable nel
+  modello User (gli utenti OAuth-only non hanno password di login).
+  OAuth sostituisce solo la verifica email/password; il sistema JWT +
+  refresh token resta invariato.
+
+  FILE COINVOLTI:
+    CREATO:  server/src/config/passport.ts
+    CREATO:  server/src/services/oauth.service.ts
+    CREATO:  server/src/controllers/oauth.controller.ts
+    CREATO:  server/src/routes/oauth.routes.ts
+    CREATO:  client/src/pages/OAuthCallbackPage.tsx
+    CREATO:  client/src/pages/VaultSetupPage.tsx
+    CREATO:  client/src/components/OAuthButtons.tsx
+    CREATO:  client/src/components/Settings/LinkedAccountsSection.tsx
+    CREATO:  client/src/api/oauth.api.ts
+    MODIFICATO: server/prisma/schema.prisma
+    MODIFICATO: server/src/config.ts
+    MODIFICATO: server/src/app.ts
+    MODIFICATO: server/src/services/auth.service.ts
+    MODIFICATO: server/src/services/user.service.ts
+    MODIFICATO: server/src/services/vault.service.ts
+    MODIFICATO: server/src/index.ts
+    MODIFICATO: client/src/store/authStore.ts
+    MODIFICATO: client/src/pages/LoginPage.tsx
+    MODIFICATO: client/src/pages/RegisterPage.tsx
+    MODIFICATO: client/src/pages/SettingsPage.tsx
+    MODIFICATO: client/src/App.tsx
+    MODIFICATO: .env.example
+    MODIFICATO: server/package.json
+
+
+------------------------------------------------------------------------------
+[x] AUDIT-013 — Log attivita' e audit trail
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: USER-007
+  COMPLETATO: Full audit trail system — AuditAction enum (24 actions) + AuditLog model in Prisma, fire-and-forget audit.service.ts with paginated getAuditLogs(), audit.controller.ts + audit.routes.ts (GET /api/audit with filtering), audit logging integrated into 8 controllers (auth, connections, sharing, vault, user, folders, twofa, oauth) covering 24 distinct actions, client AuditLogPage with action/date filters, color-coded chips, pagination (25/50/100), Activity Log menu item in MainLayout
+
+  DESCRIZIONE:
+  Registrare le azioni importanti degli utenti per sicurezza e debug.
+
+  FILE COINVOLTI:
+    CREATO:  server/src/services/audit.service.ts
+    CREATO:  server/src/controllers/audit.controller.ts
+    CREATO:  server/src/routes/audit.routes.ts
+    CREATO:  client/src/api/audit.api.ts
+    CREATO:  client/src/pages/AuditLogPage.tsx
+    MODIFICATO: server/prisma/schema.prisma (AuditAction enum + AuditLog model)
+    MODIFICATO: server/src/lib/prisma.ts (AuditAction re-export)
+    MODIFICATO: server/src/app.ts (mount /api/audit routes)
+    MODIFICATO: server/src/services/auth.service.ts (register returns userId, logout returns userId)
+    MODIFICATO: server/src/controllers/auth.controller.ts (REGISTER, LOGIN, LOGIN_TOTP, LOGOUT)
+    MODIFICATO: server/src/controllers/connections.controller.ts (CREATE/UPDATE/DELETE_CONNECTION)
+    MODIFICATO: server/src/controllers/sharing.controller.ts (SHARE/UNSHARE/UPDATE_SHARE_PERMISSION)
+    MODIFICATO: server/src/controllers/vault.controller.ts (VAULT_UNLOCK/LOCK, PASSWORD_REVEAL)
+    MODIFICATO: server/src/controllers/user.controller.ts (PROFILE_UPDATE, PASSWORD_CHANGE)
+    MODIFICATO: server/src/controllers/folders.controller.ts (CREATE/UPDATE/DELETE_FOLDER)
+    MODIFICATO: server/src/controllers/twofa.controller.ts (TOTP_ENABLE/DISABLE)
+    MODIFICATO: server/src/controllers/oauth.controller.ts (OAUTH_LINK/UNLINK, LOGIN_OAUTH, VAULT_SETUP)
+    MODIFICATO: client/src/App.tsx (/audit-log route)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (Activity Log menu item)

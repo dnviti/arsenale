@@ -14,6 +14,10 @@ export async function unlockVault(userId: string, password: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) throw new AppError('User not found', 404);
 
+  if (!user.vaultSalt || !user.encryptedVaultKey || !user.vaultKeyIV || !user.vaultKeyTag) {
+    throw new AppError('Vault not set up. Please set a vault password first.', 400);
+  }
+
   try {
     const derivedKey = await deriveKeyFromPassword(password, user.vaultSalt);
     const masterKey = decryptMasterKey(
@@ -57,6 +61,9 @@ export async function revealPassword(
 
   // If vault is locked, derive from password
   if (!masterKey) {
+    if (!user.vaultSalt || !user.encryptedVaultKey || !user.vaultKeyIV || !user.vaultKeyTag) {
+      throw new AppError('Vault not set up. Please set a vault password first.', 400);
+    }
     try {
       const derivedKey = await deriveKeyFromPassword(password, user.vaultSalt);
       masterKey = decryptMasterKey(
