@@ -33,17 +33,49 @@ export async function register(req: Request, res: Response, next: NextFunction) 
   }
 }
 
+const verifyTotpSchema = z.object({
+  tempToken: z.string(),
+  code: z.string().length(6).regex(/^\d{6}$/),
+});
+
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password } = loginSchema.parse(req.body);
     const result = await authService.login(email, password);
-    res.json(result);
+
+    if (result.requiresTOTP) {
+      res.json({ requiresTOTP: true, tempToken: result.tempToken });
+    } else {
+      res.json({
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      });
+    }
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(new AppError(err.issues[0].message, 400));
     }
     if (err instanceof Error && err.message === 'Invalid email or password') {
       return next(new AppError(err.message, 401));
+    }
+    next(err);
+  }
+}
+
+export async function verifyTotp(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { tempToken, code } = verifyTotpSchema.parse(req.body);
+    const result = await authService.verifyTotp(tempToken, code);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return next(new AppError('Invalid code format', 400));
+    }
+    if (err instanceof Error) {
+      if (err.message === 'Invalid TOTP code') return next(new AppError(err.message, 401));
+      if (err.message.includes('token')) return next(new AppError(err.message, 401));
+      if (err.message === '2FA verification failed') return next(new AppError(err.message, 401));
     }
     next(err);
   }

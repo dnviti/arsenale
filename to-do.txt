@@ -10,6 +10,126 @@
   SEZIONE A — TASK RICHIESTI (Core Features)
 ================================================================================
 
+------------------------------------------------------------------------------
+[ ] EMAIL-030 — Verifica email alla registrazione account
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Implementare un sistema di verifica email durante la registrazione.
+  Dopo la registrazione, l'utente riceve un'email con un link di conferma.
+  Finche' l'email non e' verificata, l'utente NON puo' effettuare il login.
+  Include un meccanismo di re-invio dell'email e scadenza del token.
+
+  DETTAGLI TECNICI:
+
+  ===== 1. SCHEMA PRISMA =====
+
+    Modifiche a User:
+      + emailVerified       Boolean   @default(false)
+      + emailVerifyToken    String?   @unique
+      + emailVerifyExpiry   DateTime?
+
+    Migrazione: aggiungere i nuovi campi. Per gli utenti esistenti,
+    impostare emailVerified=true (sono gia' attivi).
+
+  ===== 2. CONFIGURAZIONE (.env + config.ts) =====
+
+    Nuove variabili .env:
+      SMTP_HOST=smtp.example.com
+      SMTP_PORT=587
+      SMTP_USER=noreply@example.com
+      SMTP_PASS=your-smtp-password
+      SMTP_FROM="Remote Desktop Manager <noreply@example.com>"
+      CLIENT_URL=http://localhost:3000
+
+    In config.ts aggiungere sezione smtp con i parametri di connessione.
+
+  ===== 3. BACKEND — EMAIL SERVICE =====
+
+    Installare: nodemailer, @types/nodemailer
+
+    Creare server/src/services/email.service.ts:
+      - Configurare trasporto SMTP con nodemailer (da config)
+      - sendVerificationEmail(to, token): invia email con link
+        {CLIENT_URL}/verify-email?token=...
+      - Template HTML inline (semplice, no dipendenze extra)
+      - In sviluppo: loggare il link in console se SMTP non configurato
+
+  ===== 4. BACKEND — FLOW REGISTRAZIONE =====
+
+    Modifiche a auth.service.ts register():
+      - Generare token di verifica (crypto.randomBytes(32).toString('hex'))
+      - Impostare emailVerifyExpiry a +24h
+      - Salvare token e scadenza su User
+      - Dopo la creazione: chiamare sendVerificationEmail()
+      - Ritornare messaggio "Check your email to verify your account"
+
+    Nuovo endpoint in auth.routes.ts:
+      GET  /api/auth/verify-email?token=...
+        - Cerca User per emailVerifyToken
+        - Verifica che token non sia scaduto (emailVerifyExpiry > now)
+        - Imposta emailVerified=true, pulisce token e scadenza
+        - Redirect a {CLIENT_URL}/login?verified=true
+
+      POST /api/auth/resend-verification
+        - Body: { email }
+        - Cerca utente non verificato per email
+        - Genera nuovo token + scadenza, invia nuova email
+        - Rate limit: max 1 invio ogni 60 secondi per email
+        - Ritorna sempre 200 (non rivelare se email esiste)
+
+    Modifiche a auth.service.ts login():
+      - Se emailVerified === false: ritornare errore 403
+        "Please verify your email before logging in"
+
+  ===== 5. FRONTEND =====
+
+    a) Aggiornare RegisterPage.tsx:
+       - Dopo registrazione: mostrare messaggio di conferma
+         "A verification email has been sent to {email}"
+       - Bottone "Resend verification email" (con countdown 60s)
+       - Non redirigere automaticamente al login
+
+    b) Aggiornare LoginPage.tsx:
+       - Se query param ?verified=true: mostrare snackbar di successo
+         "Email verified! You can now log in."
+       - Se errore 403 (email non verificata): mostrare messaggio
+         con link "Resend verification email"
+
+    c) Creare client/src/api/email.api.ts:
+       - resendVerificationEmail(email): POST /api/auth/resend-verification
+
+  ===== 6. SICUREZZA =====
+
+    - Token di verifica: 32 bytes random, hex-encoded (64 chars)
+    - Scadenza token: 24 ore
+    - Rate limiting re-invio: 1 email ogni 60 secondi per indirizzo
+    - Risposta resend sempre 200 (prevenzione user enumeration)
+    - Token monouso: cancellato dopo la verifica
+    - Utenti esistenti: migrazione li marca come verificati
+
+  FILE COINVOLTI:
+    CREARE:  server/src/services/email.service.ts
+    CREARE:  client/src/api/email.api.ts
+    MODIFICARE: server/prisma/schema.prisma
+                (emailVerified, emailVerifyToken, emailVerifyExpiry su User)
+    MODIFICARE: server/src/config.ts (sezione smtp + clientUrl)
+    MODIFICARE: server/src/services/auth.service.ts
+                (generare token, inviare email, bloccare login non verificati)
+    MODIFICARE: server/src/controllers/auth.controller.ts
+                (endpoint verify-email, resend-verification)
+    MODIFICARE: server/src/routes/auth.routes.ts
+                (GET /verify-email, POST /resend-verification)
+    MODIFICARE: client/src/pages/RegisterPage.tsx
+                (messaggio post-registrazione, bottone resend)
+    MODIFICARE: client/src/pages/LoginPage.tsx
+                (snackbar verified, messaggio email non verificata)
+    MODIFICARE: .env.example (variabili SMTP + CLIENT_URL)
+    MODIFICARE: server/package.json (nodemailer)
+
+
 ================================================================================
   SEZIONE B — TASK AGGIUNTIVI SUGGERITI
 ================================================================================
@@ -36,38 +156,6 @@
     MODIFICARE: package.json (aggiungere dipendenza)
 
 
-------------------------------------------------------------------------------
-[ ] 2FA-012 — Autenticazione a due fattori (TOTP)
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: USER-007 (pagina impostazioni necessaria per setup)
-
-  DESCRIZIONE:
-  Aggiungere supporto TOTP per aumentare la sicurezza dell'accesso.
-  Compatibile con Google Authenticator, Authy, ecc.
-
-  DETTAGLI TECNICI:
-  Backend:
-    1. Installare otplib e qrcode
-    2. Aggiungere a schema.prisma User: totpSecret String?,
-       totpEnabled Boolean @default(false)
-    3. Endpoint POST /api/user/2fa/setup → Genera secret + QR code URI
-    4. Endpoint POST /api/user/2fa/verify → Verifica codice e abilita
-    5. Endpoint POST /api/user/2fa/disable → Disabilita (richiede password)
-    6. Modificare login: se totpEnabled, richiedere codice TOTP dopo email/password
-  Frontend:
-    1. Sezione 2FA nella SettingsPage
-    2. Mostrare QR code durante setup (libreria qrcode.react)
-    3. Input codice 6 cifre per verifica
-    4. Step aggiuntivo nel LoginPage se 2FA abilitato
-
-  FILE COINVOLTI:
-    CREARE:  server/src/routes/twofa.routes.ts
-    CREARE:  server/src/services/twofa.service.ts
-    MODIFICARE: server/prisma/schema.prisma
-    MODIFICARE: server/src/services/auth.service.ts (login con TOTP)
-    MODIFICARE: client/src/pages/SettingsPage.tsx (sezione 2FA)
-    MODIFICARE: client/src/pages/LoginPage.tsx (step codice TOTP)
 
 
 ------------------------------------------------------------------------------
@@ -131,168 +219,214 @@
     MODIFICARE: client/src/components/Layout/MainLayout.tsx (badge)
 
 
-
-
 ------------------------------------------------------------------------------
-[~] SFTP-019 — Trasferimento file via SFTP (SSH)
+[ ] OAUTH-029 — Autenticazione OAuth (Google, Microsoft, GitHub)
 ------------------------------------------------------------------------------
   Priorita: MEDIA
   Dipendenze: Nessuna
 
   DESCRIZIONE:
-  Abilitare il trasferimento file bidirezionale nelle sessioni SSH
-  tramite il protocollo SFTP. La libreria ssh2 (v1.17.0) gia' presente
-  nel progetto supporta SFTP nativamente via client.sftp(). L'architettura
-  segue il pattern Socket.IO gia' usato per il terminale SSH: la sessione
-  SFTP viene creata sulla stessa connessione SSH esistente.
-  Riferimento: il file transfer RDP (RDPFS-018) usa un approccio HTTP/REST
-  con drawer laterale — il pattern frontend puo' essere riutilizzato.
+  Aggiungere il supporto per l'autenticazione tramite OAuth 2.0 con tre
+  provider: Google, Microsoft e GitHub. Utilizza il flusso Authorization
+  Code (server-side, piu' sicuro). Gli utenti OAuth al primo accesso
+  devono impostare una "vault password" per cifrare le credenziali delle
+  connessioni (stesse garanzie di sicurezza degli utenti email/password).
+  Gli utenti esistenti con email/password possono collegare account OAuth
+  dalla pagina impostazioni. Il campo passwordHash diventa nullable nel
+  modello User (gli utenti OAuth-only non hanno password di login).
+  OAuth sostituisce solo la verifica email/password; il sistema JWT +
+  refresh token resta invariato.
 
   DETTAGLI TECNICI:
 
-  ---- Server — SFTP via Socket.IO (approccio primario) ----
+  ===== 1. SCHEMA PRISMA =====
 
-    1. Estendere ssh.service.ts con creazione sessione SFTP:
-       - createSftpSession(client: Client): Promise<SFTPWrapper>
-         Chiama client.sftp() sulla connessione SSH gia' attiva
-       - La sessione SFTP vive in parallelo alla shell (stesso client SSH)
-       - Salvare SFTPWrapper nella mappa sessioni attive di ssh.handler.ts
+    Nuovo enum:
+      enum AuthProvider {
+        LOCAL          // email/password tradizionale
+        GOOGLE
+        MICROSOFT
+        GITHUB
+      }
 
-    2. Aggiungere eventi SFTP in ssh.handler.ts:
-       Navigazione:
-         - sftp:list (path: string)
-           → Ritorna array di { name, size, permissions, type, modifiedAt }
-           → type: 'file' | 'directory' | 'symlink'
-           → Usa sftp.readdir() con attrs (mode, size, mtime)
-         - sftp:stat (path: string)
-           → Ritorna stat singolo file/cartella (size, permissions, type, dates)
+    Nuovo modello:
+      model OAuthAccount {
+        id              String       @id @default(uuid())
+        userId          String
+        provider        AuthProvider
+        providerUserId  String       // ID univoco dal provider (sub/oid/id)
+        providerEmail   String?      // email dal profilo OAuth (informativa)
+        accessToken     String?      // token OAuth (opzionale, per future integrazioni)
+        refreshToken    String?      // refresh token OAuth (opzionale)
+        createdAt       DateTime     @default(now())
+        updatedAt       DateTime     @updatedAt
 
-       Upload (browser → server remoto):
-         - sftp:upload:start (remotePath: string, fileSize: number)
-           → Apre write stream con sftp.createWriteStream(remotePath)
-           → Ritorna transferId (uuid)
-         - sftp:upload:chunk (transferId: string, data: Buffer, offset: number)
-           → Scrive chunk nello stream aperto
-           → Emette sftp:progress (transferId, bytesTransferred, totalBytes)
-         - sftp:upload:end (transferId: string)
-           → Chiude lo stream, conferma completamento
-           → Emette sftp:transfer:complete (transferId)
+        user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-       Download (server remoto → browser):
-         - sftp:download:start (remotePath: string)
-           → Apre read stream con sftp.createReadStream(remotePath)
-           → Stat per ottenere fileSize, ritorna transferId
-         - Server emette sftp:download:chunk (transferId, data, offset) in loop
-           → Chunk size configurabile (default 64KB)
-           → Emette sftp:progress tra i chunk
-         - sftp:download:end emesso al completamento
+        @@unique([provider, providerUserId])
+        @@index([userId])
+      }
 
-       Gestione file/cartelle:
-         - sftp:mkdir (path: string) → sftp.mkdir()
-         - sftp:delete (path: string) → sftp.unlink() per file
-         - sftp:rmdir (path: string) → sftp.rmdir() per cartelle
-         - sftp:rename (oldPath: string, newPath: string) → sftp.rename()
+    Modifiche a User:
+      - passwordHash: String  ->  passwordHash: String?  (nullable per OAuth-only)
+      - vaultSalt, encryptedVaultKey, vaultKeyIV, vaultKeyTag: String?  (nullable,
+        impostati quando l'utente OAuth imposta la vault password)
+      + vaultSetupComplete  Boolean  @default(true)
+        (default true per utenti esistenti; false per nuovi utenti OAuth
+         finche' non impostano la vault password)
+      + oauthAccounts  OAuthAccount[]
 
-       Controllo trasferimenti:
-         - sftp:cancel (transferId: string)
-           → Chiude stream in corso, pulisce risorse
-           → Emette sftp:transfer:cancelled (transferId)
+    Migrazione: campi nullable + data migration vaultSetupComplete=true per
+    utenti esistenti. Usare prisma migrate dev.
 
-    3. Progresso e coda trasferimenti:
-       - Ogni trasferimento ha un transferId univoco (uuid)
-       - Evento sftp:progress (transferId, bytesTransferred, totalBytes, filename)
-         emesso ogni chunk (lato server)
-       - Mappa in-memory dei trasferimenti attivi per sessione
-       - Cleanup automatico alla disconnessione socket
+  ===== 2. CONFIGURAZIONE (.env + config.ts) =====
 
-    4. Limiti e sicurezza:
-       - Max file size configurabile (default 100MB per SFTP)
-       - Validazione path: no path traversal (sanitize input)
-       - Rate limiting sugli eventi upload (evitare flood)
-       - Timeout per trasferimenti inattivi (30s senza chunk → abort)
+    Nuove variabili .env:
+      GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_CALLBACK_URL
+      MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_CALLBACK_URL
+      GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_CALLBACK_URL
+      CLIENT_URL=http://localhost:3000
 
-  ---- Server — Approccio HTTP alternativo (opzionale) ----
+    In config.ts aggiungere sezione oauth per ogni provider con enabled flag
+    basato sulla presenza del CLIENT_ID.
 
-    5. Routes HTTP per upload/download via SFTP:
-       - POST /api/sessions/ssh/:sessionId/upload
-         → Multer riceve il file, lo streamma via SFTP al server remoto
-         → Riutilizza setup multer e logica quota da files.routes.ts
-       - GET  /api/sessions/ssh/:sessionId/download?path=...
-         → Legge file remoto via SFTP, streamma come risposta HTTP
-       - Utile per: drag-and-drop dal desktop, download diretto nel browser
-       - Richiede sessionId valido (mapping in ssh.handler.ts)
+  ===== 3. PASSPORT.JS SETUP =====
 
-  ---- Frontend — SftpBrowser ----
+    Installare:
+      passport, passport-google-oauth20, passport-github2, passport-microsoft
+      @types/passport, @types/passport-google-oauth20, @types/passport-github2,
+      @types/passport-microsoft
 
-    6. Creare client/src/components/SSH/SftpBrowser.tsx:
-       Navigazione:
-         - Barra breadcrumb con path corrente (es. / > home > user > docs)
-         - Click su segmento breadcrumb per navigare a quel livello
-         - Doppio-click su cartella per entrare
-         - Bottone "Up" per tornare alla cartella padre
+    Creare server/src/config/passport.ts:
+      - Configurare le tre strategy (solo quelle con config enabled)
+      - Verify callback ritorna profilo normalizzato OAuthProfile
+        { provider, providerUserId, email, displayName, avatarUrl }
+      - NO passport.session() (solo JWT, no server sessions)
+      - Solo passport.initialize()
 
-       Lista file:
-         - Tabella/lista con colonne: Icona, Nome, Dimensione, Permessi, Data
-         - Ordinamento per colonna (click su header)
-         - Icone diverse per file, cartella, symlink
-         - Dimensione formattata (KB, MB, GB)
-         - Data formattata (relativa per recenti, assoluta per vecchi)
+  ===== 4. BACKEND — SERVICE (oauth.service.ts) =====
 
-       Azioni file:
-         - Upload: bottone + zona drag-and-drop (evidenziata al trascinamento)
-         - Download: icona per ogni file (click diretto)
-         - Crea cartella: bottone + dialog con input nome
-         - Elimina: icona con dialog di conferma
-         - Rinomina: doppio-click sul nome o voce context menu
-         - Refresh: bottone per ricaricare la lista
+    a) findOrCreateOAuthUser(profile: OAuthProfile):
+       - Cerca OAuthAccount per { provider, providerUserId }
+       - Se trovato: ritorna user + { isNewUser: false, needsVaultSetup }
+       - Se non trovato: cerca User per email
+         - Email esiste (utente LOCAL): crea OAuthAccount collegato
+         - Email non esiste: crea User (passwordHash=null, vault fields=null,
+           vaultSetupComplete=false) + OAuthAccount
 
-       Upload multiplo:
-         - Supporto selezione multipla nell'input file
-         - Coda visiva dei file in attesa di upload
-         - Upload sequenziale (uno alla volta per non sovraccaricare)
+    b) linkOAuthAccount(userId, profile): collega account OAuth esistente
+    c) unlinkOAuthAccount(userId, provider): scollega (impedisce rimuovere
+       ultimo metodo di login)
+    d) getLinkedAccounts(userId): lista account collegati
+    e) setupVaultForOAuthUser(userId, vaultPassword): genera vault keys
+       (stessa logica di register), salva su User, vaultSetupComplete=true,
+       sblocca vault immediatamente
 
-    7. Creare client/src/components/SSH/SftpTransferQueue.tsx:
-       - Pannello collassabile in basso nel SftpBrowser
-       - Lista trasferimenti: attivi, in coda, completati, falliti
-       - Per ogni trasferimento: nome file, direzione (up/down),
-         barra progresso, velocita', tempo stimato
-       - Bottone cancella per trasferimenti attivi
-       - Bottone riprova per trasferimenti falliti
-       - Bottone "Clear completed" per pulire la lista
+  ===== 5. BACKEND — ROUTES + CONTROLLER =====
 
-    8. Integrazione nella tab SSH:
-       - FloatingToolbar: aggiungere bottone con icona cartella
-         (stesso pattern di RDP: FloatingToolbar.tsx)
-       - Click su bottone: apre/chiude drawer laterale (320px, stile FileBrowser RDP)
-       - Il drawer SftpBrowser si affianca al terminale XTerm
-       - Stato apertura/chiusura persistente per sessione
+    Flusso OAuth per ogni provider:
+      GET  /api/auth/{provider}           -> passport redirect
+      GET  /api/auth/{provider}/callback  -> passport callback -> handleCallback
 
-    9. Aggiornare SshTerminal.tsx:
-       - Prop onToggleSftp / sftpOpen per controllare il drawer
-       - Passare socket e sessionId al SftpBrowser
-       - Ridimensionare terminale quando il drawer si apre/chiude (FitAddon.fit())
+    handleCallback:
+      - findOrCreateOAuthUser(profile)
+      - Genera JWT + refresh token (riusare issueTokens da auth.service)
+      - Redirect a {CLIENT_URL}/oauth/callback?token=...&refresh=...
+        &needsVaultSetup=true/false
 
-   10. Aggiornare TabPanel.tsx:
-       - Rendere SftpBrowser condizionalmente per tab SSH
-       - Gestire stato sftpOpen nel tab
+    Route protette (JWT auth):
+      POST   /api/auth/oauth/link           -> link account
+      DELETE /api/auth/oauth/link/:provider  -> unlink account
+      GET    /api/auth/oauth/accounts        -> lista account collegati
+      POST   /api/auth/oauth/vault-setup     -> setup vault password
+
+    Route pubblica:
+      GET    /api/auth/oauth/providers       -> { google, microsoft, github: bool }
+
+  ===== 6. FRONTEND =====
+
+    a) OAuthCallbackPage.tsx:
+       - Legge token e user info da query params
+       - Salva in authStore, rimuove params da URL (history.replaceState)
+       - Redirect a /oauth/vault-setup se needsVaultSetup, altrimenti a /
+
+    b) VaultSetupPage.tsx:
+       - Form: vault password + conferma (min 8 chars)
+       - POST /api/auth/oauth/vault-setup
+       - Al successo: setVaultUnlocked(true), redirect a /
+
+    c) OAuthButtons.tsx (riutilizzabile):
+       - Bottoni con icone brand per ogni provider abilitato
+       - Fetch /api/auth/oauth/providers al mount
+       - Divider "— or —" tra OAuth e form email/password
+
+    d) LinkedAccountsSection.tsx:
+       - Sezione in SettingsPage per link/unlink account OAuth
+       - Impedisce unlink dell'ultimo metodo di login
+
+    e) Aggiornare LoginPage.tsx e RegisterPage.tsx:
+       - Aggiungere OAuthButtons con divider
+
+    f) Aggiornare App.tsx:
+       - Route /oauth/callback -> OAuthCallbackPage
+       - Route /oauth/vault-setup -> VaultSetupPage (protetta)
+
+  ===== 7. MODIFICHE A FILE ESISTENTI =====
+
+    auth.service.ts:
+      - login(): gestire passwordHash null (errore per utenti OAuth-only)
+      - Estrarre issueTokens(user) per riuso in oauth.service
+
+    user.service.ts:
+      - changePassword(): verificare passwordHash != null
+      - getProfile(): includere provider OAuth + vaultSetupComplete
+
+    authStore.ts:
+      - Aggiungere vaultSetupComplete e authProvider alla User interface
+
+  ===== 8. SICUREZZA =====
+
+    - OAuth state parameter: gestito da Passport (CSRF)
+    - Token in query string: letti e rimossi immediatamente dal client
+    - OAuth-only users: NON possono usare login form
+    - Vault password OAuth: separata dal login, irrecuperabile se persa
+    - Account linking: verifica email o conferma esplicita
+    - Unlink: impedito se ultimo metodo di autenticazione
+    - TOTP (2FA-012): NON richiesto per login OAuth (il provider gestisce
+      il suo 2FA). Richiesto solo per login email/password.
 
   FILE COINVOLTI:
-    MODIFICARE: server/src/services/ssh.service.ts
-                (aggiungere createSftpSession() via client.sftp())
-    MODIFICARE: server/src/socket/ssh.handler.ts
-                (aggiungere tutti gli eventi SFTP: list, stat, upload, download,
-                 mkdir, delete, rmdir, rename, cancel, progress)
-    CREARE:  client/src/components/SSH/SftpBrowser.tsx
-             (file browser con breadcrumb, lista file, upload, download,
-              drag-and-drop, azioni CRUD, progress)
-    CREARE:  client/src/components/SSH/SftpTransferQueue.tsx
-             (coda trasferimenti con progresso, cancel, retry)
-    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
-                (integrazione toggle SFTP drawer, resize terminale)
-    MODIFICARE: client/src/components/Tabs/TabPanel.tsx
-                (render condizionale SftpBrowser per tab SSH)
-    OPZIONALE:  server/src/routes/sftp.routes.ts
-                (endpoint HTTP alternativi per upload/download streaming)
+    CREARE:  server/src/config/passport.ts
+    CREARE:  server/src/services/oauth.service.ts
+    CREARE:  server/src/controllers/oauth.controller.ts
+    CREARE:  server/src/routes/oauth.routes.ts
+    CREARE:  client/src/pages/OAuthCallbackPage.tsx
+    CREARE:  client/src/pages/VaultSetupPage.tsx
+    CREARE:  client/src/components/OAuthButtons.tsx
+    CREARE:  client/src/components/Settings/LinkedAccountsSection.tsx
+    CREARE:  client/src/api/oauth.api.ts
+    MODIFICARE: server/prisma/schema.prisma
+                (enum AuthProvider, modello OAuthAccount, User campi nullable
+                 + vaultSetupComplete + oauthAccounts[])
+    MODIFICARE: server/src/config.ts (oauth provider config, clientUrl)
+    MODIFICARE: server/src/app.ts (passport.initialize, mount oauth routes)
+    MODIFICARE: server/src/services/auth.service.ts
+                (gestire passwordHash null, estrarre issueTokens)
+    MODIFICARE: server/src/controllers/auth.controller.ts
+                (errore per utenti OAuth-only)
+    MODIFICARE: server/src/services/user.service.ts
+                (guard changePassword, profile con OAuth info)
+    MODIFICARE: server/src/types/index.ts
+                (OAuthProfile, AuthPayload esteso)
+    MODIFICARE: client/src/pages/LoginPage.tsx (OAuthButtons + divider)
+    MODIFICARE: client/src/pages/RegisterPage.tsx (OAuthButtons + divider)
+    MODIFICARE: client/src/store/authStore.ts
+                (vaultSetupComplete, authProvider su User interface)
+    MODIFICARE: client/src/App.tsx
+                (routes /oauth/callback, /oauth/vault-setup)
+    MODIFICARE: client/src/pages/SettingsPage.tsx (LinkedAccountsSection)
+    MODIFICARE: .env.example (variabili OAuth)
+    MODIFICARE: server/package.json (dipendenze Passport)
 
 
 ================================================================================
@@ -818,23 +952,25 @@
    10. FAVS-014    Preferiti e recenti                          [COMPLETATO]
    11. RDPFS-018   Drive redirection RDP (file transfer)        [COMPLETATO]
    12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni) [COMPLETATO]
-   13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione) [IN CORSO]
-   14. SFTP-019    Trasferimento file SFTP (SSH)
+   13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione) [COMPLETATO]
+   14. SFTP-019    Trasferimento file SFTP (SSH)                         [COMPLETATO]
 
   Fase 4 — Sicurezza e amministrazione:
-   15. 2FA-012     Autenticazione due fattori
-   16. AUDIT-013   Log attivita'
-   17. NOTIF-015   Notifiche condivisione
-   18. DND-010     Drag and drop
+   15. 2FA-012     Autenticazione due fattori                           [IN CORSO]
+   16. EMAIL-030   Verifica email alla registrazione
+   17. OAUTH-029   Autenticazione OAuth (Google, Microsoft, GitHub)
+   18. AUDIT-013   Log attivita'
+   19. NOTIF-015   Notifiche condivisione
+   20. DND-010     Drag and drop
 
   Fase 5 — Multi-tenant e team:
-   19. TENANT-020  Schema multi-tenant (modelli Prisma)
-   20. TENANT-021  Backend CRUD tenant + onboarding
-   21. TEAM-022    Backend CRUD team + vault team
-   22. PERM-023    Ownership connessioni + permessi team
-   23. DISC-024    Ricerca utenti per condivisione (parallelizzabile con 22)
-   24. UI-025      Frontend tenant/team/sidebar
-   25. GUARD-026   Middleware sicurezza + test isolamento
+   21. TENANT-020  Schema multi-tenant (modelli Prisma)
+   22. TENANT-021  Backend CRUD tenant + onboarding
+   23. TEAM-022    Backend CRUD team + vault team
+   24. PERM-023    Ownership connessioni + permessi team
+   25. DISC-024    Ricerca utenti per condivisione (parallelizzabile con 23)
+   26. UI-025      Frontend tenant/team/sidebar
+   27. GUARD-026   Middleware sicurezza + test isolamento
 
 
 ================================================================================
@@ -860,4 +996,16 @@
     per semplificare la scelta; il preset "Custom" mostra tutti i parametri
   - RDPSET-028 espone parametri Guacamole: color-depth, risoluzione, DPI,
     performance flags, audio, security, keyboard layout, console, timezone
+  - EMAIL-030 introduce nodemailer come prima infrastruttura email del progetto
+  - EMAIL-030 blocca il login finche' l'email non e' verificata; utenti esistenti
+    migrati come emailVerified=true
+  - EMAIL-030 in dev: se SMTP non configurato, il link di verifica viene loggato
+    in console (nessun servizio esterno richiesto per sviluppo locale)
+  - OAUTH-029 usa Passport.js con Authorization Code flow (server-side)
+  - OAUTH-029 utenti OAuth devono impostare una vault password separata al primo
+    login (stesse garanzie crittografiche degli utenti LOCAL)
+  - OAUTH-029 passwordHash diventa nullable: utenti OAuth-only non hanno password
+    di login, solo vault password per cifrare le credenziali
+  - OAUTH-029 TOTP (2FA-012) NON richiesto per login OAuth: il provider gestisce
+    il suo 2FA. Richiesto solo per login email/password.
 ================================================================================

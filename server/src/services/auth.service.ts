@@ -12,6 +12,8 @@ import {
   decryptMasterKey,
   storeVaultSession,
 } from './crypto.service';
+import { verifyCode as verifyTotpCode } from './totp.service';
+
 const BCRYPT_ROUNDS = 12;
 
 export async function register(email: string, password: string) {
@@ -59,24 +61,9 @@ export async function login(email: string, password: string) {
     throw new Error('Invalid email or password');
   }
 
-  // Generate JWT
-  const payload: AuthPayload = { userId: user.id, email: user.email };
-  const accessToken = jwt.sign(payload, config.jwtSecret, {
-    expiresIn: config.jwtExpiresIn as string,
-  } as jwt.SignOptions);
-
-  // Generate refresh token
-  const refreshTokenValue = uuidv4();
-  const refreshExpiresMs = parseExpiry(config.jwtRefreshExpiresIn);
-  await prisma.refreshToken.create({
-    data: {
-      token: refreshTokenValue,
-      userId: user.id,
-      expiresAt: new Date(Date.now() + refreshExpiresMs),
-    },
-  });
-
-  // Auto-unlock vault
+  // Auto-unlock vault early (before TOTP check) so it's ready
+  // when the user completes the second step. If TOTP is abandoned,
+  // the vault session simply expires via its TTL.
   const derivedKey = await deriveKeyFromPassword(password, user.vaultSalt);
   const masterKey = decryptMasterKey(
     {
@@ -89,6 +76,77 @@ export async function login(email: string, password: string) {
   storeVaultSession(user.id, masterKey);
   masterKey.fill(0);
   derivedKey.fill(0);
+
+  // If TOTP is enabled, return a temp token instead of real tokens
+  if (user.totpEnabled) {
+    const tempToken = jwt.sign(
+      { userId: user.id, purpose: 'totp-verify' },
+      config.jwtSecret,
+      { expiresIn: '5m' } as jwt.SignOptions
+    );
+    return { requiresTOTP: true as const, tempToken };
+  }
+
+  // Normal flow: issue real tokens
+  const payload: AuthPayload = { userId: user.id, email: user.email };
+  const accessToken = jwt.sign(payload, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn as string,
+  } as jwt.SignOptions);
+
+  const refreshTokenValue = uuidv4();
+  const refreshExpiresMs = parseExpiry(config.jwtRefreshExpiresIn);
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshTokenValue,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + refreshExpiresMs),
+    },
+  });
+
+  return {
+    requiresTOTP: false as const,
+    accessToken,
+    refreshToken: refreshTokenValue,
+    user: { id: user.id, email: user.email, username: user.username, avatarData: user.avatarData },
+  };
+}
+
+export async function verifyTotp(tempToken: string, code: string) {
+  let decoded: { userId: string; purpose: string };
+  try {
+    decoded = jwt.verify(tempToken, config.jwtSecret) as { userId: string; purpose: string };
+  } catch {
+    throw new Error('Invalid or expired temporary token');
+  }
+
+  if (decoded.purpose !== 'totp-verify') {
+    throw new Error('Invalid token purpose');
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+  if (!user || !user.totpEnabled || !user.totpSecret) {
+    throw new Error('2FA verification failed');
+  }
+
+  if (!verifyTotpCode(user.totpSecret, code)) {
+    throw new Error('Invalid TOTP code');
+  }
+
+  // Issue real tokens (vault was already unlocked during password step)
+  const payload: AuthPayload = { userId: user.id, email: user.email };
+  const accessToken = jwt.sign(payload, config.jwtSecret, {
+    expiresIn: config.jwtExpiresIn as string,
+  } as jwt.SignOptions);
+
+  const refreshTokenValue = uuidv4();
+  const refreshExpiresMs = parseExpiry(config.jwtRefreshExpiresIn);
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshTokenValue,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + refreshExpiresMs),
+    },
+  });
 
   return {
     accessToken,

@@ -1,12 +1,19 @@
 import api from './client';
 
-export async function loginApi(email: string, password: string) {
+type UserInfo = { id: string; email: string; username: string | null; avatarData: string | null };
+
+export type LoginResponse =
+  | { requiresTOTP: true; tempToken: string }
+  | { requiresTOTP?: false; accessToken: string; refreshToken: string; user: UserInfo };
+
+export async function loginApi(email: string, password: string): Promise<LoginResponse> {
   const res = await api.post('/auth/login', { email, password });
-  return res.data as {
-    accessToken: string;
-    refreshToken: string;
-    user: { id: string; email: string; username: string | null; avatarData: string | null };
-  };
+  return res.data;
+}
+
+export async function verifyTotpApi(tempToken: string, code: string) {
+  const res = await api.post('/auth/verify-totp', { tempToken, code });
+  return res.data as { accessToken: string; refreshToken: string; user: UserInfo };
 }
 
 export async function registerApi(email: string, password: string) {

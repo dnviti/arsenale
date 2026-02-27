@@ -21,6 +21,7 @@
     "guacamole-lite": "^1.2.0",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "otplib": "^13.3.0",
     "socket.io": "^4.8.3",
     "ssh2": "^1.17.0",
     "uuid": "^13.0.0",

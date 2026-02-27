@@ -13,6 +13,7 @@ import TerminalSettingsSection from '../components/Settings/TerminalSettingsSect
 import { useRdpSettingsStore } from '../store/rdpSettingsStore';
 import type { RdpSettings } from '../constants/rdpDefaults';
 import RdpSettingsSection from '../components/Settings/RdpSettingsSection';
+import TwoFactorSection from '../components/Settings/TwoFactorSection';
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -264,7 +265,12 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {/* Security Section */}
+        {/* Two-Factor Authentication */}
+        <Box sx={{ mb: 3 }}>
+          <TwoFactorSection />
+        </Box>
+
+        {/* Change Password */}
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>Change Password</Typography>

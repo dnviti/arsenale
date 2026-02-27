@@ -7,6 +7,7 @@ import foldersRoutes from './routes/folders.routes';
 import sharingRoutes from './routes/sharing.routes';
 import sessionsRoutes from './socket/rdp.handler';
 import userRoutes from './routes/user.routes';
+import twofaRoutes from './routes/twofa.routes';
 import filesRoutes from './routes/files.routes';
 import { errorHandler } from './middleware/error.middleware';
 
@@ -23,6 +24,7 @@ app.use('/api/folders', foldersRoutes);
 app.use('/api/connections', sharingRoutes);
 app.use('/api/sessions', sessionsRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/user/2fa', twofaRoutes);
 app.use('/api/files', filesRoutes);
 
 // Health check

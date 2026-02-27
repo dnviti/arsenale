@@ -392,3 +392,55 @@
     MODIFICATO: server/src/services/connection.service.ts
     MODIFICATO: server/src/controllers/user.controller.ts
     MODIFICATO: server/src/routes/user.routes.ts
+
+
+------------------------------------------------------------------------------
+[x] RDPSET-028 — Personalizzazione sessioni RDP (qualita', risoluzione, opzioni)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: USER-007 (pagina impostazioni per configurazione globale)
+  COMPLETATO: Two-level RDP session customization (global defaults + per-connection overrides) with quality presets (Performance/Balanced/Quality/Custom), Guacamole parameter mapping, RdpSettingsSection component, SettingsPage and ConnectionDialog integration
+
+  DESCRIZIONE:
+  Permettere la personalizzazione della qualita', risoluzione e comportamento
+  delle sessioni RDP con due livelli di configurazione: impostazioni globali
+  nell'account utente e override per connessione.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (rdpDefaults on User, rdpSettings on Connection)
+    CREATO:  client/src/components/Settings/RdpSettingsSection.tsx
+    CREATO:  client/src/constants/rdpDefaults.ts
+    CREATO:  client/src/store/rdpSettingsStore.ts
+    MODIFICATO: server/src/types/index.ts (RdpSettings interface)
+    MODIFICATO: server/src/services/rdp.service.ts (generateGuacamoleToken + mergeRdpSettings)
+    MODIFICATO: server/src/socket/rdp.handler.ts (load + merge user/connection settings)
+    MODIFICATO: client/src/pages/SettingsPage.tsx (RDP Defaults section)
+    MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (RDP Settings for type=RDP)
+    MODIFICATO: client/src/api/user.api.ts (rdpDefaults in profile)
+    MODIFICATO: client/src/api/connections.api.ts (rdpSettings in ConnectionData)
+    MODIFICATO: server/src/services/user.service.ts (rdpDefaults read/write)
+    MODIFICATO: server/src/services/connection.service.ts (rdpSettings pass-through)
+
+
+------------------------------------------------------------------------------
+[x] SFTP-019 — Trasferimento file via SFTP (SSH)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Full SFTP file transfer system via Socket.IO — SftpBrowser with breadcrumbs, upload/download with chunked transfers and progress, mkdir/rename/delete, drag-and-drop, SftpTransferQueue, FloatingToolbar toggle, 100MB max file size, 64KB chunks
+
+  DESCRIZIONE:
+  Abilitare il trasferimento file bidirezionale nelle sessioni SSH
+  tramite il protocollo SFTP. La libreria ssh2 gia' presente supporta
+  SFTP nativamente via client.sftp().
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/socket/ssh.handler.ts (SFTP events: list, mkdir, delete, rmdir, rename, upload, download, cancel)
+    MODIFICATO: server/src/services/ssh.service.ts (createSftpSession)
+    MODIFICATO: server/src/config.ts (sftpMaxFileSize, sftpChunkSize)
+    MODIFICATO: server/src/types/index.ts (SftpEntry interface)
+    CREATO:  client/src/components/SSH/SftpBrowser.tsx
+    CREATO:  client/src/components/SSH/SftpTransferQueue.tsx
+    CREATO:  client/src/hooks/useSftpTransfers.ts
+    MODIFICATO: client/src/components/Terminal/SshTerminal.tsx (SFTP drawer + FloatingToolbar toggle)
+    MODIFICATO: client/src/components/Tabs/TabPanel.tsx (conditional SFTP render)
