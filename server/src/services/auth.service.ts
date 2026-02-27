@@ -1,9 +1,12 @@
+import crypto from 'crypto';
 import prisma from '../lib/prisma';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { config } from '../config';
 import { AuthPayload } from '../types';
+import { AppError } from '../middleware/error.middleware';
+import { logger } from '../utils/logger';
 import {
   generateSalt,
   generateMasterKey,
@@ -13,8 +16,11 @@ import {
   storeVaultSession,
 } from './crypto.service';
 import { verifyCode as verifyTotpCode } from './totp.service';
+import { sendVerificationEmail } from './email.service';
 
 const BCRYPT_ROUNDS = 12;
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function register(email: string, password: string) {
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -31,6 +37,9 @@ export async function register(email: string, password: string) {
   const derivedKey = await deriveKeyFromPassword(password, vaultSalt);
   const encryptedVault = encryptMasterKey(masterKey, derivedKey);
 
+  const emailVerifyToken = crypto.randomBytes(32).toString('hex');
+  const emailVerifyExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+
   const user = await prisma.user.create({
     data: {
       email,
@@ -39,6 +48,9 @@ export async function register(email: string, password: string) {
       encryptedVaultKey: encryptedVault.ciphertext,
       vaultKeyIV: encryptedVault.iv,
       vaultKeyTag: encryptedVault.tag,
+      emailVerified: false,
+      emailVerifyToken,
+      emailVerifyExpiry,
     },
     select: { id: true, email: true, createdAt: true },
   });
@@ -47,7 +59,11 @@ export async function register(email: string, password: string) {
   masterKey.fill(0);
   derivedKey.fill(0);
 
-  return user;
+  sendVerificationEmail(email, emailVerifyToken).catch((err) => {
+    logger.error('Failed to send verification email:', err);
+  });
+
+  return { message: 'Registration successful. Please check your email to verify your account.' };
 }
 
 export async function login(email: string, password: string) {
@@ -59,6 +75,10 @@ export async function login(email: string, password: string) {
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
     throw new Error('Invalid email or password');
+  }
+
+  if (!user.emailVerified) {
+    throw new AppError('Email not verified. Please check your inbox or resend the verification email.', 403);
   }
 
   // Auto-unlock vault early (before TOTP check) so it's ready
@@ -189,6 +209,62 @@ export async function refreshAccessToken(refreshToken: string) {
 
 export async function logout(refreshToken: string) {
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+}
+
+export async function verifyEmail(token: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { emailVerifyToken: token },
+  });
+
+  if (!user) {
+    throw new AppError('Invalid or expired verification link.', 400);
+  }
+
+  if (user.emailVerified) {
+    return; // Already verified
+  }
+
+  if (!user.emailVerifyExpiry || user.emailVerifyExpiry < new Date()) {
+    throw new AppError('Verification link has expired. Please request a new one.', 400);
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerified: true,
+      emailVerifyToken: null,
+      emailVerifyExpiry: null,
+    },
+  });
+}
+
+export async function resendVerification(email: string): Promise<void> {
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  if (!user || user.emailVerified) {
+    return; // Silently succeed to prevent user enumeration
+  }
+
+  // Rate limit: check if last token was generated less than 60s ago
+  if (user.emailVerifyExpiry) {
+    const tokenCreatedAt = new Date(user.emailVerifyExpiry.getTime() - EMAIL_VERIFY_TTL_MS);
+    const elapsed = Date.now() - tokenCreatedAt.getTime();
+    if (elapsed < RESEND_COOLDOWN_MS) {
+      return; // Silently ignore rapid requests
+    }
+  }
+
+  const emailVerifyToken = crypto.randomBytes(32).toString('hex');
+  const emailVerifyExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { emailVerifyToken, emailVerifyExpiry },
+  });
+
+  sendVerificationEmail(email, emailVerifyToken).catch((err) => {
+    logger.error('Failed to send verification email:', err);
+  });
 }
 
 function parseExpiry(expiry: string): number {

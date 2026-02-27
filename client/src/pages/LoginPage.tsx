@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link as RouterLink, useSearchParams } from 'react-router-dom';
 import {
   Box, Card, CardContent, TextField, Button, Typography, Alert, Link,
 } from '@mui/material';
 import { loginApi, verifyTotpApi } from '../api/auth.api';
+import { resendVerificationEmail } from '../api/email.api';
 import { useAuthStore } from '../store/authStore';
 import { useVaultStore } from '../store/vaultStore';
 
@@ -11,17 +12,55 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'credentials' | 'totp'>('credentials');
   const [tempToken, setTempToken] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [showResend, setShowResend] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval>>(undefined);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const setAuth = useAuthStore((s) => s.setAuth);
   const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
+
+  useEffect(() => {
+    if (searchParams.get('verified') === 'true') {
+      setSuccess('Email verified successfully! You can now sign in.');
+      searchParams.delete('verified');
+      setSearchParams(searchParams, { replace: true });
+    }
+    const verifyError = searchParams.get('verifyError');
+    if (verifyError) {
+      setError(verifyError);
+      searchParams.delete('verifyError');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (resendCountdown <= 0) {
+      clearInterval(countdownRef.current);
+      return;
+    }
+    countdownRef.current = setInterval(() => {
+      setResendCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(countdownRef.current);
+  }, [resendCountdown > 0]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
+    setShowResend(false);
     setLoading(true);
     try {
       const data = await loginApi(email, password);
@@ -39,10 +78,12 @@ export default function LoginPage() {
         navigate('/');
       }
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
-        'Login failed';
+      const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
+      const msg = axiosErr?.response?.data?.error || 'Login failed';
       setError(msg);
+      if (axiosErr?.response?.status === 403) {
+        setShowResend(true);
+      }
     } finally {
       setLoading(false);
     }
@@ -74,6 +115,18 @@ export default function LoginPage() {
     setError('');
   };
 
+  const handleResend = async () => {
+    try {
+      await resendVerificationEmail(email);
+      setResendCountdown(60);
+      setSuccess('Verification email sent! Check your inbox.');
+      setError('');
+      setShowResend(false);
+    } catch {
+      // Server always returns 200 for valid format
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -93,7 +146,22 @@ export default function LoginPage() {
               ? 'Sign in to manage your connections'
               : 'Enter the 6-digit code from your authenticator app'}
           </Typography>
+          {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {showResend && (
+            <Button
+              fullWidth
+              variant="outlined"
+              size="small"
+              onClick={handleResend}
+              disabled={resendCountdown > 0}
+              sx={{ mb: 2 }}
+            >
+              {resendCountdown > 0
+                ? `Resend verification email (${resendCountdown}s)`
+                : 'Resend verification email'}
+            </Button>
+          )}
 
           {step === 'credentials' ? (
             <Box component="form" onSubmit={handleSubmit}>

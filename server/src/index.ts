@@ -3,8 +3,22 @@ import app from './app';
 import { config } from './config';
 import { setupSocketIO } from './socket';
 import { logger, toGuacamoleLogLevel } from './utils/logger';
+import prisma from './lib/prisma';
+
+async function runStartupMigrations() {
+  // Mark existing users without emailVerified as verified so they aren't locked out
+  const result = await prisma.user.updateMany({
+    where: { emailVerified: false, emailVerifyToken: null },
+    data: { emailVerified: true },
+  });
+  if (result.count > 0) {
+    logger.info(`Startup migration: marked ${result.count} existing user(s) as email-verified`);
+  }
+}
 
 async function main() {
+  await runStartupMigrations();
+
   const server = http.createServer(app);
 
   // Setup Socket.io for SSH

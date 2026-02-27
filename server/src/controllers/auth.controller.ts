@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import * as authService from '../services/auth.service';
 import { AppError } from '../middleware/error.middleware';
+import { config } from '../config';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -56,6 +57,9 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     if (err instanceof z.ZodError) {
       return next(new AppError(err.issues[0].message, 400));
     }
+    if (err instanceof AppError) {
+      return next(err);
+    }
     if (err instanceof Error && err.message === 'Invalid email or password') {
       return next(new AppError(err.message, 401));
     }
@@ -103,6 +107,43 @@ export async function logout(req: Request, res: Response, next: NextFunction) {
     await authService.logout(refreshToken);
     res.json({ success: true });
   } catch (err) {
+    next(err);
+  }
+}
+
+const verifyEmailSchema = z.object({
+  token: z.string().length(64),
+});
+
+const resendVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
+export async function verifyEmail(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { token } = verifyEmailSchema.parse(req.query);
+    await authService.verifyEmail(token);
+    res.redirect(`${config.clientUrl}/login?verified=true`);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.redirect(`${config.clientUrl}/login?verifyError=${encodeURIComponent('Invalid verification link.')}`);
+    }
+    if (err instanceof AppError) {
+      return res.redirect(`${config.clientUrl}/login?verifyError=${encodeURIComponent(err.message)}`);
+    }
+    next(err);
+  }
+}
+
+export async function resendVerification(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { email } = resendVerificationSchema.parse(req.body);
+    await authService.resendVerification(email);
+    res.json({ message: 'If an account exists with this email, a verification link has been sent.' });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return next(new AppError('Invalid email format', 400));
+    }
     next(err);
   }
 }

@@ -444,3 +444,30 @@
     CREATO:  client/src/hooks/useSftpTransfers.ts
     MODIFICATO: client/src/components/Terminal/SshTerminal.tsx (SFTP drawer + FloatingToolbar toggle)
     MODIFICATO: client/src/components/Tabs/TabPanel.tsx (conditional SFTP render)
+
+
+------------------------------------------------------------------------------
+[x] 2FA-012 — Autenticazione a due fattori (TOTP)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: USER-007 (pagina impostazioni necessaria per setup)
+  COMPLETATO: Full TOTP 2FA — setup/verify/disable endpoints, QR code display, two-phase login (credentials then TOTP code), TwoFactorSection in Settings, otplib+qrcode.react
+
+  DESCRIZIONE:
+  Aggiungere supporto TOTP per aumentare la sicurezza dell'accesso.
+  Compatibile con Google Authenticator, Authy, ecc.
+
+  FILE COINVOLTI:
+    CREATO:  server/src/routes/twofa.routes.ts
+    CREATO:  server/src/controllers/twofa.controller.ts
+    CREATO:  server/src/services/totp.service.ts
+    CREATO:  client/src/api/twofa.api.ts
+    CREATO:  client/src/components/Settings/TwoFactorSection.tsx
+    MODIFICATO: server/prisma/schema.prisma (totpSecret, totpEnabled on User)
+    MODIFICATO: server/src/services/auth.service.ts (login con TOTP, verifyTotp)
+    MODIFICATO: server/src/controllers/auth.controller.ts (handle TOTP flow)
+    MODIFICATO: server/src/routes/auth.routes.ts (POST /verify-totp)
+    MODIFICATO: server/src/app.ts (mount twofa routes)
+    MODIFICATO: client/src/api/auth.api.ts (loginApi type, verifyTotpApi)
+    MODIFICATO: client/src/pages/LoginPage.tsx (two-phase login)
+    MODIFICATO: client/src/pages/SettingsPage.tsx (TwoFactorSection)

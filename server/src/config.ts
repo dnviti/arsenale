@@ -20,4 +20,10 @@ export const config = {
   userDriveQuota: parseInt(process.env.USER_DRIVE_QUOTA || String(100 * 1024 * 1024), 10),
   sftpMaxFileSize: parseInt(process.env.SFTP_MAX_FILE_SIZE || String(100 * 1024 * 1024), 10),
   sftpChunkSize: parseInt(process.env.SFTP_CHUNK_SIZE || String(64 * 1024), 10),
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT || '587', 10),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  smtpFrom: process.env.SMTP_FROM || 'noreply@localhost',
+  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
 };

@@ -10,125 +10,6 @@
   SEZIONE A — TASK RICHIESTI (Core Features)
 ================================================================================
 
-------------------------------------------------------------------------------
-[ ] EMAIL-030 — Verifica email alla registrazione account
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Implementare un sistema di verifica email durante la registrazione.
-  Dopo la registrazione, l'utente riceve un'email con un link di conferma.
-  Finche' l'email non e' verificata, l'utente NON puo' effettuare il login.
-  Include un meccanismo di re-invio dell'email e scadenza del token.
-
-  DETTAGLI TECNICI:
-
-  ===== 1. SCHEMA PRISMA =====
-
-    Modifiche a User:
-      + emailVerified       Boolean   @default(false)
-      + emailVerifyToken    String?   @unique
-      + emailVerifyExpiry   DateTime?
-
-    Migrazione: aggiungere i nuovi campi. Per gli utenti esistenti,
-    impostare emailVerified=true (sono gia' attivi).
-
-  ===== 2. CONFIGURAZIONE (.env + config.ts) =====
-
-    Nuove variabili .env:
-      SMTP_HOST=smtp.example.com
-      SMTP_PORT=587
-      SMTP_USER=noreply@example.com
-      SMTP_PASS=your-smtp-password
-      SMTP_FROM="Remote Desktop Manager <noreply@example.com>"
-      CLIENT_URL=http://localhost:3000
-
-    In config.ts aggiungere sezione smtp con i parametri di connessione.
-
-  ===== 3. BACKEND — EMAIL SERVICE =====
-
-    Installare: nodemailer, @types/nodemailer
-
-    Creare server/src/services/email.service.ts:
-      - Configurare trasporto SMTP con nodemailer (da config)
-      - sendVerificationEmail(to, token): invia email con link
-        {CLIENT_URL}/verify-email?token=...
-      - Template HTML inline (semplice, no dipendenze extra)
-      - In sviluppo: loggare il link in console se SMTP non configurato
-
-  ===== 4. BACKEND — FLOW REGISTRAZIONE =====
-
-    Modifiche a auth.service.ts register():
-      - Generare token di verifica (crypto.randomBytes(32).toString('hex'))
-      - Impostare emailVerifyExpiry a +24h
-      - Salvare token e scadenza su User
-      - Dopo la creazione: chiamare sendVerificationEmail()
-      - Ritornare messaggio "Check your email to verify your account"
-
-    Nuovo endpoint in auth.routes.ts:
-      GET  /api/auth/verify-email?token=...
-        - Cerca User per emailVerifyToken
-        - Verifica che token non sia scaduto (emailVerifyExpiry > now)
-        - Imposta emailVerified=true, pulisce token e scadenza
-        - Redirect a {CLIENT_URL}/login?verified=true
-
-      POST /api/auth/resend-verification
-        - Body: { email }
-        - Cerca utente non verificato per email
-        - Genera nuovo token + scadenza, invia nuova email
-        - Rate limit: max 1 invio ogni 60 secondi per email
-        - Ritorna sempre 200 (non rivelare se email esiste)
-
-    Modifiche a auth.service.ts login():
-      - Se emailVerified === false: ritornare errore 403
-        "Please verify your email before logging in"
-
-  ===== 5. FRONTEND =====
-
-    a) Aggiornare RegisterPage.tsx:
-       - Dopo registrazione: mostrare messaggio di conferma
-         "A verification email has been sent to {email}"
-       - Bottone "Resend verification email" (con countdown 60s)
-       - Non redirigere automaticamente al login
-
-    b) Aggiornare LoginPage.tsx:
-       - Se query param ?verified=true: mostrare snackbar di successo
-         "Email verified! You can now log in."
-       - Se errore 403 (email non verificata): mostrare messaggio
-         con link "Resend verification email"
-
-    c) Creare client/src/api/email.api.ts:
-       - resendVerificationEmail(email): POST /api/auth/resend-verification
-
-  ===== 6. SICUREZZA =====
-
-    - Token di verifica: 32 bytes random, hex-encoded (64 chars)
-    - Scadenza token: 24 ore
-    - Rate limiting re-invio: 1 email ogni 60 secondi per indirizzo
-    - Risposta resend sempre 200 (prevenzione user enumeration)
-    - Token monouso: cancellato dopo la verifica
-    - Utenti esistenti: migrazione li marca come verificati
-
-  FILE COINVOLTI:
-    CREARE:  server/src/services/email.service.ts
-    CREARE:  client/src/api/email.api.ts
-    MODIFICARE: server/prisma/schema.prisma
-                (emailVerified, emailVerifyToken, emailVerifyExpiry su User)
-    MODIFICARE: server/src/config.ts (sezione smtp + clientUrl)
-    MODIFICARE: server/src/services/auth.service.ts
-                (generare token, inviare email, bloccare login non verificati)
-    MODIFICARE: server/src/controllers/auth.controller.ts
-                (endpoint verify-email, resend-verification)
-    MODIFICARE: server/src/routes/auth.routes.ts
-                (GET /verify-email, POST /resend-verification)
-    MODIFICARE: client/src/pages/RegisterPage.tsx
-                (messaggio post-registrazione, bottone resend)
-    MODIFICARE: client/src/pages/LoginPage.tsx
-                (snackbar verified, messaggio email non verificata)
-    MODIFICARE: .env.example (variabili SMTP + CLIENT_URL)
-    MODIFICARE: server/package.json (nodemailer)
-
 
 ================================================================================
   SEZIONE B — TASK AGGIUNTIVI SUGGERITI
@@ -956,8 +837,8 @@
    14. SFTP-019    Trasferimento file SFTP (SSH)                         [COMPLETATO]
 
   Fase 4 — Sicurezza e amministrazione:
-   15. 2FA-012     Autenticazione due fattori                           [IN CORSO]
-   16. EMAIL-030   Verifica email alla registrazione
+   15. 2FA-012     Autenticazione due fattori                           [COMPLETATO]
+   16. EMAIL-030   Verifica email alla registrazione                    [IN CORSO]
    17. OAUTH-029   Autenticazione OAuth (Google, Microsoft, GitHub)
    18. AUDIT-013   Log attivita'
    19. NOTIF-015   Notifiche condivisione

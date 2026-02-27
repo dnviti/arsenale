@@ -18,7 +18,7 @@ export async function verifyTotpApi(tempToken: string, code: string) {
 
 export async function registerApi(email: string, password: string) {
   const res = await api.post('/auth/register', { email, password });
-  return res.data;
+  return res.data as { message: string };
 }
 
 export async function refreshApi(refreshToken: string) {
