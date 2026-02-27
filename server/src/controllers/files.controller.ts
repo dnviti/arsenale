@@ -23,7 +23,7 @@ export async function download(req: AuthRequest, res: Response, next: NextFuncti
     const filePath = await fileService.getFilePath(req.user!.userId, name);
     res.download(filePath, name);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }
@@ -46,7 +46,7 @@ export async function remove(req: AuthRequest, res: Response, next: NextFunction
     await fileService.deleteFile(req.user!.userId, name);
     res.json({ deleted: true });
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }

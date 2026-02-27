@@ -16,7 +16,7 @@ export async function unlock(req: AuthRequest, res: Response, next: NextFunction
     const result = await vaultService.unlockVault(req.user!.userId, password);
     res.json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }
@@ -41,7 +41,7 @@ export async function revealPassword(req: AuthRequest, res: Response, next: Next
     );
     res.json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }

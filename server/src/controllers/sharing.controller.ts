@@ -24,7 +24,7 @@ export async function share(req: AuthRequest, res: Response, next: NextFunction)
     );
     res.status(201).json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }
@@ -53,7 +53,7 @@ export async function updatePermission(req: AuthRequest, res: Response, next: Ne
     );
     res.json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }

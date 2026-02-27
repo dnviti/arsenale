@@ -1,8 +1,6 @@
-import { PrismaClient, Permission } from '@prisma/client';
+import prisma, { Permission } from '../lib/prisma';
 import { encrypt, decrypt, getMasterKey } from './crypto.service';
 import { AppError } from '../middleware/error.middleware';
-
-const prisma = new PrismaClient();
 
 export async function shareConnection(
   ownerUserId: string,
@@ -144,7 +142,7 @@ export async function listShares(ownerUserId: string, connectionId: string) {
     include: { sharedWith: { select: { id: true, email: true } } },
   });
 
-  return shares.map((s) => ({
+  return shares.map((s: (typeof shares)[number]) => ({
     id: s.id,
     userId: s.sharedWith.id,
     email: s.sharedWith.email,

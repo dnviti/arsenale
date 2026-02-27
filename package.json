@@ -20,6 +20,6 @@
     "db:generate": "npm run db:generate -w server"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.2.1"
   }
 }

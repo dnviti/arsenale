@@ -1,8 +1,6 @@
-import { Prisma, PrismaClient, ConnectionType } from '@prisma/client';
+import prisma, { Prisma, ConnectionType } from '../lib/prisma';
 import { encrypt, decrypt, getMasterKey } from './crypto.service';
 import { AppError } from '../middleware/error.middleware';
-
-const prisma = new PrismaClient();
 
 function requireMasterKey(userId: string): Buffer {
   const key = getMasterKey(userId);
@@ -21,6 +19,7 @@ export interface CreateConnectionInput {
   folderId?: string;
   enableDrive?: boolean;
   sshTerminalConfig?: Prisma.InputJsonValue | null;
+  rdpSettings?: Prisma.InputJsonValue | null;
 }
 
 export interface UpdateConnectionInput {
@@ -34,6 +33,7 @@ export interface UpdateConnectionInput {
   folderId?: string | null;
   enableDrive?: boolean;
   sshTerminalConfig?: Prisma.InputJsonValue | null;
+  rdpSettings?: Prisma.InputJsonValue | null;
 }
 
 export async function createConnection(userId: string, input: CreateConnectionInput) {
@@ -58,6 +58,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
       description: input.description || null,
       enableDrive: input.enableDrive ?? false,
       sshTerminalConfig: input.sshTerminalConfig ?? undefined,
+      rdpSettings: input.rdpSettings ?? undefined,
       userId,
     },
   });
@@ -72,6 +73,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
     description: connection.description,
     enableDrive: connection.enableDrive,
     sshTerminalConfig: connection.sshTerminalConfig,
+    rdpSettings: connection.rdpSettings,
     createdAt: connection.createdAt,
     updatedAt: connection.updatedAt,
   };
@@ -98,6 +100,7 @@ export async function updateConnection(
   if (input.folderId !== undefined) data.folderId = input.folderId;
   if (input.enableDrive !== undefined) data.enableDrive = input.enableDrive;
   if (input.sshTerminalConfig !== undefined) data.sshTerminalConfig = input.sshTerminalConfig;
+  if (input.rdpSettings !== undefined) data.rdpSettings = input.rdpSettings;
 
   if (input.username !== undefined) {
     const enc = encrypt(input.username, masterKey);
@@ -128,6 +131,7 @@ export async function updateConnection(
     description: updated.description,
     enableDrive: updated.enableDrive,
     sshTerminalConfig: updated.sshTerminalConfig,
+    rdpSettings: updated.rdpSettings,
     createdAt: updated.createdAt,
     updatedAt: updated.updatedAt,
   };
@@ -159,6 +163,7 @@ export async function getConnection(userId: string, connectionId: string) {
       description: connection.description,
       enableDrive: connection.enableDrive,
       sshTerminalConfig: connection.sshTerminalConfig,
+      rdpSettings: connection.rdpSettings,
       isOwner: true,
       createdAt: connection.createdAt,
       updatedAt: connection.updatedAt,
@@ -181,6 +186,7 @@ export async function getConnection(userId: string, connectionId: string) {
       description: shared.connection.description,
       enableDrive: shared.connection.enableDrive,
       sshTerminalConfig: shared.connection.sshTerminalConfig,
+      rdpSettings: shared.connection.rdpSettings,
       isOwner: false,
       permission: shared.permission,
       createdAt: shared.connection.createdAt,
@@ -205,6 +211,7 @@ export async function listConnections(userId: string) {
       isFavorite: true,
       enableDrive: true,
       sshTerminalConfig: true,
+      rdpSettings: true,
       createdAt: true,
       updatedAt: true,
     },
@@ -224,6 +231,7 @@ export async function listConnections(userId: string) {
           description: true,
           enableDrive: true,
           sshTerminalConfig: true,
+          rdpSettings: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -233,8 +241,8 @@ export async function listConnections(userId: string) {
   });
 
   return {
-    own: ownConnections.map((c) => ({ ...c, isOwner: true })),
-    shared: sharedConnections.map((s) => ({
+    own: ownConnections.map((c: (typeof ownConnections)[number]) => ({ ...c, isOwner: true })),
+    shared: sharedConnections.map((s: (typeof sharedConnections)[number]) => ({
       ...s.connection,
       folderId: null,
       isOwner: false,

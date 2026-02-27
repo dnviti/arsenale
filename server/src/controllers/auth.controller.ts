@@ -24,7 +24,7 @@ export async function register(req: Request, res: Response, next: NextFunction) 
     res.status(201).json(user);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return next(new AppError(err.errors[0].message, 400));
+      return next(new AppError(err.issues[0].message, 400));
     }
     if (err instanceof Error && err.message === 'Email already registered') {
       return next(new AppError(err.message, 409));
@@ -40,7 +40,7 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return next(new AppError(err.errors[0].message, 400));
+      return next(new AppError(err.issues[0].message, 400));
     }
     if (err instanceof Error && err.message === 'Invalid email or password') {
       return next(new AppError(err.message, 401));
@@ -56,7 +56,7 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) {
-      return next(new AppError(err.errors[0].message, 400));
+      return next(new AppError(err.issues[0].message, 400));
     }
     if (err instanceof Error && err.message.includes('refresh token')) {
       return next(new AppError(err.message, 401));

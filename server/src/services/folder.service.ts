@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
-
-const prisma = new PrismaClient();
 
 export async function createFolder(
   userId: string,

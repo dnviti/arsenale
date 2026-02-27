@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,8 +12,6 @@ import {
   decryptMasterKey,
   storeVaultSession,
 } from './crypto.service';
-
-const prisma = new PrismaClient();
 const BCRYPT_ROUNDS = 12;
 
 export async function register(email: string, password: string) {

@@ -20,7 +20,7 @@ export async function create(req: AuthRequest, res: Response, next: NextFunction
     const result = await folderService.createFolder(req.user!.userId, name, parentId);
     res.status(201).json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }
@@ -31,7 +31,7 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
     const result = await folderService.updateFolder(req.user!.userId, req.params.id as string, data);
     res.json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }

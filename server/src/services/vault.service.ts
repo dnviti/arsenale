@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma';
 import {
   deriveKeyFromPassword,
   decryptMasterKey,
@@ -9,8 +9,6 @@ import {
   decrypt,
 } from './crypto.service';
 import { AppError } from '../middleware/error.middleware';
-
-const prisma = new PrismaClient();
 
 export async function unlockVault(userId: string, password: string) {
   const user = await prisma.user.findUnique({ where: { id: userId } });

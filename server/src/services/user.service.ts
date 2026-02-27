@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import prisma, { Prisma } from '../lib/prisma';
 import bcrypt from 'bcrypt';
 import {
   generateSalt,
@@ -8,15 +8,13 @@ import {
   lockVault,
 } from './crypto.service';
 import { AppError } from '../middleware/error.middleware';
-
-const prisma = new PrismaClient();
 const BCRYPT_ROUNDS = 12;
 const MAX_AVATAR_SIZE = 200 * 1024; // ~200KB base64
 
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, username: true, avatarData: true, sshDefaults: true, createdAt: true },
+    select: { id: true, email: true, username: true, avatarData: true, sshDefaults: true, rdpDefaults: true, createdAt: true },
   });
   if (!user) throw new AppError('User not found', 404);
   return user;
@@ -109,6 +107,15 @@ export async function updateSshDefaults(userId: string, sshDefaults: Prisma.Inpu
     where: { id: userId },
     data: { sshDefaults },
     select: { id: true, sshDefaults: true },
+  });
+  return user;
+}
+
+export async function updateRdpDefaults(userId: string, rdpDefaults: Prisma.InputJsonValue) {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: { rdpDefaults },
+    select: { id: true, rdpDefaults: true },
   });
   return user;
 }

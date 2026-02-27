@@ -12,7 +12,7 @@ const sshTerminalConfigSchema = z.object({
   cursorStyle: z.enum(['block', 'underline', 'bar']).optional(),
   cursorBlink: z.boolean().optional(),
   theme: z.string().optional(),
-  customColors: z.record(z.string()).optional(),
+  customColors: z.record(z.string(), z.string()).optional(),
   scrollback: z.number().int().min(100).max(10000).optional(),
   bellStyle: z.enum(['none', 'sound', 'visual']).optional(),
 });
@@ -49,7 +49,7 @@ export async function create(req: AuthRequest, res: Response, next: NextFunction
     const result = await connectionService.createConnection(req.user!.userId, data);
     res.status(201).json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }
@@ -64,7 +64,7 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
     );
     res.json(result);
   } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(err.errors[0].message, 400));
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }
