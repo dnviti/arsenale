@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { ConnectionData, listConnections, toggleFavorite as toggleFavoriteApi } from '../api/connections.api';
+import { ConnectionData, listConnections, updateConnection, toggleFavorite as toggleFavoriteApi } from '../api/connections.api';
 import { FolderData, listFolders } from '../api/folders.api';
 
 export type Folder = FolderData;
@@ -12,9 +12,10 @@ interface ConnectionsState {
   fetchConnections: () => Promise<void>;
   fetchFolders: () => Promise<void>;
   toggleFavorite: (connectionId: string) => Promise<void>;
+  moveConnection: (connectionId: string, targetFolderId: string | null) => Promise<void>;
 }
 
-export const useConnectionsStore = create<ConnectionsState>((set) => ({
+export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
   ownConnections: [],
   sharedConnections: [],
   folders: [],
@@ -55,6 +56,23 @@ export const useConnectionsStore = create<ConnectionsState>((set) => ({
       }));
     } catch {
       // Silently fail; the star just does not toggle
+    }
+  },
+
+  moveConnection: async (connectionId, targetFolderId) => {
+    const prev = get().ownConnections;
+    // Optimistic update
+    set({
+      ownConnections: prev.map((c) =>
+        c.id === connectionId ? { ...c, folderId: targetFolderId } : c
+      ),
+    });
+    try {
+      await updateConnection(connectionId, { folderId: targetFolderId });
+      await get().fetchConnections();
+    } catch (err) {
+      set({ ownConnections: prev });
+      throw err;
     }
   },
 }));

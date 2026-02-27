@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Box, Typography, List, ListItemButton, ListItemIcon, ListItemText,
   Collapse, Menu, MenuItem, Divider, IconButton, TextField, InputAdornment,
@@ -38,6 +38,18 @@ import { ConnectionData, deleteConnection, updateConnection } from '../../api/co
 import { deleteFolder } from '../../api/folders.api';
 import { openConnectionWindow } from '../../utils/openConnectionWindow';
 import { getRecentConnectionIds } from '../../utils/recentConnections';
+import {
+  DndContext,
+  DragOverlay,
+  pointerWithin,
+  useSensor,
+  useSensors,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+} from '@dnd-kit/core';
+import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 
 function getErrorMessage(err: unknown, fallback: string): string {
   return (err as { response?: { data?: { error?: string } } })?.response?.data?.error || fallback;
@@ -97,6 +109,7 @@ interface ConnectionItemProps {
   conn: ConnectionData;
   depth: number;
   compact?: boolean;
+  draggable?: boolean;
   onEdit: (conn: ConnectionData) => void;
   onDelete: (conn: ConnectionData) => void;
   onMove: (conn: ConnectionData) => void;
@@ -105,9 +118,20 @@ interface ConnectionItemProps {
   onToggleFavorite?: (conn: ConnectionData) => void;
 }
 
-function ConnectionItem({ conn, depth, compact, onEdit, onDelete, onMove, onShare, onConnectAs, onToggleFavorite }: ConnectionItemProps) {
+function ConnectionItem({ conn, depth, compact, draggable = false, onEdit, onDelete, onMove, onShare, onConnectAs, onToggleFavorite }: ConnectionItemProps) {
   const openTab = useTabsStore((s) => s.openTab);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `connection-${conn.id}`,
+    data: { type: 'connection', connection: conn },
+    disabled: !draggable,
+  });
 
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -155,10 +179,18 @@ function ConnectionItem({ conn, depth, compact, onEdit, onDelete, onMove, onShar
   return (
     <>
       <ListItemButton
+        ref={setNodeRef}
         dense
         onDoubleClick={() => openTab(conn)}
         onContextMenu={handleContextMenu}
-        sx={{ pl: depthPl(depth), ...(compact && { py: 0.125 }) }}
+        sx={{
+          pl: depthPl(depth),
+          ...(compact && { py: 0.125 }),
+          ...(draggable && { cursor: 'grab' }),
+          ...(isDragging && { opacity: 0.4 }),
+          ...(transform && { transform: CSS.Translate.toString(transform) }),
+        }}
+        {...(draggable ? { ...listeners, ...attributes } : {})}
       >
         <ListItemIcon sx={{ minWidth: compact ? 24 : 32 }}>
           {conn.type === 'RDP' ? (
@@ -248,6 +280,7 @@ interface FolderItemProps {
   folderMap: Map<string, ConnectionData[]>;
   depth: number;
   compact?: boolean;
+  isDndEnabled?: boolean;
   onEditConnection: (conn: ConnectionData) => void;
   onDeleteConnection: (conn: ConnectionData) => void;
   onMoveConnection: (conn: ConnectionData) => void;
@@ -261,12 +294,28 @@ interface FolderItemProps {
 }
 
 function FolderItem({
-  node, connections, folderMap, depth, compact,
+  node, connections, folderMap, depth, compact, isDndEnabled = false,
   onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection, onConnectAsConnection, onToggleFavorite,
   onCreateConnection, onCreateFolder, onEditFolder, onDeleteFolder,
 }: FolderItemProps) {
   const [open, setOpen] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
+
+  const { setNodeRef, isOver } = useDroppable({
+    id: `folder-${node.folder.id}`,
+    data: { type: 'folder', folderId: node.folder.id },
+  });
+
+  // Auto-expand collapsed folders on drag hover after 500ms
+  const dragOverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (isOver && !open) {
+      dragOverTimerRef.current = setTimeout(() => setOpen(true), 500);
+    }
+    return () => {
+      if (dragOverTimerRef.current) clearTimeout(dragOverTimerRef.current);
+    };
+  }, [isOver, open]);
 
   const handleContextMenu = (event: React.MouseEvent) => {
     event.preventDefault();
@@ -279,10 +328,20 @@ function FolderItem({
   return (
     <>
       <ListItemButton
+        ref={setNodeRef}
         dense
         onClick={() => setOpen(!open)}
         onContextMenu={handleContextMenu}
-        sx={{ pl: depthPl(depth), ...(compact && { py: 0.125 }) }}
+        sx={{
+          pl: isOver ? depthPl(depth) - 0.375 : depthPl(depth),
+          ...(compact && { py: 0.125 }),
+          ...(isOver && {
+            bgcolor: 'action.hover',
+            borderLeft: '3px solid',
+            borderColor: 'primary.main',
+          }),
+          transition: 'background-color 0.15s ease',
+        }}
       >
         <ListItemIcon sx={{ minWidth: compact ? 24 : 32 }}>
           {open ? <FolderOpenIcon fontSize="small" /> : <FolderIcon fontSize="small" />}
@@ -333,6 +392,7 @@ function FolderItem({
               folderMap={folderMap}
               depth={depth + 1}
               compact={compact}
+              isDndEnabled={isDndEnabled}
               onEditConnection={onEditConnection}
               onDeleteConnection={onDeleteConnection}
               onMoveConnection={onMoveConnection}
@@ -351,6 +411,7 @@ function FolderItem({
               conn={conn}
               depth={depth + 1}
               compact={compact}
+              draggable={isDndEnabled && conn.isOwner}
               onEdit={onEditConnection}
               onDelete={onDeleteConnection}
               onMove={onMoveConnection}
@@ -382,6 +443,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
   const folders = useConnectionsStore((s) => s.folders);
   const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
   const toggleFav = useConnectionsStore((s) => s.toggleFavorite);
+  const moveConn = useConnectionsStore((s) => s.moveConnection);
   const userId = useAuthStore((s) => s.user?.id);
   const recentTick = useTabsStore((s) => s.recentTick);
   const notify = useNotificationStore((s) => s.notify);
@@ -393,6 +455,40 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<Folder | null>(null);
   const [moveTarget, setMoveTarget] = useState<ConnectionData | null>(null);
   const [moveDestination, setMoveDestination] = useState('');
+
+  // --- Drag and drop ---
+  const [activeConnection, setActiveConnection] = useState<ConnectionData | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
+
+  const { setNodeRef: rootDropRef, isOver: isOverRoot } = useDroppable({
+    id: 'root-drop-zone',
+    data: { type: 'root', folderId: null },
+  });
+
+  const handleDragStart = (event: DragStartEvent) => {
+    const conn = event.active.data.current?.connection as ConnectionData | undefined;
+    if (conn) setActiveConnection(conn);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveConnection(null);
+    const { active, over } = event;
+    if (!over) return;
+
+    const connection = active.data.current?.connection as ConnectionData | undefined;
+    if (!connection) return;
+
+    const targetFolderId = (over.data.current?.folderId as string | null) ?? null;
+    if (targetFolderId === (connection.folderId ?? null)) return;
+
+    try {
+      await moveConn(connection.id, targetFolderId);
+    } catch (err) {
+      notify(getErrorMessage(err, 'Failed to move connection'));
+    }
+  };
 
   const handleToggleFavorite = async (conn: ConnectionData) => {
     await toggleFav(conn.id);
@@ -485,6 +581,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
   }, [ownConnections, sharedConnections, userId, recentTick]);
 
   const isSearching = searchQuery.trim().length > 0;
+  const isDndEnabled = !isSearching;
 
   return (
     <Box sx={{ py: 1 }}>
@@ -598,42 +695,88 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
         <Divider sx={{ my: 1 }} />
       )}
 
-      <List disablePadding>
-        {filteredFolderTree.map((node) => (
-          <FolderItem
-            key={node.folder.id}
-            node={node}
-            connections={filteredFolderMap.get(node.folder.id) || []}
-            folderMap={filteredFolderMap}
-            depth={0}
-            compact={compact}
-            onEditConnection={onEditConnection}
-            onDeleteConnection={setDeleteTarget}
-            onMoveConnection={handleOpenMoveDialog}
-            onShareConnection={onShareConnection}
-            onConnectAsConnection={onConnectAsConnection}
-            onToggleFavorite={handleToggleFavorite}
-            onCreateConnection={onCreateConnection}
-            onCreateFolder={onCreateFolder}
-            onEditFolder={onEditFolder}
-            onDeleteFolder={setDeleteFolderTarget}
-          />
-        ))}
-        {filteredRootConnections.map((conn) => (
-          <ConnectionItem
-            key={conn.id}
-            conn={conn}
-            depth={0}
-            compact={compact}
-            onEdit={onEditConnection}
-            onDelete={setDeleteTarget}
-            onMove={handleOpenMoveDialog}
-            onShare={onShareConnection}
-            onConnectAs={onConnectAsConnection}
-            onToggleFavorite={handleToggleFavorite}
-          />
-        ))}
-      </List>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={pointerWithin}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <Box
+          ref={rootDropRef}
+          sx={{
+            ...(isOverRoot && {
+              bgcolor: 'action.hover',
+              transition: 'background-color 0.15s ease',
+            }),
+            minHeight: 40,
+          }}
+        >
+          <List disablePadding>
+            {filteredFolderTree.map((node) => (
+              <FolderItem
+                key={node.folder.id}
+                node={node}
+                connections={filteredFolderMap.get(node.folder.id) || []}
+                folderMap={filteredFolderMap}
+                depth={0}
+                compact={compact}
+                isDndEnabled={isDndEnabled}
+                onEditConnection={onEditConnection}
+                onDeleteConnection={setDeleteTarget}
+                onMoveConnection={handleOpenMoveDialog}
+                onShareConnection={onShareConnection}
+                onConnectAsConnection={onConnectAsConnection}
+                onToggleFavorite={handleToggleFavorite}
+                onCreateConnection={onCreateConnection}
+                onCreateFolder={onCreateFolder}
+                onEditFolder={onEditFolder}
+                onDeleteFolder={setDeleteFolderTarget}
+              />
+            ))}
+            {filteredRootConnections.map((conn) => (
+              <ConnectionItem
+                key={conn.id}
+                conn={conn}
+                depth={0}
+                compact={compact}
+                draggable={isDndEnabled && conn.isOwner}
+                onEdit={onEditConnection}
+                onDelete={setDeleteTarget}
+                onMove={handleOpenMoveDialog}
+                onShare={onShareConnection}
+                onConnectAs={onConnectAsConnection}
+                onToggleFavorite={handleToggleFavorite}
+              />
+            ))}
+          </List>
+          {isOverRoot && (
+            <Box sx={{ height: 2, bgcolor: 'primary.main', mx: 2, borderRadius: 1 }} />
+          )}
+        </Box>
+
+        <DragOverlay dropAnimation={null}>
+          {activeConnection && (
+            <Box sx={{
+              bgcolor: 'background.paper',
+              boxShadow: 3,
+              borderRadius: 1,
+              px: 2,
+              py: 0.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              opacity: 0.9,
+              pointerEvents: 'none',
+              maxWidth: 220,
+            }}>
+              {activeConnection.type === 'RDP'
+                ? <RdpIcon fontSize="small" color="primary" />
+                : <SshIcon fontSize="small" color="secondary" />}
+              <Typography variant="body2" noWrap>{activeConnection.name}</Typography>
+            </Box>
+          )}
+        </DragOverlay>
+      </DndContext>
 
       {searchQuery.trim() && filteredRootConnections.length === 0 && filteredFolderTree.length === 0 && filteredSharedConnections.length === 0 && (
         <Typography variant="body2" color="text.secondary" sx={{ px: 2, py: 2, textAlign: 'center' }}>
