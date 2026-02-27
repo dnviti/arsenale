@@ -55,6 +55,15 @@ const uploadAvatarSchema = z.object({
   avatarData: z.string(),
 });
 
+const searchSchema = z.object({
+  q: z.string().min(1).max(100),
+  scope: z.enum(['tenant', 'team']).optional().default('tenant'),
+  teamId: z.string().optional(),
+}).refine(
+  (data) => !(data.scope === 'team' && !data.teamId),
+  { message: 'teamId is required when scope is team', path: ['teamId'] }
+);
+
 export async function getProfile(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const result = await userService.getProfile(req.user!.userId);
@@ -119,6 +128,23 @@ export async function uploadAvatar(req: AuthRequest, res: Response, next: NextFu
     const { avatarData } = uploadAvatarSchema.parse(req.body);
     const result = await userService.uploadAvatar(req.user!.userId, avatarData);
     res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+export async function search(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { q, scope, teamId } = searchSchema.parse(req.query);
+    const results = await userService.searchUsers(
+      req.user!.userId,
+      req.user!.tenantId!,
+      q,
+      scope,
+      teamId
+    );
+    res.json(results);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);

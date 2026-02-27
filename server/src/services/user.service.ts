@@ -152,3 +152,33 @@ export async function uploadAvatar(userId: string, avatarData: string) {
 
   return user;
 }
+
+export async function searchUsers(
+  currentUserId: string,
+  tenantId: string,
+  query: string,
+  scope?: 'tenant' | 'team',
+  teamId?: string
+) {
+  const where: Prisma.UserWhereInput = {
+    tenantId,
+    id: { not: currentUserId },
+    OR: [
+      { email: { contains: query, mode: 'insensitive' } },
+      { username: { contains: query, mode: 'insensitive' } },
+    ],
+  };
+
+  if (scope === 'team' && teamId) {
+    where.teamMembers = { some: { teamId } };
+  }
+
+  const users = await prisma.user.findMany({
+    where,
+    select: { id: true, email: true, username: true, avatarData: true },
+    take: 10,
+    orderBy: { email: 'asc' },
+  });
+
+  return users;
+}

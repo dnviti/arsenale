@@ -7,6 +7,8 @@ interface User {
   username: string | null;
   avatarData: string | null;
   vaultSetupComplete?: boolean;
+  tenantId?: string;
+  tenantRole?: string;
 }
 
 interface AuthState {

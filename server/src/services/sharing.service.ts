@@ -9,7 +9,7 @@ import * as permissionService from './permission.service';
 export async function shareConnection(
   actingUserId: string,
   connectionId: string,
-  targetEmail: string,
+  target: { email?: string; userId?: string },
   permission: Permission
 ) {
   const access = await permissionService.canManageConnection(actingUserId, connectionId);
@@ -22,9 +22,12 @@ export async function shareConnection(
     throw new AppError('Only team admins can share team connections', 403);
   }
 
-  const targetUser = await prisma.user.findUnique({
-    where: { email: targetEmail },
-  });
+  let targetUser;
+  if (target.userId) {
+    targetUser = await prisma.user.findUnique({ where: { id: target.userId } });
+  } else if (target.email) {
+    targetUser = await prisma.user.findUnique({ where: { email: target.email } });
+  }
   if (!targetUser) throw new AppError('User not found', 404);
   if (targetUser.id === actingUserId) {
     throw new AppError('Cannot share with yourself', 400);
@@ -138,7 +141,7 @@ export async function shareConnection(
   return {
     id: shared.id,
     permission: shared.permission,
-    sharedWith: targetEmail,
+    sharedWith: targetUser.email,
   };
 }
 

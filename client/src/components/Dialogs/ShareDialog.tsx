@@ -3,17 +3,22 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
   FormControl, InputLabel, Select, MenuItem, Box, Alert, List, ListItem,
   ListItemText, ListItemSecondaryAction, IconButton, Typography, Chip,
+  ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import {
   shareConnection, unshareConnection, listShares, ShareData,
 } from '../../api/sharing.api';
+import { useAuthStore } from '../../store/authStore';
+import { UserSearchResult } from '../../api/user.api';
+import UserPicker from '../UserPicker';
 
 interface ShareDialogProps {
   open: boolean;
   onClose: () => void;
   connectionId: string;
   connectionName: string;
+  teamId?: string | null;
 }
 
 export default function ShareDialog({
@@ -21,8 +26,12 @@ export default function ShareDialog({
   onClose,
   connectionId,
   connectionName,
+  teamId,
 }: ShareDialogProps) {
+  const hasTenant = !!useAuthStore((s) => s.user?.tenantId);
   const [email, setEmail] = useState('');
+  const [selectedUser, setSelectedUser] = useState<UserSearchResult | null>(null);
+  const [scope, setScope] = useState<'tenant' | 'team'>('tenant');
   const [permission, setPermission] = useState<'READ_ONLY' | 'FULL_ACCESS'>('READ_ONLY');
   const [shares, setShares] = useState<ShareData[]>([]);
   const [error, setError] = useState('');
@@ -31,6 +40,9 @@ export default function ShareDialog({
   useEffect(() => {
     if (open) {
       loadShares();
+      setSelectedUser(null);
+      setEmail('');
+      setError('');
     }
   }, [open, connectionId]);
 
@@ -41,15 +53,28 @@ export default function ShareDialog({
     } catch {}
   };
 
+  const sharedUserIds = shares.map((s) => s.userId);
+
   const handleShare = async () => {
     setError('');
-    if (!email) {
-      setError('Email is required');
-      return;
+    if (hasTenant) {
+      if (!selectedUser) {
+        setError('Select a user to share with');
+        return;
+      }
+    } else {
+      if (!email) {
+        setError('Email is required');
+        return;
+      }
     }
     setLoading(true);
     try {
-      await shareConnection(connectionId, email, permission);
+      const target = selectedUser
+        ? { userId: selectedUser.id }
+        : { email };
+      await shareConnection(connectionId, target, permission);
+      setSelectedUser(null);
       setEmail('');
       await loadShares();
     } catch (err: unknown) {
@@ -75,14 +100,37 @@ export default function ShareDialog({
       <DialogContent>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 1, mb: 2 }}>
-          <TextField
-            label="User email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+        {hasTenant && teamId && (
+          <ToggleButtonGroup
+            value={scope}
+            exclusive
+            onChange={(_e, val) => { if (val) setScope(val); }}
             size="small"
-            fullWidth
-          />
+            sx={{ mt: 1, mb: 1 }}
+          >
+            <ToggleButton value="tenant">Organization</ToggleButton>
+            <ToggleButton value="team">My Team</ToggleButton>
+          </ToggleButtonGroup>
+        )}
+
+        <Box sx={{ display: 'flex', gap: 1, mt: 1, mb: 2 }}>
+          {hasTenant ? (
+            <UserPicker
+              onSelect={setSelectedUser}
+              scope={scope}
+              teamId={scope === 'team' && teamId ? teamId : undefined}
+              placeholder="Search users by name or email..."
+              excludeUserIds={sharedUserIds}
+            />
+          ) : (
+            <TextField
+              label="User email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              size="small"
+              fullWidth
+            />
+          )}
           <FormControl size="small" sx={{ minWidth: 140 }}>
             <InputLabel>Permission</InputLabel>
             <Select

@@ -699,3 +699,89 @@
                 storeTeamVaultSession, getTeamMasterKey, lockTeamVault, lockUserTeamVaults)
     MODIFICATO: server/src/app.ts (montare team routes su /api/teams)
     MODIFICATO: server/src/types/index.ts (TeamMembershipInfo, AuthRequest.teamMembership)
+
+
+------------------------------------------------------------------------------
+[x] PERM-023 — Estensione ownership connessioni: private, team e permessi
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: TEAM-022
+  Fase: 2 (Connection Permission Model)
+  COMPLETATO: Full permission model — permission.service.ts with canViewConnection/canManageConnection/canManageTeamResource/resolveEncryptionKey, connection.service.ts with teamId support and team vault key encryption, categorized listConnections (own/shared/team) with scope field, folder.service.ts with team folders, sharing.service.ts with TEAM_ADMIN checks for team connections, client API types updated with scope/teamId/teamName/teamRole
+
+  DESCRIZIONE:
+  Modificare il sistema di proprieta' delle connessioni per supportare
+  tre modalita': private (come oggi), team (visibili ai membri del team),
+  e il nuovo modello di permessi. Una connessione con teamId != null
+  e' una connessione del team: le sue credenziali sono cifrate con la
+  team vault key invece che con la chiave personale dell'utente.
+  Aggiornare tutti i service che leggono/scrivono connessioni per
+  rispettare il nuovo modello di permessi.
+
+  FILE COINVOLTI:
+    CREATO:  server/src/services/permission.service.ts
+    MODIFICATO: server/src/services/connection.service.ts
+    MODIFICATO: server/src/services/folder.service.ts
+    MODIFICATO: server/src/controllers/connections.controller.ts
+    MODIFICATO: server/src/services/sharing.service.ts
+    MODIFICATO: client/src/api/connections.api.ts (tipi aggiornati)
+
+
+------------------------------------------------------------------------------
+[x] DISC-024 — Ricerca utenti nel tenant/team per condivisione connessioni
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: TENANT-021
+  Fase: 3 (UX Migliorata)
+  COMPLETATO: Tenant-scoped user search endpoint (GET /api/user/search with ILIKE query, tenant isolation, team scope), reusable UserPicker component (MUI Autocomplete with 300ms debounce, avatar+name+email display), ShareDialog updated with conditional rendering (UserPicker for tenant users, email fallback for non-tenant), sharing service/controller updated to accept userId alongside email for backward compatibility, authStore extended with tenantId/tenantRole
+
+  DESCRIZIONE:
+  Sostituire l'attuale condivisione basata su inserimento manuale
+  dell'email con un sistema di ricerca/browse utenti all'interno del
+  proprio tenant e dei propri team. L'endpoint di ricerca restituisce
+  solo utenti dello stesso tenant (isolamento cross-tenant). Il dialog
+  di condivisione mostra un autocomplete con avatar, username ed email.
+
+  DETTAGLI TECNICI:
+  Backend:
+
+    Nuovo endpoint in user.routes.ts:
+      GET /api/users/search?q=...&scope=tenant|team&teamId=...
+        - q: query string, cerca in email e username (ILIKE)
+        - scope: "tenant" (tutti gli utenti del tenant) o "team" (solo team)
+        - Filtro automatico: solo utenti con tenantId == req.user.tenantId
+        - Esclude l'utente corrente dai risultati
+        - Ritorna: [{ id, email, username, avatarData }]
+        - Limit default: 10 risultati
+
+    server/src/services/user.service.ts:
+      - searchUsers(tenantId, query, scope?, teamId?)
+
+  Frontend:
+
+    Creare client/src/components/UserPicker.tsx (riutilizzabile):
+      - Autocomplete MUI con debounce (300ms)
+      - Mostra avatar + nome + email per ogni suggerimento
+      - Props: onSelect(user), scope, teamId?, placeholder
+
+    Aggiornare ShareDialog.tsx:
+      - Sostituire TextField email con UserPicker
+      - Toggle scope: "My Team" / "My Organization"
+      - Se utente non trovato: "User not found in your organization"
+
+    Aggiornare sharing.service.ts (backend):
+      - Accettare userId direttamente (non solo email)
+      - Mantenere supporto email per backward compatibility
+
+  FILE COINVOLTI:
+    CREATO:  client/src/components/UserPicker.tsx
+    MODIFICATO: server/src/routes/user.routes.ts (endpoint search + requireTenant middleware)
+    MODIFICATO: server/src/services/user.service.ts (searchUsers function)
+    MODIFICATO: server/src/controllers/user.controller.ts (search handler + Zod schema)
+    MODIFICATO: client/src/api/user.api.ts (searchUsers API call + UserSearchResult type)
+    MODIFICATO: client/src/components/Dialogs/ShareDialog.tsx (UserPicker, scope toggle, userId support)
+    MODIFICATO: server/src/services/sharing.service.ts (accept userId alongside email)
+    MODIFICATO: server/src/controllers/sharing.controller.ts (schema accepts email or userId)
+    MODIFICATO: client/src/api/sharing.api.ts (target object instead of email string)
+    MODIFICATO: client/src/store/authStore.ts (tenantId, tenantRole in User interface)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (teamId prop to ShareDialog)

@@ -48,3 +48,21 @@ export async function uploadAvatar(avatarData: string): Promise<{ id: string; av
   const res = await api.post('/user/avatar', { avatarData });
   return res.data;
 }
+
+export interface UserSearchResult {
+  id: string;
+  email: string;
+  username: string | null;
+  avatarData: string | null;
+}
+
+export async function searchUsers(
+  query: string,
+  scope: 'tenant' | 'team' = 'tenant',
+  teamId?: string
+): Promise<UserSearchResult[]> {
+  const params: Record<string, string> = { q: query, scope };
+  if (teamId) params.teamId = teamId;
+  const res = await api.get('/user/search', { params });
+  return res.data;
+}

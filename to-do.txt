@@ -207,60 +207,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] DISC-024 — Ricerca utenti nel tenant/team per condivisione connessioni
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: TENANT-021
-  Fase: 3 (UX Migliorata)
-
-  DESCRIZIONE:
-  Sostituire l'attuale condivisione basata su inserimento manuale
-  dell'email con un sistema di ricerca/browse utenti all'interno del
-  proprio tenant e dei propri team. L'endpoint di ricerca restituisce
-  solo utenti dello stesso tenant (isolamento cross-tenant). Il dialog
-  di condivisione mostra un autocomplete con avatar, username ed email.
-
-  DETTAGLI TECNICI:
-  Backend:
-
-    Nuovo endpoint in user.routes.ts:
-      GET /api/users/search?q=...&scope=tenant|team&teamId=...
-        - q: query string, cerca in email e username (ILIKE)
-        - scope: "tenant" (tutti gli utenti del tenant) o "team" (solo team)
-        - Filtro automatico: solo utenti con tenantId == req.user.tenantId
-        - Esclude l'utente corrente dai risultati
-        - Ritorna: [{ id, email, username, avatarData }]
-        - Limit default: 10 risultati
-
-    server/src/services/user.service.ts:
-      - searchUsers(tenantId, query, scope?, teamId?)
-
-  Frontend:
-
-    Creare client/src/components/UserPicker.tsx (riutilizzabile):
-      - Autocomplete MUI con debounce (300ms)
-      - Mostra avatar + nome + email per ogni suggerimento
-      - Props: onSelect(user), scope, teamId?, placeholder
-
-    Aggiornare ShareDialog.tsx:
-      - Sostituire TextField email con UserPicker
-      - Toggle scope: "My Team" / "My Organization"
-      - Se utente non trovato: "User not found in your organization"
-
-    Aggiornare sharing.service.ts (backend):
-      - Accettare userId direttamente (non solo email)
-      - Mantenere supporto email per backward compatibility
-
-  FILE COINVOLTI:
-    CREARE:  client/src/components/UserPicker.tsx
-    MODIFICARE: server/src/routes/user.routes.ts (endpoint search)
-    MODIFICARE: server/src/services/user.service.ts (searchUsers)
-    MODIFICARE: server/src/controllers/user.controller.ts
-    MODIFICARE: client/src/api/user.api.ts (searchUsers API call)
-    MODIFICARE: client/src/components/Dialogs/ShareDialog.tsx
-    MODIFICARE: server/src/services/sharing.service.ts (accettare userId)
-
 
 ------------------------------------------------------------------------------
 [ ] UI-025 — Frontend: gestione tenant, team e sidebar multi-scope
@@ -443,8 +389,8 @@
    23. TENANT-020  Schema multi-tenant (modelli Prisma)                   [COMPLETATO]
    24. TENANT-021  Backend CRUD tenant + onboarding                          [COMPLETATO]
    25. TEAM-022    Backend CRUD team + vault team                                [COMPLETATO]
-   26. PERM-023    Ownership connessioni + permessi team                          [IN CORSO]
-   27. DISC-024    Ricerca utenti per condivisione (parallelizzabile con 25)
+   26. PERM-023    Ownership connessioni + permessi team                          [COMPLETATO]
+   27. DISC-024    Ricerca utenti per condivisione (parallelizzabile con 25)       [COMPLETATO]
    28. UI-025      Frontend tenant/team/sidebar
    29. GUARD-026   Middleware sicurezza + test isolamento
 

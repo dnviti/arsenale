@@ -10,10 +10,10 @@ export interface ShareData {
 
 export async function shareConnection(
   connectionId: string,
-  email: string,
+  target: { email?: string; userId?: string },
   permission: 'READ_ONLY' | 'FULL_ACCESS'
 ) {
-  const res = await api.post(`/connections/${connectionId}/share`, { email, permission });
+  const res = await api.post(`/connections/${connectionId}/share`, { ...target, permission });
   return res.data;
 }
 

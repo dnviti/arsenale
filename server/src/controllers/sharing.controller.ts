@@ -6,9 +6,13 @@ import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 
 const shareSchema = z.object({
-  email: z.string().email(),
+  email: z.string().email().optional(),
+  userId: z.string().optional(),
   permission: z.enum(['READ_ONLY', 'FULL_ACCESS']),
-});
+}).refine(
+  (data) => data.email || data.userId,
+  { message: 'Either email or userId is required' }
+);
 
 const updatePermSchema = z.object({
   permission: z.enum(['READ_ONLY', 'FULL_ACCESS']),
@@ -16,17 +20,17 @@ const updatePermSchema = z.object({
 
 export async function share(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const { email, permission } = shareSchema.parse(req.body);
+    const { email, userId, permission } = shareSchema.parse(req.body);
     const result = await sharingService.shareConnection(
       req.user!.userId,
       req.params.id as string,
-      email,
+      { email, userId },
       permission
     );
     auditService.log({
       userId: req.user!.userId, action: 'SHARE_CONNECTION',
       targetType: 'Connection', targetId: req.params.id as string,
-      details: { sharedWith: email, permission },
+      details: { sharedWith: userId || email, permission },
       ipAddress: req.ip,
     });
     res.status(201).json(result);

@@ -225,6 +225,7 @@ export default function MainLayout() {
         onClose={() => setShareTarget(null)}
         connectionId={shareTarget?.id ?? ''}
         connectionName={shareTarget?.name ?? ''}
+        teamId={shareTarget?.teamId}
       />
       <ConnectAsDialog
         open={!!connectAsTarget}
