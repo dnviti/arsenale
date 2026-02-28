@@ -48,7 +48,7 @@ const updateSchema = z.object({
 export async function create(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const data = createSchema.parse(req.body);
-    const result = await connectionService.createConnection(req.user!.userId, data);
+    const result = await connectionService.createConnection(req.user!.userId, data, req.user!.tenantId);
     auditService.log({
       userId: req.user!.userId, action: 'CREATE_CONNECTION',
       targetType: 'Connection', targetId: result.id,
@@ -68,7 +68,8 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
     const result = await connectionService.updateConnection(
       req.user!.userId,
       req.params.id as string,
-      data
+      data,
+      req.user!.tenantId
     );
     auditService.log({
       userId: req.user!.userId, action: 'UPDATE_CONNECTION',
@@ -85,7 +86,7 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
 
 export async function remove(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await connectionService.deleteConnection(req.user!.userId, req.params.id as string);
+    const result = await connectionService.deleteConnection(req.user!.userId, req.params.id as string, req.user!.tenantId);
     auditService.log({
       userId: req.user!.userId, action: 'DELETE_CONNECTION',
       targetType: 'Connection', targetId: req.params.id as string,
@@ -99,7 +100,7 @@ export async function remove(req: AuthRequest, res: Response, next: NextFunction
 
 export async function getOne(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await connectionService.getConnection(req.user!.userId, req.params.id as string);
+    const result = await connectionService.getConnection(req.user!.userId, req.params.id as string, req.user!.tenantId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -108,7 +109,7 @@ export async function getOne(req: AuthRequest, res: Response, next: NextFunction
 
 export async function list(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await connectionService.listConnections(req.user!.userId);
+    const result = await connectionService.listConnections(req.user!.userId, req.user!.tenantId);
     res.json(result);
   } catch (err) {
     next(err);
@@ -117,7 +118,7 @@ export async function list(req: AuthRequest, res: Response, next: NextFunction) 
 
 export async function toggleFavorite(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await connectionService.toggleFavorite(req.user!.userId, req.params.id as string);
+    const result = await connectionService.toggleFavorite(req.user!.userId, req.params.id as string, req.user!.tenantId);
     res.json(result);
   } catch (err) {
     next(err);

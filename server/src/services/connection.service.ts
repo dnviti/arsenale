@@ -4,6 +4,7 @@ import { AppError } from '../middleware/error.middleware';
 import { resolveTeamKey } from './team.service';
 import * as permissionService from './permission.service';
 import { ROLE_HIERARCHY } from './permission.service';
+import { tenantScopedTeamFilter } from '../utils/tenantScope';
 
 function requireMasterKey(userId: string): Buffer {
   const key = getMasterKey(userId);
@@ -40,11 +41,11 @@ export interface UpdateConnectionInput {
   rdpSettings?: Prisma.InputJsonValue | null;
 }
 
-export async function createConnection(userId: string, input: CreateConnectionInput) {
+export async function createConnection(userId: string, input: CreateConnectionInput, tenantId?: string | null) {
   let encryptionKey: Buffer;
 
   if (input.teamId) {
-    const perm = await permissionService.canManageTeamResource(userId, input.teamId, 'TEAM_EDITOR');
+    const perm = await permissionService.canManageTeamResource(userId, input.teamId, 'TEAM_EDITOR', tenantId);
     if (!perm.allowed) throw new AppError('Insufficient team role to create connections', 403);
     encryptionKey = await resolveTeamKey(input.teamId, userId);
   } else {
@@ -96,9 +97,10 @@ export async function createConnection(userId: string, input: CreateConnectionIn
 export async function updateConnection(
   userId: string,
   connectionId: string,
-  input: UpdateConnectionInput
+  input: UpdateConnectionInput,
+  tenantId?: string | null
 ) {
-  const access = await permissionService.canManageConnection(userId, connectionId);
+  const access = await permissionService.canManageConnection(userId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   const connection = access.connection;
@@ -152,16 +154,16 @@ export async function updateConnection(
   };
 }
 
-export async function deleteConnection(userId: string, connectionId: string) {
-  const access = await permissionService.canManageConnection(userId, connectionId);
+export async function deleteConnection(userId: string, connectionId: string, tenantId?: string | null) {
+  const access = await permissionService.canManageConnection(userId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   await prisma.connection.delete({ where: { id: connectionId } });
   return { deleted: true };
 }
 
-export async function getConnection(userId: string, connectionId: string) {
-  const access = await permissionService.canViewConnection(userId, connectionId);
+export async function getConnection(userId: string, connectionId: string, tenantId?: string | null) {
+  const access = await permissionService.canViewConnection(userId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   const connection = access.connection;
@@ -231,7 +233,7 @@ export async function getConnection(userId: string, connectionId: string) {
   };
 }
 
-export async function listConnections(userId: string) {
+export async function listConnections(userId: string, tenantId?: string | null) {
   // Personal connections (exclude team connections)
   const ownConnections = await prisma.connection.findMany({
     where: { userId, teamId: null },
@@ -278,7 +280,7 @@ export async function listConnections(userId: string) {
 
   // Team connections
   const userTeamMemberships = await prisma.teamMember.findMany({
-    where: { userId },
+    where: { userId, ...tenantScopedTeamFilter(tenantId) },
     select: { teamId: true, role: true, team: { select: { name: true } } },
   });
 
@@ -339,9 +341,10 @@ export async function listConnections(userId: string) {
 
 export async function getConnectionCredentials(
   userId: string,
-  connectionId: string
+  connectionId: string,
+  tenantId?: string | null
 ): Promise<{ username: string; password: string }> {
-  const access = await permissionService.canViewConnection(userId, connectionId);
+  const access = await permissionService.canViewConnection(userId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found or credentials unavailable', 404);
 
   const connection = access.connection;
@@ -397,8 +400,8 @@ export async function getConnectionCredentials(
   throw new AppError('Connection not found or credentials unavailable', 404);
 }
 
-export async function toggleFavorite(userId: string, connectionId: string) {
-  const access = await permissionService.canViewConnection(userId, connectionId);
+export async function toggleFavorite(userId: string, connectionId: string, tenantId?: string | null) {
+  const access = await permissionService.canViewConnection(userId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   if (access.accessType === 'shared') {

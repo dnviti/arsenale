@@ -19,7 +19,7 @@ const updateSchema = z.object({
 export async function create(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const { name, parentId, teamId } = createSchema.parse(req.body);
-    const result = await folderService.createFolder(req.user!.userId, name, parentId, teamId);
+    const result = await folderService.createFolder(req.user!.userId, name, parentId, teamId, req.user!.tenantId);
     auditService.log({
       userId: req.user!.userId, action: 'CREATE_FOLDER',
       targetType: 'Folder', targetId: result.id,
@@ -36,7 +36,7 @@ export async function create(req: AuthRequest, res: Response, next: NextFunction
 export async function update(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const data = updateSchema.parse(req.body);
-    const result = await folderService.updateFolder(req.user!.userId, req.params.id as string, data);
+    const result = await folderService.updateFolder(req.user!.userId, req.params.id as string, data, req.user!.tenantId);
     auditService.log({
       userId: req.user!.userId, action: 'UPDATE_FOLDER',
       targetType: 'Folder', targetId: req.params.id as string,
@@ -52,7 +52,7 @@ export async function update(req: AuthRequest, res: Response, next: NextFunction
 
 export async function remove(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await folderService.deleteFolder(req.user!.userId, req.params.id as string);
+    const result = await folderService.deleteFolder(req.user!.userId, req.params.id as string, req.user!.tenantId);
     auditService.log({
       userId: req.user!.userId, action: 'DELETE_FOLDER',
       targetType: 'Folder', targetId: req.params.id as string,
@@ -66,7 +66,7 @@ export async function remove(req: AuthRequest, res: Response, next: NextFunction
 
 export async function list(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await folderService.getFolderTree(req.user!.userId);
+    const result = await folderService.getFolderTree(req.user!.userId, req.user!.tenantId);
     res.json(result);
   } catch (err) {
     next(err);

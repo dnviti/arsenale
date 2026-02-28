@@ -24,7 +24,7 @@ router.use(authenticate);
 router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { connectionId, username: overrideUser, password: overridePass } = sessionSchema.parse(req.body);
-    const conn = await getConnection(req.user!.userId, connectionId);
+    const conn = await getConnection(req.user!.userId, connectionId, req.user!.tenantId);
 
     if (conn.type !== 'RDP') {
       throw new AppError('Not an RDP connection', 400);
@@ -36,7 +36,7 @@ router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) 
       username = overrideUser;
       password = overridePass;
     } else {
-      const creds = await getConnectionCredentials(req.user!.userId, connectionId);
+      const creds = await getConnectionCredentials(req.user!.userId, connectionId, req.user!.tenantId);
       username = creds.username;
       password = creds.password;
     }
@@ -75,7 +75,7 @@ router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) 
 router.post('/ssh', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { connectionId } = sessionSchema.parse(req.body);
-    const conn = await getConnection(req.user!.userId, connectionId);
+    const conn = await getConnection(req.user!.userId, connectionId, req.user!.tenantId);
 
     if (conn.type !== 'SSH') {
       throw new AppError('Not an SSH connection', 400);

@@ -10,9 +10,10 @@ export async function shareConnection(
   actingUserId: string,
   connectionId: string,
   target: { email?: string; userId?: string },
-  permission: Permission
+  permission: Permission,
+  tenantId?: string | null
 ) {
-  const access = await permissionService.canManageConnection(actingUserId, connectionId);
+  const access = await permissionService.canManageConnection(actingUserId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   const connection = access.connection;
@@ -33,13 +34,17 @@ export async function shareConnection(
     throw new AppError('Cannot share with yourself', 400);
   }
 
-  // Tenant boundary check
+  // Tenant boundary check (bidirectional)
   const actingUser = await prisma.user.findUnique({
     where: { id: actingUserId },
     select: { tenantId: true },
   });
-  if (actingUser?.tenantId && targetUser.tenantId !== actingUser.tenantId) {
-    throw new AppError('Cannot share with users outside your organization', 400);
+  const actingTenantId = actingUser?.tenantId ?? null;
+  const targetTenantId = targetUser.tenantId ?? null;
+  if (actingTenantId || targetTenantId) {
+    if (actingTenantId !== targetTenantId) {
+      throw new AppError('Cannot share with users outside your organization', 400);
+    }
   }
 
   // Get target user's master key (they must have their vault unlocked)
@@ -148,9 +153,10 @@ export async function shareConnection(
 export async function unshareConnection(
   actingUserId: string,
   connectionId: string,
-  targetUserId: string
+  targetUserId: string,
+  tenantId?: string | null
 ) {
-  const access = await permissionService.canManageConnection(actingUserId, connectionId);
+  const access = await permissionService.canManageConnection(actingUserId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   const connection = access.connection;
@@ -194,9 +200,10 @@ export async function updateSharePermission(
   actingUserId: string,
   connectionId: string,
   targetUserId: string,
-  permission: Permission
+  permission: Permission,
+  tenantId?: string | null
 ) {
-  const access = await permissionService.canManageConnection(actingUserId, connectionId);
+  const access = await permissionService.canManageConnection(actingUserId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   const connection = access.connection;
@@ -243,8 +250,8 @@ export async function updateSharePermission(
   return result;
 }
 
-export async function listShares(actingUserId: string, connectionId: string) {
-  const access = await permissionService.canManageConnection(actingUserId, connectionId);
+export async function listShares(actingUserId: string, connectionId: string, tenantId?: string | null) {
+  const access = await permissionService.canManageConnection(actingUserId, connectionId, tenantId);
   if (!access.allowed) throw new AppError('Connection not found', 404);
 
   const connection = access.connection;

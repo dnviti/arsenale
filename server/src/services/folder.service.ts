@@ -1,15 +1,17 @@
 import prisma from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
 import * as permissionService from './permission.service';
+import { tenantScopedTeamFilter } from '../utils/tenantScope';
 
 export async function createFolder(
   userId: string,
   name: string,
   parentId?: string,
-  teamId?: string
+  teamId?: string,
+  tenantId?: string | null
 ) {
   if (teamId) {
-    const perm = await permissionService.canManageTeamResource(userId, teamId, 'TEAM_EDITOR');
+    const perm = await permissionService.canManageTeamResource(userId, teamId, 'TEAM_EDITOR', tenantId);
     if (!perm.allowed) throw new AppError('Insufficient team role to create folders', 403);
   }
 
@@ -36,9 +38,10 @@ export async function createFolder(
 export async function updateFolder(
   userId: string,
   folderId: string,
-  data: { name?: string; parentId?: string | null }
+  data: { name?: string; parentId?: string | null },
+  tenantId?: string | null
 ) {
-  const access = await permissionService.canManageFolder(userId, folderId);
+  const access = await permissionService.canManageFolder(userId, folderId, tenantId);
   if (!access.allowed) throw new AppError('Folder not found', 404);
 
   const folder = access.folder;
@@ -66,8 +69,8 @@ export async function updateFolder(
   });
 }
 
-export async function deleteFolder(userId: string, folderId: string) {
-  const access = await permissionService.canManageFolder(userId, folderId);
+export async function deleteFolder(userId: string, folderId: string, tenantId?: string | null) {
+  const access = await permissionService.canManageFolder(userId, folderId, tenantId);
   if (!access.allowed) throw new AppError('Folder not found', 404);
 
   const folder = access.folder;
@@ -97,7 +100,7 @@ export async function deleteFolder(userId: string, folderId: string) {
   return { deleted: true };
 }
 
-export async function getFolderTree(userId: string) {
+export async function getFolderTree(userId: string, tenantId?: string | null) {
   // Personal folders
   const personalFolders = await prisma.folder.findMany({
     where: { userId, teamId: null },
@@ -106,7 +109,7 @@ export async function getFolderTree(userId: string) {
 
   // Team folders
   const teamMemberships = await prisma.teamMember.findMany({
-    where: { userId },
+    where: { userId, ...tenantScopedTeamFilter(tenantId) },
     select: { teamId: true, team: { select: { name: true } } },
   });
 

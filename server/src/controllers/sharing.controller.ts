@@ -25,7 +25,8 @@ export async function share(req: AuthRequest, res: Response, next: NextFunction)
       req.user!.userId,
       req.params.id as string,
       { email, userId },
-      permission
+      permission,
+      req.user!.tenantId
     );
     auditService.log({
       userId: req.user!.userId, action: 'SHARE_CONNECTION',
@@ -45,7 +46,8 @@ export async function unshare(req: AuthRequest, res: Response, next: NextFunctio
     const result = await sharingService.unshareConnection(
       req.user!.userId,
       req.params.id as string,
-      req.params.userId as string
+      req.params.userId as string,
+      req.user!.tenantId
     );
     auditService.log({
       userId: req.user!.userId, action: 'UNSHARE_CONNECTION',
@@ -66,7 +68,8 @@ export async function updatePermission(req: AuthRequest, res: Response, next: Ne
       req.user!.userId,
       req.params.id as string,
       req.params.userId as string,
-      permission
+      permission,
+      req.user!.tenantId
     );
     auditService.log({
       userId: req.user!.userId, action: 'UPDATE_SHARE_PERMISSION',
@@ -83,7 +86,7 @@ export async function updatePermission(req: AuthRequest, res: Response, next: Ne
 
 export async function listShares(req: AuthRequest, res: Response, next: NextFunction) {
   try {
-    const result = await sharingService.listShares(req.user!.userId, req.params.id as string);
+    const result = await sharingService.listShares(req.user!.userId, req.params.id as string, req.user!.tenantId);
     res.json(result);
   } catch (err) {
     next(err);

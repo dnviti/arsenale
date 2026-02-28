@@ -86,7 +86,7 @@ export function setupSshHandler(io: Server) {
           return;
         }
 
-        const conn = await getConnection(user.userId, data.connectionId);
+        const conn = await getConnection(user.userId, data.connectionId, user.tenantId);
         if (conn.type !== 'SSH') {
           socket.emit('session:error', { message: 'Not an SSH connection' });
           return;
@@ -98,7 +98,7 @@ export function setupSshHandler(io: Server) {
           username = data.username;
           password = data.password;
         } else {
-          const creds = await getConnectionCredentials(user.userId, data.connectionId);
+          const creds = await getConnectionCredentials(user.userId, data.connectionId, user.tenantId);
           username = creds.username;
           password = creds.password;
         }
