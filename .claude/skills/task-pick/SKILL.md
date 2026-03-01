@@ -28,7 +28,7 @@ Tasks are split across three files by status:
 !`grep '^\[x\]' done.txt 2>/dev/null | tr -d '\r'`
 
 ### Recommended implementation order:
-!`sed -n '/ORDINE DI IMPLEMENTAZIONE CONSIGLIATO/,/NOTE/p' to-do.txt | head -40 | tr -d '\r'`
+!`grep -A 50 'ORDINE DI IMPLEMENTAZIONE CONSIGLIATO' to-do.txt 2>/dev/null | tr -d '\r'`
 
 ## Instructions
 
@@ -84,14 +84,9 @@ Perform these verification checks:
      - Fix ALL errors and warnings reported
      - Re-run `npm run verify` (or `npm run build`) until it passes with zero errors
      - Only proceed to step 2 when the quality gate passes
-  2. **Commit Prompt (Step 6):** Ask the user if they want to commit the changes before closing the task. Wait for their response and act accordingly.
-  3. Remove the entire task block from `progressing.txt` (everything between its `------` separators, inclusive)
-  4. Append the task block to `done.txt` at the end of the appropriate section (SEZIONE A or SEZIONE B, matching where it was in progressing.txt)
-  5. In the appended block: change `[~]` to `[x]` in the header line
-  6. Add a `COMPLETATO:` line after the priority/dependencies lines with a brief English summary of what was implemented
-  7. If the task appears in the recommended order section of `to-do.txt`, update its status annotation to `[COMPLETATO]`
-  8. Present the verification report to the user (including SAST/quality gate result) and confirm the task was closed
-  9. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
+  2. Present the verification report to the user (including SAST/quality gate result)
+  3. **Run the Step 6 completion flow** (Confirm → Close → Commit) for this task
+  4. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
 
 - **Some checks fail (task partially implemented or not implemented):**
   1. Present the verification report showing what is implemented and what is missing
@@ -151,13 +146,45 @@ After presenting the briefing, ask the user: "Ready to start implementation, or 
 
 ---
 
-### Step 6: Post-Implementation — Commit Prompt
+### Step 6: Post-Implementation — Confirm, Close & Commit
 
-After a task has been **fully implemented and the quality gate passes**, before closing the task (Step 0c), ask the user:
+After a task has been **fully implemented and the quality gate (`npm run verify`) passes**, execute this completion flow:
 
-> "Work is complete and the quality gate passed. Would you like me to commit these changes?"
+**6a. Ask for user confirmation:**
 
-- If the user says **yes**: create a commit using the `/commit` skill (or follow the standard git commit workflow). The commit message should reference the task code and briefly describe what was implemented.
-- If the user says **no** or **not now**: skip the commit and proceed with closing the task as normal.
+Present a summary of what was done and ask the user to confirm:
 
-**Important:** Always ask — never auto-commit without user confirmation.
+> "Implementation of **[TASK-CODE] — [Task Title]** is complete and the quality gate passed.
+>
+> **Summary of work done:**
+> - [brief list of what was created/modified]
+>
+> Can you confirm this task is done?"
+
+Use `AskUserQuestion` with options:
+- **"Yes, task is done"** — proceed to 6b
+- **"Not yet, needs more work"** — stop the completion flow; the task stays as `[~]` in `progressing.txt`
+
+**6b. Move task to done.txt (automatic on confirmation):**
+
+Once the user confirms the work is done:
+
+1. Read the full task block from `progressing.txt` (everything between its `------` separator lines, inclusive)
+2. Remove the entire task block from `progressing.txt`
+3. Append the task block to `done.txt` at the end of the appropriate section (SEZIONE A, B, C, or D — matching where it was in `progressing.txt`)
+4. In the appended block: change `[~]` to `[x]` in the header line
+5. Add a `COMPLETATO:` line after the priority/dependencies lines with a brief English summary of what was implemented
+6. If the task appears in the recommended order section of `to-do.txt`, update its status annotation to `[COMPLETATO]`
+7. Inform the user: "Task [TASK-CODE] has been moved to done.txt."
+
+**6c. Ask to commit:**
+
+After closing the task, ask the user:
+
+> "Would you like me to commit these changes?"
+
+Use `AskUserQuestion` with options:
+- **"Yes, commit"** — create a commit using the `/commit` skill (or follow the standard git commit workflow). The commit message should reference the task code and briefly describe what was implemented.
+- **"No, skip commit"** — skip the commit; done.
+
+**Important:** Always ask — never auto-commit or auto-close without user confirmation.
