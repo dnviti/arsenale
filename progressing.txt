@@ -15,51 +15,7 @@
 ================================================================================
 
 
-------------------------------------------------------------------------------
-[~] SSHUI-028 — Sincronizzazione automatica tema terminale SSH con tema WebUI
-------------------------------------------------------------------------------
-  Priorita: BASSA
-  Dipendenze: SSHUI-027 (completato), THEME-011 (completato)
 
-  DESCRIZIONE:
-  Aggiungere un'opzione "Sync theme with WebUI" nelle impostazioni del terminale
-  SSH che, quando attiva, cambia automaticamente il tema del terminale in base
-  al tema light/dark scelto dall'utente per la WebUI. Quando il tema WebUI e'
-  light, il terminale usa un tema chiaro (es. solarized-light); quando e' dark,
-  usa un tema scuro (es. default-dark). L'utente puo' comunque scegliere
-  manualmente un tema diverso disattivando lo switch (comportamento attuale
-  invariato).
-
-  DETTAGLI TECNICI:
-  Frontend:
-    - Estendere SshTerminalConfig in client/src/constants/terminalThemes.ts:
-      aggiungere campo syncThemeWithWebUI?: boolean (default false)
-    - Aggiungere due campi opzionali per i preset da usare:
-      syncLightTheme?: string (default 'solarized-light')
-      syncDarkTheme?: string (default 'default-dark')
-    - TerminalSettingsSection.tsx: aggiungere switch "Sync theme with WebUI"
-      - Quando attivo: mostrare dropdown per scegliere il preset light e dark
-      - Quando attivo: disabilitare/nascondere il selettore tema manuale
-      - Quando disattivo: comportamento attuale (scelta manuale tema)
-    - SshTerminal.tsx: nel calcolo del tema effettivo, se syncThemeWithWebUI
-      e' true, leggere il mode da useThemeStore e applicare il preset
-      corrispondente (syncLightTheme o syncDarkTheme) al posto del tema
-      manuale
-    - mergeTerminalConfig(): rispettare la gerarchia esistente
-      (defaults -> user globals -> connection overrides)
-    - Aggiornare la live preview in TerminalSettingsSection per riflettere
-      il tema sincronizzato quando lo switch e' attivo
-  Backend:
-    - Nessuna modifica strutturale: i nuovi campi (syncThemeWithWebUI,
-      syncLightTheme, syncDarkTheme) transitano come JSON nei campi
-      User.sshDefaults e Connection.sshTerminalConfig gia' esistenti
-    - Aggiornare la validazione Zod in user.controller.ts per accettare
-      i nuovi campi opzionali
-  File coinvolti:
-    MODIFICARE: client/src/constants/terminalThemes.ts
-    MODIFICARE: client/src/components/Settings/TerminalSettingsSection.tsx
-    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
-    MODIFICARE: server/src/controllers/user.controller.ts
 
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI

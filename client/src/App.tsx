@@ -4,11 +4,6 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ConnectionViewerPage from './pages/ConnectionViewerPage';
-import SettingsPage from './pages/SettingsPage';
-import TenantSettingsPage from './pages/TenantSettingsPage';
-import TeamManagementPage from './pages/TeamManagementPage';
-import GatewayList from './components/gateway/GatewayList';
-import AuditLogPage from './pages/AuditLogPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import VaultSetupPage from './pages/VaultSetupPage';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
@@ -65,46 +60,6 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ConnectionViewerPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <SettingsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings/tenant"
-        element={
-          <ProtectedRoute>
-            <TenantSettingsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings/teams"
-        element={
-          <ProtectedRoute>
-            <TeamManagementPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings/gateways"
-        element={
-          <ProtectedRoute>
-            <GatewayList />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/audit-log"
-        element={
-          <ProtectedRoute>
-            <AuditLogPage />
           </ProtectedRoute>
         }
       />

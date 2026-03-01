@@ -770,6 +770,54 @@
     MODIFICARE: .env.example
 
 
+------------------------------------------------------------------------------
+[x] SSHUI-028 — Sincronizzazione automatica tema terminale SSH con tema WebUI
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: SSHUI-027 (completato), THEME-011 (completato)
+  COMPLETATO: Added syncThemeWithWebUI toggle, syncLightTheme/syncDarkTheme presets to SshTerminalConfig. TerminalSettingsSection shows sync switch with light/dark preset dropdowns. SshTerminal dynamically syncs theme with WebUI light/dark mode via useThemeStore. Zod validation updated in user.controller.ts.
+
+  DESCRIZIONE:
+  Aggiungere un'opzione "Sync theme with WebUI" nelle impostazioni del terminale
+  SSH che, quando attiva, cambia automaticamente il tema del terminale in base
+  al tema light/dark scelto dall'utente per la WebUI. Quando il tema WebUI e'
+  light, il terminale usa un tema chiaro (es. solarized-light); quando e' dark,
+  usa un tema scuro (es. default-dark). L'utente puo' comunque scegliere
+  manualmente un tema diverso disattivando lo switch (comportamento attuale
+  invariato).
+
+  DETTAGLI TECNICI:
+  Frontend:
+    - Estendere SshTerminalConfig in client/src/constants/terminalThemes.ts:
+      aggiungere campo syncThemeWithWebUI?: boolean (default false)
+    - Aggiungere due campi opzionali per i preset da usare:
+      syncLightTheme?: string (default 'solarized-light')
+      syncDarkTheme?: string (default 'default-dark')
+    - TerminalSettingsSection.tsx: aggiungere switch "Sync theme with WebUI"
+      - Quando attivo: mostrare dropdown per scegliere il preset light e dark
+      - Quando attivo: disabilitare/nascondere il selettore tema manuale
+      - Quando disattivo: comportamento attuale (scelta manuale tema)
+    - SshTerminal.tsx: nel calcolo del tema effettivo, se syncThemeWithWebUI
+      e' true, leggere il mode da useThemeStore e applicare il preset
+      corrispondente (syncLightTheme o syncDarkTheme) al posto del tema
+      manuale
+    - mergeTerminalConfig(): rispettare la gerarchia esistente
+      (defaults -> user globals -> connection overrides)
+    - Aggiornare la live preview in TerminalSettingsSection per riflettere
+      il tema sincronizzato quando lo switch e' attivo
+  Backend:
+    - Nessuna modifica strutturale: i nuovi campi (syncThemeWithWebUI,
+      syncLightTheme, syncDarkTheme) transitano come JSON nei campi
+      User.sshDefaults e Connection.sshTerminalConfig gia' esistenti
+    - Aggiornare la validazione Zod in user.controller.ts per accettare
+      i nuovi campi opzionali
+  File coinvolti:
+    MODIFICARE: client/src/constants/terminalThemes.ts
+    MODIFICARE: client/src/components/Settings/TerminalSettingsSection.tsx
+    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
+    MODIFICARE: server/src/controllers/user.controller.ts
+
+
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI
 ================================================================================
@@ -1096,3 +1144,30 @@
     MODIFICATO: client/src/pages/SettingsPage.tsx (Manage Gateways nav button)
     MODIFICATO: server/src/controllers/connections.controller.ts (gatewayId in Zod schemas)
     MODIFICATO: server/src/services/connection.service.ts (gatewayId in create/update)
+
+
+------------------------------------------------------------------------------
+[x] UI-046 — Refactoring Settings page: tabbed category layout
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Converted all settings and activity log pages into full-screen modal dialogs rendered from MainLayout — user never leaves the main page. SettingsDialog with 7 tabs (Profile, Connections, Security, Organization, Teams, Gateways, Administration) using vertical MUI Tabs with responsive mobile layout. AuditLogDialog with filters/table/pagination. Extracted TenantSection, TeamSection, GatewaySection from their former page components. Removed 5 routes from App.tsx, deleted 6 dead files (SettingsPage, TenantSettingsPage, TeamManagementPage, AuditLogPage, OrganizationSection, GatewayList). Tab state persisted via uiPreferencesStore. OAuth link redirect handled via useState initializers.
+
+  FILE COINVOLTI:
+    CREATO:     client/src/components/Settings/TenantSection.tsx
+    CREATO:     client/src/components/Settings/TeamSection.tsx
+    CREATO:     client/src/components/Settings/GatewaySection.tsx
+    CREATO:     client/src/components/Dialogs/SettingsDialog.tsx
+    CREATO:     client/src/components/Dialogs/AuditLogDialog.tsx
+    CREATO:     client/src/components/Settings/ProfileSection.tsx
+    CREATO:     client/src/components/Settings/ChangePasswordSection.tsx
+    CREATO:     client/src/components/Settings/ConnectionDefaultsSection.tsx
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (dialog state, OAuth URL handling)
+    MODIFICATO: client/src/App.tsx (removed 5 routes)
+    MODIFICATO: client/src/store/uiPreferencesStore.ts (settingsActiveTab)
+    ELIMINATO:  client/src/pages/SettingsPage.tsx
+    ELIMINATO:  client/src/pages/TenantSettingsPage.tsx
+    ELIMINATO:  client/src/pages/TeamManagementPage.tsx
+    ELIMINATO:  client/src/pages/AuditLogPage.tsx
+    ELIMINATO:  client/src/components/Settings/OrganizationSection.tsx
+    ELIMINATO:  client/src/components/gateway/GatewayList.tsx

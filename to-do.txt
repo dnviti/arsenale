@@ -17,56 +17,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] UI-046 — Refactoring Settings page: tabbed category layout
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: Nessuna (tutti i componenti sezione esistono gia')
-
-  DESCRIZIONE:
-  Rifattorizzare la SettingsPage da una singola colonna scrollabile (maxWidth
-  700px) a un layout wide con tab verticali sulla sinistra. Una lista di tab
-  permette di navigare tra categorie (Profile, Connections, Security,
-  Organization, Administration). Ogni tab mostra solo le impostazioni della
-  sua categoria. I componenti sezione esistenti vengono riutilizzati, non
-  riscritti. Il tab attivo viene persistito in uiPreferencesStore e
-  sincronizzato con il query parameter ?tab= nell'URL per direct linking.
-
-  DETTAGLI TECNICI:
-  Frontend:
-    - Layout: Box flex row con sidebar sinistra (~220px) contenente MUI Tabs
-      (orientation="vertical") e area contenuto a destra (flex: 1, overflow: auto)
-    - Tab categories:
-      1. "Profile" (PersonIcon) -> ProfileSection + ChangePasswordSection
-      2. "Connections" (TerminalIcon) -> ConnectionDefaultsSection (SSH + RDP)
-      3. "Security" (ShieldIcon) -> TwoFactorSection + SmsMfaSection
-                                    + LinkedAccountsSection
-      4. "Organization" (BusinessIcon) -> OrganizationSection
-      5. "Administration" (AdminPanelSettingsIcon) -> EmailProviderSection
-         (tab visibile solo a OWNER/ADMIN, nascosto per utenti normali)
-    - Estrarre 4 nuovi componenti dalla JSX inline di SettingsPage:
-      - ProfileSection.tsx: avatar, username, email, gestione ?linked= param
-      - ChangePasswordSection.tsx: form cambio password (prop hasPassword)
-      - OrganizationSection.tsx: pulsanti navigazione tenant/teams/gateways
-      - ConnectionDefaultsSection.tsx: card SSH defaults + RDP defaults con
-        rispettivi save button e store (terminalSettingsStore, rdpSettingsStore)
-    - Riutilizzare i 4 componenti sezione esistenti senza modifiche:
-      TerminalSettingsSection, RdpSettingsSection, TwoFactorSection,
-      SmsMfaSection, LinkedAccountsSection, EmailProviderSection
-    - Persistenza tab attivo: aggiungere settingsActiveTab (default 'profile')
-      a uiPreferencesStore; sincronizzare con ?tab= URL query param
-    - Rimuovere maxWidth: 700 dal contenuto; area contenuto usa maxWidth: 900
-      per evitare stretching eccessivo su schermi ultrawide
-    - Responsive: su schermi < 768px, switch a tab orizzontali in alto
-      (useMediaQuery di MUI)
-  File coinvolti:
-    CREARE:     client/src/components/Settings/ProfileSection.tsx
-    CREARE:     client/src/components/Settings/ChangePasswordSection.tsx
-    CREARE:     client/src/components/Settings/OrganizationSection.tsx
-    CREARE:     client/src/components/Settings/ConnectionDefaultsSection.tsx
-    MODIFICARE: client/src/pages/SettingsPage.tsx (refactor maggiore)
-    MODIFICARE: client/src/store/uiPreferencesStore.ts (aggiungere settingsActiveTab)
-
 
 ------------------------------------------------------------------------------
 [ ] TABS-047 — Persistenza automatica tab aperti (server-side, cross-device)
@@ -876,6 +826,640 @@
 
 
 ================================================================================
+  SEZIONE F — PASSWORD KEYCHAIN / SECRET VAULT
+================================================================================
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-053 — Modelli Prisma e servizio CRUD backend per i secrets del keychain
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Fondazione del sistema Password Keychain / Secret Vault. Creare i modelli
+  Prisma per i secrets (multi-tipo, multi-scope), il concetto di "tenant key"
+  (analogo al team key ma a livello tenant), il versionamento dei secrets, e
+  il servizio backend CRUD con supporto crittografico completo.
+
+  I secrets supportano cinque tipi: Login (username+password), SSH Key
+  (chiave privata/pubblica+passphrase), Certificate (X.509 PEM + chain),
+  API Key/Token (stringa segreta + metadata), Secure Note (testo libero
+  cifrato). Ogni secret appartiene a uno dei tre scope: PERSONAL (cifrato
+  con master key utente), TEAM (cifrato con team key), TENANT (cifrato con
+  una nuova "tenant key" distribuita per-membro come le team key).
+
+  Il tenant key e' una chiave AES-256 generata alla prima creazione di un
+  secret tenant-scope (o tramite azione esplicita dell'OWNER/ADMIN). La
+  chiave viene cifrata con la master key di ogni utente del tenant e salvata
+  in una nuova tabella TenantVaultMember. Al login di nuovi utenti la chiave
+  viene distribuita dall'admin.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Nuovo enum SecretType:
+        enum SecretType {
+          LOGIN
+          SSH_KEY
+          CERTIFICATE
+          API_KEY
+          SECURE_NOTE
+        }
+    - Nuovo enum SecretScope:
+        enum SecretScope {
+          PERSONAL
+          TEAM
+          TENANT
+        }
+    - Nuovo modello VaultSecret:
+        model VaultSecret {
+          id          String      @id @default(uuid())
+          name        String
+          description String?
+          type        SecretType
+          scope       SecretScope
+          userId      String                // creator
+          teamId      String?               // se scope=TEAM
+          tenantId    String?               // se scope=TEAM o TENANT
+          folderId    String?               // opzionale, VaultFolder
+          encryptedData   String            // JSON cifrato con tutti i campi
+          dataIV          String
+          dataTag         String
+          metadata    Json?                 // metadata non cifrato (es. URL per API_KEY)
+          tags        String[]    @default([])
+          isFavorite  Boolean     @default(false)
+          expiresAt   DateTime?             // scadenza opzionale
+          currentVersion  Int     @default(1)
+          createdAt   DateTime    @default(now())
+          updatedAt   DateTime    @updatedAt
+
+          user    User    @relation("VaultSecretOwner", fields: [userId], references: [id])
+          team    Team?   @relation(fields: [teamId], references: [id])
+          tenant  Tenant? @relation(fields: [tenantId], references: [id])
+          folder  VaultFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+          versions VaultSecretVersion[]
+          shares   SharedSecret[]
+          connections Connection[] @relation("ConnectionVaultSecret")
+
+          @@index([userId, scope])
+          @@index([teamId])
+          @@index([tenantId, scope])
+          @@index([expiresAt])
+        }
+    - Nuovo modello VaultSecretVersion:
+        model VaultSecretVersion {
+          id            String   @id @default(uuid())
+          secretId      String
+          version       Int
+          encryptedData String
+          dataIV        String
+          dataTag       String
+          changedBy     String   // userId che ha fatto la modifica
+          changeNote    String?
+          createdAt     DateTime @default(now())
+
+          secret  VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+          changer User        @relation("SecretVersionChanger", fields: [changedBy], references: [id])
+
+          @@unique([secretId, version])
+          @@index([secretId])
+        }
+    - Nuovo modello VaultFolder:
+        model VaultFolder {
+          id        String   @id @default(uuid())
+          name      String
+          parentId  String?
+          userId    String
+          scope     SecretScope
+          teamId    String?
+          tenantId  String?
+          sortOrder Int      @default(0)
+          createdAt DateTime @default(now())
+          updatedAt DateTime @updatedAt
+
+          parent    VaultFolder?  @relation("VaultFolderTree", fields: [parentId], references: [id])
+          children  VaultFolder[] @relation("VaultFolderTree")
+          user      User          @relation(fields: [userId], references: [id])
+          team      Team?         @relation(fields: [teamId], references: [id])
+          secrets   VaultSecret[]
+        }
+    - Nuovo modello TenantVaultMember (distribuzione tenant key):
+        model TenantVaultMember {
+          id                       String   @id @default(uuid())
+          tenantId                 String
+          userId                   String
+          encryptedTenantVaultKey  String
+          tenantVaultKeyIV         String
+          tenantVaultKeyTag        String
+          createdAt                DateTime @default(now())
+
+          tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+          user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+          @@unique([tenantId, userId])
+        }
+    - Aggiungere campo hasTenantVaultKey Boolean @default(false) a Tenant
+    - Aggiungere relazioni in User:
+        vaultSecrets        VaultSecret[]         @relation("VaultSecretOwner")
+        secretVersions      VaultSecretVersion[]  @relation("SecretVersionChanger")
+        vaultFolders        VaultFolder[]
+        tenantVaultMembership TenantVaultMember[]
+    - Aggiungere relazioni in Team:
+        vaultSecrets  VaultSecret[]
+        vaultFolders  VaultFolder[]
+    - Aggiungere relazioni in Tenant:
+        vaultSecrets        VaultSecret[]
+        tenantVaultMembers  TenantVaultMember[]
+    - Aggiungere a AuditAction enum:
+        SECRET_CREATE, SECRET_READ, SECRET_UPDATE, SECRET_DELETE,
+        SECRET_SHARE, SECRET_UNSHARE, SECRET_EXTERNAL_SHARE,
+        SECRET_EXTERNAL_ACCESS, SECRET_VERSION_RESTORE,
+        TENANT_VAULT_INIT, TENANT_VAULT_KEY_DISTRIBUTE
+    - Eseguire migrazione Prisma
+
+  Tipi TypeScript (server/src/types/index.ts):
+    - Aggiungere interface SecretPayload (tipo unione discriminata):
+        LoginSecretData: { type: 'LOGIN', username, password, url?, notes? }
+        SshKeySecretData: { type: 'SSH_KEY', privateKey (PEM), publicKey?,
+          passphrase?, algorithm?, notes? }
+        CertificateSecretData: { type: 'CERTIFICATE', certificate (PEM X.509),
+          privateKey (PEM), chain?, passphrase?, expiresAt?, notes? }
+        ApiKeySecretData: { type: 'API_KEY', apiKey, endpoint?, headers?, notes? }
+        SecureNoteSecretData: { type: 'SECURE_NOTE', content }
+
+  Servizio crypto.service.ts — nuove funzioni per tenant key:
+    - Nuovo in-memory store: tenantVaultStore Map<string, { tenantKey, expiresAt }>
+      (chiave = "${tenantId}:${userId}", stesso pattern di teamVaultStore)
+    - generateTenantMasterKey(): Buffer
+    - encryptTenantKey(tenantKey, userMasterKey): EncryptedField
+    - decryptTenantKey(encryptedField, userMasterKey): Buffer
+    - storeTenantVaultSession(tenantId, userId, tenantKey): void
+    - getTenantMasterKey(tenantId, userId): Buffer | null
+    - lockTenantVault(tenantId): void
+    - lockUserTenantVaults(userId): void
+    - Aggiornare cleanup interval e lockVault() per includere tenant sessions
+
+  Nuovo servizio secret.service.ts:
+    - resolveSecretEncryptionKey(userId, scope, teamId?, tenantId?): Promise<Buffer>
+        PERSONAL -> getMasterKey(userId)
+        TEAM -> resolveTeamKey(teamId, userId)
+        TENANT -> resolveTenantKey(tenantId, userId)
+    - resolveTenantKey(tenantId, userId): Promise<Buffer>
+        Try cache -> load from TenantVaultMember -> decrypt -> cache
+    - initTenantVault(tenantId, initiatorUserId): Promise<void>
+        Genera tenant key, cifra per initiator, distribuisci a membri con vault unlocked
+    - distributeTenantKeyToUser(tenantId, targetUserId, distributorUserId)
+    - createSecret(userId, input): Promise<VaultSecret>
+    - getSecret(userId, secretId, tenantId?): Promise<DecryptedSecret>
+    - updateSecret(userId, secretId, input, tenantId?): Promise<VaultSecret>
+    - deleteSecret(userId, secretId, tenantId?): Promise<void>
+    - listSecrets(userId, filters): Promise<SecretListItem[]>
+    - listSecretVersions(userId, secretId, tenantId?)
+    - restoreSecretVersion(userId, secretId, version, tenantId?)
+
+  Permessi secrets (in permission.service.ts):
+    - canViewSecret(userId, secretId, tenantId?):
+        PERSONAL: owner | TEAM: team member | TENANT: has TenantVaultMember
+    - canManageSecret(userId, secretId, tenantId?):
+        PERSONAL: owner | TEAM: TEAM_EDITOR+ | TENANT: ADMIN/OWNER
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (5 nuovi modelli, 2 nuovi enum,
+                relazioni, AuditAction values, campo Tenant.hasTenantVaultKey)
+    CREARE:     server/src/services/secret.service.ts
+    MODIFICARE: server/src/services/crypto.service.ts (tenant key management)
+    MODIFICARE: server/src/services/permission.service.ts (canViewSecret,
+                canManageSecret)
+    MODIFICARE: server/src/types/index.ts (SecretPayload types)
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-054 — API routes, controller e servizio sharing per i secrets
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-053
+
+  DESCRIZIONE:
+  Esporre le operazioni CRUD sui secrets tramite API REST, con validazione
+  Zod completa, audit logging, e il servizio di sharing secrets tra utenti
+  e team nello stesso tenant. Segue lo stesso pattern di
+  connections.routes.ts + sharing.service.ts ma adattato ai secrets.
+
+  Lo sharing dei secrets segue il pattern di SharedConnection: i dati
+  cifrati vengono decifrati con la chiave sorgente e ricifrati con la chiave
+  del destinatario. Un secret puo' essere condiviso come READ_ONLY (il
+  destinatario puo' visualizzare ma non modificare) o FULL_ACCESS.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Nuovo modello SharedSecret:
+        model SharedSecret {
+          id                String     @id @default(uuid())
+          secretId          String
+          sharedWithUserId  String
+          sharedByUserId    String
+          permission        Permission  // riusa enum READ_ONLY | FULL_ACCESS
+          encryptedData     String      // dati ricifrati per il destinatario
+          dataIV            String
+          dataTag           String
+          createdAt         DateTime   @default(now())
+
+          secret     VaultSecret @relation(fields: [secretId], references: [id],
+                     onDelete: Cascade)
+          sharedWith User        @relation("SecretSharedWith",
+                     fields: [sharedWithUserId], references: [id])
+          sharedBy   User        @relation("SecretSharedBy",
+                     fields: [sharedByUserId], references: [id])
+
+          @@unique([secretId, sharedWithUserId])
+        }
+    - Aggiungere relazioni in User:
+        secretsSharedWithMe SharedSecret[] @relation("SecretSharedWith")
+        secretsSharedByMe   SharedSecret[] @relation("SecretSharedBy")
+    - Aggiungere a NotificationType enum: SECRET_SHARED, SECRET_SHARE_REVOKED
+    - Eseguire migrazione Prisma
+
+  Controller (server/src/controllers/secret.controller.ts):
+    - Zod schema createSecretSchema con tipo discriminato per data payload:
+        LOGIN: { username, password, url?, notes? }
+        SSH_KEY: { privateKey, publicKey?, passphrase?, algorithm?, notes? }
+        CERTIFICATE: { certificate, privateKey, chain?, passphrase?, notes? }
+        API_KEY: { apiKey, endpoint?, headers?, notes? }
+        SECURE_NOTE: { content }
+    - Refine: scope=TEAM richiede teamId
+    - Handlers: create, list, getOne, update, remove, listVersions, restoreVersion
+
+  Routes (server/src/routes/secret.routes.ts):
+    - router.use(authenticate)
+    - GET/POST /                    -> list/create
+    - GET/PUT/DELETE /:id          -> getOne/update/remove
+    - GET /:id/versions            -> listVersions
+    - POST /:id/versions/:version/restore -> restoreVersion
+    - POST /:id/share              -> share
+    - DELETE /:id/share/:userId    -> unshare
+    - GET /:id/shares              -> listShares
+    - PUT /:id/share/:userId       -> updateSharePermission
+    - Montare in app.ts: app.use('/api/secrets', secretRoutes)
+
+  Servizio sharing (server/src/services/secretSharing.service.ts):
+    - shareSecret(actingUserId, secretId, target, permission, tenantId?):
+        Permission check -> tenant boundary -> decrypt -> re-encrypt -> upsert -> notify
+    - unshareSecret, updateSecretSharePermission, listSecretShares
+
+  Tenant vault management (in secret.routes.ts):
+    - POST /api/secrets/tenant-vault/init (OWNER/ADMIN)
+    - POST /api/secrets/tenant-vault/distribute (ADMIN/OWNER, body: { targetUserId })
+    - GET  /api/secrets/tenant-vault/status
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (SharedSecret, NotificationType, User rel.)
+    CREARE:     server/src/controllers/secret.controller.ts
+    CREARE:     server/src/routes/secret.routes.ts
+    CREARE:     server/src/services/secretSharing.service.ts
+    MODIFICARE: server/src/app.ts (mount /api/secrets)
+    MODIFICARE: server/src/services/secret.service.ts (tenant vault init/distribute)
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-055 — Integrazione backend connessioni con secrets del vault
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-053
+
+  DESCRIZIONE:
+  Permettere alle connessioni di fare riferimento a un secret del vault
+  invece di memorizzare credenziali inline. Il campo Connection.credentialSecretId
+  (opzionale) punta a un VaultSecret di tipo LOGIN o SSH_KEY. Al momento
+  della connessione (SSH o RDP), il sistema risolve il secretId, decifra le
+  credenziali dal vault, e le usa per connettersi. Le connessioni esistenti
+  con credenziali inline continuano a funzionare senza modifiche (backward
+  compatible). Per le connessioni SSH, se il secret e' di tipo SSH_KEY, il
+  sistema usa l'autenticazione basata su chiave privata invece che password.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Aggiungere a Connection:
+        credentialSecretId  String?
+        credentialSecret    VaultSecret? @relation("ConnectionVaultSecret",
+                            fields: [credentialSecretId], references: [id],
+                            onDelete: SetNull)
+    - Eseguire migrazione Prisma
+
+  connection.service.ts — modifiche:
+    - createConnection/updateConnection: accettare credentialSecretId opzionale,
+      validare tipo secret compatibile (LOGIN per RDP, LOGIN o SSH_KEY per SSH)
+    - getConnectionCredentials() — MODIFICA PRINCIPALE:
+        - Se connection.credentialSecretId e' definito:
+          1. Caricare VaultSecret e determinare la chiave di cifratura
+             (PERSONAL->master key, TEAM->team key, TENANT->tenant key,
+              SHARED->da SharedSecret.encryptedData)
+          2. Decifrare il secret payload
+          3. Se LOGIN: return { username, password }
+          4. Se SSH_KEY: return { username, password: '', privateKey, passphrase }
+        - Altrimenti: comportamento attuale invariato (inline credentials)
+    - Estendere return type: Promise<{ username, password, privateKey?, passphrase? }>
+
+  ssh.service.ts — modifiche:
+    - Estendere SshConnectionParams con privateKey?, passphrase?
+    - createSshConnection(): se privateKey presente, usare nel client.connect()
+    - createSshConnectionViaBastion(): supportare privateKey per target
+
+  ssh.handler.ts — modifiche:
+    - Dopo getConnectionCredentials(), passare privateKey se presente
+
+  connections.controller.ts — modifiche:
+    - Aggiungere credentialSecretId ai Zod schemas
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (Connection.credentialSecretId)
+    MODIFICARE: server/src/services/connection.service.ts (credential resolution)
+    MODIFICARE: server/src/services/ssh.service.ts (privateKey auth support)
+    MODIFICARE: server/src/socket/ssh.handler.ts (privateKey flow)
+    MODIFICARE: server/src/socket/rdp.handler.ts (validation only)
+    MODIFICARE: server/src/controllers/connections.controller.ts (Zod schemas)
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-056 — Frontend pagina Keychain, store Zustand e API layer
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-054
+
+  DESCRIZIONE:
+  Creare l'interfaccia frontend completa per il Password Keychain:
+  una pagina dedicata accessibile dalla sidebar, lo store Zustand per la
+  gestione dello stato secrets, il layer API, e tutti i componenti UI
+  necessari per visualizzare, creare, modificare, eliminare, cercare e
+  organizzare i secrets. Include la vista dettaglio con reveal/copy dei
+  campi sensibili e il dialog di sharing (analogo a ShareDialog per le
+  connessioni).
+
+  DETTAGLI TECNICI:
+  API layer (client/src/api/secrets.api.ts):
+    - Interfacce: SecretListItem, SecretDetail, SecretPayload (union types),
+      CreateSecretInput, UpdateSecretInput, SecretVersionItem, SecretShareData
+    - Funzioni: listSecrets, createSecret, getSecret, updateSecret, deleteSecret,
+      listVersions, restoreVersion, shareSecret, unshareSecret, listSecretShares,
+      updateSecretSharePermission, initTenantVault, distributeTenantKey,
+      getTenantVaultStatus
+
+  Store (client/src/store/secretStore.ts):
+    - State: secrets[], selectedSecret, folders[], loading, error, filters,
+      tenantVaultStatus
+    - Actions: fetchSecrets, fetchSecret, createSecret, updateSecret, deleteSecret,
+      toggleFavorite, setFilters, clearSelectedSecret, fetchTenantVaultStatus
+
+  Pagina Keychain (client/src/pages/KeychainPage.tsx):
+    - Layout due colonne: pannello navigazione (~300px) + area dettaglio
+    - Pannello sinistro: search bar, scope filter (All/Personal/Team/Tenant),
+      type filter dropdown, VaultFolder tree, lista secrets con icone tipo/scope
+    - Area destra: SecretDetailView o empty state
+    - Responsive: su mobile, lista e dettaglio sono viste separate
+
+  Componenti UI:
+    - SecretListPanel.tsx: lista scrollabile con icone tipo, badge scope,
+      warning scadenza, context menu (Edit/Delete/Share/Copy)
+    - SecretDetailView.tsx: header + campi specifici per tipo, reveal/copy
+      per campi sensibili con timer auto-hide 30s, bottoni azione
+    - SecretDialog.tsx: dialog create/edit con form dinamico per tipo:
+      LOGIN (username, password+generate, url),
+      SSH_KEY (privateKey textarea/file upload, publicKey, passphrase, algorithm),
+      CERTIFICATE (cert/key/chain textarea/file upload .pem/.crt/.key),
+      API_KEY (apiKey, endpoint, headers key-value),
+      SECURE_NOTE (large textarea)
+    - ShareSecretDialog.tsx: user search/email, permission picker, lista shares
+    - SecretVersionHistory.tsx: timeline versioni con restore
+
+  uiPreferencesStore — nuove keys:
+    keychainSidebarWidth, keychainScopeFilter, keychainTypeFilter,
+    keychainExpandedFolders, keychainSortBy
+
+  Routing: aggiungere /keychain in App.tsx, voce "Keychain" nella sidebar MainLayout
+
+  File coinvolti:
+    CREARE:     client/src/api/secrets.api.ts
+    CREARE:     client/src/store/secretStore.ts
+    CREARE:     client/src/pages/KeychainPage.tsx
+    CREARE:     client/src/components/Keychain/SecretListPanel.tsx
+    CREARE:     client/src/components/Keychain/SecretDetailView.tsx
+    CREARE:     client/src/components/Keychain/SecretDialog.tsx
+    CREARE:     client/src/components/Keychain/ShareSecretDialog.tsx
+    CREARE:     client/src/components/Keychain/SecretVersionHistory.tsx
+    MODIFICARE: client/src/store/uiPreferencesStore.ts (nuove preference keys)
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx (sidebar link)
+    MODIFICARE: client/src/App.tsx (route /keychain)
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-057 — Integrazione frontend ConnectionDialog con secret picker
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: VAULT-055, VAULT-056
+
+  DESCRIZIONE:
+  Aggiungere al ConnectionDialog la possibilita' di selezionare un secret
+  dal vault come sorgente credenziali invece di inserire manualmente
+  username e password. L'utente puo' scegliere tra "Manual" (inserimento
+  inline come ora) e "From Keychain" (seleziona un secret esistente).
+  Per SSH, il picker mostra secrets LOGIN e SSH_KEY. Per RDP, solo LOGIN.
+  Quando un secret e' selezionato i campi username/password vengono nascosti.
+  Al salvataggio la connessione memorizza credentialSecretId. Il ConnectAsDialog
+  mostra il nome del secret quando la connessione ne usa uno dal vault.
+
+  DETTAGLI TECNICI:
+  Frontend:
+    - ConnectionDialog.tsx: aggiungere credentialMode state ('manual'|'keychain'),
+      selectedSecretId, toggle sopra campi Username/Password, integrazione
+      SecretPicker, gestione edit mode (preseleziona keychain se credentialSecretId),
+      handleSubmit invia credentialSecretId o null
+    - Nuovo SecretPicker.tsx: Autocomplete MUI con search server-side (debounce
+      300ms), filtra per tipo compatibile (LOGIN per RDP, LOGIN+SSH_KEY per SSH),
+      mostra nome/tipo icon/scope badge, chip selezione con rimuovi
+    - connections.api.ts: aggiungere credentialSecretId a ConnectionInput/Update/Data
+    - ConnectAsDialog.tsx: mostrare nome secret quando connessione usa vault
+
+  File coinvolti:
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx
+    CREARE:     client/src/components/Keychain/SecretPicker.tsx
+    MODIFICARE: client/src/api/connections.api.ts (credentialSecretId)
+    MODIFICARE: client/src/components/Dialogs/ConnectAsDialog.tsx
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-058 — External sharing: link temporanei per condivisione esterna
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: VAULT-054
+
+  DESCRIZIONE:
+  Implementare la condivisione esterna di secrets tramite link temporanei.
+  Un utente puo' generare un link per condividere un secret con persone
+  che non hanno un account nel sistema. Il link ha scadenza temporale
+  configurabile, numero massimo di accessi, e PIN opzionale.
+
+  Modello crittografico: il token casuale (32 bytes) e' la chiave. Il DB
+  salva solo SHA-256(token) per lookup. Senza PIN: chiave = HKDF(token).
+  Con PIN: chiave = Argon2id(token+pin, salt). Il server non conserva la
+  chiave in chiaro — e' nel token URL. Zero-knowledge dopo la creazione.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Nuovo modello ExternalSecretShare:
+        model ExternalSecretShare {
+          id              String    @id @default(uuid())
+          secretId        String
+          createdByUserId String
+          tokenHash       String    @unique   // SHA-256 hash del token (il token
+                                              // raw non viene mai salvato nel DB)
+          encryptedData   String              // secret cifrato con chiave derivata
+          dataIV          String
+          dataTag         String
+          hasPin          Boolean   @default(false)
+          pinSalt         String?             // salt per derivazione chiave con PIN
+          expiresAt       DateTime
+          maxAccessCount  Int?                // null = unlimited
+          accessCount     Int       @default(0)
+          secretType      SecretType          // tipo del secret (per display)
+          secretName      String              // nome del secret (non cifrato)
+          isRevoked       Boolean   @default(false)
+          createdAt       DateTime  @default(now())
+
+          secret    VaultSecret @relation(fields: [secretId], references: [id],
+                    onDelete: Cascade)
+          createdBy User        @relation(fields: [createdByUserId], references: [id])
+
+          @@index([tokenHash])
+          @@index([expiresAt])
+        }
+    - Aggiungere relazione in VaultSecret: externalShares ExternalSecretShare[]
+    - Aggiungere relazione in User: externalSecretShares ExternalSecretShare[]
+    - Eseguire migrazione Prisma
+
+  Servizio (server/src/services/externalShare.service.ts):
+    - createExternalShare(userId, secretId, options: {
+        expiresInHours, maxAccessCount?, pin? }, tenantId?):
+        1. Permission check: canManageSecret
+        2. Generare token: crypto.randomBytes(32).toString('base64url')
+        3. Calcolare tokenHash: SHA-256(token)
+        4. Decifrare il secret con la chiave sorgente
+        5. Derivare chiave: senza PIN -> HKDF(token, info=shareId)
+           con PIN -> Argon2id(token + pin, salt=random)
+        6. Cifrare i dati del secret con la chiave derivata
+        7. Salvare ExternalSecretShare nel DB
+        8. Audit log SECRET_EXTERNAL_SHARE
+        9. Restituire URL: ${clientUrl}/share/${token}
+    - accessExternalShare(token, pin?):
+        1. Calcolare tokenHash = SHA-256(token)
+        2. Cercare ExternalSecretShare by tokenHash
+        3. Validare: non scaduto, non revocato, accessCount < maxAccessCount
+        4. Derivare chiave (stessa logica di creazione)
+        5. Decifrare i dati
+        6. Incrementare accessCount
+        7. Audit log SECRET_EXTERNAL_ACCESS (senza userId, con IP)
+        8. Restituire dati decifrati
+    - revokeExternalShare(userId, shareId, tenantId?)
+    - listExternalShares(userId, secretId, tenantId?)
+    - cleanupExpiredShares(): cron job per eliminare share scaduti
+
+  Controller (server/src/controllers/externalShare.controller.ts):
+    - Zod schemas:
+        createExternalShareSchema = z.object({
+          secretId: z.string().uuid(),
+          expiresInHours: z.number().int().min(1).max(720),  // max 30 days
+          maxAccessCount: z.number().int().min(1).max(100).optional(),
+          pin: z.string().min(4).max(32).optional(),
+        })
+    - Handlers: create, access, revoke, list
+
+  Routes:
+    - In secret.routes.ts (autenticato):
+        POST   /external-shares          -> create
+        DELETE /external-shares/:shareId -> revoke
+        GET    /:id/external-shares      -> list
+    - Nuovo publicShare.routes.ts (PUBBLICO, senza authenticate):
+        POST   /api/share/:token         -> access (body: { pin? })
+        GET    /api/share/:token/info    -> info parziale (nome, tipo, hasPin)
+    - Montare in app.ts: app.use('/api/share', publicShareRoutes)
+
+  Frontend:
+    - ExternalShareDialog.tsx: slider scadenza (1h, 6h, 24h, 7d, 30d, custom),
+      max accessi (1, 5, 10, unlimited), toggle PIN + input, mostra link con
+      copy, lista shares esistenti con stats e revoke
+    - PublicSharePage.tsx: pagina pubblica /share/:token, form PIN se richiesto,
+      secret read-only con reveal/copy, warning scadenza/accessi, layout minimal
+    - Route /share/:token in App.tsx (senza layout autenticato)
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (ExternalSecretShare, relations)
+    CREARE:     server/src/services/externalShare.service.ts
+    CREARE:     server/src/controllers/externalShare.controller.ts
+    CREARE:     server/src/routes/publicShare.routes.ts
+    MODIFICARE: server/src/routes/secret.routes.ts (external share routes)
+    MODIFICARE: server/src/app.ts (mount /api/share)
+    CREARE:     client/src/components/Keychain/ExternalShareDialog.tsx
+    CREARE:     client/src/pages/PublicSharePage.tsx
+    MODIFICARE: client/src/App.tsx (public route /share/:token)
+    MODIFICARE: client/src/api/secrets.api.ts (external share API functions)
+
+
+------------------------------------------------------------------------------
+[ ] VAULT-059 — Secret versioning UI, scadenza con alert, e audit migliorato
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: VAULT-056, VAULT-054
+
+  DESCRIZIONE:
+  Task di rifinitura che completa tre aspetti del keychain:
+  1. Versioning UI completo: vista diff tra versioni, restore con conferma,
+     visualizzazione dati decifrati di versioni precedenti.
+  2. Sistema scadenza con notifiche: backend job periodico che genera
+     notifiche/warning quando secrets stanno per scadere (30gg, 7gg, 1gg,
+     scaduto). Badge visivi nella lista e nella sidebar.
+  3. Audit trail migliorato: estendere la pagina AuditLog per mostrare
+     i nuovi AuditAction relativi ai secrets con descrizioni leggibili.
+
+  DETTAGLI TECNICI:
+  Backend — scadenza e notifiche:
+    - Nuovo servizio secretExpiry.service.ts:
+      checkExpiringSecrets(): query secrets con expiresAt, genera notifiche
+      per fasce (30gg, 7gg, 1gg, scaduto), evita duplicati 24h,
+      destinatario basato su scope (PERSONAL->owner, TEAM->admin, TENANT->admin)
+    - Cron job: setInterval ogni 6 ore, avviare in server/src/index.ts
+    - Nuovi NotificationType: SECRET_EXPIRING, SECRET_EXPIRED
+
+  Backend — versioning:
+    - Nuovo endpoint GET /api/secrets/:id/versions/:version/data
+    - getSecretVersionData(): decifra dati versione specifica
+
+  Frontend — versioning:
+    - SecretVersionHistory.tsx: timeline MUI, "View" per espandere dati
+      decifrati, "Restore" con conferma, visual diff (changed/unchanged)
+
+  Frontend — scadenza:
+    - SecretListPanel: chip "Expires in N days" (arancione 7-30gg, rosso <7gg)
+    - SecretDetailView: banner warning scadenza, modifica data inline
+    - KeychainPage: badge numerico sidebar per secrets in scadenza entro 7gg
+
+  Frontend — audit:
+    - AuditLogPage: nuove descrizioni leggibili per SECRET_* e TENANT_VAULT_*
+      actions, link cliccabile al secret, gestione log anonimi (external access)
+
+  File coinvolti:
+    CREARE:     server/src/services/secretExpiry.service.ts
+    MODIFICARE: server/prisma/schema.prisma (NotificationType values)
+    MODIFICARE: server/src/index.ts (avvio cron job)
+    MODIFICARE: server/src/services/secret.service.ts (getSecretVersionData)
+    MODIFICARE: server/src/controllers/secret.controller.ts (getVersionData)
+    MODIFICARE: server/src/routes/secret.routes.ts (version data endpoint)
+    MODIFICARE: client/src/components/Keychain/SecretVersionHistory.tsx
+    MODIFICARE: client/src/components/Keychain/SecretListPanel.tsx
+    MODIFICARE: client/src/components/Keychain/SecretDetailView.tsx
+    MODIFICARE: client/src/pages/KeychainPage.tsx
+    MODIFICARE: client/src/pages/AuditLogPage.tsx
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx (keychain badge)
+
+
+================================================================================
   ORDINE DI IMPLEMENTAZIONE CONSIGLIATO
 ================================================================================
 
@@ -896,7 +1480,7 @@
    10. FAVS-014    Preferiti e recenti                          [COMPLETATO]
    11. RDPFS-018   Drive redirection RDP (file transfer)        [COMPLETATO]
    12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni) [COMPLETATO]
-   12b. SSHUI-028  Sync automatico tema terminale SSH con tema WebUI
+   12b. SSHUI-028  Sync automatico tema terminale SSH con tema WebUI     [COMPLETATO]
    13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione) [COMPLETATO]
    14. SFTP-019    Trasferimento file SFTP (SSH)                         [COMPLETATO]
 
@@ -933,7 +1517,7 @@
    36. GATE-039  Frontend gestione gateway e assegnazione connessioni              [COMPLETATO]
 
   Fase 8b — UX refactoring:
-   37. UI-046    Refactoring Settings page: tabbed category layout
+   37. UI-046    Refactoring Settings page: tabbed category layout              [COMPLETATO]
    37b. TABS-047  Persistenza automatica tab aperti (server-side, cross-device)
    37c. FOLD-048  Context menu cartelle: Share Folder e Open All Connections
 
@@ -943,19 +1527,28 @@
    40. SSHGW-051  Integrazione gateway managed nel backend (MANAGED_SSH + key auth)
    41. SSHGW-052  Frontend gateway SSH gestito: UI, status e configurazione
 
+  Fase 8d — Password Keychain / Secret Vault:
+   42. VAULT-053  Modelli Prisma e servizio CRUD backend secrets
+   43. VAULT-054  API routes, controller e sharing secrets
+   44. VAULT-055  Integrazione backend connessioni con vault secrets
+   45. VAULT-056  Frontend pagina Keychain, store e componenti
+   46. VAULT-057  Integrazione frontend ConnectionDialog con secret picker
+   47. VAULT-058  External sharing: link temporanei condivisione esterna
+   48. VAULT-059  Secret versioning UI, scadenza alert, audit migliorato
+
   Fase 9 — Zero Trust hardening (Tier 1, priorita' alta):
-   42. ZT-036   Security headers (helmet middleware)
-   43. ZT-037   Rate limiting login e account lockout
-   44. ZT-038   Audit sessioni SSH/RDP (session start/end)
-   45. ZT-039   Audit tentativi di login falliti
-   46. ZT-040   Lock vault al logout
+   49. ZT-036   Security headers (helmet middleware)
+   50. ZT-037   Rate limiting login e account lockout
+   51. ZT-038   Audit sessioni SSH/RDP (session start/end)
+   52. ZT-039   Audit tentativi di login falliti
+   53. ZT-040   Lock vault al logout
 
   Fase 10 — Zero Trust hardening (Tier 2, core ZT):
-   47. ZT-041   Policy MFA obbligatorio a livello tenant
-   48. ZT-042   Rotazione refresh token
-   49. ZT-043   Fix validazione certificato RDP (default ignoreCert)
-   50. ZT-044   Cifratura TOTP secret a riposo
-   51. ZT-045   Vista audit log per admin tenant
+   54. ZT-041   Policy MFA obbligatorio a livello tenant
+   55. ZT-042   Rotazione refresh token
+   56. ZT-043   Fix validazione certificato RDP (default ignoreCert)
+   57. ZT-044   Cifratura TOTP secret a riposo
+   58. ZT-045   Vista audit log per admin tenant
 
 ================================================================================
   NOTE
@@ -1097,4 +1690,29 @@
     e SSH_BASTION per connessioni SSH (entrambi validi)
   - SSHGW-052 nessuna nuova pagina/route: la gestione keypair vive nella
     pagina /settings/gateways esistente
+  - VAULT-053 il tenant key segue lo stesso pattern esatto del team key:
+    AES-256 random, cifrato per-membro con master key, cached in memory con TTL
+  - VAULT-053 i secrets usano un singolo blob JSON cifrato (encryptedData) invece
+    di colonne separate per campo — supporta tipi diversi senza schema changes
+  - VAULT-053 ogni update crea una VaultSecretVersion con snapshot cifrato
+  - VAULT-054 lo sharing secrets riusa l'enum Permission (READ_ONLY/FULL_ACCESS)
+    e il pattern decrypt->re-encrypt identico a SharedConnection
+  - VAULT-054 la distribuzione tenant key richiede che entrambi i vault
+    (distributor e target) siano unlocked, come per le team key
+  - VAULT-055 credentialSecretId e' nullable con onDelete: SetNull — se il
+    secret viene eliminato, la connessione torna a credenziali inline
+  - VAULT-055 backward compatible: connessioni senza credentialSecretId
+    funzionano esattamente come prima
+  - VAULT-055 per SSH_KEY: ssh2 supporta nativamente privateKey nel connect()
+  - VAULT-055 per RDP: solo secrets tipo LOGIN sono compatibili
+  - VAULT-056 file upload per SSH_KEY e CERTIFICATE accetta .pem, .key, .crt, .pub
+  - VAULT-056 campi sensibili auto-hide dopo 30 secondi dal reveal
+  - VAULT-057 il SecretPicker filtra per tipo compatibile in base al tipo connessione
+  - VAULT-058 zero-knowledge: il token e' la chiave, il DB salva solo SHA-256(token)
+  - VAULT-058 con PIN: chiave = Argon2id(token+pin, salt) — secondo fattore
+  - VAULT-058 senza PIN: chiave = HKDF(token) — URL alone grants access
+  - VAULT-058 endpoint pubblico /api/share/:token NON ha authenticate middleware
+  - VAULT-058 cleanup automatico shares scaduti via cron job
+  - VAULT-059 cron job scadenza ogni 6 ore, notifiche per fasce (30/7/1/0 giorni)
+  - VAULT-059 evita notifiche duplicate controllando le ultime 24h
 ================================================================================

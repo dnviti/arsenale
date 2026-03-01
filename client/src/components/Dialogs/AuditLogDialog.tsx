@@ -1,13 +1,20 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect, useCallback, forwardRef } from 'react';
 import {
-  AppBar, Toolbar, Typography, Box, IconButton, Card, CardContent,
+  Dialog, AppBar, Toolbar, Typography, Box, IconButton, Card, CardContent,
   Table, TableHead, TableBody, TableRow, TableCell, TablePagination,
   Select, MenuItem, FormControl, InputLabel, TextField, Stack,
-  CircularProgress, Chip, Alert,
+  CircularProgress, Chip, Alert, Slide,
 } from '@mui/material';
-import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
-import { getAuditLogs, AuditLogEntry, AuditAction, AuditLogParams } from '../api/audit.api';
+import type { TransitionProps } from '@mui/material/transitions';
+import { Close as CloseIcon } from '@mui/icons-material';
+import { getAuditLogs, AuditLogEntry, AuditAction, AuditLogParams } from '../../api/audit.api';
+
+const SlideUp = forwardRef(function SlideUp(
+  props: TransitionProps & { children: React.ReactElement },
+  ref: React.Ref<unknown>,
+) {
+  return <Slide direction="up" ref={ref} {...props} />;
+});
 
 const ACTION_LABELS: Record<AuditAction, string> = {
   LOGIN: 'Login',
@@ -67,8 +74,12 @@ const ALL_ACTIONS: AuditAction[] = [
   'PASSWORD_REVEAL',
 ];
 
-export default function AuditLogPage() {
-  const navigate = useNavigate();
+interface AuditLogDialogProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -102,8 +113,8 @@ export default function AuditLogPage() {
   }, [page, rowsPerPage, actionFilter, startDate, endDate]);
 
   useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+    if (open) fetchLogs();
+  }, [open, fetchLogs]);
 
   const handleChangePage = (_: unknown, newPage: number) => {
     setPage(newPage);
@@ -119,11 +130,16 @@ export default function AuditLogPage() {
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
-      <AppBar position="static">
+    <Dialog
+      fullScreen
+      open={open}
+      onClose={onClose}
+      TransitionComponent={SlideUp}
+    >
+      <AppBar position="static" sx={{ position: 'relative' }}>
         <Toolbar variant="dense">
-          <IconButton edge="start" color="inherit" onClick={() => navigate(-1)} sx={{ mr: 1 }}>
-            <ArrowBackIcon />
+          <IconButton edge="start" color="inherit" onClick={onClose} sx={{ mr: 1 }}>
+            <CloseIcon />
           </IconButton>
           <Typography variant="h6">Activity Log</Typography>
         </Toolbar>
@@ -243,6 +259,6 @@ export default function AuditLogPage() {
           )}
         </Card>
       </Box>
-    </Box>
+    </Dialog>
   );
 }

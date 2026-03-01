@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   AppBar, Toolbar, Typography, IconButton, Box, Chip, Menu, MenuItem,
   Snackbar, Alert, Avatar, Button,
@@ -20,6 +19,8 @@ import ConnectionDialog from '../Dialogs/ConnectionDialog';
 import FolderDialog from '../Dialogs/FolderDialog';
 import ShareDialog from '../Dialogs/ShareDialog';
 import ConnectAsDialog from '../Dialogs/ConnectAsDialog';
+import SettingsDialog from '../Dialogs/SettingsDialog';
+import AuditLogDialog from '../Dialogs/AuditLogDialog';
 
 import NotificationBell from './NotificationBell';
 import { useAuthStore } from '../../store/authStore';
@@ -65,8 +66,27 @@ export default function MainLayout() {
   const [folderTeamId, setFolderTeamId] = useState<string | null>(null);
   const [shareTarget, setShareTarget] = useState<ConnectionData | null>(null);
   const [connectAsTarget, setConnectAsTarget] = useState<ConnectionData | null>(null);
-  const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+
+  // Settings & Audit Log modals
+  // OAuth link redirect: server redirects to /?linked=google after linking
+  const [settingsOpen, setSettingsOpen] = useState(
+    () => Boolean(new URLSearchParams(window.location.search).get('linked')),
+  );
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(
+    () => new URLSearchParams(window.location.search).get('linked') ? 'security' : undefined,
+  );
+  const [auditLogOpen, setAuditLogOpen] = useState(false);
+  const [linkedProvider, setLinkedProvider] = useState<string | null>(() => {
+    const linked = new URLSearchParams(window.location.search).get('linked');
+    if (linked) window.history.replaceState({}, '', '/');
+    return linked;
+  });
+
+  const handleOpenSettings = (tab?: string) => {
+    setSettingsInitialTab(tab);
+    setSettingsOpen(true);
+  };
 
   const handleEditConnection = (conn: ConnectionData) => {
     setEditingConnection(conn);
@@ -168,11 +188,11 @@ export default function MainLayout() {
             <MenuItem disabled>
               <Typography variant="body2">{user?.username || user?.email}</Typography>
             </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); navigate('/settings'); }}>
+            <MenuItem onClick={() => { setAnchorEl(null); handleOpenSettings(); }}>
               <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
               Settings
             </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); navigate('/audit-log'); }}>
+            <MenuItem onClick={() => { setAnchorEl(null); setAuditLogOpen(true); }}>
               <HistoryIcon fontSize="small" sx={{ mr: 1 }} />
               Activity Log
             </MenuItem>
@@ -199,7 +219,7 @@ export default function MainLayout() {
               variant="outlined"
               sx={{ m: 1, '& .MuiAlert-message': { width: '100%' } }}
               action={
-                <Button size="small" onClick={() => navigate('/settings/tenant')}>
+                <Button size="small" onClick={() => handleOpenSettings('organization')}>
                   Get Started
                 </Button>
               }
@@ -270,6 +290,16 @@ export default function MainLayout() {
       </Snackbar>
       </Box>
 
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => { setSettingsOpen(false); setLinkedProvider(null); }}
+        initialTab={settingsInitialTab}
+        linkedProvider={linkedProvider}
+      />
+      <AuditLogDialog
+        open={auditLogOpen}
+        onClose={() => setAuditLogOpen(false)}
+      />
     </>
   );
 }

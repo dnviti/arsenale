@@ -10,11 +10,12 @@ interface UiPreferences {
   sidebarSharedOpen: boolean;
   sidebarCompact: boolean;
   sidebarTeamSections: Record<string, boolean>;
+  settingsActiveTab: string;
 }
 
 interface UiPreferencesState extends UiPreferences {
   set: <K extends keyof UiPreferences>(key: K, value: UiPreferences[K]) => void;
-  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections'>) => void;
+  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections' | 'settingsActiveTab'>) => void;
   toggleTeamSection: (teamId: string) => void;
 }
 
@@ -27,6 +28,7 @@ const defaults: UiPreferences = {
   sidebarSharedOpen: true,
   sidebarCompact: false,
   sidebarTeamSections: {},
+  settingsActiveTab: 'profile',
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(
