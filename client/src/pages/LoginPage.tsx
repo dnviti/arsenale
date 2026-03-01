@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link as RouterLink, useSearchParams } from 'react-router-dom';
 import {
-  Box, Card, CardContent, TextField, Button, Typography, Alert, Link,
+  Box, Card, CardContent, TextField, Button, Typography, Alert, Link, Stack,
 } from '@mui/material';
-import { loginApi, verifyTotpApi } from '../api/auth.api';
+import { loginApi, verifyTotpApi, requestSmsCodeApi, verifySmsApi } from '../api/auth.api';
 import { resendVerificationEmail } from '../api/email.api';
 import { useAuthStore } from '../store/authStore';
 import { useVaultStore } from '../store/vaultStore';
 import OAuthButtons from '../components/OAuthButtons';
+
+type Step = 'credentials' | 'mfa-choice' | 'totp' | 'sms';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -15,9 +17,12 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<'credentials' | 'totp'>('credentials');
+  const [step, setStep] = useState<Step>('credentials');
   const [tempToken, setTempToken] = useState('');
   const [totpCode, setTotpCode] = useState('');
+  const [smsCode, setSmsCode] = useState('');
+  const [mfaMethods, setMfaMethods] = useState<string[]>([]);
+  const [smsSending, setSmsSending] = useState(false);
   const [showResend, setShowResend] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(0);
   const countdownRef = useRef<ReturnType<typeof setInterval>>(undefined);
@@ -63,6 +68,12 @@ export default function LoginPage() {
     return () => clearInterval(countdownRef.current);
   }, [resendCountdown > 0]);
 
+  const completeLogin = (data: { accessToken: string; refreshToken: string; user: { id: string; email: string; username: string | null; avatarData: string | null } }) => {
+    setAuth(data.accessToken, data.refreshToken, data.user);
+    setVaultUnlocked(true);
+    navigate('/');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -72,6 +83,25 @@ export default function LoginPage() {
     try {
       const data = await loginApi(email, password);
 
+      // New unified MFA response
+      if ('requiresMFA' in data && data.requiresMFA) {
+        setTempToken(data.tempToken);
+        setMfaMethods(data.methods);
+        if (data.methods.length === 1) {
+          if (data.methods[0] === 'totp') {
+            setStep('totp');
+          } else {
+            setStep('sms');
+            await requestSmsCodeApi(data.tempToken);
+          }
+        } else {
+          setStep('mfa-choice');
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Legacy TOTP-only response (backward compat)
       if ('requiresTOTP' in data && data.requiresTOTP) {
         setTempToken(data.tempToken);
         setStep('totp');
@@ -80,9 +110,7 @@ export default function LoginPage() {
       }
 
       if ('accessToken' in data) {
-        setAuth(data.accessToken, data.refreshToken, data.user);
-        setVaultUnlocked(true);
-        navigate('/');
+        completeLogin(data);
       }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { error?: string } } };
@@ -102,9 +130,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await verifyTotpApi(tempToken, totpCode);
-      setAuth(data.accessToken, data.refreshToken, data.user);
-      setVaultUnlocked(true);
-      navigate('/');
+      completeLogin(data);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
@@ -115,10 +141,56 @@ export default function LoginPage() {
     }
   };
 
+  const handleSmsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const data = await verifySmsApi(tempToken, smsCode);
+      completeLogin(data);
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'Invalid code';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleChooseMethod = async (method: string) => {
+    setError('');
+    if (method === 'totp') {
+      setStep('totp');
+    } else {
+      setSmsSending(true);
+      try {
+        await requestSmsCodeApi(tempToken);
+        setStep('sms');
+      } catch (err: unknown) {
+        const msg =
+          (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+          'Failed to send SMS code';
+        setError(msg);
+      } finally {
+        setSmsSending(false);
+      }
+    }
+  };
+
   const handleBackToCredentials = () => {
     setStep('credentials');
     setTotpCode('');
+    setSmsCode('');
     setTempToken('');
+    setMfaMethods([]);
+    setError('');
+  };
+
+  const handleBackToChoice = () => {
+    setStep('mfa-choice');
+    setTotpCode('');
+    setSmsCode('');
     setError('');
   };
 
@@ -133,6 +205,17 @@ export default function LoginPage() {
       // Server always returns 200 for valid format
     }
   };
+
+  const subtitle = (() => {
+    switch (step) {
+      case 'credentials': return 'Sign in to manage your connections';
+      case 'mfa-choice': return 'Choose your verification method';
+      case 'totp': return 'Enter the 6-digit code from your authenticator app';
+      case 'sms': return 'Enter the 6-digit code sent to your phone';
+    }
+  })();
+
+  const canGoBackToChoice = mfaMethods.length > 1;
 
   return (
     <Box
@@ -149,9 +232,7 @@ export default function LoginPage() {
             Remote Desktop Manager
           </Typography>
           <Typography variant="body2" color="text.secondary" align="center" mb={3}>
-            {step === 'credentials'
-              ? 'Sign in to manage your connections'
-              : 'Enter the 6-digit code from your authenticator app'}
+            {subtitle}
           </Typography>
           {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -170,7 +251,7 @@ export default function LoginPage() {
             </Button>
           )}
 
-          {step === 'credentials' ? (
+          {step === 'credentials' && (
             <Box component="form" onSubmit={handleSubmit}>
               <OAuthButtons mode="login" />
               <TextField
@@ -205,7 +286,34 @@ export default function LoginPage() {
                 <Link component={RouterLink} to="/register">Sign up</Link>
               </Typography>
             </Box>
-          ) : (
+          )}
+
+          {step === 'mfa-choice' && (
+            <Box>
+              <Stack spacing={1}>
+                {mfaMethods.includes('totp') && (
+                  <Button fullWidth variant="outlined" onClick={() => handleChooseMethod('totp')}>
+                    Authenticator App
+                  </Button>
+                )}
+                {mfaMethods.includes('sms') && (
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    onClick={() => handleChooseMethod('sms')}
+                    disabled={smsSending}
+                  >
+                    {smsSending ? 'Sending...' : 'SMS Code'}
+                  </Button>
+                )}
+              </Stack>
+              <Button fullWidth variant="text" onClick={handleBackToCredentials} sx={{ mt: 1 }}>
+                Back
+              </Button>
+            </Box>
+          )}
+
+          {step === 'totp' && (
             <Box component="form" onSubmit={handleTotpSubmit}>
               <TextField
                 fullWidth
@@ -232,7 +340,45 @@ export default function LoginPage() {
               <Button
                 fullWidth
                 variant="text"
-                onClick={handleBackToCredentials}
+                onClick={canGoBackToChoice ? handleBackToChoice : handleBackToCredentials}
+                sx={{ mb: 1 }}
+              >
+                Back
+              </Button>
+            </Box>
+          )}
+
+          {step === 'sms' && (
+            <Box component="form" onSubmit={handleSmsSubmit}>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                A verification code has been sent to your phone.
+              </Alert>
+              <TextField
+                fullWidth
+                label="SMS Code"
+                type="text"
+                inputMode="numeric"
+                value={smsCode}
+                onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                margin="normal"
+                required
+                autoFocus
+                placeholder="000000"
+                slotProps={{ htmlInput: { maxLength: 6 } }}
+              />
+              <Button
+                fullWidth
+                type="submit"
+                variant="contained"
+                disabled={loading || smsCode.length !== 6}
+                sx={{ mt: 2, mb: 1 }}
+              >
+                {loading ? 'Verifying...' : 'Verify'}
+              </Button>
+              <Button
+                fullWidth
+                variant="text"
+                onClick={canGoBackToChoice ? handleBackToChoice : handleBackToCredentials}
                 sx={{ mb: 1 }}
               >
                 Back

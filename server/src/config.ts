@@ -39,6 +39,16 @@ export const config = {
   mailgunApiKey: process.env.MAILGUN_API_KEY || '',
   mailgunDomain: process.env.MAILGUN_DOMAIN || '',
   mailgunRegion: (process.env.MAILGUN_REGION || 'us') as 'us' | 'eu',
+  smsProvider: (process.env.SMS_PROVIDER || '') as '' | 'twilio' | 'sns' | 'vonage',
+  twilioAccountSid: process.env.TWILIO_ACCOUNT_SID || '',
+  twilioAuthToken: process.env.TWILIO_AUTH_TOKEN || '',
+  twilioFromNumber: process.env.TWILIO_FROM_NUMBER || '',
+  snsRegion: process.env.AWS_SNS_REGION || 'us-east-1',
+  snsAccessKeyId: process.env.AWS_SNS_ACCESS_KEY_ID || '',
+  snsSecretAccessKey: process.env.AWS_SNS_SECRET_ACCESS_KEY || '',
+  vonageApiKey: process.env.VONAGE_API_KEY || '',
+  vonageApiSecret: process.env.VONAGE_API_SECRET || '',
+  vonageFromNumber: process.env.VONAGE_FROM_NUMBER || '',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
   oauth: {
     google: {

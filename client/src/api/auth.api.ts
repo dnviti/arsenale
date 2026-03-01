@@ -2,7 +2,10 @@ import api from './client';
 
 type UserInfo = { id: string; email: string; username: string | null; avatarData: string | null };
 
+type MfaMethod = 'totp' | 'sms';
+
 export type LoginResponse =
+  | { requiresMFA: true; requiresTOTP?: boolean; methods: MfaMethod[]; tempToken: string }
   | { requiresTOTP: true; tempToken: string }
   | { requiresTOTP?: false; accessToken: string; refreshToken: string; user: UserInfo };
 
@@ -13,6 +16,16 @@ export async function loginApi(email: string, password: string): Promise<LoginRe
 
 export async function verifyTotpApi(tempToken: string, code: string) {
   const res = await api.post('/auth/verify-totp', { tempToken, code });
+  return res.data as { accessToken: string; refreshToken: string; user: UserInfo };
+}
+
+export async function requestSmsCodeApi(tempToken: string) {
+  const res = await api.post('/auth/request-sms-code', { tempToken });
+  return res.data as { message: string };
+}
+
+export async function verifySmsApi(tempToken: string, code: string) {
+  const res = await api.post('/auth/verify-sms', { tempToken, code });
   return res.data as { accessToken: string; refreshToken: string; user: UserInfo };
 }
 

@@ -77,6 +77,11 @@ model User {
   rdpDefaults        Json?
   totpSecret         String?
   totpEnabled        Boolean     @default(false)
+  phoneNumber        String?
+  phoneVerified      Boolean     @default(false)
+  smsMfaEnabled      Boolean     @default(false)
+  smsOtpHash         String?
+  smsOtpExpiresAt    DateTime?
   emailVerified      Boolean     @default(false)
   emailVerifyToken   String?     @unique
   emailVerifyExpiry  DateTime?
@@ -230,6 +235,10 @@ enum AuditAction {
   PROFILE_UPDATE
   TOTP_ENABLE
   TOTP_DISABLE
+  LOGIN_SMS
+  SMS_MFA_ENABLE
+  SMS_MFA_DISABLE
+  SMS_PHONE_VERIFY
   OAUTH_LINK
   OAUTH_UNLINK
   PASSWORD_REVEAL

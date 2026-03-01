@@ -46,9 +46,14 @@ export async function login(req: Request, res: Response, next: NextFunction) {
     const { email, password } = loginSchema.parse(req.body);
     const result = await authService.login(email, password);
 
-    if (result.requiresTOTP) {
-      res.json({ requiresTOTP: true, tempToken: result.tempToken });
-    } else {
+    if ('requiresMFA' in result && result.requiresMFA) {
+      res.json({
+        requiresMFA: true,
+        requiresTOTP: result.requiresTOTP,
+        methods: result.methods,
+        tempToken: result.tempToken,
+      });
+    } else if (!('requiresMFA' in result) || !result.requiresMFA) {
       auditService.log({ userId: result.user.id, action: 'LOGIN', ipAddress: req.ip });
       res.json({
         accessToken: result.accessToken,
@@ -84,6 +89,47 @@ export async function verifyTotp(req: Request, res: Response, next: NextFunction
       if (err.message === 'Invalid TOTP code') return next(new AppError(err.message, 401));
       if (err.message.includes('token')) return next(new AppError(err.message, 401));
       if (err.message === '2FA verification failed') return next(new AppError(err.message, 401));
+    }
+    next(err);
+  }
+}
+
+const requestSmsSchema = z.object({
+  tempToken: z.string(),
+});
+
+const verifySmsSchema = z.object({
+  tempToken: z.string(),
+  code: z.string().length(6).regex(/^\d{6}$/),
+});
+
+export async function requestSmsCode(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { tempToken } = requestSmsSchema.parse(req.body);
+    await authService.requestLoginSmsCode(tempToken);
+    res.json({ message: 'SMS code sent' });
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError('Invalid request', 400));
+    if (err instanceof Error) {
+      if (err.message.includes('token')) return next(new AppError(err.message, 401));
+      if (err.message.includes('not available')) return next(new AppError(err.message, 400));
+    }
+    next(err);
+  }
+}
+
+export async function verifySms(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { tempToken, code } = verifySmsSchema.parse(req.body);
+    const result = await authService.verifySmsCode(tempToken, code);
+    auditService.log({ userId: result.user.id, action: 'LOGIN_SMS', ipAddress: req.ip });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError('Invalid code format', 400));
+    if (err instanceof Error) {
+      if (err.message.includes('SMS code')) return next(new AppError(err.message, 401));
+      if (err.message.includes('token')) return next(new AppError(err.message, 401));
+      if (err.message.includes('verification failed')) return next(new AppError(err.message, 401));
     }
     next(err);
   }

@@ -146,19 +146,28 @@ export async function login(email: string, password: string) {
     derivedKey.fill(0);
   }
 
-  // If TOTP is enabled, return a temp token instead of real tokens
-  if (user.totpEnabled) {
+  // Check which MFA methods are enabled
+  const mfaMethods: ('totp' | 'sms')[] = [];
+  if (user.totpEnabled) mfaMethods.push('totp');
+  if (user.smsMfaEnabled) mfaMethods.push('sms');
+
+  if (mfaMethods.length > 0) {
     const tempToken = jwt.sign(
-      { userId: user.id, purpose: 'totp-verify' },
+      { userId: user.id, purpose: 'mfa-verify' },
       config.jwtSecret,
       { expiresIn: '5m' } as jwt.SignOptions
     );
-    return { requiresTOTP: true as const, tempToken };
+    return {
+      requiresMFA: true as const,
+      requiresTOTP: mfaMethods.includes('totp') as true,
+      methods: mfaMethods,
+      tempToken,
+    };
   }
 
   // Normal flow: issue real tokens
   const tokens = await issueTokens(user);
-  return { requiresTOTP: false as const, ...tokens };
+  return { requiresMFA: false as const, ...tokens };
 }
 
 export async function verifyTotp(tempToken: string, code: string) {
@@ -169,7 +178,7 @@ export async function verifyTotp(tempToken: string, code: string) {
     throw new Error('Invalid or expired temporary token');
   }
 
-  if (decoded.purpose !== 'totp-verify') {
+  if (decoded.purpose !== 'totp-verify' && decoded.purpose !== 'mfa-verify') {
     throw new Error('Invalid token purpose');
   }
 
@@ -183,6 +192,57 @@ export async function verifyTotp(tempToken: string, code: string) {
   }
 
   // Issue real tokens (vault was already unlocked during password step)
+  return issueTokens(user);
+}
+
+export async function requestLoginSmsCode(tempToken: string) {
+  let decoded: { userId: string; purpose: string };
+  try {
+    decoded = jwt.verify(tempToken, config.jwtSecret) as { userId: string; purpose: string };
+  } catch {
+    throw new Error('Invalid or expired temporary token');
+  }
+
+  if (decoded.purpose !== 'mfa-verify') {
+    throw new Error('Invalid token purpose');
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+    select: { id: true, smsMfaEnabled: true, phoneNumber: true },
+  });
+
+  if (!user || !user.smsMfaEnabled || !user.phoneNumber) {
+    throw new Error('SMS MFA is not available');
+  }
+
+  const { sendOtpToPhone } = await import('./smsOtp.service');
+  await sendOtpToPhone(user.id, user.phoneNumber);
+}
+
+export async function verifySmsCode(tempToken: string, code: string) {
+  let decoded: { userId: string; purpose: string };
+  try {
+    decoded = jwt.verify(tempToken, config.jwtSecret) as { userId: string; purpose: string };
+  } catch {
+    throw new Error('Invalid or expired temporary token');
+  }
+
+  if (decoded.purpose !== 'mfa-verify') {
+    throw new Error('Invalid token purpose');
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+  if (!user || !user.smsMfaEnabled || !user.phoneNumber) {
+    throw new Error('SMS MFA verification failed');
+  }
+
+  const { verifyOtp } = await import('./smsOtp.service');
+  const valid = await verifyOtp(user.id, code);
+  if (!valid) {
+    throw new Error('Invalid or expired SMS code');
+  }
+
   return issueTokens(user);
 }
 

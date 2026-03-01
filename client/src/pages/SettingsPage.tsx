@@ -19,6 +19,7 @@ import { useRdpSettingsStore } from '../store/rdpSettingsStore';
 import type { RdpSettings } from '../constants/rdpDefaults';
 import RdpSettingsSection from '../components/Settings/RdpSettingsSection';
 import TwoFactorSection from '../components/Settings/TwoFactorSection';
+import SmsMfaSection from '../components/Settings/SmsMfaSection';
 import LinkedAccountsSection from '../components/Settings/LinkedAccountsSection';
 import EmailProviderSection from '../components/Settings/EmailProviderSection';
 
@@ -321,6 +322,11 @@ export default function SettingsPage() {
         {/* Two-Factor Authentication */}
         <Box sx={{ mb: 3 }}>
           <TwoFactorSection />
+        </Box>
+
+        {/* SMS Authentication */}
+        <Box sx={{ mb: 3 }}>
+          <SmsMfaSection />
         </Box>
 
         {/* Linked Accounts */}
