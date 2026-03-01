@@ -863,6 +863,41 @@
     MODIFICARE: client/src/components/Layout/MainLayout.tsx
 
 
+------------------------------------------------------------------------------
+[x] FOLD-048 — Context menu cartelle: Share Folder e Open All Connections
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SHR-005 (completato), FOLD-001 (completato)
+  COMPLETATO: Added "Open All" and "Share Folder" to folder context menu.
+    Open All: subfolder prompt + >5 confirmation dialog, bulk tab open.
+    Share Folder: batch share backend endpoint (POST /api/connections/batch-share)
+    with Promise.allSettled, ShareFolderDialog with connection preview, user picker,
+    permission selector, and result summary. BATCH_SHARE audit action added.
+
+  DESCRIZIONE:
+  Aggiungere due nuove azioni al menu contestuale delle cartelle:
+  1. "Open All" — apre un tab per ogni connessione nella cartella. Se la
+     cartella contiene sottocartelle, mostra un dialog che chiede all'utente
+     se includere anche le connessioni delle sottocartelle (con il conteggio
+     per ciascuna opzione). Se il totale supera 5 connessioni, mostra un
+     dialog di conferma con il conteggio prima di procedere.
+  2. "Share Folder" — condivide tutte le connessioni contenute nella cartella
+     e ricorsivamente nelle sottocartelle con un altro utente. Richiede un
+     nuovo endpoint backend per batch share (condivisione multipla atomica).
+
+  File coinvolti:
+    MODIFICARE: client/src/components/Sidebar/treeHelpers.tsx
+    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx
+    MODIFICARE: client/src/components/Sidebar/TeamConnectionSection.tsx
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx
+    CREARE:     client/src/components/Dialogs/ShareFolderDialog.tsx
+    MODIFICARE: client/src/api/sharing.api.ts
+    MODIFICARE: server/src/services/sharing.service.ts
+    MODIFICARE: server/src/controllers/sharing.controller.ts
+    MODIFICARE: server/src/routes/sharing.routes.ts
+    MODIFICARE: server/prisma/schema.prisma
+
+
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI
 ================================================================================

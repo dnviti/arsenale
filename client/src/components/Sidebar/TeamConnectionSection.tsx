@@ -33,13 +33,15 @@ interface TeamConnectionSectionProps {
   onCreateFolder: (parentId?: string, teamId?: string) => void;
   onEditFolder: (folder: Folder) => void;
   onDeleteFolder: (folder: Folder) => void;
+  onBulkOpen?: (folderId: string) => void;
+  onShareFolder?: (folderId: string, folderName: string) => void;
 }
 
 export default function TeamConnectionSection({
   teamId, teamName, teamRole, connections, folders, compact, searchQuery,
   onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection,
   onConnectAsConnection, onToggleFavorite, onCreateConnection, onCreateFolder,
-  onEditFolder, onDeleteFolder,
+  onEditFolder, onDeleteFolder, onBulkOpen, onShareFolder,
 }: TeamConnectionSectionProps) {
   const sidebarTeamSections = useUiPreferencesStore((s) => s.sidebarTeamSections);
   const toggleTeamSection = useUiPreferencesStore((s) => s.toggleTeamSection);
@@ -140,6 +142,8 @@ export default function TeamConnectionSection({
               onCreateFolder={onCreateFolder}
               onEditFolder={onEditFolder}
               onDeleteFolder={onDeleteFolder}
+              onBulkOpen={onBulkOpen}
+              onShareFolder={onShareFolder}
             />
           ))}
           {filteredRootConnections.map((conn) => (

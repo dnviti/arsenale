@@ -1329,7 +1329,7 @@
   Fase 8b — UX refactoring:
    37. UI-046    Refactoring Settings page: tabbed category layout              [COMPLETATO]
    37b. TABS-047  Persistenza automatica tab aperti (server-side, cross-device)  [COMPLETATO]
-   37c. FOLD-048  Context menu cartelle: Share Folder e Open All Connections     [IN CORSO]
+   37c. FOLD-048  Context menu cartelle: Share Folder e Open All Connections     [COMPLETATO]
 
   Fase 8c — SSH Gateway gestito (container managed):
    38. SSHGW-049  Container image SSH Gateway (Alpine + OpenSSH, CI/CD)

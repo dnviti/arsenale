@@ -21,6 +21,8 @@ import {
   DriveFileMove as MoveIcon,
   Star as StarIcon,
   StarBorder as StarBorderIcon,
+  FolderShared as FolderSharedIcon,
+  PlaylistPlay as PlaylistPlayIcon,
 } from '@mui/icons-material';
 import { useTabsStore } from '../../store/tabsStore';
 import { ConnectionData } from '../../api/connections.api';
@@ -76,6 +78,27 @@ export function buildFolderTree(folders: Folder[]): FolderNode[] {
     }
   }
   return roots;
+}
+
+export function collectFolderConnections(
+  folderId: string,
+  folderMap: Map<string, ConnectionData[]>,
+  folders: Folder[],
+  recursive: boolean
+): ConnectionData[] {
+  const direct = folderMap.get(folderId) || [];
+  if (!recursive) return [...direct];
+
+  const result = [...direct];
+  const childFolders = folders.filter((f) => f.parentId === folderId);
+  for (const child of childFolders) {
+    result.push(...collectFolderConnections(child.id, folderMap, folders, true));
+  }
+  return result;
+}
+
+export function folderHasSubfolders(folderId: string, folders: Folder[]): boolean {
+  return folders.some((f) => f.parentId === folderId);
 }
 
 // --- ConnectionItem ---
@@ -267,12 +290,15 @@ export interface FolderItemProps {
   onCreateFolder: (parentId?: string, teamId?: string) => void;
   onEditFolder: (folder: Folder) => void;
   onDeleteFolder: (folder: Folder) => void;
+  onBulkOpen?: (folderId: string) => void;
+  onShareFolder?: (folderId: string, folderName: string) => void;
 }
 
 export function FolderItem({
   node, connections, folderMap, depth, compact, isDndEnabled = false, teamId,
   onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection, onConnectAsConnection, onToggleFavorite,
   onCreateConnection, onCreateFolder, onEditFolder, onDeleteFolder,
+  onBulkOpen, onShareFolder,
 }: FolderItemProps) {
   const [open, setOpen] = useState(true);
   const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
@@ -347,6 +373,18 @@ export function FolderItem({
           <ListItemIcon><CreateNewFolderIcon fontSize="small" /></ListItemIcon>
           <ListItemText>New Subfolder</ListItemText>
         </MenuItem>
+        {onBulkOpen && (
+          <MenuItem onClick={() => { handleCloseMenu(); onBulkOpen(node.folder.id); }}>
+            <ListItemIcon><PlaylistPlayIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Open All</ListItemText>
+          </MenuItem>
+        )}
+        {onShareFolder && (
+          <MenuItem onClick={() => { handleCloseMenu(); onShareFolder(node.folder.id, node.folder.name); }}>
+            <ListItemIcon><FolderSharedIcon fontSize="small" /></ListItemIcon>
+            <ListItemText>Share Folder</ListItemText>
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem onClick={() => { handleCloseMenu(); onEditFolder(node.folder); }}>
           <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
@@ -380,6 +418,8 @@ export function FolderItem({
               onCreateFolder={onCreateFolder}
               onEditFolder={onEditFolder}
               onDeleteFolder={onDeleteFolder}
+              onBulkOpen={onBulkOpen}
+              onShareFolder={onShareFolder}
             />
           ))}
           {connections.map((conn) => (

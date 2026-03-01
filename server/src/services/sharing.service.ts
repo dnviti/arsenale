@@ -150,6 +150,87 @@ export async function shareConnection(
   };
 }
 
+export interface BatchShareResult {
+  shared: number;
+  failed: number;
+  alreadyShared: number;
+  errors: Array<{ connectionId: string; reason: string }>;
+}
+
+export async function batchShareConnections(
+  actingUserId: string,
+  connectionIds: string[],
+  target: { email?: string; userId?: string },
+  permission: Permission,
+  tenantId?: string | null,
+  folderName?: string
+): Promise<BatchShareResult> {
+  // Resolve target user once
+  let targetUser;
+  if (target.userId) {
+    targetUser = await prisma.user.findUnique({ where: { id: target.userId } });
+  } else if (target.email) {
+    targetUser = await prisma.user.findUnique({ where: { email: target.email } });
+  }
+  if (!targetUser) throw new AppError('User not found', 404);
+  if (targetUser.id === actingUserId) {
+    throw new AppError('Cannot share with yourself', 400);
+  }
+
+  const results = await Promise.allSettled(
+    connectionIds.map((connectionId) =>
+      shareConnection(actingUserId, connectionId, { userId: targetUser!.id }, permission, tenantId)
+    )
+  );
+
+  let shared = 0;
+  let failed = 0;
+  let alreadyShared = 0;
+  const errors: Array<{ connectionId: string; reason: string }> = [];
+
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      shared++;
+    } else {
+      const reason = result.reason instanceof AppError ? result.reason.message : 'Unknown error';
+      if (reason.includes('already')) {
+        alreadyShared++;
+      } else {
+        failed++;
+        errors.push({ connectionId: connectionIds[index], reason });
+      }
+    }
+  });
+
+  // Send a single summary notification
+  if (shared > 0) {
+    const actor = await prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { username: true, email: true },
+    });
+    const actorName = actor?.username || actor?.email || 'Someone';
+    const permLabel = permission === 'FULL_ACCESS' ? 'Full Access' : 'Read Only';
+    const folderPart = folderName ? ` from folder "${folderName}"` : '';
+    const msg = `${actorName} shared ${shared} connection${shared > 1 ? 's' : ''}${folderPart} with you (${permLabel})`;
+
+    createNotificationAsync({
+      userId: targetUser.id,
+      type: 'CONNECTION_SHARED',
+      message: msg,
+    });
+    emitNotification(targetUser.id, {
+      id: '',
+      type: 'CONNECTION_SHARED',
+      message: msg,
+      read: false,
+      relatedId: connectionIds[0],
+      createdAt: new Date(),
+    });
+  }
+
+  return { shared, failed, alreadyShared, errors };
+}
+
 export async function unshareConnection(
   actingUserId: string,
   connectionId: string,

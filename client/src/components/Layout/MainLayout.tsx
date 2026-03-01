@@ -18,6 +18,7 @@ import TabPanel from '../Tabs/TabPanel';
 import ConnectionDialog from '../Dialogs/ConnectionDialog';
 import FolderDialog from '../Dialogs/FolderDialog';
 import ShareDialog from '../Dialogs/ShareDialog';
+import ShareFolderDialog from '../Dialogs/ShareFolderDialog';
 import ConnectAsDialog from '../Dialogs/ConnectAsDialog';
 import SettingsDialog from '../Dialogs/SettingsDialog';
 import AuditLogDialog from '../Dialogs/AuditLogDialog';
@@ -66,6 +67,7 @@ export default function MainLayout() {
   const [newFolderParentId, setNewFolderParentId] = useState<string | null>(null);
   const [folderTeamId, setFolderTeamId] = useState<string | null>(null);
   const [shareTarget, setShareTarget] = useState<ConnectionData | null>(null);
+  const [shareFolderTarget, setShareFolderTarget] = useState<{ folderId: string; folderName: string } | null>(null);
   const [connectAsTarget, setConnectAsTarget] = useState<ConnectionData | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
@@ -117,6 +119,10 @@ export default function MainLayout() {
 
   const handleShareConnection = (conn: ConnectionData) => {
     setShareTarget(conn);
+  };
+
+  const handleShareFolder = (folderId: string, folderName: string) => {
+    setShareFolderTarget({ folderId, folderName });
   };
 
   const handleLogout = async () => {
@@ -238,6 +244,7 @@ export default function MainLayout() {
             onCreateConnection={handleCreateConnection}
             onCreateFolder={handleCreateFolder}
             onEditFolder={handleEditFolder}
+            onShareFolder={handleShareFolder}
           />
         </Box>
 
@@ -268,6 +275,12 @@ export default function MainLayout() {
         connectionId={shareTarget?.id ?? ''}
         connectionName={shareTarget?.name ?? ''}
         teamId={shareTarget?.teamId}
+      />
+      <ShareFolderDialog
+        open={!!shareFolderTarget}
+        onClose={() => setShareFolderTarget(null)}
+        folderId={shareFolderTarget?.folderId ?? ''}
+        folderName={shareFolderTarget?.folderName ?? ''}
       />
       <ConnectAsDialog
         open={!!connectAsTarget}

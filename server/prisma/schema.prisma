@@ -300,6 +300,7 @@ enum AuditAction {
   GATEWAY_CREATE
   GATEWAY_UPDATE
   GATEWAY_DELETE
+  BATCH_SHARE
 }
 
 model AuditLog {

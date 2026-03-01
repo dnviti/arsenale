@@ -36,6 +36,23 @@ export async function listShares(connectionId: string): Promise<ShareData[]> {
   return res.data;
 }
 
+export interface BatchShareResult {
+  shared: number;
+  failed: number;
+  alreadyShared: number;
+  errors: Array<{ connectionId: string; reason: string }>;
+}
+
+export async function batchShareConnections(
+  connectionIds: string[],
+  target: { email?: string; userId?: string },
+  permission: 'READ_ONLY' | 'FULL_ACCESS',
+  folderName?: string
+): Promise<BatchShareResult> {
+  const res = await api.post('/connections/batch-share', { connectionIds, target, permission, folderName });
+  return res.data;
+}
+
 export async function createSession(connectionId: string) {
   const res = await api.post('/sessions/rdp', { connectionId });
   return res.data as { token: string } | { connectionId: string; type: string };

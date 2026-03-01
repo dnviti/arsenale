@@ -41,6 +41,7 @@ import {
 import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
 import {
   getErrorMessage, matchesSearch, buildFolderTree, pruneFolderTree,
+  collectFolderConnections, folderHasSubfolders,
   ConnectionItem, FolderItem,
 } from './treeHelpers';
 import TeamConnectionSection from './TeamConnectionSection';
@@ -54,9 +55,10 @@ interface ConnectionTreeProps {
   onCreateConnection: (folderId?: string, teamId?: string) => void;
   onCreateFolder: (parentId?: string, teamId?: string) => void;
   onEditFolder: (folder: Folder) => void;
+  onShareFolder: (folderId: string, folderName: string) => void;
 }
 
-export default function ConnectionTree({ onEditConnection, onShareConnection, onConnectAsConnection, onCreateConnection, onCreateFolder, onEditFolder }: ConnectionTreeProps) {
+export default function ConnectionTree({ onEditConnection, onShareConnection, onConnectAsConnection, onCreateConnection, onCreateFolder, onEditFolder, onShareFolder }: ConnectionTreeProps) {
   const ownConnections = useConnectionsStore((s) => s.ownConnections);
   const sharedConnections = useConnectionsStore((s) => s.sharedConnections);
   const teamConnections = useConnectionsStore((s) => s.teamConnections);
@@ -150,6 +152,52 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
       notify(getErrorMessage(err, 'Failed to delete connection'));
     }
     setDeleteTarget(null);
+  };
+
+  // --- Bulk Open ---
+  const openTab = useTabsStore((s) => s.openTab);
+  const [bulkOpenTarget, setBulkOpenTarget] = useState<{ folderId: string; connections: ConnectionData[] } | null>(null);
+  const [bulkOpenSubfolderPrompt, setBulkOpenSubfolderPrompt] = useState<{
+    folderId: string;
+    thisOnly: number;
+    withSubs: number;
+  } | null>(null);
+
+  const handleBulkOpen = (folderId: string) => {
+    const directConns = collectFolderConnections(folderId, filteredFolderMap, folders, false);
+    const hasSubs = folderHasSubfolders(folderId, folders);
+
+    if (hasSubs) {
+      const allConns = collectFolderConnections(folderId, filteredFolderMap, folders, true);
+      setBulkOpenSubfolderPrompt({
+        folderId,
+        thisOnly: directConns.length,
+        withSubs: allConns.length,
+      });
+    } else if (directConns.length > 5) {
+      setBulkOpenTarget({ folderId, connections: directConns });
+    } else {
+      directConns.forEach((conn) => openTab(conn));
+    }
+  };
+
+  const handleBulkOpenChoice = (recursive: boolean) => {
+    if (!bulkOpenSubfolderPrompt) return;
+    const conns = collectFolderConnections(
+      bulkOpenSubfolderPrompt.folderId, filteredFolderMap, folders, recursive
+    );
+    setBulkOpenSubfolderPrompt(null);
+    if (conns.length > 5) {
+      setBulkOpenTarget({ folderId: bulkOpenSubfolderPrompt.folderId, connections: conns });
+    } else {
+      conns.forEach((conn) => openTab(conn));
+    }
+  };
+
+  const handleConfirmBulkOpen = () => {
+    if (!bulkOpenTarget) return;
+    bulkOpenTarget.connections.forEach((conn) => openTab(conn));
+    setBulkOpenTarget(null);
   };
 
   const handleConfirmDeleteFolder = async () => {
@@ -402,6 +450,8 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
                 onCreateFolder={onCreateFolder}
                 onEditFolder={onEditFolder}
                 onDeleteFolder={setDeleteFolderTarget}
+                onBulkOpen={handleBulkOpen}
+                onShareFolder={onShareFolder}
               />
             ))}
             {filteredRootConnections.map((conn) => (
@@ -471,6 +521,8 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
           onCreateFolder={onCreateFolder}
           onEditFolder={onEditFolder}
           onDeleteFolder={setDeleteFolderTarget}
+          onBulkOpen={handleBulkOpen}
+          onShareFolder={onShareFolder}
         />
       ))}
 
@@ -566,6 +618,39 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
         <DialogActions>
           <Button onClick={() => setDeleteFolderTarget(null)}>Cancel</Button>
           <Button onClick={handleConfirmDeleteFolder} color="error" variant="contained">Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk open: subfolder prompt */}
+      <Dialog open={bulkOpenSubfolderPrompt !== null} onClose={() => setBulkOpenSubfolderPrompt(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Open All Connections</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This folder contains subfolders. Which connections would you like to open?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkOpenSubfolderPrompt(null)}>Cancel</Button>
+          <Button onClick={() => handleBulkOpenChoice(false)}>
+            This folder only ({bulkOpenSubfolderPrompt?.thisOnly ?? 0})
+          </Button>
+          <Button onClick={() => handleBulkOpenChoice(true)} variant="contained">
+            Include subfolders ({bulkOpenSubfolderPrompt?.withSubs ?? 0})
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Bulk open: confirmation for >5 connections */}
+      <Dialog open={bulkOpenTarget !== null} onClose={() => setBulkOpenTarget(null)}>
+        <DialogTitle>Open {bulkOpenTarget?.connections.length} Connections?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will create {bulkOpenTarget?.connections.length} new tabs. Continue?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkOpenTarget(null)}>Cancel</Button>
+          <Button onClick={handleConfirmBulkOpen} variant="contained">Open All</Button>
         </DialogActions>
       </Dialog>
     </Box>
