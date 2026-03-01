@@ -500,7 +500,7 @@
    32. OIDC-035  Supporto provider OAuth2/OIDC generico (Authentik, Keycloak, etc.)  [COMPLETATO]
 
   Fase 8 — Multi-backend / Multi-gateway:
-   33. GATE-036  Modello Gateway e CRUD backend (Prisma + API)                         [IN CORSO]
+   33. GATE-036  Modello Gateway e CRUD backend (Prisma + API)                         [COMPLETATO]
    34. GATE-037  Routing RDP tramite gateway guacd dinamico
    35. GATE-038  Routing SSH tramite bastion/jump host (parallelizzabile con 34)
    36. GATE-039  Frontend gestione gateway e assegnazione connessioni

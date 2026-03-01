@@ -1000,3 +1000,30 @@
     MODIFICATO: server/src/controllers/connections.controller.ts
     MODIFICATO: server/src/controllers/folders.controller.ts
     MODIFICATO: server/src/controllers/sharing.controller.ts
+
+
+================================================================================
+  SEZIONE D — MULTI-BACKEND / MULTI-GATEWAY
+================================================================================
+
+------------------------------------------------------------------------------
+[x] GATE-036 — Modello Gateway e CRUD backend (Prisma + API)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: TENANT-020 (completato), GUARD-026 (completato)
+  COMPLETATO: Gateway model with GatewayType enum (GUACD/SSH_BASTION), full CRUD API (5 endpoints: list, create, update, delete, test connectivity), tenant isolation, encrypted SSH_BASTION credentials (AES-256-GCM), isDefault per-type-per-tenant transaction logic, connection reference check on delete, audit logging, Zod input validation, Connection.gatewayId FK added
+
+  DESCRIZIONE:
+  Creare l'entita' Gateway nel database e le relative API CRUD. Un Gateway
+  rappresenta un backend riutilizzabile (istanza guacd per RDP o bastion SSH)
+  attraverso cui instradare le connessioni verso sottoreti/VLAN diverse.
+  Casi d'uso: Proxmox con piu' SDN, datacenter multipli con subnet isolate,
+  ambienti dove si aprono solo le porte verso guacd e il gateway SSH.
+  I gateway sono tenant-scoped (ogni tenant gestisce i propri).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (Gateway, GatewayType, Connection.gatewayId)
+    MODIFICATO: server/src/app.ts (montare gateway routes)
+    CREATO:     server/src/routes/gateway.routes.ts
+    CREATO:     server/src/controllers/gateway.controller.ts
+    CREATO:     server/src/services/gateway.service.ts
