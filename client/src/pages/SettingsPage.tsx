@@ -82,6 +82,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
+    console.log('[SSH useEffect] userDefaults changed:', JSON.stringify(userDefaults));
     if (userDefaults) setSshConfig(userDefaults);
   }, [userDefaults]);
 

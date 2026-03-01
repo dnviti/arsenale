@@ -36,6 +36,9 @@ export interface SshTerminalConfig {
   customColors?: Partial<TerminalThemeColors>;
   scrollback?: number;
   bellStyle?: 'none' | 'sound' | 'visual';
+  syncThemeWithWebUI?: boolean;
+  syncLightTheme?: string;
+  syncDarkTheme?: string;
 }
 
 // ── Font families ──────────────────────────────────────────────────────────
@@ -85,6 +88,9 @@ export const TERMINAL_DEFAULTS: Required<Omit<SshTerminalConfig, 'customColors'>
   },
   scrollback: 1000,
   bellStyle: 'none',
+  syncThemeWithWebUI: false,
+  syncLightTheme: 'solarized-light',
+  syncDarkTheme: 'default-dark',
 };
 
 // ── Theme presets ──────────────────────────────────────────────────────────
@@ -281,7 +287,7 @@ export const THEME_PRESET_NAMES = Object.keys(THEME_PRESETS);
 
 // ── Merge logic ────────────────────────────────────────────────────────────
 
-type MergedConfig = Required<Omit<SshTerminalConfig, 'customColors'>> & {
+export type MergedConfig = Required<Omit<SshTerminalConfig, 'customColors'>> & {
   customColors: TerminalThemeColors;
 };
 
@@ -322,11 +328,26 @@ export function mergeTerminalConfig(
 
 // ── Convert to xterm.js options ────────────────────────────────────────────
 
-export function toXtermOptions(config: MergedConfig): ITerminalOptions {
+export function resolveThemeForMode(
+  config: MergedConfig,
+  webUiMode: 'light' | 'dark',
+): string {
+  if (!config.syncThemeWithWebUI) return config.theme;
+  return webUiMode === 'light' ? config.syncLightTheme : config.syncDarkTheme;
+}
+
+export function toXtermOptions(
+  config: MergedConfig,
+  webUiMode?: 'light' | 'dark',
+): ITerminalOptions {
+  const effectiveTheme = webUiMode
+    ? resolveThemeForMode(config, webUiMode)
+    : config.theme;
+
   const colors: TerminalThemeColors =
-    config.theme === 'custom'
+    effectiveTheme === 'custom'
       ? config.customColors
-      : THEME_PRESETS[config.theme] ?? THEME_PRESETS['default-dark'];
+      : THEME_PRESETS[effectiveTheme] ?? THEME_PRESETS['default-dark'];
 
   const theme: ITheme = {
     background: colors.background,

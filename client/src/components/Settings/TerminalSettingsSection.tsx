@@ -23,6 +23,7 @@ import {
   THEME_PRESETS,
   THEME_PRESET_NAMES,
 } from '../../constants/terminalThemes';
+import { useThemeStore } from '../../store/themeStore';
 
 interface TerminalSettingsSectionProps {
   value: Partial<SshTerminalConfig>;
@@ -109,7 +110,18 @@ export default function TerminalSettingsSection({
     }
   };
 
-  const currentTheme = getVal('theme') ?? 'default-dark';
+  const webUiMode = useThemeStore((s) => s.mode);
+  const isSyncEnabled = !!(getVal('syncThemeWithWebUI'));
+
+  const currentTheme = useMemo(() => {
+    if (isSyncEnabled) {
+      const lightTheme = getVal('syncLightTheme') ?? 'solarized-light';
+      const darkTheme = getVal('syncDarkTheme') ?? 'default-dark';
+      return webUiMode === 'light' ? lightTheme : darkTheme;
+    }
+    return getVal('theme') ?? 'default-dark';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSyncEnabled, webUiMode, value.syncLightTheme, value.syncDarkTheme, value.theme, defaults]);
   const currentColors: TerminalThemeColors = useMemo(() => {
     if (currentTheme === 'custom') {
       return { ...TERMINAL_DEFAULTS.customColors, ...value.customColors };
@@ -268,18 +280,110 @@ export default function TerminalSettingsSection({
         </Grid>
       </Box>
 
-      {/* Theme Section */}
+      {/* Theme Sync Section */}
       <Box>
-        <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Color Theme</Typography>
-        {mode === 'connection' && renderOverrideCheckbox('theme')}
-        <Grid container spacing={1} sx={{ mb: 1 }}>
-          {THEME_PRESET_NAMES.map((name) => (
-            <Grid size={{ xs: 6, sm: 4, md: 3 }} key={name}>
+        <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Theme Sync</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          {renderOverrideCheckbox('syncThemeWithWebUI')}
+          <FormControlLabel
+            control={
+              <Switch
+                checked={isSyncEnabled}
+                onChange={(e) => setField('syncThemeWithWebUI', e.target.checked)}
+                disabled={isDisabled('syncThemeWithWebUI')}
+              />
+            }
+            label="Sync theme with WebUI light/dark mode"
+          />
+        </Box>
+        {isSyncEnabled && !isDisabled('syncThemeWithWebUI') && (
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {renderOverrideCheckbox('syncLightTheme')}
+                <FormControl fullWidth size="small" disabled={isDisabled('syncLightTheme')}>
+                  <InputLabel>Light Mode Theme</InputLabel>
+                  <Select
+                    value={getVal('syncLightTheme') ?? 'solarized-light'}
+                    label="Light Mode Theme"
+                    onChange={(e) => setField('syncLightTheme', e.target.value)}
+                  >
+                    {THEME_PRESET_NAMES.map((name) => (
+                      <MenuItem key={name} value={name}>{themeLabel(name)}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {renderOverrideCheckbox('syncDarkTheme')}
+                <FormControl fullWidth size="small" disabled={isDisabled('syncDarkTheme')}>
+                  <InputLabel>Dark Mode Theme</InputLabel>
+                  <Select
+                    value={getVal('syncDarkTheme') ?? 'default-dark'}
+                    label="Dark Mode Theme"
+                    onChange={(e) => setField('syncDarkTheme', e.target.value)}
+                  >
+                    {THEME_PRESET_NAMES.map((name) => (
+                      <MenuItem key={name} value={name}>{themeLabel(name)}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            </Grid>
+          </Grid>
+        )}
+        {isSyncEnabled && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            Currently using: {themeLabel(currentTheme)} ({webUiMode} mode)
+          </Typography>
+        )}
+      </Box>
+
+      {/* Theme Section (hidden when sync is enabled) */}
+      {!isSyncEnabled && (
+        <Box>
+          <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Color Theme</Typography>
+          {mode === 'connection' && renderOverrideCheckbox('theme')}
+          <Grid container spacing={1} sx={{ mb: 1 }}>
+            {THEME_PRESET_NAMES.map((name) => (
+              <Grid size={{ xs: 6, sm: 4, md: 3 }} key={name}>
+                <Paper
+                  elevation={currentTheme === name ? 4 : 0}
+                  onClick={() => {
+                    if (!isDisabled('theme')) {
+                      setField('theme', name);
+                    }
+                  }}
+                  sx={{
+                    p: 1,
+                    cursor: isDisabled('theme') ? 'default' : 'pointer',
+                    opacity: isDisabled('theme') ? 0.5 : 1,
+                    border: '2px solid',
+                    borderColor: currentTheme === name ? 'primary.main' : 'transparent',
+                    bgcolor: THEME_PRESETS[name].background,
+                    transition: 'border-color 0.2s',
+                    '&:hover': !isDisabled('theme') ? { borderColor: 'primary.light' } : {},
+                  }}
+                >
+                  <Typography
+                    variant="caption"
+                    sx={{ color: THEME_PRESETS[name].foreground, fontWeight: 500 }}
+                  >
+                    {themeLabel(name)}
+                  </Typography>
+                  <ThemePreview colors={THEME_PRESETS[name]} />
+                </Paper>
+              </Grid>
+            ))}
+            {/* Custom option */}
+            <Grid size={{ xs: 6, sm: 4, md: 3 }}>
               <Paper
-                elevation={currentTheme === name ? 4 : 0}
+                elevation={currentTheme === 'custom' ? 4 : 0}
                 onClick={() => {
                   if (!isDisabled('theme')) {
-                    setField('theme', name);
+                    setField('theme', 'custom');
                   }
                 }}
                 sx={{
@@ -287,76 +391,47 @@ export default function TerminalSettingsSection({
                   cursor: isDisabled('theme') ? 'default' : 'pointer',
                   opacity: isDisabled('theme') ? 0.5 : 1,
                   border: '2px solid',
-                  borderColor: currentTheme === name ? 'primary.main' : 'transparent',
-                  bgcolor: THEME_PRESETS[name].background,
+                  borderColor: currentTheme === 'custom' ? 'primary.main' : 'transparent',
                   transition: 'border-color 0.2s',
                   '&:hover': !isDisabled('theme') ? { borderColor: 'primary.light' } : {},
                 }}
               >
-                <Typography
-                  variant="caption"
-                  sx={{ color: THEME_PRESETS[name].foreground, fontWeight: 500 }}
-                >
-                  {themeLabel(name)}
+                <Typography variant="caption" sx={{ fontWeight: 500 }}>Custom</Typography>
+                <Typography variant="caption" display="block" color="text.secondary">
+                  Pick your own colors
                 </Typography>
-                <ThemePreview colors={THEME_PRESETS[name]} />
               </Paper>
             </Grid>
-          ))}
-          {/* Custom option */}
-          <Grid size={{ xs: 6, sm: 4, md: 3 }}>
-            <Paper
-              elevation={currentTheme === 'custom' ? 4 : 0}
-              onClick={() => {
-                if (!isDisabled('theme')) {
-                  setField('theme', 'custom');
-                }
-              }}
-              sx={{
-                p: 1,
-                cursor: isDisabled('theme') ? 'default' : 'pointer',
-                opacity: isDisabled('theme') ? 0.5 : 1,
-                border: '2px solid',
-                borderColor: currentTheme === 'custom' ? 'primary.main' : 'transparent',
-                transition: 'border-color 0.2s',
-                '&:hover': !isDisabled('theme') ? { borderColor: 'primary.light' } : {},
-              }}
-            >
-              <Typography variant="caption" sx={{ fontWeight: 500 }}>Custom</Typography>
-              <Typography variant="caption" display="block" color="text.secondary">
-                Pick your own colors
-              </Typography>
-            </Paper>
           </Grid>
-        </Grid>
 
-        {/* Custom color pickers */}
-        {currentTheme === 'custom' && !isDisabled('theme') && (
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              Custom Colors
-            </Typography>
-            <Grid container spacing={1}>
-              {ANSI_COLOR_KEYS.map((colorKey) => (
-                <Grid size={{ xs: 6, sm: 4, md: 3 }} key={colorKey}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <input
-                      type="color"
-                      value={currentColors[colorKey]}
-                      onChange={(e) => {
-                        const newCustom = { ...value.customColors, [colorKey]: e.target.value };
-                        onChange({ ...value, customColors: newCustom });
-                      }}
-                      style={{ width: 28, height: 28, border: 'none', cursor: 'pointer', padding: 0 }}
-                    />
-                    <Typography variant="caption" noWrap>{colorKey}</Typography>
-                  </Box>
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
-        )}
-      </Box>
+          {/* Custom color pickers */}
+          {currentTheme === 'custom' && !isDisabled('theme') && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                Custom Colors
+              </Typography>
+              <Grid container spacing={1}>
+                {ANSI_COLOR_KEYS.map((colorKey) => (
+                  <Grid size={{ xs: 6, sm: 4, md: 3 }} key={colorKey}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <input
+                        type="color"
+                        value={currentColors[colorKey]}
+                        onChange={(e) => {
+                          const newCustom = { ...value.customColors, [colorKey]: e.target.value };
+                          onChange({ ...value, customColors: newCustom });
+                        }}
+                        style={{ width: 28, height: 28, border: 'none', cursor: 'pointer', padding: 0 }}
+                      />
+                      <Typography variant="caption" noWrap>{colorKey}</Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+          )}
+        </Box>
+      )}
 
       {/* Performance Section */}
       <Box>

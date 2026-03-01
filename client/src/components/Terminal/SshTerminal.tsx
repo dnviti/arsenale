@@ -9,7 +9,8 @@ import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { SshTerminalConfig } from '../../constants/terminalThemes';
-import { mergeTerminalConfig, toXtermOptions } from '../../constants/terminalThemes';
+import { mergeTerminalConfig, toXtermOptions, resolveThemeForMode, THEME_PRESETS } from '../../constants/terminalThemes';
+import { useThemeStore } from '../../store/themeStore';
 import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
 import SftpBrowser from '../SSH/SftpBrowser';
 import '@xterm/xterm/css/xterm.css';
@@ -31,16 +32,52 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
   const [error, setError] = useState('');
   const accessToken = useAuthStore((s) => s.accessToken);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
+  const webUiMode = useThemeStore((s) => s.mode);
 
   // Compute xterm options from merged config (applied at mount only)
   const xtermOptions = useMemo(
-    () => toXtermOptions(mergeTerminalConfig(userDefaults, sshTerminalConfig)),
-    [userDefaults, sshTerminalConfig],
+    () => toXtermOptions(mergeTerminalConfig(userDefaults, sshTerminalConfig), webUiMode),
+    [userDefaults, sshTerminalConfig, webUiMode],
   );
   const xtermOptionsRef = useRef(xtermOptions);
   useEffect(() => {
     xtermOptionsRef.current = xtermOptions;
   }, [xtermOptions]);
+
+  // Dynamically update terminal theme when WebUI mode changes
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+
+    const merged = mergeTerminalConfig(userDefaults, sshTerminalConfig);
+    const effectiveTheme = resolveThemeForMode(merged, webUiMode);
+    const colors = effectiveTheme === 'custom'
+      ? merged.customColors
+      : THEME_PRESETS[effectiveTheme] ?? THEME_PRESETS['default-dark'];
+
+    terminal.options.theme = {
+      background: colors.background,
+      foreground: colors.foreground,
+      cursor: colors.cursor,
+      selectionBackground: colors.selectionBackground,
+      black: colors.black,
+      red: colors.red,
+      green: colors.green,
+      yellow: colors.yellow,
+      blue: colors.blue,
+      magenta: colors.magenta,
+      cyan: colors.cyan,
+      white: colors.white,
+      brightBlack: colors.brightBlack,
+      brightRed: colors.brightRed,
+      brightGreen: colors.brightGreen,
+      brightYellow: colors.brightYellow,
+      brightBlue: colors.brightBlue,
+      brightMagenta: colors.brightMagenta,
+      brightCyan: colors.brightCyan,
+      brightWhite: colors.brightWhite,
+    };
+  }, [webUiMode, userDefaults, sshTerminalConfig]);
 
   // Resolve bell style for onBell handler
   const bellStyle = mergeTerminalConfig(userDefaults, sshTerminalConfig).bellStyle;

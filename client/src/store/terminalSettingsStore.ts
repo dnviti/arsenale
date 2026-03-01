@@ -28,7 +28,9 @@ export const useTerminalSettingsStore = create<TerminalSettingsState>((set) => (
   updateDefaults: async (config) => {
     set({ loading: true });
     try {
+      console.log('[SSH save] sending config:', JSON.stringify(config));
       const result = await apiUpdateSshDefaults(config);
+      console.log('[SSH save] server returned:', JSON.stringify(result.sshDefaults));
       set({ userDefaults: result.sshDefaults, loading: false });
     } catch {
       set({ loading: false });

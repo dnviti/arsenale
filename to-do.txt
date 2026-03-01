@@ -16,52 +16,6 @@
 ================================================================================
 
 
-------------------------------------------------------------------------------
-[ ] SSHUI-028 — Sincronizzazione automatica tema terminale SSH con tema WebUI
-------------------------------------------------------------------------------
-  Priorita: BASSA
-  Dipendenze: SSHUI-027 (completato), THEME-011 (completato)
-
-  DESCRIZIONE:
-  Aggiungere un'opzione "Sync theme with WebUI" nelle impostazioni del terminale
-  SSH che, quando attiva, cambia automaticamente il tema del terminale in base
-  al tema light/dark scelto dall'utente per la WebUI. Quando il tema WebUI e'
-  light, il terminale usa un tema chiaro (es. solarized-light); quando e' dark,
-  usa un tema scuro (es. default-dark). L'utente puo' comunque scegliere
-  manualmente un tema diverso disattivando lo switch (comportamento attuale
-  invariato).
-
-  DETTAGLI TECNICI:
-  Frontend:
-    - Estendere SshTerminalConfig in client/src/constants/terminalThemes.ts:
-      aggiungere campo syncThemeWithWebUI?: boolean (default false)
-    - Aggiungere due campi opzionali per i preset da usare:
-      syncLightTheme?: string (default 'solarized-light')
-      syncDarkTheme?: string (default 'default-dark')
-    - TerminalSettingsSection.tsx: aggiungere switch "Sync theme with WebUI"
-      - Quando attivo: mostrare dropdown per scegliere il preset light e dark
-      - Quando attivo: disabilitare/nascondere il selettore tema manuale
-      - Quando disattivo: comportamento attuale (scelta manuale tema)
-    - SshTerminal.tsx: nel calcolo del tema effettivo, se syncThemeWithWebUI
-      e' true, leggere il mode da useThemeStore e applicare il preset
-      corrispondente (syncLightTheme o syncDarkTheme) al posto del tema
-      manuale
-    - mergeTerminalConfig(): rispettare la gerarchia esistente
-      (defaults -> user globals -> connection overrides)
-    - Aggiornare la live preview in TerminalSettingsSection per riflettere
-      il tema sincronizzato quando lo switch e' attivo
-  Backend:
-    - Nessuna modifica strutturale: i nuovi campi (syncThemeWithWebUI,
-      syncLightTheme, syncDarkTheme) transitano come JSON nei campi
-      User.sshDefaults e Connection.sshTerminalConfig gia' esistenti
-    - Aggiornare la validazione Zod in user.controller.ts per accettare
-      i nuovi campi opzionali
-  File coinvolti:
-    MODIFICARE: client/src/constants/terminalThemes.ts
-    MODIFICARE: client/src/components/Settings/TerminalSettingsSection.tsx
-    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
-    MODIFICARE: server/src/controllers/user.controller.ts
-
 
 ------------------------------------------------------------------------------
 [ ] UI-046 — Refactoring Settings page: tabbed category layout
@@ -305,6 +259,281 @@
     MODIFICARE: server/src/controllers/sharing.controller.ts (batchShare handler)
     MODIFICARE: server/src/routes/sharing.routes.ts (POST /api/sharing/batch)
     MODIFICARE: server/prisma/schema.prisma (AuditAction enum + OpenTab model)
+
+
+------------------------------------------------------------------------------
+[ ] SSHGW-049 — Container image SSH Gateway gestito (Alpine + OpenSSH)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Creare un container Docker leggero basato su Alpine che esegue un demone
+  OpenSSH configurato esclusivamente per il TCP port forwarding. Il container
+  NON concede accesso shell — serve solo come tunnel SSH sicuro per instradare
+  connessioni verso reti interne, analogo a quanto guacd fa per RDP.
+  Il container e' interamente configurabile tramite variabili d'ambiente e
+  volume mount (authorized_keys). Include health check e si integra nel
+  workflow CI/CD esistente per build e push su GHCR.
+
+  DETTAGLI TECNICI:
+  Container:
+    - Base image: alpine:3.19 (o latest stable)
+    - Installare openssh-server, nessun pacchetto aggiuntivo
+    - Utente dedicato "tunnel" (no root login) con shell /sbin/nologin
+    - sshd_config restrittivo:
+        PermitRootLogin no
+        PasswordAuthentication no
+        PubkeyAuthentication yes
+        AllowTcpForwarding yes
+        GatewayPorts no
+        X11Forwarding no
+        PermitTTY no
+        ForceCommand /usr/sbin/nologin
+        AllowUsers tunnel
+    - Entrypoint script (entrypoint.sh):
+        - Generare host keys se non presenti (/etc/ssh/ssh_host_*)
+        - Creare /home/tunnel/.ssh/authorized_keys da:
+          a) variabile env SSH_AUTHORIZED_KEYS (stringa con chiavi separate
+             da newline)
+          b) volume mount /config/authorized_keys (se il file esiste)
+        - Impostare permessi corretti (700 su .ssh, 600 su authorized_keys)
+        - Avviare sshd in foreground (exec /usr/sbin/sshd -D -e)
+    - Porta esposta: 2222 (default, configurabile via SSH_PORT env var)
+    - Health check: nc -z localhost ${SSH_PORT:-2222} (ogni 10s, 3 retry)
+    - Label OCI standard per GHCR (org.opencontainers.image.*)
+  CI/CD:
+    - Aggiungere job "build-ssh-gateway" in .github/workflows/docker-build.yml
+    - Stesso pattern di build-server e build-client:
+      - checkout, buildx, login GHCR, metadata-action, build-push-action
+      - Image: ghcr.io/${{ github.repository }}/ssh-gateway
+      - Tags: latest (default branch), sha, semver
+      - Cache: type=gha
+  Docker Compose:
+    - docker-compose.dev.yml: aggiungere servizio ssh-gateway (commentato
+      per default — utile per testing locale)
+    - docker-compose.yml: aggiungere servizio ssh-gateway con build context
+    - docker-compose.prod.yml: aggiungere servizio ssh-gateway con image
+      da GHCR, authorized_keys via volume, porta configurabile
+    - Il servizio e' opzionale: chi non lo usa puo' rimuoverlo o commentarlo
+    - Esempio di scaling multiplo nei commenti:
+      ssh-gateway-dmz, ssh-gateway-internal con porte diverse
+  File coinvolti:
+    CREARE:     ssh-gateway/Dockerfile
+    CREARE:     ssh-gateway/entrypoint.sh
+    CREARE:     ssh-gateway/sshd_config
+    MODIFICARE: .github/workflows/docker-build.yml (job build-ssh-gateway)
+    MODIFICARE: docker-compose.dev.yml (servizio ssh-gateway)
+    MODIFICARE: docker-compose.yml (servizio ssh-gateway)
+    MODIFICARE: docker-compose.prod.yml (servizio ssh-gateway)
+    MODIFICARE: .env.example (SSH_GATEWAY_PORT, SSH_AUTHORIZED_KEYS)
+
+
+------------------------------------------------------------------------------
+[ ] SSHGW-050 — Generazione e gestione chiavi SSH server-side per gateway gestiti
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-049
+
+  DESCRIZIONE:
+  Implementare la generazione e il ciclo di vita di una coppia di chiavi SSH
+  (Ed25519) utilizzata dal server RDM per autenticarsi verso i gateway SSH
+  gestiti. La chiave privata viene cifrata e salvata nel database con una
+  chiave server-level (non la vault utente — il server deve poter decifrare
+  autonomamente durante le connessioni). La chiave pubblica viene esposta
+  tramite API per essere iniettata nei container gateway. Questo elimina la
+  necessita' di gestire password per i gateway managed.
+
+  DETTAGLI TECNICI:
+  Prisma:
+    - Nuovo modello SshKeyPair:
+        id                   String   @id @default(uuid())
+        tenantId             String   @unique
+        encryptedPrivateKey  String
+        privateKeyIV         String
+        privateKeyTag        String
+        publicKey            String   // chiave pubblica in chiaro
+        fingerprint          String   // SHA256 fingerprint
+        algorithm            String   @default("ed25519")
+        createdAt            DateTime @default(now())
+        updatedAt            DateTime @updatedAt
+        tenant               Tenant   @relation(fields: [tenantId],
+                                      references: [id], onDelete: Cascade)
+    - Aggiungere relazione in Tenant: sshKeyPair SshKeyPair?
+    - Migrazione Prisma
+  Crittografia server-level:
+    - Nuova env var: SERVER_ENCRYPTION_KEY (32 bytes hex)
+    - In config.ts: aggiungere SERVER_ENCRYPTION_KEY (obbligatorio in
+      production, auto-generato in development)
+    - In crypto.service.ts: aggiungere encryptWithServerKey()/
+      decryptWithServerKey() che usano SERVER_ENCRYPTION_KEY
+    - La chiave privata SSH e' cifrata con questa key, NON con la
+      vault utente — il server deve poter decifrare senza interazione
+  Servizio (sshkey.service.ts):
+    - generateKeyPair(tenantId):
+        - Usare crypto.generateKeyPairSync('ed25519') di Node.js
+        - Cifrare la chiave privata con encryptWithServerKey()
+        - Salvare nel modello SshKeyPair
+        - Restituire la chiave pubblica e il fingerprint
+    - getPublicKey(tenantId):
+        - Restituire solo la chiave pubblica (non sensibile)
+    - getPrivateKey(tenantId):
+        - Decifrare la chiave privata con decryptWithServerKey()
+        - Restituire come Buffer per uso in ssh2 connect()
+    - rotateKeyPair(tenantId):
+        - Generare nuova coppia, sostituire la precedente
+        - Restituire la nuova chiave pubblica (l'utente deve aggiornare
+          i container gateway con la nuova authorized_keys)
+  Controller e Routes:
+    - POST  /api/gateways/ssh-keypair          — genera coppia di chiavi
+    - GET   /api/gateways/ssh-keypair          — restituisce pubblica +
+                                                  fingerprint
+    - POST  /api/gateways/ssh-keypair/rotate   — ruota la coppia
+    - Proteggere con requireTenantRole('ADMIN')
+    - Zod validation, audit logging (nuovi AuditAction: SSH_KEY_GENERATE,
+      SSH_KEY_ROTATE)
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (SshKeyPair model, Tenant rel.)
+    CREARE:     server/src/services/sshkey.service.ts
+    MODIFICARE: server/src/services/crypto.service.ts (encryptWithServerKey)
+    MODIFICARE: server/src/routes/gateway.routes.ts (keypair endpoints)
+    MODIFICARE: server/src/controllers/gateway.controller.ts (keypair)
+    MODIFICARE: server/src/config.ts (SERVER_ENCRYPTION_KEY)
+    MODIFICARE: .env.example (SERVER_ENCRYPTION_KEY)
+
+
+------------------------------------------------------------------------------
+[ ] SSHGW-051 — Integrazione gateway SSH gestito nel backend (MANAGED_SSH)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-049, SSHGW-050
+
+  DESCRIZIONE:
+  Aggiungere il supporto per i gateway SSH gestiti nel sistema di routing
+  delle connessioni. Nuovo tipo gateway MANAGED_SSH nel enum GatewayType che
+  identifica un container SSH gateway gestito dal progetto (a differenza di
+  SSH_BASTION che e' un host esterno con credenziali manuali). Per i gateway
+  MANAGED_SSH il server usa automaticamente la coppia di chiavi SSH generata
+  in SSHGW-050 invece di credenziali username/password. Estendere
+  ssh.service.ts per supportare autenticazione basata su chiave privata
+  verso il bastion.
+
+  DETTAGLI TECNICI:
+  Prisma:
+    - Aggiungere MANAGED_SSH all'enum GatewayType:
+        enum GatewayType { GUACD, SSH_BASTION, MANAGED_SSH }
+    - Migrazione Prisma per il nuovo valore enum
+  ssh.service.ts:
+    - Estendere BastionConnectionParams:
+        bastionPrivateKey?: Buffer   // alternativa a bastionPassword
+    - Rendere bastionPassword opzionale (attualmente obbligatorio)
+    - Modificare createSshConnectionViaBastion():
+        - Se bastionPrivateKey e' presente, usare privateKey nel
+          bastionClient.connect() al posto di password:
+            bastionClient.connect({
+              host, port,
+              username: params.bastionUsername,
+              privateKey: params.bastionPrivateKey,
+              readyTimeout: 10000,
+              keepaliveInterval: 10000,
+            });
+        - Se bastionPassword e' presente, comportamento attuale invariato
+        - Validare che almeno uno dei due sia fornito
+  ssh.handler.ts:
+    - Nella sezione gateway routing (session:start handler):
+        - Accettare anche gateway.type === 'MANAGED_SSH'
+        - Per MANAGED_SSH:
+            - Non servono credenziali gateway dal vault utente
+            - Recuperare la chiave privata dal SshKeyPair del tenant
+              (via sshkey.service.ts getPrivateKey())
+            - Username fisso: "tunnel" (corrisponde al container)
+            - Chiamare createSshConnectionViaBastion() con
+              bastionPrivateKey e bastionUsername: 'tunnel'
+        - Per SSH_BASTION: comportamento attuale invariato
+  gateway.service.ts:
+    - createGateway(): accettare tipo MANAGED_SSH
+        - Non richiedere credenziali (nessun username/password)
+        - Validare che il tenant abbia una coppia di chiavi SSH generata
+          (altrimenti errore 400: "Generate an SSH key pair first")
+    - getGatewayCredentials(): per MANAGED_SSH restituire null
+    - updateGateway(): gestire tipo MANAGED_SSH (no credenziali)
+  gateway.controller.ts:
+    - Aggiornare Zod schema createSchema per accettare 'MANAGED_SSH'
+    - Per MANAGED_SSH, non validare username/password
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (GatewayType enum)
+    MODIFICARE: server/src/services/ssh.service.ts (privateKey auth)
+    MODIFICARE: server/src/socket/ssh.handler.ts (MANAGED_SSH routing)
+    MODIFICARE: server/src/services/gateway.service.ts (MANAGED_SSH type)
+    MODIFICARE: server/src/controllers/gateway.controller.ts (Zod schema)
+
+
+------------------------------------------------------------------------------
+[ ] SSHGW-052 — Frontend gateway SSH gestito: UI, status e configurazione
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-050, SSHGW-051
+
+  DESCRIZIONE:
+  Aggiornare l'interfaccia frontend per supportare i gateway SSH gestiti.
+  Il GatewayDialog deve mostrare il nuovo tipo MANAGED_SSH con un form
+  semplificato (nessun campo credenziali — il server usa la propria chiave).
+  La GatewayList mostra un indicatore visivo per i gateway managed e il
+  loro stato di connettivita'. Aggiungere una sezione per gestire la coppia
+  di chiavi SSH del tenant (generazione, visualizzazione chiave pubblica,
+  rotazione) con istruzioni per iniettarla nei container gateway.
+
+  DETTAGLI TECNICI:
+  API (gateway.api.ts):
+    - Aggiungere tipo 'MANAGED_SSH' a GatewayData.type e GatewayInput.type
+    - Nuove funzioni API:
+        generateSshKeyPair(): POST /api/gateways/ssh-keypair
+        getSshKeyPair(): GET /api/gateways/ssh-keypair
+        rotateSshKeyPair(): POST /api/gateways/ssh-keypair/rotate
+    - Interfaccia SshKeyPairData:
+        { publicKey, fingerprint, algorithm, createdAt }
+  GatewayDialog.tsx:
+    - Aggiungere MenuItem per tipo MANAGED_SSH:
+        <MenuItem value="MANAGED_SSH">Managed SSH Gateway</MenuItem>
+    - Quando type === 'MANAGED_SSH':
+        - Nascondere i campi Username e Password (non necessari)
+        - Mostrare un Alert info: "This gateway uses the server's SSH key
+          pair for authentication. No manual credentials needed."
+        - Porta default: 2222 (la porta del container SSH gateway)
+    - handleTypeChange(): gestire il default port per MANAGED_SSH (2222)
+  GatewayList.tsx:
+    - Aggiornare Chip del tipo per MANAGED_SSH:
+        color="success", label="Managed SSH"
+    - Nuova sezione "SSH Key Pair" sopra la tabella gateway:
+        - Se nessuna chiave esiste:
+            - Messaggio "No SSH key pair generated yet"
+            - Button "Generate Key Pair"
+        - Se chiave esiste:
+            - Mostrare fingerprint e data creazione
+            - TextField readonly con la chiave pubblica + copy button
+            - Button "Rotate Key Pair" (con conferma dialog)
+            - Istruzioni in un Accordion/Collapse:
+              "Copy this public key and add it to the SSH_AUTHORIZED_KEYS
+               environment variable of your SSH gateway container, or
+               mount it as /config/authorized_keys."
+    - Proteggere sezione keypair con controllo ruolo: solo OWNER/ADMIN
+  ConnectionDialog.tsx:
+    - Il dropdown gateway filtra MANAGED_SSH per connessioni SSH
+      (stesso filtering di SSH_BASTION)
+    - MANAGED_SSH e SSH_BASTION sono entrambi validi per connessioni SSH
+  gatewayStore.ts:
+    - Aggiungere stato e azioni per la coppia di chiavi:
+        sshKeyPair: SshKeyPairData | null
+        fetchSshKeyPair(): Promise<void>
+        generateSshKeyPair(): Promise<SshKeyPairData>
+        rotateSshKeyPair(): Promise<SshKeyPairData>
+  File coinvolti:
+    MODIFICARE: client/src/api/gateway.api.ts (MANAGED_SSH, keypair API)
+    MODIFICARE: client/src/store/gatewayStore.ts (keypair state/actions)
+    MODIFICARE: client/src/components/gateway/GatewayDialog.tsx (MANAGED_SSH)
+    MODIFICARE: client/src/components/gateway/GatewayList.tsx (managed chip,
+                keypair section)
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx (filter)
 
 
 ================================================================================
@@ -708,19 +937,25 @@
    37b. TABS-047  Persistenza automatica tab aperti (server-side, cross-device)
    37c. FOLD-048  Context menu cartelle: Share Folder e Open All Connections
 
+  Fase 8c — SSH Gateway gestito (container managed):
+   38. SSHGW-049  Container image SSH Gateway (Alpine + OpenSSH, CI/CD)
+   39. SSHGW-050  Generazione e gestione chiavi SSH server-side
+   40. SSHGW-051  Integrazione gateway managed nel backend (MANAGED_SSH + key auth)
+   41. SSHGW-052  Frontend gateway SSH gestito: UI, status e configurazione
+
   Fase 9 — Zero Trust hardening (Tier 1, priorita' alta):
-   38. ZT-036   Security headers (helmet middleware)
-   39. ZT-037   Rate limiting login e account lockout
-   40. ZT-038   Audit sessioni SSH/RDP (session start/end)
-   41. ZT-039   Audit tentativi di login falliti
-   42. ZT-040   Lock vault al logout
+   42. ZT-036   Security headers (helmet middleware)
+   43. ZT-037   Rate limiting login e account lockout
+   44. ZT-038   Audit sessioni SSH/RDP (session start/end)
+   45. ZT-039   Audit tentativi di login falliti
+   46. ZT-040   Lock vault al logout
 
   Fase 10 — Zero Trust hardening (Tier 2, core ZT):
-   43. ZT-041   Policy MFA obbligatorio a livello tenant
-   44. ZT-042   Rotazione refresh token
-   45. ZT-043   Fix validazione certificato RDP (default ignoreCert)
-   46. ZT-044   Cifratura TOTP secret a riposo
-   47. ZT-045   Vista audit log per admin tenant
+   47. ZT-041   Policy MFA obbligatorio a livello tenant
+   48. ZT-042   Rotazione refresh token
+   49. ZT-043   Fix validazione certificato RDP (default ignoreCert)
+   50. ZT-044   Cifratura TOTP secret a riposo
+   51. ZT-045   Vista audit log per admin tenant
 
 ================================================================================
   NOTE
@@ -842,4 +1077,24 @@
   - FOLD-048 "Open All" mostra conferma se > 5 connessioni
   - FOLD-048 batch share limitato a 50 connessioni per richiesta
   - FOLD-048 richiede migrazione Prisma per BATCH_SHARE nell'enum AuditAction
+  - SSHGW-049 e' un container indipendente, non richiede codice nel server
+  - SSHGW-049 il container usa solo port forwarding TCP, nessun accesso shell
+  - SSHGW-049 la directory ssh-gateway/ e' un nuovo workspace root-level
+    (non un npm workspace — solo Dockerfile + config)
+  - SSHGW-050 la chiave privata SSH e' cifrata con SERVER_ENCRYPTION_KEY (env var),
+    NON con la vault utente — il server deve decifrare autonomamente durante
+    le connessioni SSH senza richiedere vault unlock
+  - SSHGW-050 ogni tenant ha una sola coppia di chiavi (1:1 Tenant→SshKeyPair)
+  - SSHGW-050 rotazione chiave richiede aggiornamento manuale dei container
+    gateway (nuova chiave pubblica da iniettare)
+  - SSHGW-051 aggiunge MANAGED_SSH all'enum GatewayType: richiede migrazione Prisma
+  - SSHGW-051 per MANAGED_SSH: username fisso "tunnel", auth via privateKey,
+    nessuna credenziale dal vault utente
+  - SSHGW-051 backward compatible: SSH_BASTION funziona come prima con password
+  - SSHGW-051 ssh2 supporta nativamente privateKey nel metodo connect()
+  - SSHGW-052 la sezione SSH Key Pair e' visibile solo a OWNER/ADMIN del tenant
+  - SSHGW-052 il dropdown gateway nel ConnectionDialog filtra MANAGED_SSH
+    e SSH_BASTION per connessioni SSH (entrambi validi)
+  - SSHGW-052 nessuna nuova pagina/route: la gestione keypair vive nella
+    pagina /settings/gateways esistente
 ================================================================================
