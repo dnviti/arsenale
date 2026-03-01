@@ -17,6 +17,7 @@ import notificationRoutes from './routes/notification.routes';
 import tenantRoutes from './routes/tenant.routes';
 import teamRoutes from './routes/team.routes';
 import adminRoutes from './routes/admin.routes';
+import gatewayRoutes from './routes/gateway.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 const app = express();
@@ -42,6 +43,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/teams', teamRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/gateways', gatewayRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {

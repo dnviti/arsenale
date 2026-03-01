@@ -1,4 +1,4 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 export const smsRateLimiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
@@ -8,7 +8,8 @@ export const smsRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     const authReq = req as { user?: { userId: string } };
-    return `sms:${authReq.user?.userId ?? req.ip}`;
+    if (authReq.user?.userId) return `sms:${authReq.user.userId}`;
+    return `sms:${ipKeyGenerator(req.ip ?? '127.0.0.1')}`;
   },
 });
 

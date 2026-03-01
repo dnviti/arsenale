@@ -26,8 +26,9 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
-  teams Team[]
+  users    User[]
+  teams    Team[]
+  gateways Gateway[]
 }
 
 model Team {
@@ -99,7 +100,8 @@ model User {
   oauthAccounts OAuthAccount[]
   auditLogs     AuditLog[]
   notifications Notification[]
-  teamMembers   TeamMember[]
+  teamMembers     TeamMember[]
+  gatewaysCreated Gateway[]    @relation("GatewayCreator")
 }
 
 enum AuthProvider {
@@ -167,15 +169,52 @@ model Connection {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  team   Team?   @relation(fields: [teamId], references: [id])
-  user   User    @relation(fields: [userId], references: [id])
-  shares SharedConnection[]
+  gatewayId         String?
+
+  folder  Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  team    Team?    @relation(fields: [teamId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  gateway Gateway? @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  shares  SharedConnection[]
 }
 
 enum ConnectionType {
   RDP
   SSH
+}
+
+enum GatewayType {
+  GUACD
+  SSH_BASTION
+}
+
+model Gateway {
+  id          String      @id @default(uuid())
+  name        String
+  type        GatewayType
+  host        String
+  port        Int
+  description String?
+  isDefault   Boolean     @default(false)
+  tenantId    String
+  createdById String
+
+  encryptedUsername  String?
+  usernameIV         String?
+  usernameTag        String?
+  encryptedPassword  String?
+  passwordIV         String?
+  passwordTag        String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id])
+  createdBy   User         @relation("GatewayCreator", fields: [createdById], references: [id])
+  connections Connection[]
+
+  @@index([tenantId])
+  @@index([tenantId, type, isDefault])
 }
 
 model SharedConnection {
@@ -256,6 +295,9 @@ enum AuditAction {
   TEAM_REMOVE_MEMBER
   TEAM_UPDATE_MEMBER_ROLE
   EMAIL_TEST_SEND
+  GATEWAY_CREATE
+  GATEWAY_UPDATE
+  GATEWAY_DELETE
 }
 
 model AuditLog {
