@@ -107,6 +107,7 @@ enum AuthProvider {
   GOOGLE
   MICROSOFT
   GITHUB
+  OIDC
 }
 
 model OAuthAccount {

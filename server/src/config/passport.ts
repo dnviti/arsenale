@@ -2,11 +2,12 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
 import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
+import * as crypto from 'crypto';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
 export interface OAuthProfile {
-  provider: 'GOOGLE' | 'MICROSOFT' | 'GITHUB';
+  provider: 'GOOGLE' | 'MICROSOFT' | 'GITHUB' | 'OIDC';
   providerUserId: string;
   email: string;
   displayName: string | null;
@@ -53,7 +54,206 @@ function makeVerifyCallback(provider: OAuthProfile['provider']) {
   };
 }
 
-export function initializePassport(): void {
+// --- OIDC Discovery + Custom Passport Strategy ---
+
+interface OidcDiscoveryDocument {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  userinfo_endpoint: string;
+  jwks_uri?: string;
+}
+
+type VerifyCallback = (
+  accessToken: string,
+  refreshToken: string,
+  profile: { id: string; displayName?: string; emails?: Array<{ value: string }>; photos?: Array<{ value: string }>; _json?: Record<string, unknown> },
+  done: (err: Error | null, data?: OAuthCallbackData) => void,
+) => void;
+
+// Temporary in-memory store for PKCE code verifiers, keyed by state
+const oidcPkceStore = new Map<string, { codeVerifier: string; createdAt: number }>();
+
+/**
+ * Minimal Passport strategy for generic OIDC providers.
+ * Uses OIDC Discovery and standard OAuth2 Authorization Code flow with PKCE.
+ * No external dependencies beyond Node.js built-in fetch().
+ */
+class OidcStrategy extends passport.Strategy {
+  name = 'oidc';
+
+  private clientId: string;
+  private clientSecret: string;
+  private callbackUrl: string;
+  private scopes: string;
+  private disc: OidcDiscoveryDocument;
+  private _verify: VerifyCallback;
+
+  constructor(
+    options: {
+      clientId: string;
+      clientSecret: string;
+      callbackUrl: string;
+      scopes: string;
+      discovery: OidcDiscoveryDocument;
+    },
+    verify: VerifyCallback,
+  ) {
+    super();
+    this.clientId = options.clientId;
+    this.clientSecret = options.clientSecret;
+    this.callbackUrl = options.callbackUrl;
+    this.scopes = options.scopes;
+    this.disc = options.discovery;
+    this._verify = verify;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  authenticate(
+    req: any,
+    options?: { state?: string; scope?: string[] },
+  ): void {
+    // If the request has a 'code' query param, this is a callback
+    if (req.query?.code || req.query?.error) {
+      this._handleCallback(req)
+        .catch((err) => (this as any).error(err)); // eslint-disable-line @typescript-eslint/no-explicit-any
+      return;
+    }
+
+    // Build authorization redirect URL
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: this.clientId,
+      redirect_uri: this.callbackUrl,
+      scope: options?.scope?.join(' ') || this.scopes,
+    });
+
+    // Generate PKCE challenge
+    const codeVerifier = crypto.randomBytes(32).toString('base64url');
+    const codeChallenge = crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+    params.set('code_challenge', codeChallenge);
+    params.set('code_challenge_method', 'S256');
+
+    // Determine state (may be provided for account linking)
+    const state = options?.state || crypto.randomBytes(16).toString('hex');
+    params.set('state', state);
+
+    // Store PKCE verifier keyed by state
+    oidcPkceStore.set(state, { codeVerifier, createdAt: Date.now() });
+
+    // Cleanup old PKCE entries (older than 10 minutes)
+    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+    for (const [key, val] of oidcPkceStore.entries()) {
+      if (val.createdAt < tenMinutesAgo) oidcPkceStore.delete(key);
+    }
+
+    const authUrl = `${this.disc.authorization_endpoint}?${params.toString()}`;
+    (this as any).redirect(authUrl); // eslint-disable-line @typescript-eslint/no-explicit-any
+  }
+
+  private async _handleCallback(req: { query?: Record<string, string | string[] | undefined> }) {
+    const code = typeof req.query?.code === 'string' ? req.query.code : undefined;
+    const state = typeof req.query?.state === 'string' ? req.query.state : undefined;
+    const error = typeof req.query?.error === 'string' ? req.query.error : undefined;
+
+    if (error) {
+      const errorDesc = req.query?.error_description || error;
+      (this as any).fail({ message: errorDesc }, 401); // eslint-disable-line @typescript-eslint/no-explicit-any
+      return;
+    }
+
+    if (!code) {
+      (this as any).fail({ message: 'Missing authorization code' }, 400); // eslint-disable-line @typescript-eslint/no-explicit-any
+      return;
+    }
+
+    // Retrieve and remove PKCE code_verifier
+    const pkceEntry = state ? oidcPkceStore.get(state) : undefined;
+    if (state) oidcPkceStore.delete(state);
+
+    // Exchange authorization code for tokens
+    const tokenParams: Record<string, string> = {
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: this.callbackUrl,
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+    };
+    if (pkceEntry?.codeVerifier) {
+      tokenParams.code_verifier = pkceEntry.codeVerifier;
+    }
+
+    const tokenResponse = await fetch(this.disc.token_endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(tokenParams).toString(),
+    });
+
+    if (!tokenResponse.ok) {
+      const errorBody = await tokenResponse.text();
+      logger.error('OIDC token exchange failed:', errorBody);
+      (this as any).fail({ message: 'Token exchange failed' }, 401); // eslint-disable-line @typescript-eslint/no-explicit-any
+      return;
+    }
+
+    const tokens = await tokenResponse.json() as {
+      access_token: string;
+      refresh_token?: string;
+      id_token?: string;
+    };
+
+    // Fetch userinfo from the IdP
+    const userinfoResponse = await fetch(this.disc.userinfo_endpoint, {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+
+    if (!userinfoResponse.ok) {
+      logger.error('OIDC userinfo fetch failed:', await userinfoResponse.text());
+      (this as any).fail({ message: 'Failed to fetch user info' }, 401); // eslint-disable-line @typescript-eslint/no-explicit-any
+      return;
+    }
+
+    const userinfo = await userinfoResponse.json() as Record<string, unknown>;
+
+    // Map OIDC standard claims to Passport profile shape
+    const profile = {
+      id: String(userinfo.sub),
+      displayName: (userinfo.name as string) || (userinfo.preferred_username as string) || undefined,
+      emails: userinfo.email ? [{ value: userinfo.email as string }] : undefined,
+      photos: userinfo.picture ? [{ value: userinfo.picture as string }] : undefined,
+      _json: userinfo,
+    };
+
+    // Call the verify callback (same shape as other providers)
+    this._verify(
+      tokens.access_token,
+      tokens.refresh_token || '',
+      profile,
+      (err, data) => {
+        if (err) return (this as any).error(err); // eslint-disable-line @typescript-eslint/no-explicit-any
+        if (!data) return (this as any).fail({ message: 'Authentication failed' }, 401); // eslint-disable-line @typescript-eslint/no-explicit-any
+        (this as any).success(data); // eslint-disable-line @typescript-eslint/no-explicit-any
+      },
+    );
+  }
+}
+
+async function discoverOidcEndpoints(issuerUrl: string): Promise<OidcDiscoveryDocument> {
+  const wellKnownUrl = issuerUrl.replace(/\/+$/, '') + '/.well-known/openid-configuration';
+  const response = await fetch(wellKnownUrl);
+  if (!response.ok) {
+    throw new Error(`OIDC Discovery failed: ${response.status} ${response.statusText}`);
+  }
+  const doc = await response.json() as OidcDiscoveryDocument;
+
+  if (!doc.authorization_endpoint || !doc.token_endpoint || !doc.userinfo_endpoint) {
+    throw new Error('OIDC Discovery document missing required endpoints');
+  }
+
+  return doc;
+}
+
+export async function initializePassport(): Promise<void> {
   if (config.oauth.google.enabled) {
     passport.use(
       new GoogleStrategy(
@@ -98,5 +298,26 @@ export function initializePassport(): void {
       )
     );
     logger.info('OAuth: GitHub strategy registered');
+  }
+
+  if (config.oauth.oidc.enabled) {
+    try {
+      const discovery = await discoverOidcEndpoints(config.oauth.oidc.issuerUrl);
+      passport.use(
+        new OidcStrategy(
+          {
+            clientId: config.oauth.oidc.clientId,
+            clientSecret: config.oauth.oidc.clientSecret,
+            callbackUrl: config.oauth.oidc.callbackUrl,
+            scopes: config.oauth.oidc.scopes,
+            discovery,
+          },
+          makeVerifyCallback('OIDC') as any,
+        )
+      );
+      logger.info(`OAuth: OIDC strategy registered (${config.oauth.oidc.providerName}, issuer: ${discovery.issuer})`);
+    } catch (err) {
+      logger.warn('OIDC Discovery failed — OIDC provider will be unavailable:', err instanceof Error ? err.message : err);
+    }
   }
 }

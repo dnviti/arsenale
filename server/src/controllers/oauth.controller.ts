@@ -11,9 +11,9 @@ import * as auditService from '../services/audit.service';
 import { issueTokens } from '../services/auth.service';
 import { logger } from '../utils/logger';
 
-type OAuthProvider = 'google' | 'microsoft' | 'github';
+type OAuthProvider = 'google' | 'microsoft' | 'github' | 'oidc';
 
-const VALID_PROVIDERS: OAuthProvider[] = ['google', 'microsoft', 'github'];
+const VALID_PROVIDERS: OAuthProvider[] = ['google', 'microsoft', 'github', 'oidc'];
 
 function isValidProvider(p: string): p is OAuthProvider {
   return VALID_PROVIDERS.includes(p as OAuthProvider);
@@ -27,6 +27,7 @@ const SCOPE_MAP: Record<OAuthProvider, string[]> = {
   google: ['profile', 'email'],
   microsoft: ['user.read'],
   github: ['user:email'],
+  oidc: config.oauth.oidc.scopes.split(/\s+/).filter(Boolean),
 };
 
 export function initiateOAuth(req: Request, res: Response, next: NextFunction) {
@@ -118,6 +119,8 @@ export function getAvailableProviders(_req: Request, res: Response) {
     google: config.oauth.google.enabled,
     microsoft: config.oauth.microsoft.enabled,
     github: config.oauth.github.enabled,
+    oidc: config.oauth.oidc.enabled,
+    oidcProviderName: config.oauth.oidc.providerName,
   });
 }
 

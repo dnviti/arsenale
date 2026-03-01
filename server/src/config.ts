@@ -69,5 +69,14 @@ export const config = {
       clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
       callbackUrl: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/auth/github/callback',
     },
+    oidc: {
+      enabled: !!process.env.OIDC_CLIENT_ID,
+      providerName: process.env.OIDC_PROVIDER_NAME || 'SSO',
+      issuerUrl: process.env.OIDC_ISSUER_URL || '',
+      clientId: process.env.OIDC_CLIENT_ID || '',
+      clientSecret: process.env.OIDC_CLIENT_SECRET || '',
+      callbackUrl: process.env.OIDC_CALLBACK_URL || 'http://localhost:3001/api/auth/oidc/callback',
+      scopes: process.env.OIDC_SCOPES || 'openid profile email',
+    },
   },
 };

@@ -4,6 +4,14 @@ import GitHubIcon from '@mui/icons-material/GitHub';
 import GoogleIcon from '@mui/icons-material/Google';
 import { getOAuthProviders, initiateOAuthLogin, OAuthProviders } from '../api/oauth.api';
 
+function OidcIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" />
+    </svg>
+  );
+}
+
 function MicrosoftIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
@@ -38,7 +46,7 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
     );
   }
 
-  if (!providers || (!providers.google && !providers.microsoft && !providers.github)) {
+  if (!providers || (!providers.google && !providers.microsoft && !providers.github && !providers.oidc)) {
     return null;
   }
 
@@ -75,6 +83,16 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
             onClick={() => initiateOAuthLogin('github')}
           >
             {label} with GitHub
+          </Button>
+        )}
+        {providers.oidc && (
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<OidcIcon />}
+            onClick={() => initiateOAuthLogin('oidc')}
+          >
+            {label} with {providers.oidcProviderName || 'SSO'}
           </Button>
         )}
       </Stack>

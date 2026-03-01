@@ -22,16 +22,26 @@ function MicrosoftIcon() {
   );
 }
 
+function OidcIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zM12 17c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zM15.1 8H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" />
+    </svg>
+  );
+}
+
 const providerIcons: Record<string, React.ReactNode> = {
   GOOGLE: <GoogleIcon />,
   MICROSOFT: <MicrosoftIcon />,
   GITHUB: <GitHubIcon />,
+  OIDC: <OidcIcon />,
 };
 
 const providerLabels: Record<string, string> = {
   GOOGLE: 'Google',
   MICROSOFT: 'Microsoft',
   GITHUB: 'GitHub',
+  OIDC: 'SSO',
 };
 
 interface LinkedAccountsSectionProps {
@@ -58,13 +68,18 @@ export default function LinkedAccountsSection({ hasPassword }: LinkedAccountsSec
   const linkedProviders = new Set(accounts.map((a) => a.provider));
   const totalAuthMethods = accounts.length + (hasPassword ? 1 : 0);
 
+  // Compute labels with dynamic OIDC provider name
+  const labels: Record<string, string> = providers?.oidcProviderName
+    ? { ...providerLabels, OIDC: providers.oidcProviderName }
+    : providerLabels;
+
   const handleUnlink = async (provider: string) => {
     setError('');
     setSuccess('');
     try {
       await unlinkOAuthAccount(provider);
       setAccounts((prev) => prev.filter((a) => a.provider !== provider));
-      setSuccess(`${providerLabels[provider] ?? provider} account unlinked`);
+      setSuccess(`${labels[provider] ?? provider} account unlinked`);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
@@ -76,7 +91,7 @@ export default function LinkedAccountsSection({ hasPassword }: LinkedAccountsSec
   if (loading) return null;
   if (!providers) return null;
 
-  const availableProviders = (['GOOGLE', 'MICROSOFT', 'GITHUB'] as const).filter(
+  const availableProviders = (['GOOGLE', 'MICROSOFT', 'GITHUB', 'OIDC'] as const).filter(
     (p) => providers[p.toLowerCase() as keyof OAuthProviders] && !linkedProviders.has(p),
   );
 
@@ -101,7 +116,7 @@ export default function LinkedAccountsSection({ hasPassword }: LinkedAccountsSec
                 <ListItemText
                   primary={
                     <Stack direction="row" alignItems="center" spacing={1}>
-                      <span>{providerLabels[account.provider] ?? account.provider}</span>
+                      <span>{labels[account.provider] ?? account.provider}</span>
                       <Chip label="Linked" color="success" size="small" />
                     </Stack>
                   }
@@ -131,7 +146,7 @@ export default function LinkedAccountsSection({ hasPassword }: LinkedAccountsSec
                 startIcon={providerIcons[provider]}
                 onClick={() => initiateOAuthLink(provider.toLowerCase())}
               >
-                Link {providerLabels[provider]}
+                Link {labels[provider]}
               </Button>
             ))}
           </Stack>

@@ -18,14 +18,12 @@ import tenantRoutes from './routes/tenant.routes';
 import teamRoutes from './routes/team.routes';
 import adminRoutes from './routes/admin.routes';
 import { errorHandler } from './middleware/error.middleware';
-import { initializePassport } from './config/passport';
 
 const app = express();
 
 app.use(cors({ origin: ['http://localhost:3000'], credentials: true }));
 app.use(express.json({ limit: '500kb' }));
 app.use(passport.initialize());
-initializePassport();
 
 // Routes
 app.use('/api/auth', oauthRoutes);
