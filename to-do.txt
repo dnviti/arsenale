@@ -16,6 +16,103 @@
 ================================================================================
 
 
+------------------------------------------------------------------------------
+[ ] SSHUI-028 — Sincronizzazione automatica tema terminale SSH con tema WebUI
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: SSHUI-027 (completato), THEME-011 (completato)
+
+  DESCRIZIONE:
+  Aggiungere un'opzione "Sync theme with WebUI" nelle impostazioni del terminale
+  SSH che, quando attiva, cambia automaticamente il tema del terminale in base
+  al tema light/dark scelto dall'utente per la WebUI. Quando il tema WebUI e'
+  light, il terminale usa un tema chiaro (es. solarized-light); quando e' dark,
+  usa un tema scuro (es. default-dark). L'utente puo' comunque scegliere
+  manualmente un tema diverso disattivando lo switch (comportamento attuale
+  invariato).
+
+  DETTAGLI TECNICI:
+  Frontend:
+    - Estendere SshTerminalConfig in client/src/constants/terminalThemes.ts:
+      aggiungere campo syncThemeWithWebUI?: boolean (default false)
+    - Aggiungere due campi opzionali per i preset da usare:
+      syncLightTheme?: string (default 'solarized-light')
+      syncDarkTheme?: string (default 'default-dark')
+    - TerminalSettingsSection.tsx: aggiungere switch "Sync theme with WebUI"
+      - Quando attivo: mostrare dropdown per scegliere il preset light e dark
+      - Quando attivo: disabilitare/nascondere il selettore tema manuale
+      - Quando disattivo: comportamento attuale (scelta manuale tema)
+    - SshTerminal.tsx: nel calcolo del tema effettivo, se syncThemeWithWebUI
+      e' true, leggere il mode da useThemeStore e applicare il preset
+      corrispondente (syncLightTheme o syncDarkTheme) al posto del tema
+      manuale
+    - mergeTerminalConfig(): rispettare la gerarchia esistente
+      (defaults -> user globals -> connection overrides)
+    - Aggiornare la live preview in TerminalSettingsSection per riflettere
+      il tema sincronizzato quando lo switch e' attivo
+  Backend:
+    - Nessuna modifica strutturale: i nuovi campi (syncThemeWithWebUI,
+      syncLightTheme, syncDarkTheme) transitano come JSON nei campi
+      User.sshDefaults e Connection.sshTerminalConfig gia' esistenti
+    - Aggiornare la validazione Zod in user.controller.ts per accettare
+      i nuovi campi opzionali
+  File coinvolti:
+    MODIFICARE: client/src/constants/terminalThemes.ts
+    MODIFICARE: client/src/components/Settings/TerminalSettingsSection.tsx
+    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
+    MODIFICARE: server/src/controllers/user.controller.ts
+
+
+------------------------------------------------------------------------------
+[ ] UI-046 — Refactoring Settings page: tabbed category layout
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna (tutti i componenti sezione esistono gia')
+
+  DESCRIZIONE:
+  Rifattorizzare la SettingsPage da una singola colonna scrollabile (maxWidth
+  700px) a un layout wide con tab verticali sulla sinistra. Una lista di tab
+  permette di navigare tra categorie (Profile, Connections, Security,
+  Organization, Administration). Ogni tab mostra solo le impostazioni della
+  sua categoria. I componenti sezione esistenti vengono riutilizzati, non
+  riscritti. Il tab attivo viene persistito in uiPreferencesStore e
+  sincronizzato con il query parameter ?tab= nell'URL per direct linking.
+
+  DETTAGLI TECNICI:
+  Frontend:
+    - Layout: Box flex row con sidebar sinistra (~220px) contenente MUI Tabs
+      (orientation="vertical") e area contenuto a destra (flex: 1, overflow: auto)
+    - Tab categories:
+      1. "Profile" (PersonIcon) -> ProfileSection + ChangePasswordSection
+      2. "Connections" (TerminalIcon) -> ConnectionDefaultsSection (SSH + RDP)
+      3. "Security" (ShieldIcon) -> TwoFactorSection + SmsMfaSection
+                                    + LinkedAccountsSection
+      4. "Organization" (BusinessIcon) -> OrganizationSection
+      5. "Administration" (AdminPanelSettingsIcon) -> EmailProviderSection
+         (tab visibile solo a OWNER/ADMIN, nascosto per utenti normali)
+    - Estrarre 4 nuovi componenti dalla JSX inline di SettingsPage:
+      - ProfileSection.tsx: avatar, username, email, gestione ?linked= param
+      - ChangePasswordSection.tsx: form cambio password (prop hasPassword)
+      - OrganizationSection.tsx: pulsanti navigazione tenant/teams/gateways
+      - ConnectionDefaultsSection.tsx: card SSH defaults + RDP defaults con
+        rispettivi save button e store (terminalSettingsStore, rdpSettingsStore)
+    - Riutilizzare i 4 componenti sezione esistenti senza modifiche:
+      TerminalSettingsSection, RdpSettingsSection, TwoFactorSection,
+      SmsMfaSection, LinkedAccountsSection, EmailProviderSection
+    - Persistenza tab attivo: aggiungere settingsActiveTab (default 'profile')
+      a uiPreferencesStore; sincronizzare con ?tab= URL query param
+    - Rimuovere maxWidth: 700 dal contenuto; area contenuto usa maxWidth: 900
+      per evitare stretching eccessivo su schermi ultrawide
+    - Responsive: su schermi < 768px, switch a tab orizzontali in alto
+      (useMediaQuery di MUI)
+  File coinvolti:
+    CREARE:     client/src/components/Settings/ProfileSection.tsx
+    CREARE:     client/src/components/Settings/ChangePasswordSection.tsx
+    CREARE:     client/src/components/Settings/OrganizationSection.tsx
+    CREARE:     client/src/components/Settings/ConnectionDefaultsSection.tsx
+    MODIFICARE: client/src/pages/SettingsPage.tsx (refactor maggiore)
+    MODIFICARE: client/src/store/uiPreferencesStore.ts (aggiungere settingsActiveTab)
+
 
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI
@@ -38,37 +135,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] GATE-039 — Frontend gestione gateway e assegnazione connessioni
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: GATE-036, GATE-037, GATE-038
-
-  DESCRIZIONE:
-  Interfaccia frontend per gestire i gateway e assegnarli alle connessioni.
-  Include: pagina di gestione gateway (CRUD + test connettivita') e
-  selettore gateway opzionale nel dialog di creazione/modifica connessione.
-
-  DETTAGLI TECNICI:
-  Frontend:
-    - API layer: client/src/api/gateway.api.ts (CRUD + test endpoint)
-    - Store: client/src/store/gatewayStore.ts (Zustand, lista gateway)
-    - Pagina gestione gateway (admin area o Settings):
-      - Lista gateway: nome, tipo (GUACD/SSH_BASTION), host:port, descrizione
-      - Dialog crea/modifica gateway (campi: nome, tipo, host, porta,
-        credenziali per SSH_BASTION, descrizione, flag default)
-      - Bottone "Test connessione" per ogni gateway
-      - Indicatore visuale per gateway default
-    - ConnectionDialog.tsx: aggiungere dropdown opzionale "Gateway"
-      - Filtrato per tipo connessione: gateway GUACD per RDP, SSH_BASTION per SSH
-      - Opzione "Nessuno (connessione diretta)" come default
-      - Mostrare host:port del gateway selezionato come hint
-  File coinvolti:
-    CREARE:     client/src/api/gateway.api.ts
-    CREARE:     client/src/store/gatewayStore.ts
-    CREARE:     client/src/components/gateway/GatewayList.tsx
-    CREARE:     client/src/components/gateway/GatewayDialog.tsx
-    MODIFICARE: client/src/components/connections/ConnectionDialog.tsx
 
 
 ================================================================================
@@ -408,6 +474,7 @@
    10. FAVS-014    Preferiti e recenti                          [COMPLETATO]
    11. RDPFS-018   Drive redirection RDP (file transfer)        [COMPLETATO]
    12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni) [COMPLETATO]
+   12b. SSHUI-028  Sync automatico tema terminale SSH con tema WebUI
    13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione) [COMPLETATO]
    14. SFTP-019    Trasferimento file SFTP (SSH)                         [COMPLETATO]
 
@@ -440,22 +507,25 @@
   Fase 8 — Multi-backend / Multi-gateway:
    33. GATE-036  Modello Gateway e CRUD backend (Prisma + API)                         [COMPLETATO]
    34. GATE-037  Routing RDP tramite gateway guacd dinamico                             [COMPLETATO]
-   35. GATE-038  Routing SSH tramite bastion/jump host (parallelizzabile con 34)  [IN CORSO]
-   36. GATE-039  Frontend gestione gateway e assegnazione connessioni
+   35. GATE-038  Routing SSH tramite bastion/jump host (parallelizzabile con 34)  [COMPLETATO]
+   36. GATE-039  Frontend gestione gateway e assegnazione connessioni              [COMPLETATO]
+
+  Fase 8b — UX refactoring:
+   37. UI-046   Refactoring Settings page: tabbed category layout
 
   Fase 9 — Zero Trust hardening (Tier 1, priorita' alta):
-   37. ZT-036   Security headers (helmet middleware)
-   38. ZT-037   Rate limiting login e account lockout
-   39. ZT-038   Audit sessioni SSH/RDP (session start/end)
-   40. ZT-039   Audit tentativi di login falliti
-   41. ZT-040   Lock vault al logout
+   38. ZT-036   Security headers (helmet middleware)
+   39. ZT-037   Rate limiting login e account lockout
+   40. ZT-038   Audit sessioni SSH/RDP (session start/end)
+   41. ZT-039   Audit tentativi di login falliti
+   42. ZT-040   Lock vault al logout
 
   Fase 10 — Zero Trust hardening (Tier 2, core ZT):
-   42. ZT-041   Policy MFA obbligatorio a livello tenant
-   43. ZT-042   Rotazione refresh token
-   44. ZT-043   Fix validazione certificato RDP (default ignoreCert)
-   45. ZT-044   Cifratura TOTP secret a riposo
-   46. ZT-045   Vista audit log per admin tenant
+   43. ZT-041   Policy MFA obbligatorio a livello tenant
+   44. ZT-042   Rotazione refresh token
+   45. ZT-043   Fix validazione certificato RDP (default ignoreCert)
+   46. ZT-044   Cifratura TOTP secret a riposo
+   47. ZT-045   Vista audit log per admin tenant
 
 ================================================================================
   NOTE
@@ -548,4 +618,14 @@
   - ZT-044 richiede script di migrazione per re-cifrare segreti TOTP esistenti
   - ZT-045 nuovo endpoint /api/audit/tenant protetto da requireTenantRole('ADMIN')
   - ZT-045 permette a OWNER/ADMIN di vedere i log di tutti gli utenti del tenant
+  - SSHUI-028 aggiunge solo un campo boolean + due preset al JSON esistente,
+    nessuna migrazione Prisma necessaria
+  - SSHUI-028 il sync e' opzionale (default off): comportamento attuale invariato
+  - SSHUI-028 l'utente puo' scegliere quale preset light e dark usare per il sync
+  - UI-046 e' un refactoring puramente frontend, nessuna modifica backend
+  - UI-046 estrae 4 componenti dalla JSX inline di SettingsPage e riutilizza
+    i 6 componenti sezione gia' esistenti senza modifiche
+  - UI-046 il tab Administration e' visibile solo a OWNER/ADMIN del tenant
+  - UI-046 il tab attivo e' persistito in uiPreferencesStore + URL ?tab= param
+  - UI-046 responsive: su schermi < 768px, tab orizzontali in alto
 ================================================================================

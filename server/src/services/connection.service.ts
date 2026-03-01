@@ -23,6 +23,7 @@ export interface CreateConnectionInput {
   folderId?: string;
   teamId?: string;
   enableDrive?: boolean;
+  gatewayId?: string | null;
   sshTerminalConfig?: Prisma.InputJsonValue | null;
   rdpSettings?: Prisma.InputJsonValue | null;
 }
@@ -37,6 +38,7 @@ export interface UpdateConnectionInput {
   description?: string | null;
   folderId?: string | null;
   enableDrive?: boolean;
+  gatewayId?: string | null;
   sshTerminalConfig?: Prisma.InputJsonValue | null;
   rdpSettings?: Prisma.InputJsonValue | null;
 }
@@ -71,6 +73,7 @@ export async function createConnection(userId: string, input: CreateConnectionIn
       passwordTag: encPassword.tag,
       description: input.description || null,
       enableDrive: input.enableDrive ?? false,
+      gatewayId: input.gatewayId || null,
       sshTerminalConfig: input.sshTerminalConfig ?? undefined,
       rdpSettings: input.rdpSettings ?? undefined,
       userId,
@@ -115,6 +118,7 @@ export async function updateConnection(
   if (input.description !== undefined) data.description = input.description;
   if (input.folderId !== undefined) data.folderId = input.folderId;
   if (input.enableDrive !== undefined) data.enableDrive = input.enableDrive;
+  if (input.gatewayId !== undefined) data.gatewayId = input.gatewayId;
   if (input.sshTerminalConfig !== undefined) data.sshTerminalConfig = input.sshTerminalConfig;
   if (input.rdpSettings !== undefined) data.rdpSettings = input.rdpSettings;
 

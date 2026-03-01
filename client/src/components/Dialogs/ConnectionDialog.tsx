@@ -15,6 +15,8 @@ import type { RdpSettings } from '../../constants/rdpDefaults';
 import { mergeRdpConfig } from '../../constants/rdpDefaults';
 import { useRdpSettingsStore } from '../../store/rdpSettingsStore';
 import RdpSettingsSection from '../Settings/RdpSettingsSection';
+import { useGatewayStore } from '../../store/gatewayStore';
+import { useAuthStore } from '../../store/authStore';
 
 interface ConnectionDialogProps {
   open: boolean;
@@ -35,15 +37,20 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   const [enableDrive, setEnableDrive] = useState(false);
   const [sshTerminalConfig, setSshTerminalConfig] = useState<Partial<SshTerminalConfig>>({});
   const [rdpSettings, setRdpSettings] = useState<Partial<RdpSettings>>({});
+  const [gatewayId, setGatewayId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
   const rdpUserDefaults = useRdpSettingsStore((s) => s.userDefaults);
+  const gateways = useGatewayStore((s) => s.gateways);
+  const fetchGateways = useGatewayStore((s) => s.fetchGateways);
+  const hasTenant = Boolean(useAuthStore((s) => s.user)?.tenantId);
 
   const isEditMode = Boolean(connection);
 
   useEffect(() => {
+    if (open && hasTenant) fetchGateways();
     if (open && connection) {
       setName(connection.name);
       setType(connection.type);
@@ -53,6 +60,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
       setPassword('');
       setDescription(connection.description || '');
       setEnableDrive(connection.enableDrive ?? false);
+      setGatewayId(connection.gatewayId || '');
       setSshTerminalConfig(
         (connection.sshTerminalConfig as Partial<SshTerminalConfig>) ?? {}
       );
@@ -68,6 +76,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
       setPassword('');
       setDescription('');
       setEnableDrive(false);
+      setGatewayId('');
       setSshTerminalConfig({});
       setRdpSettings({});
     }
@@ -77,7 +86,14 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     setType(newType);
     if (newType === 'SSH' && port === '3389') setPort('22');
     if (newType === 'RDP' && port === '22') setPort('3389');
+    setGatewayId('');
   };
+
+  const availableGateways = gateways.filter((g) => {
+    if (type === 'SSH') return g.type === 'SSH_BASTION';
+    if (type === 'RDP') return g.type === 'GUACD';
+    return false;
+  });
 
   const handleSubmit = async () => {
     setError('');
@@ -100,6 +116,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
           port: parseInt(port, 10),
           description: description || null,
           enableDrive,
+          gatewayId: gatewayId || null,
           ...(type === 'SSH' && {
             sshTerminalConfig: Object.keys(sshTerminalConfig).length > 0 ? sshTerminalConfig : null,
           }),
@@ -120,6 +137,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
           password,
           description: description || undefined,
           enableDrive,
+          gatewayId: gatewayId || null,
           ...(folderId ? { folderId } : {}),
           ...(teamId ? { teamId } : {}),
           ...(type === 'SSH' && Object.keys(sshTerminalConfig).length > 0 && {
@@ -152,6 +170,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     setPassword('');
     setDescription('');
     setEnableDrive(false);
+    setGatewayId('');
     setSshTerminalConfig({});
     setRdpSettings({});
     setError('');
@@ -183,6 +202,23 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
               <MenuItem value="RDP">RDP</MenuItem>
             </Select>
           </FormControl>
+          {hasTenant && availableGateways.length > 0 && (
+            <FormControl fullWidth>
+              <InputLabel>Gateway (optional)</InputLabel>
+              <Select
+                value={gatewayId}
+                label="Gateway (optional)"
+                onChange={(e) => setGatewayId(e.target.value)}
+              >
+                <MenuItem value="">None (Direct connection)</MenuItem>
+                {availableGateways.map((gw) => (
+                  <MenuItem key={gw.id} value={gw.id}>
+                    {gw.name} — {gw.host}:{gw.port}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
               label="Host"

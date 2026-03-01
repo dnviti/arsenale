@@ -29,6 +29,7 @@ const createSchema = z.object({
   folderId: z.string().uuid().optional(),
   teamId: z.string().uuid().optional(),
   enableDrive: z.boolean().optional(),
+  gatewayId: z.string().uuid().nullable().optional(),
   sshTerminalConfig: sshTerminalConfigSchema.optional(),
 });
 
@@ -42,6 +43,7 @@ const updateSchema = z.object({
   description: z.string().nullable().optional(),
   folderId: z.string().uuid().nullable().optional(),
   enableDrive: z.boolean().optional(),
+  gatewayId: z.string().uuid().nullable().optional(),
   sshTerminalConfig: sshTerminalConfigSchema.nullable().optional(),
 });
 

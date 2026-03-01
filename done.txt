@@ -1049,3 +1049,50 @@
     MODIFICATO: server/src/services/connection.service.ts (gatewayId+gateway in getConnection)
     MODIFICATO: server/src/services/rdp.service.ts (guacdHost/guacdPort in interface + token)
     MODIFICATO: server/src/socket/rdp.handler.ts (gateway resolution + type validation)
+
+
+------------------------------------------------------------------------------
+[x] GATE-038 — Routing SSH tramite bastion/jump host
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: GATE-036 (completato)
+  COMPLETATO: SSH bastion/jump host routing — ssh.service.ts: createSshConnectionViaBastion() with SSH2 forwardOut() tunnel (bastion→target TCP channel, second SSH2 client on forwarded stream, SshSession with bastionClient ref). ssh.handler.ts: gateway type check (SSH_BASTION), credential decryption via getGatewayCredentials(), conditional routing, dual-client cleanup. Fully backward compatible: no gateway = direct SSH connection.
+
+  DESCRIZIONE:
+  Instradare le connessioni SSH attraverso un bastion host (jump host) quando
+  la connessione ha un gateway di tipo SSH_BASTION. Il server apre prima una
+  connessione SSH verso il bastion, poi un tunnel TCP verso l'host target,
+  e infine stabilisce la sessione SSH finale attraverso il tunnel.
+  Se nessun gateway e' assegnato, connessione diretta (comportamento attuale).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/services/ssh.service.ts (createSshConnectionViaBastion, BastionConnectionParams, SshSession.bastionClient)
+    MODIFICATO: server/src/socket/ssh.handler.ts (gateway check, bastion routing, dual cleanup)
+    MODIFICATO: server/src/services/connection.service.ts (gateway data in getConnection)
+    MODIFICATO: server/src/services/permission.service.ts (gateway include in canViewConnection)
+    MODIFICATO: server/src/services/gateway.service.ts (getGatewayCredentials)
+
+
+------------------------------------------------------------------------------
+[x] GATE-039 — Frontend gestione gateway e assegnazione connessioni
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: GATE-036 (completato), GATE-037 (completato), GATE-038 (completato)
+  COMPLETATO: Full frontend gateway management — gateway.api.ts (CRUD + test endpoints), gatewayStore.ts (Zustand store), GatewayDialog.tsx (create/edit with type-conditional SSH_BASTION credentials), GatewayList.tsx (management page with table, test connectivity, edit/delete), /settings/gateways route in App.tsx, navigation link in SettingsPage.tsx. ConnectionDialog.tsx: gateway dropdown filtered by connection type (GUACD for RDP, SSH_BASTION for SSH) with "None (Direct connection)" default. Server-side: added gatewayId to connection create/update Zod schemas and service layer.
+
+  DESCRIZIONE:
+  Interfaccia frontend per gestire i gateway e assegnarli alle connessioni.
+  Include: pagina di gestione gateway (CRUD + test connettivita') e
+  selettore gateway opzionale nel dialog di creazione/modifica connessione.
+
+  FILE COINVOLTI:
+    CREATO:     client/src/api/gateway.api.ts
+    CREATO:     client/src/store/gatewayStore.ts
+    CREATO:     client/src/components/gateway/GatewayList.tsx
+    CREATO:     client/src/components/gateway/GatewayDialog.tsx
+    MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (gateway dropdown)
+    MODIFICATO: client/src/api/connections.api.ts (gatewayId in interfaces)
+    MODIFICATO: client/src/App.tsx (/settings/gateways route)
+    MODIFICATO: client/src/pages/SettingsPage.tsx (Manage Gateways nav button)
+    MODIFICATO: server/src/controllers/connections.controller.ts (gatewayId in Zod schemas)
+    MODIFICATO: server/src/services/connection.service.ts (gatewayId in create/update)

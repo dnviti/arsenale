@@ -9,6 +9,7 @@ import {
   Business as BusinessIcon,
   Groups as GroupsIcon,
   ChevronRight as ChevronRightIcon,
+  Router as RouterIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../store/authStore';
 import { getProfile, updateProfile, changePassword, uploadAvatar } from '../api/user.api';
@@ -267,6 +268,18 @@ export default function SettingsPage() {
                   sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
                 >
                   Manage Teams
+                </Button>
+              )}
+              {user?.tenantId && (
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  startIcon={<RouterIcon />}
+                  endIcon={<ChevronRightIcon />}
+                  onClick={() => navigate('/settings/gateways')}
+                  sx={{ justifyContent: 'flex-start', textTransform: 'none' }}
+                >
+                  Manage Gateways
                 </Button>
               )}
             </Stack>

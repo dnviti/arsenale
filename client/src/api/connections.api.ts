@@ -13,6 +13,7 @@ export interface ConnectionInput {
   folderId?: string;
   teamId?: string;
   enableDrive?: boolean;
+  gatewayId?: string | null;
   sshTerminalConfig?: Partial<SshTerminalConfig>;
   rdpSettings?: Partial<RdpSettings>;
 }
@@ -31,6 +32,7 @@ export interface ConnectionData {
   description: string | null;
   isFavorite: boolean;
   enableDrive: boolean;
+  gatewayId?: string | null;
   sshTerminalConfig?: Partial<SshTerminalConfig> | null;
   rdpSettings?: Partial<RdpSettings> | null;
   isOwner: boolean;
@@ -66,6 +68,7 @@ export interface ConnectionUpdate {
   description?: string | null;
   folderId?: string | null;
   enableDrive?: boolean;
+  gatewayId?: string | null;
   sshTerminalConfig?: Partial<SshTerminalConfig> | null;
   rdpSettings?: Partial<RdpSettings> | null;
 }
