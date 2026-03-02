@@ -1453,3 +1453,20 @@
     MODIFICATO: server/src/services/rdp.service.ts (metadata field in token payload)
     MODIFICATO: server/src/socket/rdp.handler.ts (pass audit metadata when generating token)
     MODIFICATO: server/src/index.ts (guacamole-lite open/close event hooks for RDP audit)
+
+
+------------------------------------------------------------------------------
+[x] ZT-039 — Audit tentativi di login falliti
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: AUDIT-013 (completato)
+  COMPLETATO: Added LOGIN_FAILURE audit action and made AuditLog.userId nullable to support "user not found" scenarios. Audit logging added at all 5 login failure points in auth.service.ts: user_not_found, account_locked, oauth_only_account, invalid_password (with failedAttempts/accountLocked details), and email_not_verified. IP address passed from controller to service. Client-side AuditLogDialog updated with label, error color, and filter support.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (LOGIN_FAILURE enum, AuditLog.userId nullable)
+    MODIFICATO: server/src/services/audit.service.ts (userId optional in AuditLogInput)
+    MODIFICATO: server/src/services/auth.service.ts (ipAddress param, 5 audit log calls)
+    MODIFICATO: server/src/controllers/auth.controller.ts (pass req.ip to login)
+    MODIFICATO: server/src/controllers/audit.controller.ts (LOGIN_FAILURE in VALID_ACTIONS)
+    MODIFICATO: client/src/api/audit.api.ts (LOGIN_FAILURE in AuditAction type)
+    MODIFICATO: client/src/components/Dialogs/AuditLogDialog.tsx (label, color, filter)

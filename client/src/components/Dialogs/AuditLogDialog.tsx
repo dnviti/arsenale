@@ -20,6 +20,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   LOGIN: 'Login',
   LOGIN_OAUTH: 'OAuth Login',
   LOGIN_TOTP: 'TOTP Login',
+  LOGIN_FAILURE: 'Failed Login',
   LOGOUT: 'Logout',
   REGISTER: 'Register',
   VAULT_UNLOCK: 'Vault Unlock',
@@ -46,7 +47,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
 function getActionColor(action: AuditAction): 'default' | 'primary' | 'secondary' | 'error' | 'warning' | 'success' | 'info' {
   if (['LOGIN', 'LOGIN_OAUTH', 'LOGIN_TOTP', 'REGISTER'].includes(action)) return 'success';
   if (['LOGOUT', 'VAULT_LOCK'].includes(action)) return 'default';
-  if (['DELETE_CONNECTION', 'DELETE_FOLDER', 'UNSHARE_CONNECTION'].includes(action)) return 'error';
+  if (['LOGIN_FAILURE', 'DELETE_CONNECTION', 'DELETE_FOLDER', 'UNSHARE_CONNECTION'].includes(action)) return 'error';
   if (['PASSWORD_CHANGE', 'PASSWORD_REVEAL', 'TOTP_ENABLE', 'TOTP_DISABLE'].includes(action)) return 'warning';
   if (['CREATE_CONNECTION', 'CREATE_FOLDER', 'VAULT_SETUP'].includes(action)) return 'info';
   return 'primary';
@@ -63,7 +64,7 @@ function formatDetails(details: Record<string, unknown> | null): string {
 }
 
 const ALL_ACTIONS: AuditAction[] = [
-  'LOGIN', 'LOGIN_OAUTH', 'LOGIN_TOTP', 'LOGOUT', 'REGISTER',
+  'LOGIN', 'LOGIN_OAUTH', 'LOGIN_TOTP', 'LOGIN_FAILURE', 'LOGOUT', 'REGISTER',
   'VAULT_UNLOCK', 'VAULT_LOCK', 'VAULT_SETUP',
   'CREATE_CONNECTION', 'UPDATE_CONNECTION', 'DELETE_CONNECTION',
   'SHARE_CONNECTION', 'UNSHARE_CONNECTION', 'UPDATE_SHARE_PERMISSION',

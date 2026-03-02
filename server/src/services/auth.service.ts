@@ -17,6 +17,7 @@ import {
 } from './crypto.service';
 import { verifyCode as verifyTotpCode } from './totp.service';
 import { sendVerificationEmail } from './email';
+import * as auditService from './audit.service';
 
 const BCRYPT_ROUNDS = 12;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -117,9 +118,14 @@ export async function issueTokens(user: {
   };
 }
 
-export async function login(email: string, password: string) {
+export async function login(email: string, password: string, ipAddress?: string | string[]) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
+    auditService.log({
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'user_not_found', email },
+      ipAddress,
+    });
     throw new Error('Invalid email or password');
   }
 
@@ -127,6 +133,12 @@ export async function login(email: string, password: string) {
   if (user.lockedUntil && user.lockedUntil > new Date()) {
     const remainingMs = user.lockedUntil.getTime() - Date.now();
     const remainingMin = Math.ceil(remainingMs / 60_000);
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'account_locked', email },
+      ipAddress,
+    });
     throw new AppError(
       `Account is temporarily locked. Try again in ${remainingMin} minute${remainingMin === 1 ? '' : 's'}.`,
       423,
@@ -135,6 +147,12 @@ export async function login(email: string, password: string) {
 
   // OAuth-only users cannot use password login
   if (!user.passwordHash) {
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'oauth_only_account', email },
+      ipAddress,
+    });
     throw new AppError('This account uses social login. Please sign in with your OAuth provider.', 400);
   }
 
@@ -146,6 +164,17 @@ export async function login(email: string, password: string) {
         ? { lockedUntil: new Date(Date.now() + config.accountLockoutDurationMs), failedLoginAttempts: 0 }
         : { failedLoginAttempts: newFailedAttempts };
     await prisma.user.update({ where: { id: user.id }, data: lockout });
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: {
+        reason: 'invalid_password',
+        email,
+        failedAttempts: newFailedAttempts,
+        accountLocked: newFailedAttempts >= config.accountLockoutThreshold,
+      },
+      ipAddress,
+    });
     throw new Error('Invalid email or password');
   }
 
@@ -158,6 +187,12 @@ export async function login(email: string, password: string) {
   }
 
   if (config.emailVerifyRequired && !user.emailVerified) {
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'email_not_verified', email },
+      ipAddress,
+    });
     throw new AppError('Email not verified. Please check your inbox or resend the verification email.', 403);
   }
 

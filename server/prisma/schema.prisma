@@ -299,6 +299,7 @@ enum AuditAction {
   LOGIN
   LOGIN_OAUTH
   LOGIN_TOTP
+  LOGIN_FAILURE
   LOGOUT
   REGISTER
   VAULT_UNLOCK
@@ -351,7 +352,7 @@ enum AuditAction {
 
 model AuditLog {
   id         String      @id @default(uuid())
-  userId     String
+  userId     String?
   action     AuditAction
   targetType String?
   targetId   String?
@@ -359,7 +360,7 @@ model AuditLog {
   ipAddress  String?
   createdAt  DateTime    @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([action])

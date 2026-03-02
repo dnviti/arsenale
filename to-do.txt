@@ -59,35 +59,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] ZT-039 — Audit tentativi di login falliti
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: AUDIT-013 (completato)
-
-  DESCRIZIONE:
-  Registrare nel log audit ogni tentativo di login fallito (password errata,
-  email non trovata, email non verificata). Attualmente i login falliti
-  non vengono tracciati, rendendo impossibile rilevare attacchi brute-force
-  o compromissioni di account.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - Aggiungere LOGIN_FAILURE all'enum AuditAction in schema.prisma
-    - Eseguire migrazione Prisma
-    - In auth.service.ts login():
-      - Loggare LOGIN_FAILURE prima di lanciare l'errore per password errata
-        (details: { reason: 'invalid_password', email }, ipAddress da req)
-      - Loggare LOGIN_FAILURE per email non trovata
-        (details: { reason: 'user_not_found', email })
-      - Loggare LOGIN_FAILURE per email non verificata
-        (details: { reason: 'email_not_verified', email })
-    - Nota: il login fallito non ha un userId valido (l'utente potrebbe non
-      esistere), quindi usare userId null o un valore speciale
-  File coinvolti:
-    - server/prisma/schema.prisma (enum AuditAction)
-    - server/src/services/auth.service.ts
-    - server/src/controllers/auth.controller.ts (passare IP al service)
 
 
 ------------------------------------------------------------------------------

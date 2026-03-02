@@ -44,7 +44,7 @@ const verifyTotpSchema = z.object({
 export async function login(req: Request, res: Response, next: NextFunction) {
   try {
     const { email, password } = loginSchema.parse(req.body);
-    const result = await authService.login(email, password);
+    const result = await authService.login(email, password, req.ip);
 
     if ('requiresMFA' in result && result.requiresMFA) {
       res.json({
