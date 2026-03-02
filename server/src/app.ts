@@ -20,6 +20,7 @@ import teamRoutes from './routes/team.routes';
 import adminRoutes from './routes/admin.routes';
 import gatewayRoutes from './routes/gateway.routes';
 import tabsRoutes from './routes/tabs.routes';
+import secretRoutes from './routes/secret.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler } from './middleware/error.middleware';
 
@@ -65,6 +66,7 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/gateways', gatewayRoutes);
 app.use('/api/tabs', tabsRoutes);
+app.use('/api/secrets', secretRoutes);
 
 // Health & readiness probes
 app.use('/api', healthRoutes);

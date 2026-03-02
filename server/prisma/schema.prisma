@@ -115,6 +115,8 @@ model User {
   secretVersionChanges   VaultSecretVersion[]   @relation("SecretVersionChanger")
   vaultFolders           VaultFolder[]
   tenantVaultMemberships TenantVaultMember[]
+  secretsSharedWithMe    SharedSecret[]         @relation("SecretSharedWith")
+  secretsSharedByMe      SharedSecret[]         @relation("SecretSharedBy")
 }
 
 enum AuthProvider {
@@ -405,6 +407,8 @@ enum NotificationType {
   CONNECTION_SHARED
   SHARE_PERMISSION_UPDATED
   SHARE_REVOKED
+  SECRET_SHARED
+  SECRET_SHARE_REVOKED
 }
 
 model Notification {
@@ -463,6 +467,7 @@ model VaultSecret {
   tenant   Tenant?            @relation(fields: [tenantId], references: [id])
   folder   VaultFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
   versions VaultSecretVersion[]
+  shares   SharedSecret[]
 
   @@index([userId, scope])
   @@index([teamId])
@@ -486,6 +491,24 @@ model VaultSecretVersion {
 
   @@unique([secretId, version])
   @@index([secretId])
+}
+
+model SharedSecret {
+  id               String     @id @default(uuid())
+  secretId         String
+  sharedWithUserId String
+  sharedByUserId   String
+  permission       Permission
+  encryptedData    String
+  dataIV           String
+  dataTag          String
+  createdAt        DateTime   @default(now())
+
+  secret    VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  sharedWith User       @relation("SecretSharedWith", fields: [sharedWithUserId], references: [id])
+  sharedBy   User       @relation("SecretSharedBy", fields: [sharedByUserId], references: [id])
+
+  @@unique([secretId, sharedWithUserId])
 }
 
 model VaultFolder {

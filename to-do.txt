@@ -236,93 +236,6 @@
 
 
 ------------------------------------------------------------------------------
-[ ] VAULT-054 — API routes, controller e servizio sharing per i secrets
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: VAULT-053
-
-  DESCRIZIONE:
-  Esporre le operazioni CRUD sui secrets tramite API REST, con validazione
-  Zod completa, audit logging, e il servizio di sharing secrets tra utenti
-  e team nello stesso tenant. Segue lo stesso pattern di
-  connections.routes.ts + sharing.service.ts ma adattato ai secrets.
-
-  Lo sharing dei secrets segue il pattern di SharedConnection: i dati
-  cifrati vengono decifrati con la chiave sorgente e ricifrati con la chiave
-  del destinatario. Un secret puo' essere condiviso come READ_ONLY (il
-  destinatario puo' visualizzare ma non modificare) o FULL_ACCESS.
-
-  DETTAGLI TECNICI:
-  Prisma (server/prisma/schema.prisma):
-    - Nuovo modello SharedSecret:
-        model SharedSecret {
-          id                String     @id @default(uuid())
-          secretId          String
-          sharedWithUserId  String
-          sharedByUserId    String
-          permission        Permission  // riusa enum READ_ONLY | FULL_ACCESS
-          encryptedData     String      // dati ricifrati per il destinatario
-          dataIV            String
-          dataTag           String
-          createdAt         DateTime   @default(now())
-
-          secret     VaultSecret @relation(fields: [secretId], references: [id],
-                     onDelete: Cascade)
-          sharedWith User        @relation("SecretSharedWith",
-                     fields: [sharedWithUserId], references: [id])
-          sharedBy   User        @relation("SecretSharedBy",
-                     fields: [sharedByUserId], references: [id])
-
-          @@unique([secretId, sharedWithUserId])
-        }
-    - Aggiungere relazioni in User:
-        secretsSharedWithMe SharedSecret[] @relation("SecretSharedWith")
-        secretsSharedByMe   SharedSecret[] @relation("SecretSharedBy")
-    - Aggiungere a NotificationType enum: SECRET_SHARED, SECRET_SHARE_REVOKED
-    - Eseguire migrazione Prisma
-
-  Controller (server/src/controllers/secret.controller.ts):
-    - Zod schema createSecretSchema con tipo discriminato per data payload:
-        LOGIN: { username, password, url?, notes? }
-        SSH_KEY: { privateKey, publicKey?, passphrase?, algorithm?, notes? }
-        CERTIFICATE: { certificate, privateKey, chain?, passphrase?, notes? }
-        API_KEY: { apiKey, endpoint?, headers?, notes? }
-        SECURE_NOTE: { content }
-    - Refine: scope=TEAM richiede teamId
-    - Handlers: create, list, getOne, update, remove, listVersions, restoreVersion
-
-  Routes (server/src/routes/secret.routes.ts):
-    - router.use(authenticate)
-    - GET/POST /                    -> list/create
-    - GET/PUT/DELETE /:id          -> getOne/update/remove
-    - GET /:id/versions            -> listVersions
-    - POST /:id/versions/:version/restore -> restoreVersion
-    - POST /:id/share              -> share
-    - DELETE /:id/share/:userId    -> unshare
-    - GET /:id/shares              -> listShares
-    - PUT /:id/share/:userId       -> updateSharePermission
-    - Montare in app.ts: app.use('/api/secrets', secretRoutes)
-
-  Servizio sharing (server/src/services/secretSharing.service.ts):
-    - shareSecret(actingUserId, secretId, target, permission, tenantId?):
-        Permission check -> tenant boundary -> decrypt -> re-encrypt -> upsert -> notify
-    - unshareSecret, updateSecretSharePermission, listSecretShares
-
-  Tenant vault management (in secret.routes.ts):
-    - POST /api/secrets/tenant-vault/init (OWNER/ADMIN)
-    - POST /api/secrets/tenant-vault/distribute (ADMIN/OWNER, body: { targetUserId })
-    - GET  /api/secrets/tenant-vault/status
-
-  File coinvolti:
-    MODIFICARE: server/prisma/schema.prisma (SharedSecret, NotificationType, User rel.)
-    CREARE:     server/src/controllers/secret.controller.ts
-    CREARE:     server/src/routes/secret.routes.ts
-    CREARE:     server/src/services/secretSharing.service.ts
-    MODIFICARE: server/src/app.ts (mount /api/secrets)
-    MODIFICARE: server/src/services/secret.service.ts (tenant vault init/distribute)
-
-
-------------------------------------------------------------------------------
 [ ] VAULT-055 — Integrazione backend connessioni con secrets del vault
 ------------------------------------------------------------------------------
   Priorita: ALTA
@@ -1478,6 +1391,291 @@
 
 
 ================================================================================
+  SEZIONE H — SCOUTED FEATURES (2026-03-02)
+================================================================================
+
+
+------------------------------------------------------------------------------
+[ ] PROTO-069 — Supporto protocollo VNC via backend nativo Guacamole
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Aggiungere VNC come terzo protocollo di connessione. Il demone guacd gia'
+  gestisce connessioni VNC nativamente (stesso meccanismo di RDP), quindi
+  l'infrastruttura backend e' gia' presente. VNC e' essenziale per
+  connettersi a server Linux con desktop grafico, VM headless, console
+  KVM/IPMI, e interfacce Proxmox/ESXi. Tutti i principali competitor
+  (mRemoteNG, Royal TS, Devolutions RDM, MobaXterm) supportano VNC.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Estendere enum ConnectionType con VNC
+    - Aggiungere campo vncSettings Json? al modello Connection
+    - Eseguire migrazione Prisma
+
+  Backend:
+    - Creare server/src/services/vnc.service.ts:
+      - generateVncGuacamoleToken(): genera token cifrato con parametri
+        VNC per guacamole-lite (hostname, port, password, color-depth,
+        cursor, read-only, clipboard-encoding, swap-red-blue)
+      - Supporto gateway GUACD (stessa logica di rdp.service.ts)
+    - Estendere server/src/socket/rdp.handler.ts (o creare vnc.handler.ts):
+      - Endpoint POST /sessions/vnc per generazione token
+      - Riutilizzare lo stesso WebSocket tunnel guacamole-lite (gia' attivo
+        sulla porta 3002)
+    - connections.controller.ts: aggiungere VNC ai Zod schemas
+    - connection.service.ts: supportare tipo VNC nel CRUD
+
+  Frontend:
+    - Creare client/src/components/VNC/VncViewer.tsx:
+      - Riutilizzare la logica di RdpViewer.tsx (entrambi usano
+        guacamole-common-js per il rendering)
+      - Adattare per parametri VNC-specifici
+    - ConnectionDialog.tsx: aggiungere tipo VNC con impostazioni dedicate:
+      - Color depth (8-bit, 16-bit, 24-bit, 32-bit)
+      - Cursor mode (local, remote)
+      - Read-only toggle
+      - Clipboard encoding (ISO 8859-1, UTF-8, UTF-16, CP1252)
+      - Swap red/blue toggle (per server con canali colore invertiti)
+    - TabPanel.tsx: gestire rendering VncViewer per tab tipo VNC
+    - Opzionale: VncSettingsSection per impostazioni globali VNC
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (ConnectionType, Connection.vncSettings)
+    CREARE:     server/src/services/vnc.service.ts
+    MODIFICARE: server/src/socket/rdp.handler.ts (o CREARE vnc.handler.ts)
+    MODIFICARE: server/src/controllers/connections.controller.ts (Zod VNC)
+    MODIFICARE: server/src/services/connection.service.ts (VNC support)
+    CREARE:     client/src/components/VNC/VncViewer.tsx
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx (VNC type)
+    MODIFICARE: client/src/components/Tabs/TabPanel.tsx (VNC rendering)
+
+
+------------------------------------------------------------------------------
+[ ] REC-070 — Registrazione e riproduzione sessioni SSH e RDP
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: ORCH-060 (session tracking)
+
+  DESCRIZIONE:
+  Registrare le sessioni SSH e RDP per compliance, formazione e audit
+  avanzato. Per le sessioni RDP, Guacamole supporta la registrazione
+  nativa server-side tramite parametri nel token (recording-path,
+  recording-name). Per SSH, i dati del terminale possono essere catturati
+  come stream I/O con timestamp (formato asciinema/asciicast v2) e
+  riprodotti in-browser con xterm.js. Le registrazioni creano una traccia
+  di audit immutabile, complementare ai log testuali gia' esistenti.
+  Questa e' una delle funzionalita' enterprise piu' richieste (presente
+  in Devolutions RDM, Teleport, HashiCorp Boundary).
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Nuovo modello SessionRecording:
+        model SessionRecording {
+          id              String   @id @default(uuid())
+          userId          String
+          connectionId    String
+          protocol        String   // SSH | RDP | VNC
+          filePath        String   // percorso file registrazione
+          fileSize        Int?
+          duration        Int?     // durata in secondi
+          format          String   // 'asciicast' | 'guac' | 'webm'
+          status          String   @default("RECORDING") // RECORDING | COMPLETE | ERROR
+          createdAt       DateTime @default(now())
+          completedAt     DateTime?
+
+          user       User       @relation(fields: [userId], references: [id])
+          connection Connection @relation(fields: [connectionId], references: [id])
+
+          @@index([userId])
+          @@index([connectionId])
+          @@index([createdAt])
+        }
+    - Aggiungere relazioni in User e Connection
+    - Aggiungere AuditAction: SESSION_RECORD_START, SESSION_RECORD_VIEW
+    - Eseguire migrazione Prisma
+
+  Backend — RDP recording:
+    - vnc/rdp.service.ts: aggiungere parametri Guacamole al token:
+      recording-path: /recordings/{userId}/{sessionId}
+      recording-name: {timestamp}.guac
+      recording-include-keys: true (opzionale, per keystroke logging)
+    - Il file .guac viene scritto da guacd nella directory configurata
+    - Post-sessione: convertire .guac in .webm con guac-encode (o servire
+      direttamente il formato Guacamole per il player nativo)
+
+  Backend — SSH recording:
+    - In ssh.handler.ts: intercettare i dati del canale SSH (stream.on
+      'data') e scrivere ogni chunk con timestamp nel formato asciicast v2
+      (JSON Lines: {"version":2,"width":W,"height":H} header + [time,
+      "o", data] events)
+    - Salvare il file .cast nella directory configurata
+    - Aggiornare metadata nel DB alla fine della sessione
+
+  Backend — Storage e API:
+    - Creare server/src/services/recording.service.ts:
+      - startRecording(), completeRecording(), getRecording(),
+        listRecordings(), deleteRecording(), streamRecordingFile()
+    - Directory configurabile via env var RECORDING_PATH (default
+      ./recordings/)
+    - API: GET /api/recordings (lista), GET /api/recordings/:id/stream
+      (download/stream file), DELETE /api/recordings/:id
+    - Policy: recording obbligatorio/opzionale configurabile per tenant
+
+  Frontend:
+    - Creare player SSH: componente xterm.js in modalita' replay che
+      legge il file .cast e riproduce i dati con timing originale
+      (play/pause/seek/speed controls)
+    - Creare player RDP: componente video HTML5 per .webm, oppure
+      integrare guacamole-common-js session player per formato .guac
+    - RecordingsPage o sezione in Settings/Administration: lista
+      registrazioni con filtri (utente, connessione, data), play inline,
+      download
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (SessionRecording, AuditAction)
+    CREARE:     server/src/services/recording.service.ts
+    CREARE:     server/src/routes/recording.routes.ts
+    CREARE:     server/src/controllers/recording.controller.ts
+    MODIFICARE: server/src/socket/ssh.handler.ts (cattura stream I/O)
+    MODIFICARE: server/src/services/rdp.service.ts (parametri recording)
+    MODIFICARE: server/src/config.ts (RECORDING_PATH, recording policy)
+    CREARE:     client/src/components/Recording/SshPlayer.tsx
+    CREARE:     client/src/components/Recording/RdpPlayer.tsx
+    CREARE:     client/src/api/recordings.api.ts
+    MODIFICARE: server/src/app.ts (mount recording routes)
+
+
+------------------------------------------------------------------------------
+[ ] IO-071 — Import/export connessioni (CSV, JSON, mRemoteNG, file RDP)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Permettere l'importazione e l'esportazione delle connessioni in diversi
+  formati per facilitare la migrazione da altri strumenti e il backup.
+  Formati supportati in export: CSV e JSON. Formati supportati in import:
+  CSV (con mapping colonne), JSON, XML mRemoteNG, e file .rdp standard.
+  L'export puo' opzionalmente includere le credenziali (richiede vault
+  sbloccata e conferma esplicita). L'import cifra automaticamente le
+  credenziali importate con la vault key dell'utente.
+  Tutti i principali competitor (mRemoteNG, Royal TS, Devolutions RDM)
+  supportano import/export.
+
+  DETTAGLI TECNICI:
+  Backend:
+    - Creare server/src/services/importExport.service.ts:
+      - exportConnections(userId, format, options): decifra credenziali
+        se richiesto, genera CSV o JSON
+      - importConnectionsFromCsv(userId, csvData, columnMapping):
+        parsing con mapping colonne, validazione, cifratura credenziali
+      - importConnectionsFromJson(userId, jsonData): validazione schema,
+        cifratura
+      - importConnectionsFromMremoteng(userId, xmlData): parsing XML
+        mRemoteNG (confCons.xml), mapping campi (Name, Hostname, Port,
+        Protocol, Username, Password, Description, Panel→Folder)
+      - importConnectionsFromRdp(userId, rdpFileContent): parsing formato
+        .rdp (key:type:value), estrazione full address, username, ecc.
+      - Duplicate detection: confronto per host+port+type, opzione skip/
+        overwrite/rename
+    - Creare controller e routes:
+      - POST /api/connections/export (body: { format, includeCredentials })
+      - POST /api/connections/import (multipart/form-data, file + options)
+      - Proteggere con authenticate, vault unlock required per credentials
+
+  Frontend:
+    - Creare client/src/components/Dialogs/ImportDialog.tsx:
+      - Step 1: file upload (drag & drop, accept .csv, .json, .xml, .rdp)
+      - Step 2: formato auto-detect + preview dati
+      - Step 3: per CSV, mapping colonne (dropdown per ogni colonna)
+      - Step 4: duplicate handling (skip/overwrite/rename)
+      - Step 5: risultato con conteggio importati/skippati/errori
+    - Creare client/src/components/Dialogs/ExportDialog.tsx:
+      - Selezione formato (CSV/JSON)
+      - Toggle "Include credentials" (warning di sicurezza)
+      - Selezione scope (tutte, cartella specifica, selezione)
+    - Aggiungere bottoni Import/Export nel context menu sidebar o settings
+    - Creare client/src/api/importExport.api.ts
+
+  File coinvolti:
+    CREARE:     server/src/services/importExport.service.ts
+    CREARE:     server/src/controllers/importExport.controller.ts
+    CREARE:     server/src/routes/importExport.routes.ts
+    MODIFICARE: server/src/app.ts (mount import/export routes)
+    CREARE:     client/src/components/Dialogs/ImportDialog.tsx
+    CREARE:     client/src/components/Dialogs/ExportDialog.tsx
+    CREARE:     client/src/api/importExport.api.ts
+    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx (bottoni)
+
+
+------------------------------------------------------------------------------
+[ ] UX-072 — Indicatore raggiungibilita' connessioni nella sidebar
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Mostrare un indicatore visivo (pallino verde/rosso/grigio) accanto a
+  ogni connessione nella sidebar per indicare se l'host target e'
+  raggiungibile. Utilizza probe TCP periodici riutilizzando l'utility
+  tcpProbe.ts gia' sviluppata per il monitoraggio gateway (GATE-067).
+  L'indicatore da' visibilita' immediata sullo stato delle macchine
+  prima di tentare una connessione. Configurabile per tenant (on/off,
+  intervallo). I risultati vengono trasmessi via Socket.IO per
+  aggiornamenti in tempo reale. Rispetta i confini di rete: se una
+  connessione ha un gateway assegnato, il probe viene effettuato
+  attraverso il gateway (SSH probe via bastion, TCP diretto per guacd).
+
+  DETTAGLI TECNICI:
+  Backend:
+    - Creare server/src/services/connectionMonitor.service.ts:
+      - startMonitoring(connections[]): avvia probe periodici per le
+        connessioni dell'utente (interval configurabile, default 60s)
+      - stopMonitoring(userId): ferma i probe
+      - probeConnection(connection): TCP probe verso host:port, timeout 5s
+        - Se connessione ha gateway SSH_BASTION/MANAGED_SSH: eseguire
+          il probe dal server (il target e' raggiungibile solo via gateway)
+        - Se connessione ha gateway GUACD: TCP probe diretto (il server
+          deve raggiungere l'host)
+      - Risultato: { connectionId, status: 'online'|'offline'|'unknown',
+        latencyMs, checkedAt }
+    - Socket.IO namespace /connection-monitor:
+      - Broadcast stato a user room quando cambia
+      - Client si connette al login, riceve aggiornamenti
+    - Endpoint opzionale: POST /api/connections/:id/probe (probe singolo
+      on-demand)
+    - Configurazione tenant: monitoringEnabled, monitorIntervalSeconds
+      (da aggiungere a Tenant o come setting separato)
+
+  Frontend:
+    - Estendere ConnectionTree.tsx:
+      - Piccolo pallino colorato (8px) prima del nome connessione:
+        verde = online, rosso = offline, grigio = unknown/disabled
+      - Tooltip con latenza e ultimo check
+    - Creare client/src/hooks/useConnectionMonitor.ts:
+      - Connessione al namespace Socket.IO /connection-monitor
+      - Stato locale: Map<connectionId, { status, latencyMs, checkedAt }>
+    - Estendere connectionsStore.ts o creare store dedicato:
+      - connectionHealth: Record<string, HealthStatus>
+      - updateConnectionHealth action
+    - uiPreferencesStore: toggle per mostrare/nascondere indicatori
+    - Riutilizzare server/src/utils/tcpProbe.ts (gia' esistente)
+
+  File coinvolti:
+    CREARE:     server/src/services/connectionMonitor.service.ts
+    CREARE:     server/src/socket/connectionMonitor.handler.ts
+    CREARE:     client/src/hooks/useConnectionMonitor.ts
+    MODIFICARE: server/src/socket/index.ts (setup handler)
+    MODIFICARE: server/src/index.ts (avvio monitor)
+    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx (indicatore)
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx (hook)
+    MODIFICARE: client/src/store/uiPreferencesStore.ts (toggle)
+
+
+================================================================================
   ORDINE DI IMPLEMENTAZIONE CONSIGLIATO
 ================================================================================
 
@@ -1549,7 +1747,7 @@
 
   Fase 8d — Password Keychain / Secret Vault:
    43. VAULT-053  Modelli Prisma e servizio CRUD backend secrets  [COMPLETATO]
-   44. VAULT-054  API routes, controller e sharing secrets
+   44. VAULT-054  API routes, controller e sharing secrets  [COMPLETATO]
    45. VAULT-055  Integrazione backend connessioni con vault secrets
    46. VAULT-056  Frontend pagina Keychain, store e componenti
    47. VAULT-057  Integrazione frontend ConnectionDialog con secret picker

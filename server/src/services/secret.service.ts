@@ -352,6 +352,31 @@ export async function getSecret(
   if (!access.allowed) throw new AppError('Secret not found', 404);
 
   const secret = access.secret;
+
+  // Shared secrets: decrypt from SharedSecret table with user's personal key
+  if (access.accessType === 'shared') {
+    const sharedRecord = await prisma.sharedSecret.findFirst({
+      where: { secretId, sharedWithUserId: userId },
+    });
+    if (!sharedRecord) throw new AppError('Secret not found', 404);
+
+    const personalKey = getMasterKey(userId);
+    if (!personalKey) throw new AppError('Vault is locked. Please unlock it first.', 403);
+
+    const decryptedJson = decrypt(
+      { ciphertext: sharedRecord.encryptedData, iv: sharedRecord.dataIV, tag: sharedRecord.dataTag },
+      personalKey
+    );
+    const data: SecretPayload = JSON.parse(decryptedJson);
+
+    return {
+      ...secretSummary(secret),
+      data,
+      shared: true,
+      permission: sharedRecord.permission,
+    };
+  }
+
   const encryptionKey = await resolveSecretEncryptionKey(
     userId,
     secret.scope,
@@ -485,17 +510,24 @@ export async function listSecrets(
     where.tenantId = tenantId;
     where.scope = 'TENANT';
   } else {
-    // All accessible secrets: personal + team + tenant
+    // All accessible secrets: personal + team + tenant + shared
     const memberships = await prisma.teamMember.findMany({
       where: { userId },
       select: { teamId: true },
     });
     const teamIds = memberships.map((m) => m.teamId);
 
+    const sharedSecrets = await prisma.sharedSecret.findMany({
+      where: { sharedWithUserId: userId },
+      select: { secretId: true },
+    });
+    const sharedIds = sharedSecrets.map((s) => s.secretId);
+
     where.OR = [
       { userId, scope: 'PERSONAL' },
       ...(teamIds.length > 0 ? [{ teamId: { in: teamIds }, scope: 'TEAM' as const }] : []),
       ...(tenantId ? [{ tenantId, scope: 'TENANT' as const }] : []),
+      ...(sharedIds.length > 0 ? [{ id: { in: sharedIds } }] : []),
     ];
   }
 

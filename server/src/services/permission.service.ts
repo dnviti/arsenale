@@ -211,7 +211,7 @@ export async function canManageFolder(
 
 // Secret access types and result interfaces
 
-type SecretAccessType = 'owner' | 'team' | 'tenant';
+type SecretAccessType = 'owner' | 'team' | 'tenant' | 'shared';
 
 interface SecretAccessResult {
   allowed: boolean;
@@ -248,7 +248,6 @@ export async function canViewSecret(
     if (secret.userId === userId) {
       return { allowed: true, secret, accessType: 'owner' };
     }
-    return { allowed: false, secret: null, accessType: 'owner' };
   }
 
   // TEAM: any team member can view
@@ -259,7 +258,6 @@ export async function canViewSecret(
     if (membership) {
       return { allowed: true, secret, accessType: 'team', teamRole: membership.role };
     }
-    return { allowed: false, secret: null, accessType: 'team' };
   }
 
   // TENANT: must have TenantVaultMember record
@@ -270,7 +268,14 @@ export async function canViewSecret(
     if (tenantMember) {
       return { allowed: true, secret, accessType: 'tenant' };
     }
-    return { allowed: false, secret: null, accessType: 'tenant' };
+  }
+
+  // SHARED: check if someone shared this secret with the user
+  const sharedSecret = await prisma.sharedSecret.findFirst({
+    where: { secretId, sharedWithUserId: userId },
+  });
+  if (sharedSecret) {
+    return { allowed: true, secret, accessType: 'shared' };
   }
 
   return { allowed: false, secret: null, accessType: 'owner' };

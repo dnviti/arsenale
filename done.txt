@@ -1513,3 +1513,33 @@
     MODIFICATO: server/src/services/crypto.service.ts (tenant vault store + 7 functions)
     MODIFICATO: server/src/services/permission.service.ts (canViewSecret, canManageSecret)
     CREATO:     server/src/services/secret.service.ts (full CRUD + versioning + tenant vault)
+
+------------------------------------------------------------------------------
+[x] VAULT-054 — API routes, controller e servizio sharing per i secrets
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-053
+  COMPLETATO: Exposed vault secrets via REST API with full Zod validation, audit
+    logging, and secret sharing between users/teams within tenant boundary.
+    Added SharedSecret Prisma model with encrypted data re-encryption pattern.
+    Extended NotificationType enum (SECRET_SHARED, SECRET_SHARE_REVOKED).
+    Created secret.controller.ts with discriminated union Zod schemas for 5 secret
+    types, 15 handlers (CRUD, versioning, sharing, tenant vault management).
+    Created secret.routes.ts mounted at /api/secrets with tenant-vault routes
+    ordered before /:id to avoid param collision.
+    Created secretSharing.service.ts with shareSecret (decrypt->re-encrypt->upsert->notify),
+    unshareSecret, updateSecretSharePermission, listSecretShares.
+    Updated permission.service.ts: canViewSecret now falls through scope checks
+    to SharedSecret lookup, enabling shared secret access.
+    Updated secret.service.ts: getSecret handles shared access type (decrypts from
+    SharedSecret table with user's personal key), listSecrets includes shared secrets
+    in unfiltered queries.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (SharedSecret model, NotificationType enum, User/VaultSecret relations)
+    CREATO:     server/src/controllers/secret.controller.ts (Zod schemas + 15 handlers)
+    CREATO:     server/src/routes/secret.routes.ts (15 routes at /api/secrets)
+    CREATO:     server/src/services/secretSharing.service.ts (share/unshare/updatePerm/listShares)
+    MODIFICATO: server/src/app.ts (mount /api/secrets)
+    MODIFICATO: server/src/services/permission.service.ts (shared secret access in canViewSecret)
+    MODIFICATO: server/src/services/secret.service.ts (shared secret read + list support)
