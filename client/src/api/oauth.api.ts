@@ -5,6 +5,8 @@ export interface OAuthProviders {
   google: boolean;
   microsoft: boolean;
   github: boolean;
+  oidc?: boolean;
+  oidcProviderName?: string;
 }
 
 export interface LinkedAccount {

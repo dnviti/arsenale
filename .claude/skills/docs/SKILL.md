@@ -1,14 +1,14 @@
 ---
 name: docs
-description: Create, update, or verify project documentation. Usage: /docs <create|update|verify> [category]. Categories: api, database, components, architecture, security, deployment, environment, all.
+description: "Manage all project documentation. Operations: create, update, verify (docs/ folder); sync (task files + doc alignment); claude-md (update CLAUDE.md from code changes). Usage: /docs <operation> [args]."
 disable-model-invocation: true
 allowed-tools: Bash, Read, Grep, Glob, Edit, Write
-argument-hint: "<create|update|verify> [category]"
+argument-hint: "<create|update|verify|sync|claude-md> [category or context]"
 ---
 
 # Documentation Manager
 
-You are a documentation manager for the Remote Desktop Manager project. Your job is to create, update, or verify project documentation based on the actual codebase.
+You are a documentation manager for the Remote Desktop Manager project. Your job is to create, update, verify, and synchronize project documentation based on the actual codebase.
 
 ## Current Documentation State
 
@@ -21,6 +21,12 @@ You are a documentation manager for the Remote Desktop Manager project. Your job
 ### Files changed in last 5 commits:
 !`git diff --name-only HEAD~5..HEAD 2>/dev/null | sort -u`
 
+### In-progress tasks:
+!`grep '^\[~\]' progressing.txt 2>/dev/null | tr -d '\r'`
+
+### Recently completed tasks (last 5):
+!`grep '^\[x\]' done.txt 2>/dev/null | tail -5 | tr -d '\r'`
+
 ## Arguments
 
 The user invoked: **$ARGUMENTS**
@@ -29,22 +35,24 @@ The user invoked: **$ARGUMENTS**
 
 ### Step 1: Parse the command
 
-Extract the **operation** and optional **category** from `$ARGUMENTS`:
+Extract the **operation** and optional **category/context** from `$ARGUMENTS`:
 - Format: `<operation> [category]`
-- Valid operations: `create`, `update`, `verify`
-- Valid categories: `api`, `database`, `components`, `architecture`, `security`, `deployment`, `environment`, `all`
-- If no category is given, default to `all`
+- Valid operations: `create`, `update`, `verify`, `sync`, `claude-md`
+- Valid categories (for create/update/verify): `api`, `database`, `components`, `architecture`, `security`, `deployment`, `environment`, `all`
+- If no category is given for create/update/verify, default to `all`
 - If arguments are empty or invalid, show this usage guide and stop:
 
 ```
 Usage: /docs <operation> [category]
 
 Operations:
-  create   — Generate new documentation from code
-  update   — Refresh existing docs to match current code
-  verify   — Check docs accuracy (read-only, no changes)
+  create     — Generate new documentation from code
+  update     — Refresh existing docs to match current code
+  verify     — Check docs accuracy (read-only, no changes)
+  sync       — Synchronize task files and align related documentation
+  claude-md  — Update CLAUDE.md to reflect current codebase state
 
-Categories:
+Categories (for create/update/verify):
   api           — REST API endpoint reference
   database      — Prisma schema, models, relations
   components    — React components, pages, stores, hooks
@@ -58,7 +66,8 @@ Examples:
   /docs create api
   /docs verify
   /docs update database
-  /docs create all
+  /docs sync
+  /docs claude-md
 ```
 
 ### Step 2: Route to the correct operation
@@ -347,6 +356,128 @@ If a single category was specified, only verify that category (plus README.md). 
 
 ---
 
+## Operation: SYNC
+
+Synchronize task tracking files and align related documentation when tasks change status.
+
+### Step 1: Assess Current State
+- Read all three task files (`to-do.txt`, `progressing.txt`, `done.txt`)
+- Identify which tasks have recently changed status based on the conversation context
+- If invoked without specific context, scan all three files for inconsistencies
+
+### Step 2: Update Task Files
+- Move tasks to the correct file based on their new status
+- Ensure the status symbol matches the file (`[ ]`, `[~]`, or `[x]`)
+- Preserve task descriptions exactly — do not rephrase or summarize
+- Maintain chronological or logical ordering within each file
+- Add timestamps or dates to completed tasks in done.txt if that convention exists
+
+### Step 3: Review Documentation Impact
+- For each progressed/completed task, determine if it affects any documentation:
+  - New features → update feature documentation, README sections
+  - Architecture changes → update CLAUDE.md architecture section
+  - New commands or scripts → update Development Commands section in CLAUDE.md
+  - New file patterns → update File Naming Conventions table in CLAUDE.md
+  - New environment variables → update Environment Setup section
+  - API changes → update relevant API documentation
+  - New UI components or stores → update client architecture docs
+  - New dependencies → note in relevant documentation
+
+### Step 4: Apply Documentation Updates
+- Make precise, targeted edits — do not rewrite entire documents
+- Maintain the existing documentation style and format
+- Add new sections only when genuinely needed
+- Keep language clear, concise, and technical
+- Ensure all code examples and command references are accurate
+
+### Step 5: Verify Consistency
+- Cross-check that no task appears in multiple files
+- Verify that documentation references match actual file paths and command names
+- Ensure no stale references to removed or renamed features remain
+- Confirm the task count adds up (no tasks lost in transition)
+
+### Sync Quality Standards
+
+- **Accuracy over completeness**: Only document what is actually implemented.
+- **Minimal diffs**: Make the smallest possible changes to achieve alignment.
+- **Preserve voice**: Match the existing documentation tone and conventions exactly.
+- **No data loss**: Never delete task entries — only move them between files. If cancelled, move to done.txt with a `[cancelled]` note.
+
+### Sync Edge Cases
+
+- **Task partially completed**: Keep in `progressing.txt` with `[~]` and add a note about what remains
+- **Task split into subtasks**: Create new entries in the appropriate files and reference the parent task
+- **Task reverted**: Move back from `done.txt` to `progressing.txt` or `to-do.txt` with a note
+- **No documentation impact**: Explicitly state that no documentation updates are needed after updating task files
+
+### Sync Summary
+
+After completing, provide:
+1. Which tasks were moved and between which files
+2. Which documentation files were updated and what changed
+3. Any inconsistencies found and how they were resolved
+4. Any items that need human review or decision
+
+---
+
+## Operation: CLAUDE-MD
+
+Update `CLAUDE.md` to reflect the current state of the codebase. Use this after architectural changes, new patterns, new commands, schema changes, or any structural change.
+
+### Step 1: Understand What Changed
+
+Before making any updates, thoroughly investigate what has changed:
+
+1. **Read the current CLAUDE.md** to understand its existing structure and content.
+2. **Examine recent file changes** — look at new, modified, or deleted files to understand the scope of changes.
+3. **Read relevant source files** — don't guess about new patterns or architecture; read the actual code.
+4. **Check package.json files** (root, server/, client/) for new scripts, dependencies, or workspace changes.
+5. **Check the Prisma schema** if database models may have changed.
+6. **Check configuration files** (tsconfig, vite.config, eslint config, Docker files) for tooling changes.
+
+### Step 2: Determine What Needs Updating
+
+Compare findings against each section of CLAUDE.md:
+
+- **Development Commands** — New scripts, changed scripts, removed scripts.
+- **Environment Setup** — New env vars, changed database setup, new Docker containers, changed ports.
+- **Architecture** — New directories, layers, entry points, restructured code, new workspaces.
+  - Server: new route files, controllers, services, middleware, socket namespaces, type definitions, schema changes.
+  - Client: new API files, stores, pages, components, hooks, UI framework changes.
+- **Key Patterns** — New or changed patterns for real-time connections, vault/encryption, authentication, UI preferences, task management, or any new cross-cutting concern.
+- **File Naming Conventions** — New file types or changed naming patterns.
+
+### Step 3: Apply Updates Surgically
+
+1. **Preserve the existing structure and style.** Match tone, formatting, heading levels, table formats, and bullet point style.
+2. **Be precise and concise.** Every line should provide actionable information.
+3. **Add new sections only when necessary.**
+4. **Update, don't just append.** Modify existing content rather than adding contradictory new content.
+5. **Remove outdated information.** Stale information is worse than missing information.
+6. **Maintain the imperative/instructional tone.** Write "Use X for Y" not "We added X for Y".
+7. **Keep command blocks accurate.** Verify against package.json scripts.
+8. **Preserve all existing rules and constraints** unless they have explicitly changed.
+
+### Step 4: Validate Your Changes
+
+1. Re-read the entire file to ensure consistency and flow.
+2. Verify no contradictions exist between sections.
+3. Check that all file paths mentioned actually exist in the current codebase.
+4. Ensure all commands mentioned are valid by cross-referencing with package.json scripts.
+5. Confirm table formatting is correct and aligned.
+
+### CLAUDE-MD Rules
+
+- **Never remove the `npm run verify` requirement.**
+- **Never change the Language section** unless explicitly instructed.
+- **Never add speculative content** — only document what actually exists.
+- **Never duplicate information** — reference rather than repeat.
+- **Always preserve the Task Files section** format and rules.
+- **Always maintain the File Naming Conventions table** with accurate patterns.
+- **Keep CLAUDE.md focused** — only information that helps Claude Code work with this codebase.
+
+---
+
 ## Important Guidelines
 
 1. **Always read source code** before writing or verifying documentation. Never guess — always base documentation on actual file contents.
@@ -355,5 +486,5 @@ If a single category was specified, only verify that category (plus README.md). 
 4. **Be precise about security parameters**: always read the actual values from `crypto.service.ts` rather than assuming.
 5. **Timestamp every generated document** so readers know when it was last generated.
 6. **Manual section markers**: When creating docs, add a `<!-- manual-start -->` / `<!-- manual-end -->` block at the end of each major section for user notes, so that `update` preserves them.
-7. **Do not modify README.md or CLAUDE.md** during create/update operations. Only check them during verify.
+7. **Do not modify README.md** during create/update operations. Only check it during verify.
 8. **Language**: All documentation must be written in English.

@@ -1,6 +1,7 @@
 import http from 'http';
 import app from './app';
 import { config } from './config';
+import { initializePassport } from './config/passport';
 import { setupSocketIO } from './socket';
 import { logger, toGuacamoleLogLevel } from './utils/logger';
 import prisma from './lib/prisma';
@@ -30,6 +31,7 @@ async function runStartupMigrations() {
 
 async function main() {
   await runStartupMigrations();
+  await initializePassport();
 
   const server = http.createServer(app);
 
