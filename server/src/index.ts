@@ -12,8 +12,7 @@ import { startAllMonitors, stopAllMonitors } from './services/gatewayMonitor.ser
 import { cleanupExpiredShares } from './services/externalShare.service';
 import { checkExpiringSecrets } from './services/secretExpiry.service';
 import { markServerReady } from './services/health.service';
-import * as auditService from './services/audit.service';
-import { formatDuration } from './utils/format';
+import * as sessionService from './services/session.service';
 
 async function runDatabaseMigrations() {
   const serverDir = path.resolve(__dirname, '..');
@@ -58,6 +57,13 @@ async function runStartupMigrations() {
 async function main() {
   await runDatabaseMigrations();
   await runStartupMigrations();
+
+  // Recover orphaned sessions from previous server instance
+  const recovered = await sessionService.recoverOrphanedSessions();
+  if (recovered > 0) {
+    logger.info(`Recovered ${recovered} orphaned session(s) from previous server instance`);
+  }
+
   await initializePassport();
 
   const server = http.createServer(app);
@@ -84,6 +90,24 @@ async function main() {
       logger.error('Secret expiry check failed:', err);
     });
   }, 6 * 60 * 60 * 1000);
+
+  // Mark idle sessions every minute
+  setInterval(() => {
+    sessionService.markIdleSessions(config.sessionIdleThresholdMinutes).then((count) => {
+      if (count > 0) logger.info(`Marked ${count} session(s) as idle`);
+    }).catch((err) => {
+      logger.error('Failed to mark idle sessions:', err);
+    });
+  }, 60 * 1000);
+
+  // Cleanup old closed sessions daily
+  setInterval(() => {
+    sessionService.cleanupClosedSessions(config.sessionCleanupRetentionDays).then((count) => {
+      if (count > 0) logger.info(`Cleaned up ${count} old closed session(s)`);
+    }).catch((err) => {
+      logger.error('Failed to cleanup closed sessions:', err);
+    });
+  }, 24 * 60 * 60 * 1000);
 
   // Setup guacamole-lite for RDP
   if (config.nodeEnv !== 'test') {
@@ -116,52 +140,28 @@ async function main() {
         );
       });
 
-      // Track RDP session start times for duration calculation
-      const rdpSessionStartTimes = new Map<number, number>();
-
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       guacServer.on('open', (clientConnection: any) => {
         const metadata = clientConnection.connectionSettings?.metadata;
         if (metadata) {
-          rdpSessionStartTimes.set(clientConnection.connectionId, Date.now());
-          auditService.log({
-            userId: metadata.userId,
-            action: 'SESSION_START',
-            targetType: 'Connection',
-            targetId: metadata.connectionId,
-            details: {
-              protocol: 'RDP',
-              host: clientConnection.connectionSettings.connection?.settings?.hostname,
-              port: clientConnection.connectionSettings.connection?.settings?.port,
-            },
-            ipAddress: metadata.ipAddress,
-          });
+          logger.debug(`Guacamole RDP tunnel opened for connection ${metadata.connectionId}`);
         }
       });
 
+      // Safety net: close persistent session if client didn't explicitly end it
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       guacServer.on('close', (clientConnection: any) => {
-        const metadata = clientConnection.connectionSettings?.metadata;
-        if (metadata) {
-          const startTime = rdpSessionStartTimes.get(clientConnection.connectionId);
-          const durationMs = startTime ? Date.now() - startTime : undefined;
-          rdpSessionStartTimes.delete(clientConnection.connectionId);
-          auditService.log({
-            userId: metadata.userId,
-            action: 'SESSION_END',
-            targetType: 'Connection',
-            targetId: metadata.connectionId,
-            details: {
-              protocol: 'RDP',
-              host: clientConnection.connectionSettings.connection?.settings?.hostname,
-              port: clientConnection.connectionSettings.connection?.settings?.port,
-              ...(durationMs !== undefined && {
-                durationMs,
-                durationFormatted: formatDuration(durationMs),
-              }),
-            },
-            ipAddress: metadata.ipAddress,
-          });
+        try {
+          const token = clientConnection.connectionSettings?.token;
+          if (token) {
+            const crypto = require('crypto');
+            const hash = crypto.createHash('sha256').update(token).digest('hex');
+            sessionService.endSessionByGuacTokenHash(hash).catch((err: unknown) => {
+              logger.error('Failed to end RDP session by guac token:', err);
+            });
+          }
+        } catch {
+          // Ignore — session will be cleaned up by idle timeout
         }
       });
 
@@ -182,10 +182,21 @@ async function main() {
     markServerReady();
   });
 
-  const shutdown = () => {
+  const shutdown = async () => {
     logger.info('Shutting down...');
     stopAllMonitors();
     stopAllJobs();
+
+    // Close all active sessions gracefully
+    try {
+      const closed = await sessionService.recoverOrphanedSessions();
+      if (closed > 0) {
+        logger.info(`Closed ${closed} active session(s) on shutdown`);
+      }
+    } catch (err) {
+      logger.error('Failed to close sessions on shutdown:', err);
+    }
+
     server.close(() => {
       logger.info('HTTP server closed.');
       process.exit(0);

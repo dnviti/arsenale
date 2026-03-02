@@ -1407,6 +1407,34 @@
     MODIFICATO: package.json (wait-on devDep, dev:client:wait script, updated dev script)
 
 
+------------------------------------------------------------------------------
+[x] ORCH-060 — Session tracking persistente e monitoraggio sessioni attive
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-049, SSHGW-050
+  COMPLETATO: Database-backed ActiveSession model with Prisma migration, session lifecycle service (start, heartbeat, idle detection, close, orphan recovery), RDP session controller replacing stateless rdp.handler.ts, SSH handler integrated with session service (heartbeat on data events + explicit heartbeat), admin endpoints (list active sessions, count, count by gateway, terminate), client-side heartbeat for SSH (Socket.IO) and RDP (HTTP polling 30s), maintenance jobs (mark idle 60s, cleanup closed daily), crash recovery on server start/shutdown.
+
+  DESCRIZIONE:
+  Fondazione per l'auto-scaling e il monitoraggio gateway: implementare un
+  sistema di tracking persistente delle sessioni attive (SSH e RDP) nel
+  database. Attualmente le sessioni SSH sono tracciate solo in una Map
+  in-memory (activeSessions in ssh.handler.ts), mentre le sessioni RDP sono
+  completamente stateless (un token Guacamole viene generato e dimenticato).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma
+    CREATO:     server/src/services/session.service.ts
+    CREATO:     server/src/controllers/session.controller.ts
+    CREATO:     server/src/routes/session.routes.ts
+    MODIFICATO: server/src/socket/ssh.handler.ts
+    ELIMINATO:  server/src/socket/rdp.handler.ts (logic moved to controller)
+    MODIFICATO: server/src/app.ts
+    MODIFICATO: server/src/index.ts
+    MODIFICATO: client/src/components/Terminal/SshTerminal.tsx
+    MODIFICATO: client/src/components/RDP/RdpViewer.tsx
+    CREATO:     client/src/api/sessions.api.ts
+
+
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
 ================================================================================

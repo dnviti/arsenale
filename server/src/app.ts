@@ -8,7 +8,7 @@ import vaultRoutes from './routes/vault.routes';
 import connectionsRoutes from './routes/connections.routes';
 import foldersRoutes from './routes/folders.routes';
 import sharingRoutes from './routes/sharing.routes';
-import sessionsRoutes from './socket/rdp.handler';
+import sessionsRoutes from './routes/session.routes';
 import userRoutes from './routes/user.routes';
 import twofaRoutes from './routes/twofa.routes';
 import smsMfaRoutes from './routes/smsMfa.routes';

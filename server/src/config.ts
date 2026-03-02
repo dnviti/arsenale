@@ -114,4 +114,7 @@ export const config = {
   loginRateLimitMaxAttempts: parseInt(process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS || '5', 10),
   accountLockoutThreshold: parseInt(process.env.ACCOUNT_LOCKOUT_THRESHOLD || '10', 10),
   accountLockoutDurationMs: parseInt(process.env.ACCOUNT_LOCKOUT_DURATION_MS || String(30 * 60 * 1000), 10),
+  sessionHeartbeatIntervalMs: parseInt(process.env.SESSION_HEARTBEAT_INTERVAL_MS || String(30 * 1000), 10),
+  sessionIdleThresholdMinutes: parseInt(process.env.SESSION_IDLE_THRESHOLD_MINUTES || '5', 10),
+  sessionCleanupRetentionDays: parseInt(process.env.SESSION_CLEANUP_RETENTION_DAYS || '30', 10),
 };

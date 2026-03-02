@@ -184,10 +184,19 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       });
     });
 
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
     socket.on('session:ready', () => {
       setStatus('connected');
       // Send initial size
       socket.emit('resize', { cols: terminal.cols, rows: terminal.rows });
+
+      // Start heartbeat interval
+      heartbeatInterval = setInterval(() => {
+        if (socket.connected) {
+          socket.emit('session:heartbeat');
+        }
+      }, 30_000);
     });
 
     socket.on('data', (data: string) => {
@@ -224,6 +233,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
     resizeObserver.observe(termRef.current);
 
     return () => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
       resizeObserver.disconnect();
       socket.disconnect();
       terminal.dispose();

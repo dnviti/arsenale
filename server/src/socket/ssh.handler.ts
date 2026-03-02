@@ -9,8 +9,8 @@ import { createSshConnection, createSshConnectionViaBastion, createSftpSession, 
 import { getConnectionCredentials, getConnection } from '../services/connection.service';
 import { getGatewayCredentials } from '../services/gateway.service';
 import { getPrivateKey as getTenantPrivateKey } from '../services/sshkey.service';
-import * as auditService from '../services/audit.service';
-import { formatDuration } from '../utils/format';
+import * as sessionService from '../services/session.service';
+import { logger } from '../utils/logger';
 
 interface ActiveTransfer {
   stream: NodeJS.ReadableStream | NodeJS.WritableStream;
@@ -51,13 +51,9 @@ export function setupSshHandler(io: Server) {
     let sftpSession: SFTPWrapper | null = null;
     const activeTransfers = new Map<string, ActiveTransfer>();
 
-    // Session audit tracking
-    let sessionStartTime: number | null = null;
-    let sessionConnectionId: string | null = null;
-    let sessionHost: string | null = null;
-    let sessionPort: number | null = null;
     const clientIp = (socket.handshake.headers['x-forwarded-for'] as string | undefined)
       || socket.handshake.address;
+    let lastActivityUpdate = 0;
 
     async function ensureSftp(): Promise<SFTPWrapper> {
       if (sftpSession) return sftpSession;
@@ -187,18 +183,17 @@ export function setupSshHandler(io: Server) {
 
         socket.emit('session:ready');
 
-        // Audit: session started
-        sessionStartTime = Date.now();
-        sessionConnectionId = data.connectionId;
-        sessionHost = conn.host;
-        sessionPort = conn.port;
-        auditService.log({
+        // Create persistent session record
+        sessionService.startSession({
           userId: user.userId,
-          action: 'SESSION_START',
-          targetType: 'Connection',
-          targetId: data.connectionId,
-          details: { protocol: 'SSH', host: conn.host, port: conn.port },
+          connectionId: data.connectionId,
+          gatewayId: conn.gatewayId ?? undefined,
+          protocol: 'SSH',
+          socketId: socket.id,
           ipAddress: clientIp,
+          metadata: { host: conn.host, port: conn.port },
+        }).catch((err) => {
+          logger.error('Failed to persist SSH session record:', err);
         });
 
         session.stream.on('data', (data: Buffer) => {
@@ -230,7 +225,18 @@ export function setupSshHandler(io: Server) {
     socket.on('data', (data: string) => {
       if (currentSession?.stream.writable) {
         currentSession.stream.write(data);
+        // Throttled implicit heartbeat (at most once per 30s)
+        const now = Date.now();
+        if (now - lastActivityUpdate > 30000) {
+          lastActivityUpdate = now;
+          sessionService.heartbeatBySocketId(socket.id).catch(() => {});
+        }
       }
+    });
+
+    // Explicit heartbeat from client
+    socket.on('session:heartbeat', () => {
+      sessionService.heartbeatBySocketId(socket.id).catch(() => {});
     });
 
     socket.on('resize', (data: { cols: number; rows: number }) => {
@@ -509,26 +515,10 @@ export function setupSshHandler(io: Server) {
     });
 
     function cleanup(sessionId: string) {
-      // Audit: session ended
-      if (sessionStartTime && sessionConnectionId) {
-        const durationMs = Date.now() - sessionStartTime;
-        auditService.log({
-          userId: user.userId,
-          action: 'SESSION_END',
-          targetType: 'Connection',
-          targetId: sessionConnectionId,
-          details: {
-            protocol: 'SSH',
-            host: sessionHost,
-            port: sessionPort,
-            durationMs,
-            durationFormatted: formatDuration(durationMs),
-          },
-          ipAddress: clientIp,
-        });
-        sessionStartTime = null;
-        sessionConnectionId = null;
-      }
+      // End persistent session record
+      sessionService.endSessionBySocketId(socket.id).catch((err) => {
+        logger.error('Failed to end persistent session:', err);
+      });
 
       // Clean up all active transfers
       for (const [transferId] of activeTransfers) {

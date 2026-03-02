@@ -118,6 +118,7 @@ model User {
   secretsSharedWithMe    SharedSecret[]         @relation("SecretSharedWith")
   secretsSharedByMe      SharedSecret[]         @relation("SecretSharedBy")
   externalSecretShares   ExternalSecretShare[]
+  activeSessions         ActiveSession[]
 }
 
 enum AuthProvider {
@@ -195,6 +196,7 @@ model Connection {
   credentialSecret VaultSecret?  @relation(fields: [credentialSecretId], references: [id], onDelete: SetNull)
   shares           SharedConnection[]
   openTabs         OpenTab[]
+  activeSessions   ActiveSession[]
 }
 
 enum ConnectionType {
@@ -212,6 +214,17 @@ enum GatewayHealthStatus {
   UNKNOWN
   REACHABLE
   UNREACHABLE
+}
+
+enum SessionProtocol {
+  SSH
+  RDP
+}
+
+enum SessionStatus {
+  ACTIVE
+  IDLE
+  CLOSED
 }
 
 model Gateway {
@@ -246,9 +259,10 @@ model Gateway {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id])
-  createdBy   User         @relation("GatewayCreator", fields: [createdById], references: [id])
-  connections Connection[]
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  createdBy      User            @relation("GatewayCreator", fields: [createdById], references: [id])
+  connections    Connection[]
+  activeSessions ActiveSession[]
 
   @@index([tenantId])
   @@index([tenantId, type, isDefault])
@@ -376,6 +390,7 @@ enum AuditAction {
   BATCH_SHARE
   SESSION_START
   SESSION_END
+  SESSION_TIMEOUT
   SECRET_CREATE
   SECRET_READ
   SECRET_UPDATE
@@ -579,4 +594,31 @@ model ExternalSecretShare {
 
   @@index([tokenHash])
   @@index([expiresAt])
+}
+
+model ActiveSession {
+  id             String          @id @default(uuid())
+  userId         String
+  connectionId   String
+  gatewayId      String?
+  protocol       SessionProtocol
+  status         SessionStatus   @default(ACTIVE)
+  socketId       String?
+  guacTokenHash  String?
+  startedAt      DateTime        @default(now())
+  lastActivityAt DateTime        @default(now())
+  endedAt        DateTime?
+  metadata       Json?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  gateway    Gateway?   @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status])
+  @@index([gatewayId, status])
+  @@index([protocol, status])
+  @@index([lastActivityAt])
+  @@index([socketId])
+  @@index([guacTokenHash])
 }
