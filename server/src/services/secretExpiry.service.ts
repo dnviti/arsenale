@@ -1,5 +1,5 @@
 import prisma from '../lib/prisma';
-import { createNotificationAsync, NotificationType } from './notification.service';
+import type { NotificationType } from './notification.service';
 import { emitNotification } from '../socket/notification.handler';
 import { logger } from '../utils/logger';
 

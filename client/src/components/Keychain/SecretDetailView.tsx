@@ -308,7 +308,12 @@ export default function SecretDetailView({
       {/* Version history */}
       <Accordion sx={{ mt: 2 }} disableGutters elevation={0} variant="outlined">
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="subtitle2">Version History</Typography>
+          <Typography variant="subtitle2">
+            Version History
+            {secret.currentVersion > 1 && (
+              <Chip label={`${secret.currentVersion} versions`} size="small" sx={{ ml: 1, height: 18, fontSize: '0.65rem' }} />
+            )}
+          </Typography>
         </AccordionSummary>
         <AccordionDetails>
           <SecretVersionHistory

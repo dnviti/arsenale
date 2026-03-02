@@ -9,6 +9,7 @@ import {
   VisibilityOff as HideIcon,
   RestorePage as RestoreIcon,
   Circle as DotIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material';
 import { listVersions, restoreVersion, getSecretVersionData } from '../../api/secrets.api';
 import type { SecretVersion, SecretPayload } from '../../api/secrets.api';
@@ -35,7 +36,10 @@ function flattenPayload(data: SecretPayload): Record<string, string> {
   return entries;
 }
 
+const SENSITIVE_KEYS = ['password', 'privateKey', 'passphrase', 'apiKey', 'certificate', 'chain', 'content'];
+
 function DiffView({ versionData, currentData }: { versionData: SecretPayload; currentData?: SecretPayload }) {
+  const [revealedKeys, setRevealedKeys] = useState<Set<string>>(new Set());
   const versionFields = flattenPayload(versionData);
   const currentFields = currentData ? flattenPayload(currentData) : null;
 
@@ -44,13 +48,23 @@ function DiffView({ versionData, currentData }: { versionData: SecretPayload; cu
     ...(currentFields ? Object.keys(currentFields) : []),
   ]);
 
+  const toggleReveal = (key: string) => {
+    setRevealedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   return (
     <Box sx={{ mt: 1 }}>
       {[...allKeys].map((key) => {
         const vVal = versionFields[key];
         const cVal = currentFields?.[key];
         const changed = currentFields !== null && vVal !== cVal;
-        const isSensitive = ['password', 'privateKey', 'passphrase', 'apiKey', 'certificate', 'chain', 'content'].includes(key);
+        const isSensitive = SENSITIVE_KEYS.includes(key);
+        const isRevealed = revealedKeys.has(key);
 
         return (
           <Box
@@ -64,12 +78,21 @@ function DiffView({ versionData, currentData }: { versionData: SecretPayload; cu
               borderColor: changed ? 'warning.light' : 'divider',
             }}
           >
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-              {key}
-              {changed && (
-                <Chip label="changed" size="small" color="warning" sx={{ ml: 0.5, height: 16, fontSize: '0.6rem' }} />
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                {key}
+                {changed && (
+                  <Chip label="changed" size="small" color="warning" sx={{ ml: 0.5, height: 16, fontSize: '0.6rem' }} />
+                )}
+              </Typography>
+              {isSensitive && vVal && (
+                <Tooltip title={isRevealed ? 'Hide' : 'Reveal'}>
+                  <IconButton size="small" onClick={() => toggleReveal(key)} sx={{ p: 0.25 }}>
+                    {isRevealed ? <HideIcon sx={{ fontSize: 14 }} /> : <ViewIcon sx={{ fontSize: 14 }} />}
+                  </IconButton>
+                </Tooltip>
               )}
-            </Typography>
+            </Box>
             <Typography
               variant="body2"
               sx={{
@@ -79,7 +102,7 @@ function DiffView({ versionData, currentData }: { versionData: SecretPayload; cu
                 whiteSpace: 'pre-wrap',
               }}
             >
-              {isSensitive && vVal ? '••••••••' : (vVal ?? '(empty)')}
+              {isSensitive && vVal && !isRevealed ? '••••••••' : (vVal ?? '(empty)')}
             </Typography>
           </Box>
         );
@@ -194,8 +217,11 @@ export default function SecretVersionHistory({
 
         return (
           <Box key={v.id} sx={{ display: 'flex', gap: 1.5 }}>
-            {/* Timeline line + dot */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 20, flexShrink: 0 }}>
+            {/* Timeline line + dot (clickable) */}
+            <Box
+              sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 20, flexShrink: 0, cursor: 'pointer' }}
+              onClick={() => handleToggleView(v.version)}
+            >
               <DotIcon
                 sx={{
                   fontSize: 12,
@@ -211,44 +237,43 @@ export default function SecretVersionHistory({
             {/* Content */}
             <Box sx={{ flex: 1, pb: 1.5, minWidth: 0 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                <Typography variant="body2" sx={{ fontWeight: isCurrent ? 600 : 400 }}>
-                  Version {v.version}
-                </Typography>
+                <Box
+                  onClick={() => handleToggleView(v.version)}
+                  sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+                >
+                  <ExpandMoreIcon
+                    sx={{
+                      fontSize: 16,
+                      color: 'text.secondary',
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                      transition: 'transform 0.2s',
+                    }}
+                  />
+                  <Typography variant="body2" sx={{ fontWeight: isCurrent ? 600 : 400 }}>
+                    Version {v.version}
+                  </Typography>
+                  {isLoadingData && <CircularProgress size={12} sx={{ ml: 0.5 }} />}
+                </Box>
                 {isCurrent && (
                   <Chip label="current" size="small" color="primary" sx={{ height: 18, fontSize: '0.65rem' }} />
                 )}
 
-                <Box sx={{ ml: 'auto', display: 'flex', gap: 0.5 }}>
-                  <Tooltip title={isExpanded ? 'Hide data' : 'View data'}>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleToggleView(v.version)}
-                      disabled={isLoadingData}
-                    >
-                      {isLoadingData ? (
-                        <CircularProgress size={16} />
-                      ) : isExpanded ? (
-                        <HideIcon fontSize="small" />
-                      ) : (
-                        <ViewIcon fontSize="small" />
-                      )}
-                    </IconButton>
-                  </Tooltip>
-                  {!isCurrent && (
+                {!isCurrent && (
+                  <Box sx={{ ml: 'auto' }}>
                     <Tooltip title="Restore this version">
                       <IconButton size="small" onClick={() => setRestoreTarget(v.version)}>
                         <RestoreIcon fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                  )}
-                </Box>
+                  </Box>
+                )}
               </Box>
 
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2.5 }}>
                 {v.changer?.username || v.changer?.email || 'Unknown'} — {formatDate(v.createdAt)}
               </Typography>
               {v.changeNote && (
-                <Typography variant="caption" display="block" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                <Typography variant="caption" display="block" color="text.secondary" sx={{ fontStyle: 'italic', ml: 2.5 }}>
                   {v.changeNote}
                 </Typography>
               )}
