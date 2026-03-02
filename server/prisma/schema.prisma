@@ -233,9 +233,13 @@ model SshKeyPair {
   privateKeyTag       String
   publicKey           String
   fingerprint         String
-  algorithm           String   @default("ed25519")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  algorithm            String    @default("ed25519")
+  expiresAt            DateTime?
+  autoRotateEnabled    Boolean   @default(false)
+  rotationIntervalDays Int       @default(90)
+  lastAutoRotatedAt    DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
@@ -324,6 +328,7 @@ enum AuditAction {
   SSH_KEY_GENERATE
   SSH_KEY_ROTATE
   SSH_KEY_PUSH
+  SSH_KEY_AUTO_ROTATE
   BATCH_SHARE
 }
 

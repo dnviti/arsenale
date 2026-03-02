@@ -19,6 +19,12 @@ const createSchema = z.object({
   apiPort: z.number().int().min(1).max(65535).optional(),
 });
 
+const rotationPolicySchema = z.object({
+  autoRotateEnabled: z.boolean().optional(),
+  rotationIntervalDays: z.number().int().min(1).max(365).optional(),
+  expiresAt: z.string().datetime().nullable().optional(),
+});
+
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   host: z.string().min(1).optional(),
@@ -225,6 +231,48 @@ export async function downloadSshPrivateKey(req: AuthRequest, res: Response, nex
     res.setHeader('Content-Type', 'text/plain');
     res.setHeader('Content-Disposition', 'attachment; filename="tenant_ed25519"');
     res.send(privateKeyBuf.toString('utf8'));
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateRotationPolicy(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const data = rotationPolicySchema.parse(req.body);
+
+    const input: sshKeyService.RotationPolicyInput = {};
+    if (data.autoRotateEnabled !== undefined) {
+      input.autoRotateEnabled = data.autoRotateEnabled;
+    }
+    if (data.rotationIntervalDays !== undefined) {
+      input.rotationIntervalDays = data.rotationIntervalDays;
+    }
+    if (data.expiresAt !== undefined) {
+      input.expiresAt = data.expiresAt ? new Date(data.expiresAt) : null;
+    }
+
+    const result = await sshKeyService.updateRotationPolicy(req.user!.tenantId!, input);
+
+    auditService.log({
+      userId: req.user!.userId,
+      action: 'SSH_KEY_ROTATE',
+      targetType: 'SshKeyPair',
+      targetId: result.id,
+      details: { policyUpdate: data },
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+export async function getRotationStatus(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const result = await sshKeyService.getRotationStatus(req.user!.tenantId!);
+    res.json(result);
   } catch (err) {
     next(err);
   }

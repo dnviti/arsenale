@@ -108,4 +108,6 @@ export const config = {
       scopes: process.env.OIDC_SCOPES || 'openid profile email',
     },
   },
+  keyRotationCron: process.env.KEY_ROTATION_CRON || '0 2 * * *',
+  keyRotationAdvanceDays: parseInt(process.env.KEY_ROTATION_ADVANCE_DAYS || '7', 10),
 };

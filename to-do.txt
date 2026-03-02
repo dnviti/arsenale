@@ -48,7 +48,6 @@
 
 
 
-
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
 ================================================================================
@@ -1883,6 +1882,7 @@
    40. SSHGW-051  Integrazione gateway managed nel backend (MANAGED_SSH + key auth)
    41. SSHGW-052  Frontend gateway SSH gestito: UI, status e configurazione  [COMPLETATO]
    42. SSHGW-053  Push chiave pubblica SSH al gateway tramite HTTP sidecar  [COMPLETATO]
+   42b. SSHGW-066  Rotazione automatica chiave SSH tenant (nightly cron)  [COMPLETATO]
 
   Fase 8d — Password Keychain / Secret Vault:
    43. VAULT-053  Modelli Prisma e servizio CRUD backend secrets
@@ -2064,6 +2064,20 @@
     GET /authorized-keys verifica le chiavi attualmente configurate
   - SSHGW-053 GATEWAY_API_TOKEN deve essere una stringa random crittografica
     (64 caratteri hex), condivisa tra .env del server e del container gateway
+  - SSHGW-066 usa node-cron (non setInterval) per espressioni cron standard
+  - SSHGW-066 il cron e' configurabile via KEY_ROTATION_CRON; default 02:00 UTC
+  - SSHGW-066 advance days = 7: una chiave che scade il 15/03 viene ruotata
+    entro il 08/03, garantendo zero interruzioni
+  - SSHGW-066 expiresAt null = chiave senza scadenza, non viene mai auto-ruotata
+  - SSHGW-066 autoRotateEnabled default false: backward compatible, nessun
+    tenant esistente viene ruotato automaticamente senza opt-in esplicito
+  - SSHGW-066 il push ai gateway e' best-effort: se un gateway non risponde,
+    la rotazione non viene annullata (logged and continued)
+  - SSHGW-066 audit action dedicata SSH_KEY_AUTO_ROTATE distingue rotazione
+    automatica da manuale (SSH_KEY_ROTATE)
+  - SSHGW-066 nessuna modifica frontend: la task e' backend-only, API-first
+  - SSHGW-066 l'admin configura la policy via PATCH /ssh-keypair/rotation
+    (curl o futuro UI), la rotazione avviene senza intervento
   - VAULT-053 il tenant key segue lo stesso pattern esatto del team key:
     AES-256 random, cifrato per-membro con master key, cached in memory con TTL
   - VAULT-053 i secrets usano un singolo blob JSON cifrato (encryptedData) invece

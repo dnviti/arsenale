@@ -1343,3 +1343,21 @@
     MODIFICATO: client/src/store/gatewayStore.ts (pushKey action, rotate response)
     MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (apiPort field)
     MODIFICATO: client/src/components/Settings/GatewaySection.tsx (Push Key button, rotation push results)
+
+------------------------------------------------------------------------------
+[x] SSHGW-066 — Rotazione automatica chiave SSH tenant (nightly cron)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSHGW-050, SSHGW-053
+  COMPLETATO: Added automatic SSH key rotation via node-cron nightly job (default 02:00 UTC). SshKeyPair model extended with expiresAt, autoRotateEnabled, rotationIntervalDays, lastAutoRotatedAt fields. New scheduler.service.ts with processKeyRotations() that finds keys expiring within configurable advance window, rotates them preserving policy fields, pushes to all MANAGED_SSH gateways (best-effort), and logs SSH_KEY_AUTO_ROTATE audit action. New REST endpoints: PATCH/GET /ssh-keypair/rotation for managing rotation policy. sshkey.service.ts refactored with updateRotationPolicy() (auto-computes expiresAt when enabling) and getRotationStatus() (computed nextRotationDate + daysUntilRotation). Graceful shutdown handlers added. Backend-only, no frontend changes.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/services/scheduler.service.ts
+    MODIFICATO: server/package.json (node-cron, @types/node-cron)
+    MODIFICATO: server/prisma/schema.prisma (SshKeyPair rotation fields, SSH_KEY_AUTO_ROTATE)
+    MODIFICATO: server/src/config.ts (keyRotationCron, keyRotationAdvanceDays)
+    MODIFICATO: server/src/services/sshkey.service.ts (RotateOptions, updateRotationPolicy, getRotationStatus)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (updateRotationPolicy, getRotationStatus)
+    MODIFICATO: server/src/routes/gateway.routes.ts (PATCH/GET /ssh-keypair/rotation)
+    MODIFICATO: server/src/index.ts (startKeyRotationJob, graceful shutdown)
+    MODIFICATO: .env.example (KEY_ROTATION_CRON, KEY_ROTATION_ADVANCE_DAYS)

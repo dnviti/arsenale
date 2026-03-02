@@ -16,6 +16,8 @@ router.post('/ssh-keypair', requireTenantRole('ADMIN'), gatewayController.genera
 router.get('/ssh-keypair', requireTenantRole('ADMIN'), gatewayController.getSshPublicKey);
 router.get('/ssh-keypair/private', requireTenantRole('ADMIN'), gatewayController.downloadSshPrivateKey);
 router.post('/ssh-keypair/rotate', requireTenantRole('ADMIN'), gatewayController.rotateSshKeyPair);
+router.patch('/ssh-keypair/rotation', requireTenantRole('ADMIN'), gatewayController.updateRotationPolicy);
+router.get('/ssh-keypair/rotation', requireTenantRole('ADMIN'), gatewayController.getRotationStatus);
 
 router.put('/:id', requireTenantRole('ADMIN'), gatewayController.update);
 router.delete('/:id', requireTenantRole('ADMIN'), gatewayController.remove);

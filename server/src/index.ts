@@ -7,6 +7,7 @@ import { initializePassport } from './config/passport';
 import { setupSocketIO } from './socket';
 import { logger, toGuacamoleLogLevel } from './utils/logger';
 import prisma from './lib/prisma';
+import { startKeyRotationJob, stopAllJobs } from './services/scheduler.service';
 
 async function runDatabaseMigrations() {
   const serverDir = path.resolve(__dirname, '..');
@@ -58,6 +59,9 @@ async function main() {
   // Setup Socket.io for SSH
   setupSocketIO(server);
 
+  // Start scheduled jobs (SSH key rotation cron)
+  startKeyRotationJob();
+
   // Setup guacamole-lite for RDP
   if (config.nodeEnv !== 'test') {
     try {
@@ -104,6 +108,18 @@ async function main() {
     logger.info(`Server running on port ${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
   });
+
+  const shutdown = () => {
+    logger.info('Shutting down...');
+    stopAllJobs();
+    server.close(() => {
+      logger.info('HTTP server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 main().catch((err) => logger.error(err));
