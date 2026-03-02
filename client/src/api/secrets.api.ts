@@ -1,3 +1,4 @@
+import axios from 'axios';
 import api from './client';
 
 // --- Secret payload types (discriminated union) ---
@@ -227,5 +228,90 @@ export async function distributeTenantKey(targetUserId: string): Promise<{ distr
 
 export async function getTenantVaultStatus(): Promise<TenantVaultStatus> {
   const res = await api.get('/secrets/tenant-vault/status');
+  return res.data;
+}
+
+// --- External share types ---
+
+export interface ExternalShareResult {
+  id: string;
+  shareUrl: string;
+  expiresAt: string;
+  maxAccessCount: number | null;
+  hasPin: boolean;
+}
+
+export interface ExternalShareInfo {
+  id: string;
+  secretName: string;
+  secretType: SecretType;
+  hasPin: boolean;
+  expiresAt: string;
+  isExpired: boolean;
+  isExhausted: boolean;
+  isRevoked: boolean;
+}
+
+export interface ExternalShareListItem {
+  id: string;
+  secretName: string;
+  secretType: SecretType;
+  hasPin: boolean;
+  expiresAt: string;
+  maxAccessCount: number | null;
+  accessCount: number;
+  isRevoked: boolean;
+  createdAt: string;
+}
+
+export interface ExternalShareAccessResult {
+  secretName: string;
+  secretType: SecretType;
+  data: SecretPayload;
+}
+
+export interface CreateExternalShareInput {
+  expiresInMinutes: number;
+  maxAccessCount?: number;
+  pin?: string;
+}
+
+// --- External share API (authenticated) ---
+
+export async function createExternalShare(
+  secretId: string,
+  input: CreateExternalShareInput,
+): Promise<ExternalShareResult> {
+  const res = await api.post(`/secrets/${secretId}/external-shares`, input);
+  return res.data;
+}
+
+export async function listExternalShares(secretId: string): Promise<ExternalShareListItem[]> {
+  const res = await api.get(`/secrets/${secretId}/external-shares`);
+  return res.data;
+}
+
+export async function revokeExternalShare(shareId: string): Promise<{ revoked: true }> {
+  const res = await api.delete(`/secrets/external-shares/${shareId}`);
+  return res.data;
+}
+
+// --- External share API (public, no auth) ---
+
+const publicApi = axios.create({
+  baseURL: '/api',
+  headers: { 'Content-Type': 'application/json' },
+});
+
+export async function getExternalShareInfo(token: string): Promise<ExternalShareInfo> {
+  const res = await publicApi.get(`/share/${token}/info`);
+  return res.data;
+}
+
+export async function accessExternalShare(
+  token: string,
+  pin?: string,
+): Promise<ExternalShareAccessResult> {
+  const res = await publicApi.post(`/share/${token}`, { pin });
   return res.data;
 }

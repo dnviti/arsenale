@@ -9,6 +9,7 @@ import { logger, toGuacamoleLogLevel } from './utils/logger';
 import prisma from './lib/prisma';
 import { startKeyRotationJob, stopAllJobs } from './services/scheduler.service';
 import { startAllMonitors, stopAllMonitors } from './services/gatewayMonitor.service';
+import { cleanupExpiredShares } from './services/externalShare.service';
 import { markServerReady } from './services/health.service';
 import * as auditService from './services/audit.service';
 import { formatDuration } from './utils/format';
@@ -68,6 +69,13 @@ async function main() {
 
   // Start gateway health monitors
   startAllMonitors();
+
+  // Cleanup expired external shares every hour
+  setInterval(() => {
+    cleanupExpiredShares().catch((err) => {
+      logger.error('Failed to cleanup expired external shares:', err);
+    });
+  }, 60 * 60 * 1000);
 
   // Setup guacamole-lite for RDP
   if (config.nodeEnv !== 'test') {

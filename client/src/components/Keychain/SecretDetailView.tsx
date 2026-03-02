@@ -8,7 +8,7 @@ import {
   Star, StarBorder, ContentCopy as CopyIcon,
   Visibility, VisibilityOff, ExpandMore as ExpandMoreIcon,
   VpnKey, Key, VerifiedUser, Api, Notes,
-  OpenInNew as LinkIcon,
+  OpenInNew as LinkIcon, Link as ExternalLinkIcon,
 } from '@mui/icons-material';
 import type { SecretDetail, SecretPayload, SecretType, SecretScope } from '../../api/secrets.api';
 import SecretVersionHistory from './SecretVersionHistory';
@@ -41,6 +41,7 @@ interface SecretDetailViewProps {
   secret: SecretDetail;
   onEdit: () => void;
   onShare: () => void;
+  onExternalShare?: () => void;
   onDelete: () => void;
   onToggleFavorite: () => void;
   onRestore: () => void;
@@ -197,6 +198,7 @@ export default function SecretDetailView({
   secret,
   onEdit,
   onShare,
+  onExternalShare,
   onDelete,
   onToggleFavorite,
   onRestore,
@@ -241,6 +243,11 @@ export default function SecretDetailView({
             <IconButton size="small" onClick={onShare} title="Share">
               <ShareIcon />
             </IconButton>
+            {onExternalShare && (
+              <IconButton size="small" onClick={onExternalShare} title="External share link">
+                <ExternalLinkIcon />
+              </IconButton>
+            )}
             <IconButton size="small" onClick={onDelete} title="Delete" color="error">
               <DeleteIcon />
             </IconButton>

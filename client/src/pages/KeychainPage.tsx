@@ -15,6 +15,7 @@ import SecretListPanel from '../components/Keychain/SecretListPanel';
 import SecretDetailView from '../components/Keychain/SecretDetailView';
 import SecretDialog from '../components/Keychain/SecretDialog';
 import ShareSecretDialog from '../components/Keychain/ShareSecretDialog';
+import ExternalShareDialog from '../components/Keychain/ExternalShareDialog';
 import { useSecretStore } from '../store/secretStore';
 import { useVaultStore } from '../store/vaultStore';
 import { useThemeStore } from '../store/themeStore';
@@ -65,6 +66,7 @@ export default function KeychainPage() {
   const [shareTarget, setShareTarget] = useState<{ id: string; name: string; teamId?: string | null } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SecretListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [externalShareTarget, setExternalShareTarget] = useState<{ id: string; name: string } | null>(null);
 
   const handleCreateSecret = () => {
     setEditingSecret(null);
@@ -197,6 +199,7 @@ export default function KeychainPage() {
                 setSecretDialogOpen(true);
               }}
               onShare={() => setShareTarget({ id: selectedSecret.id, name: selectedSecret.name, teamId: selectedSecret.teamId })}
+              onExternalShare={() => setExternalShareTarget({ id: selectedSecret.id, name: selectedSecret.name })}
               onDelete={() => setDeleteTarget(selectedSecret)}
               onToggleFavorite={() => toggleFavorite(selectedSecret.id)}
               onRestore={handleRestore}
@@ -224,6 +227,13 @@ export default function KeychainPage() {
         secretId={shareTarget?.id ?? ''}
         secretName={shareTarget?.name ?? ''}
         teamId={shareTarget?.teamId}
+      />
+
+      <ExternalShareDialog
+        open={!!externalShareTarget}
+        onClose={() => setExternalShareTarget(null)}
+        secretId={externalShareTarget?.id ?? ''}
+        secretName={externalShareTarget?.name ?? ''}
       />
 
       {/* Delete confirmation */}

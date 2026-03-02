@@ -117,6 +117,7 @@ model User {
   tenantVaultMemberships TenantVaultMember[]
   secretsSharedWithMe    SharedSecret[]         @relation("SecretSharedWith")
   secretsSharedByMe      SharedSecret[]         @relation("SecretSharedBy")
+  externalSecretShares   ExternalSecretShare[]
 }
 
 enum AuthProvider {
@@ -468,9 +469,10 @@ model VaultSecret {
   team        Team?              @relation(fields: [teamId], references: [id])
   tenant      Tenant?            @relation(fields: [tenantId], references: [id])
   folder      VaultFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  versions    VaultSecretVersion[]
-  shares      SharedSecret[]
-  connections Connection[]
+  versions       VaultSecretVersion[]
+  shares         SharedSecret[]
+  externalShares ExternalSecretShare[]
+  connections    Connection[]
 
   @@index([userId, scope])
   @@index([teamId])
@@ -550,4 +552,29 @@ model TenantVaultMember {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId])
+}
+
+model ExternalSecretShare {
+  id              String     @id @default(uuid())
+  secretId        String
+  createdByUserId String
+  tokenHash       String     @unique
+  encryptedData   String
+  dataIV          String
+  dataTag         String
+  hasPin          Boolean    @default(false)
+  pinSalt         String?
+  expiresAt       DateTime
+  maxAccessCount  Int?
+  accessCount     Int        @default(0)
+  secretType      SecretType
+  secretName      String
+  isRevoked       Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+
+  secret    VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  createdBy User        @relation(fields: [createdByUserId], references: [id])
+
+  @@index([tokenHash])
+  @@index([expiresAt])
 }

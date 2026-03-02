@@ -1629,3 +1629,40 @@
     CREATO:     client/src/components/Keychain/SecretPicker.tsx (Autocomplete, debounced search, type filtering)
     MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (credential mode toggle, SecretPicker integration)
     MODIFICATO: client/src/components/Dialogs/ConnectAsDialog.tsx (secret name display in saved credentials option)
+
+------------------------------------------------------------------------------
+[x] VAULT-058 — External sharing: link temporanei per condivisione esterna
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: VAULT-054
+  COMPLETATO: Implemented external secret sharing via temporary links with
+    zero-knowledge cryptographic model. Backend: added ExternalSecretShare Prisma
+    model with migration; extended crypto.service.ts with hashToken (SHA-256),
+    deriveKeyFromToken (HKDF-SHA256), deriveKeyFromTokenAndPin (Argon2id); created
+    externalShare.service.ts (create, access, info, revoke, list, cleanup);
+    created externalShare.controller.ts with Zod validation; created
+    publicShare.routes.ts (public, rate-limited 10 req/min/IP); added authenticated
+    routes to secret.routes.ts; mounted /api/share in app.ts; added hourly cleanup
+    scheduler in index.ts. Frontend: added external share API types and functions
+    (authenticated + public axios instance) to secrets.api.ts; created
+    ExternalShareDialog.tsx (expiry presets, max access count, optional PIN,
+    copy-to-clipboard, existing shares list with revoke); created PublicSharePage.tsx
+    (standalone public page, PIN prompt, type-aware secret field rendering); added
+    /share/:token route to App.tsx; added External Share button to SecretDetailView;
+    integrated ExternalShareDialog into KeychainPage.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (ExternalSecretShare model, User/VaultSecret relations)
+    MODIFICATO: server/src/services/crypto.service.ts (hashToken, deriveKeyFromToken, deriveKeyFromTokenAndPin)
+    CREATO:     server/src/services/externalShare.service.ts
+    CREATO:     server/src/controllers/externalShare.controller.ts
+    CREATO:     server/src/routes/publicShare.routes.ts
+    MODIFICATO: server/src/routes/secret.routes.ts (external share routes)
+    MODIFICATO: server/src/app.ts (mount /api/share)
+    MODIFICATO: server/src/index.ts (cleanup scheduler)
+    MODIFICATO: client/src/api/secrets.api.ts (external share types and API functions)
+    CREATO:     client/src/components/Keychain/ExternalShareDialog.tsx
+    CREATO:     client/src/pages/PublicSharePage.tsx
+    MODIFICATO: client/src/App.tsx (public route /share/:token)
+    MODIFICATO: client/src/components/Keychain/SecretDetailView.tsx (External Share button)
+    MODIFICATO: client/src/pages/KeychainPage.tsx (ExternalShareDialog integration)

@@ -7,6 +7,7 @@ import ConnectionViewerPage from './pages/ConnectionViewerPage';
 import KeychainPage from './pages/KeychainPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import VaultSetupPage from './pages/VaultSetupPage';
+import PublicSharePage from './pages/PublicSharePage';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
 import { useAuthStore } from './store/authStore';
 import { useVaultStore } from './store/vaultStore';
@@ -72,6 +73,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
+      <Route path="/share/:token" element={<PublicSharePage />} />
       <Route
         path="/*"
         element={

@@ -107,6 +107,32 @@ export function decryptMasterKey(
   return Buffer.from(hex, 'hex');
 }
 
+// External share key derivation
+
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+export function deriveKeyFromToken(token: string, shareId: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const ikm = Buffer.from(token, 'base64url');
+    const salt = Buffer.alloc(0);
+    const info = Buffer.from(shareId, 'utf8');
+    crypto.hkdf('sha256', ikm, salt, info, KEY_LENGTH, (err, derivedKey) => {
+      if (err) return reject(err);
+      resolve(Buffer.from(derivedKey));
+    });
+  });
+}
+
+export async function deriveKeyFromTokenAndPin(
+  token: string,
+  pin: string,
+  salt: string
+): Promise<Buffer> {
+  return deriveKeyFromPassword(token + pin, salt);
+}
+
 // Server-level encryption (for data the server must decrypt autonomously, e.g. SSH key pairs)
 
 export function encryptWithServerKey(plaintext: string): EncryptedField {

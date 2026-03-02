@@ -238,121 +238,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] VAULT-058 — External sharing: link temporanei per condivisione esterna
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: VAULT-054
-
-  DESCRIZIONE:
-  Implementare la condivisione esterna di secrets tramite link temporanei.
-  Un utente puo' generare un link per condividere un secret con persone
-  che non hanno un account nel sistema. Il link ha scadenza temporale
-  configurabile, numero massimo di accessi, e PIN opzionale.
-
-  Modello crittografico: il token casuale (32 bytes) e' la chiave. Il DB
-  salva solo SHA-256(token) per lookup. Senza PIN: chiave = HKDF(token).
-  Con PIN: chiave = Argon2id(token+pin, salt). Il server non conserva la
-  chiave in chiaro — e' nel token URL. Zero-knowledge dopo la creazione.
-
-  DETTAGLI TECNICI:
-  Prisma (server/prisma/schema.prisma):
-    - Nuovo modello ExternalSecretShare:
-        model ExternalSecretShare {
-          id              String    @id @default(uuid())
-          secretId        String
-          createdByUserId String
-          tokenHash       String    @unique   // SHA-256 hash del token (il token
-                                              // raw non viene mai salvato nel DB)
-          encryptedData   String              // secret cifrato con chiave derivata
-          dataIV          String
-          dataTag         String
-          hasPin          Boolean   @default(false)
-          pinSalt         String?             // salt per derivazione chiave con PIN
-          expiresAt       DateTime
-          maxAccessCount  Int?                // null = unlimited
-          accessCount     Int       @default(0)
-          secretType      SecretType          // tipo del secret (per display)
-          secretName      String              // nome del secret (non cifrato)
-          isRevoked       Boolean   @default(false)
-          createdAt       DateTime  @default(now())
-
-          secret    VaultSecret @relation(fields: [secretId], references: [id],
-                    onDelete: Cascade)
-          createdBy User        @relation(fields: [createdByUserId], references: [id])
-
-          @@index([tokenHash])
-          @@index([expiresAt])
-        }
-    - Aggiungere relazione in VaultSecret: externalShares ExternalSecretShare[]
-    - Aggiungere relazione in User: externalSecretShares ExternalSecretShare[]
-    - Eseguire migrazione Prisma
-
-  Servizio (server/src/services/externalShare.service.ts):
-    - createExternalShare(userId, secretId, options: {
-        expiresInHours, maxAccessCount?, pin? }, tenantId?):
-        1. Permission check: canManageSecret
-        2. Generare token: crypto.randomBytes(32).toString('base64url')
-        3. Calcolare tokenHash: SHA-256(token)
-        4. Decifrare il secret con la chiave sorgente
-        5. Derivare chiave: senza PIN -> HKDF(token, info=shareId)
-           con PIN -> Argon2id(token + pin, salt=random)
-        6. Cifrare i dati del secret con la chiave derivata
-        7. Salvare ExternalSecretShare nel DB
-        8. Audit log SECRET_EXTERNAL_SHARE
-        9. Restituire URL: ${clientUrl}/share/${token}
-    - accessExternalShare(token, pin?):
-        1. Calcolare tokenHash = SHA-256(token)
-        2. Cercare ExternalSecretShare by tokenHash
-        3. Validare: non scaduto, non revocato, accessCount < maxAccessCount
-        4. Derivare chiave (stessa logica di creazione)
-        5. Decifrare i dati
-        6. Incrementare accessCount
-        7. Audit log SECRET_EXTERNAL_ACCESS (senza userId, con IP)
-        8. Restituire dati decifrati
-    - revokeExternalShare(userId, shareId, tenantId?)
-    - listExternalShares(userId, secretId, tenantId?)
-    - cleanupExpiredShares(): cron job per eliminare share scaduti
-
-  Controller (server/src/controllers/externalShare.controller.ts):
-    - Zod schemas:
-        createExternalShareSchema = z.object({
-          secretId: z.string().uuid(),
-          expiresInHours: z.number().int().min(1).max(720),  // max 30 days
-          maxAccessCount: z.number().int().min(1).max(100).optional(),
-          pin: z.string().min(4).max(32).optional(),
-        })
-    - Handlers: create, access, revoke, list
-
-  Routes:
-    - In secret.routes.ts (autenticato):
-        POST   /external-shares          -> create
-        DELETE /external-shares/:shareId -> revoke
-        GET    /:id/external-shares      -> list
-    - Nuovo publicShare.routes.ts (PUBBLICO, senza authenticate):
-        POST   /api/share/:token         -> access (body: { pin? })
-        GET    /api/share/:token/info    -> info parziale (nome, tipo, hasPin)
-    - Montare in app.ts: app.use('/api/share', publicShareRoutes)
-
-  Frontend:
-    - ExternalShareDialog.tsx: slider scadenza (1h, 6h, 24h, 7d, 30d, custom),
-      max accessi (1, 5, 10, unlimited), toggle PIN + input, mostra link con
-      copy, lista shares esistenti con stats e revoke
-    - PublicSharePage.tsx: pagina pubblica /share/:token, form PIN se richiesto,
-      secret read-only con reveal/copy, warning scadenza/accessi, layout minimal
-    - Route /share/:token in App.tsx (senza layout autenticato)
-
-  File coinvolti:
-    MODIFICARE: server/prisma/schema.prisma (ExternalSecretShare, relations)
-    CREARE:     server/src/services/externalShare.service.ts
-    CREARE:     server/src/controllers/externalShare.controller.ts
-    CREARE:     server/src/routes/publicShare.routes.ts
-    MODIFICARE: server/src/routes/secret.routes.ts (external share routes)
-    MODIFICARE: server/src/app.ts (mount /api/share)
-    CREARE:     client/src/components/Keychain/ExternalShareDialog.tsx
-    CREARE:     client/src/pages/PublicSharePage.tsx
-    MODIFICARE: client/src/App.tsx (public route /share/:token)
-    MODIFICARE: client/src/api/secrets.api.ts (external share API functions)
 
 
 ------------------------------------------------------------------------------
@@ -1589,7 +1474,7 @@
    45. VAULT-055  Integrazione backend connessioni con vault secrets  [COMPLETATO]
    46. VAULT-056  Frontend pagina Keychain, store e componenti  [COMPLETATO]
    47. VAULT-057  Integrazione frontend ConnectionDialog con secret picker  [COMPLETATO]
-   48. VAULT-058  External sharing: link temporanei condivisione esterna
+   48. VAULT-058  External sharing: link temporanei condivisione esterna  [COMPLETATO]
    49. VAULT-059  Secret versioning UI, scadenza alert, audit migliorato
 
   Fase 8e — Gateway Orchestration e Auto-Scaling:
