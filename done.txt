@@ -1438,3 +1438,18 @@
     MODIFICATO: server/prisma/schema.prisma (User: failedLoginAttempts, lockedUntil)
     MODIFICATO: server/src/services/auth.service.ts (lockout check + tracking)
     MODIFICATO: server/src/routes/auth.routes.ts (applied loginRateLimiter middleware)
+
+------------------------------------------------------------------------------
+[x] ZT-038 — Audit sessioni SSH/RDP (session start/end)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: AUDIT-013 (completato)
+  COMPLETATO: Added SESSION_START and SESSION_END audit actions. SSH sessions log start after connection established and end on cleanup with duration. RDP sessions embed audit metadata (userId, connectionId, IP) in the encrypted Guacamole token and hook into guacamole-lite open/close events for reliable server-side session lifecycle tracking with duration.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/utils/format.ts (shared formatDuration utility)
+    MODIFICATO: server/prisma/schema.prisma (SESSION_START, SESSION_END in AuditAction enum)
+    MODIFICATO: server/src/socket/ssh.handler.ts (audit logging for SSH session start/end)
+    MODIFICATO: server/src/services/rdp.service.ts (metadata field in token payload)
+    MODIFICATO: server/src/socket/rdp.handler.ts (pass audit metadata when generating token)
+    MODIFICATO: server/src/index.ts (guacamole-lite open/close event hooks for RDP audit)

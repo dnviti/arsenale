@@ -12,6 +12,11 @@ export interface RdpConnectionParams {
   rdpSettings?: Partial<RdpSettings>;
   guacdHost?: string;
   guacdPort?: number;
+  metadata?: {
+    userId: string;
+    connectionId: string;
+    ipAddress?: string;
+  };
 }
 
 /**
@@ -115,6 +120,7 @@ export function generateGuacamoleToken(params: RdpConnectionParams): string {
       ...(params.guacdPort && { guacdPort: params.guacdPort }),
       settings,
     },
+    ...(params.metadata && { metadata: params.metadata }),
   };
 
   // guacamole-lite's Crypt.decrypt() outputs with 'ascii' encoding,

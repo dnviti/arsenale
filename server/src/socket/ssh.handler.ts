@@ -9,6 +9,8 @@ import { createSshConnection, createSshConnectionViaBastion, createSftpSession, 
 import { getConnectionCredentials, getConnection } from '../services/connection.service';
 import { getGatewayCredentials } from '../services/gateway.service';
 import { getPrivateKey as getTenantPrivateKey } from '../services/sshkey.service';
+import * as auditService from '../services/audit.service';
+import { formatDuration } from '../utils/format';
 
 interface ActiveTransfer {
   stream: NodeJS.ReadableStream | NodeJS.WritableStream;
@@ -48,6 +50,14 @@ export function setupSshHandler(io: Server) {
     let currentSession: SshSession | null = null;
     let sftpSession: SFTPWrapper | null = null;
     const activeTransfers = new Map<string, ActiveTransfer>();
+
+    // Session audit tracking
+    let sessionStartTime: number | null = null;
+    let sessionConnectionId: string | null = null;
+    let sessionHost: string | null = null;
+    let sessionPort: number | null = null;
+    const clientIp = (socket.handshake.headers['x-forwarded-for'] as string | undefined)
+      || socket.handshake.address;
 
     async function ensureSftp(): Promise<SFTPWrapper> {
       if (sftpSession) return sftpSession;
@@ -168,6 +178,20 @@ export function setupSshHandler(io: Server) {
         activeSessions.set(sessionId, session);
 
         socket.emit('session:ready');
+
+        // Audit: session started
+        sessionStartTime = Date.now();
+        sessionConnectionId = data.connectionId;
+        sessionHost = conn.host;
+        sessionPort = conn.port;
+        auditService.log({
+          userId: user.userId,
+          action: 'SESSION_START',
+          targetType: 'Connection',
+          targetId: data.connectionId,
+          details: { protocol: 'SSH', host: conn.host, port: conn.port },
+          ipAddress: clientIp,
+        });
 
         session.stream.on('data', (data: Buffer) => {
           socket.emit('data', data.toString('utf8'));
@@ -477,6 +501,27 @@ export function setupSshHandler(io: Server) {
     });
 
     function cleanup(sessionId: string) {
+      // Audit: session ended
+      if (sessionStartTime && sessionConnectionId) {
+        const durationMs = Date.now() - sessionStartTime;
+        auditService.log({
+          userId: user.userId,
+          action: 'SESSION_END',
+          targetType: 'Connection',
+          targetId: sessionConnectionId,
+          details: {
+            protocol: 'SSH',
+            host: sessionHost,
+            port: sessionPort,
+            durationMs,
+            durationFormatted: formatDuration(durationMs),
+          },
+          ipAddress: clientIp,
+        });
+        sessionStartTime = null;
+        sessionConnectionId = null;
+      }
+
       // Clean up all active transfers
       for (const [transferId] of activeTransfers) {
         clearTransfer(transferId);

@@ -77,6 +77,11 @@ router.post('/rdp', async (req: AuthRequest, res: Response, next: NextFunction) 
       rdpSettings: mergedRdp,
       guacdHost,
       guacdPort,
+      metadata: {
+        userId: req.user!.userId,
+        connectionId,
+        ipAddress: req.ip ?? undefined,
+      },
     });
 
     res.json({ token, enableDrive });

@@ -345,6 +345,8 @@ enum AuditAction {
   SSH_KEY_PUSH
   SSH_KEY_AUTO_ROTATE
   BATCH_SHARE
+  SESSION_START
+  SESSION_END
 }
 
 model AuditLog {

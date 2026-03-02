@@ -10,6 +10,8 @@ import prisma from './lib/prisma';
 import { startKeyRotationJob, stopAllJobs } from './services/scheduler.service';
 import { startAllMonitors, stopAllMonitors } from './services/gatewayMonitor.service';
 import { markServerReady } from './services/health.service';
+import * as auditService from './services/audit.service';
+import { formatDuration } from './utils/format';
 
 async function runDatabaseMigrations() {
   const serverDir = path.resolve(__dirname, '..');
@@ -96,6 +98,55 @@ async function main() {
           'Guacamole connection error:',
           error instanceof Error ? error.message : error
         );
+      });
+
+      // Track RDP session start times for duration calculation
+      const rdpSessionStartTimes = new Map<number, number>();
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      guacServer.on('open', (clientConnection: any) => {
+        const metadata = clientConnection.connectionSettings?.metadata;
+        if (metadata) {
+          rdpSessionStartTimes.set(clientConnection.connectionId, Date.now());
+          auditService.log({
+            userId: metadata.userId,
+            action: 'SESSION_START',
+            targetType: 'Connection',
+            targetId: metadata.connectionId,
+            details: {
+              protocol: 'RDP',
+              host: clientConnection.connectionSettings.connection?.settings?.hostname,
+              port: clientConnection.connectionSettings.connection?.settings?.port,
+            },
+            ipAddress: metadata.ipAddress,
+          });
+        }
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      guacServer.on('close', (clientConnection: any) => {
+        const metadata = clientConnection.connectionSettings?.metadata;
+        if (metadata) {
+          const startTime = rdpSessionStartTimes.get(clientConnection.connectionId);
+          const durationMs = startTime ? Date.now() - startTime : undefined;
+          rdpSessionStartTimes.delete(clientConnection.connectionId);
+          auditService.log({
+            userId: metadata.userId,
+            action: 'SESSION_END',
+            targetType: 'Connection',
+            targetId: metadata.connectionId,
+            details: {
+              protocol: 'RDP',
+              host: clientConnection.connectionSettings.connection?.settings?.hostname,
+              port: clientConnection.connectionSettings.connection?.settings?.port,
+              ...(durationMs !== undefined && {
+                durationMs,
+                durationFormatted: formatDuration(durationMs),
+              }),
+            },
+            ipAddress: metadata.ipAddress,
+          });
+        }
       });
 
       logger.info(

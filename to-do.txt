@@ -58,37 +58,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] ZT-038 — Audit sessioni SSH/RDP (session start/end)
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: AUDIT-013 (completato)
-
-  DESCRIZIONE:
-  Registrare nel log audit l'inizio e la fine di ogni sessione SSH e RDP.
-  Attualmente le sessioni remote non vengono loggate: non si puo' sapere
-  chi si e' connesso a quale host, quando, e per quanto tempo.
-  Questo e' un requisito fondamentale Zero Trust.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - Aggiungere SESSION_START e SESSION_END all'enum AuditAction in schema.prisma
-    - Eseguire migrazione Prisma (db:push o db:migrate)
-    - SSH handler (server/src/socket/ssh.handler.ts):
-      - Loggare SESSION_START quando la connessione SSH e' stabilita
-        (details: { connectionId, host, port, protocol: 'SSH' })
-      - Loggare SESSION_END su disconnect/cleanup
-        (details: { connectionId, duration, protocol: 'SSH' })
-    - RDP handler (server/src/socket/rdp.handler.ts o rdp.service.ts):
-      - Loggare SESSION_START quando il token Guacamole viene generato
-        (details: { connectionId, host, port, protocol: 'RDP' })
-      - Loggare SESSION_END quando la sessione WebSocket viene chiusa
-        (details: { connectionId, duration, protocol: 'RDP' })
-  File coinvolti:
-    - server/prisma/schema.prisma (enum AuditAction)
-    - server/src/socket/ssh.handler.ts
-    - server/src/socket/rdp.handler.ts o server/src/services/rdp.service.ts
-
 
 ------------------------------------------------------------------------------
 [ ] ZT-039 — Audit tentativi di login falliti
@@ -1853,7 +1822,7 @@
   Fase 9 — Zero Trust hardening (Tier 1, priorita' alta):
    56. ZT-036   Security headers (helmet middleware)
    57. ZT-037   Rate limiting login e account lockout
-   58. ZT-038   Audit sessioni SSH/RDP (session start/end)
+   58. ZT-038   Audit sessioni SSH/RDP (session start/end)         [COMPLETATO]
    59. ZT-039   Audit tentativi di login falliti
    60. ZT-040   Lock vault al logout
 
