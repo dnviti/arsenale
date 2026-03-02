@@ -1385,3 +1385,23 @@
     MODIFICATO: client/src/components/Layout/MainLayout.tsx (useGatewayMonitor hook)
     MODIFICATO: client/src/components/Settings/GatewaySection.tsx (real-time Status column)
     MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (monitoring config fields)
+
+
+------------------------------------------------------------------------------
+[x] HEALTH-068 — Health e readiness probe per tutti i servizi con ordinamento avvio
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added health service with liveness (GET /api/health) and readiness (GET /api/ready) endpoints checking server initialization, database connectivity, and guacd reachability. Docker healthchecks added to all compose files (dev, base, prod) and Dockerfiles (server: wget to /api/health, client: wget to localhost:80). depends_on with service_healthy conditions ensure correct startup ordering (postgres+guacd before server, server before client). Dev startup ordering via wait-on devDependency: client waits for server health before starting.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/services/health.service.ts
+    CREATO:     server/src/routes/health.routes.ts
+    MODIFICATO: server/src/app.ts (import + mount health routes)
+    MODIFICATO: server/src/index.ts (markServerReady in listen callback)
+    MODIFICATO: docker-compose.dev.yml (guacd healthcheck)
+    MODIFICATO: docker-compose.yml (all service healthchecks + depends_on)
+    MODIFICATO: docker-compose.prod.yml (all service healthchecks + depends_on)
+    MODIFICATO: server/Dockerfile (HEALTHCHECK instruction)
+    MODIFICATO: client/Dockerfile (HEALTHCHECK instruction)
+    MODIFICATO: package.json (wait-on devDep, dev:client:wait script, updated dev script)

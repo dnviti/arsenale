@@ -15,4 +15,7 @@ RUN npm prune --production
 
 EXPOSE 3001 3002
 
+HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=30s \
+    CMD wget -qO- http://localhost:3001/api/health || exit 1
+
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

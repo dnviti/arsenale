@@ -19,6 +19,7 @@ import teamRoutes from './routes/team.routes';
 import adminRoutes from './routes/admin.routes';
 import gatewayRoutes from './routes/gateway.routes';
 import tabsRoutes from './routes/tabs.routes';
+import healthRoutes from './routes/health.routes';
 import { errorHandler } from './middleware/error.middleware';
 
 const app = express();
@@ -47,10 +48,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/gateways', gatewayRoutes);
 app.use('/api/tabs', tabsRoutes);
 
-// Health check
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok' });
-});
+// Health & readiness probes
+app.use('/api', healthRoutes);
 
 // Error handler
 app.use(errorHandler);
