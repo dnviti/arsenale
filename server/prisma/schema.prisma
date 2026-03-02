@@ -20,16 +20,19 @@ enum TeamRole {
 }
 
 model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  name               String
+  slug               String   @unique
+  hasTenantVaultKey  Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  users      User[]
-  teams      Team[]
-  gateways   Gateway[]
-  sshKeyPair SshKeyPair?
+  users              User[]
+  teams              Team[]
+  gateways           Gateway[]
+  sshKeyPair         SshKeyPair?
+  vaultSecrets       VaultSecret[]
+  tenantVaultMembers TenantVaultMember[]
 }
 
 model Team {
@@ -40,10 +43,12 @@ model Team {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant      Tenant         @relation(fields: [tenantId], references: [id])
-  members     TeamMember[]
-  connections Connection[]
-  folders     Folder[]
+  tenant       Tenant         @relation(fields: [tenantId], references: [id])
+  members      TeamMember[]
+  connections  Connection[]
+  folders      Folder[]
+  vaultSecrets VaultSecret[]
+  vaultFolders VaultFolder[]
 
   @@unique([tenantId, name])
 }
@@ -103,9 +108,13 @@ model User {
   oauthAccounts OAuthAccount[]
   auditLogs     AuditLog[]
   notifications Notification[]
-  teamMembers     TeamMember[]
-  gatewaysCreated Gateway[]    @relation("GatewayCreator")
-  openTabs        OpenTab[]
+  teamMembers            TeamMember[]
+  gatewaysCreated        Gateway[]              @relation("GatewayCreator")
+  openTabs               OpenTab[]
+  vaultSecrets           VaultSecret[]          @relation("VaultSecretOwner")
+  secretVersionChanges   VaultSecretVersion[]   @relation("SecretVersionChanger")
+  vaultFolders           VaultFolder[]
+  tenantVaultMemberships TenantVaultMember[]
 }
 
 enum AuthProvider {
@@ -285,6 +294,20 @@ enum Permission {
   FULL_ACCESS
 }
 
+enum SecretType {
+  LOGIN
+  SSH_KEY
+  CERTIFICATE
+  API_KEY
+  SECURE_NOTE
+}
+
+enum SecretScope {
+  PERSONAL
+  TEAM
+  TENANT
+}
+
 model RefreshToken {
   id        String   @id @default(uuid())
   token     String   @unique
@@ -348,6 +371,17 @@ enum AuditAction {
   BATCH_SHARE
   SESSION_START
   SESSION_END
+  SECRET_CREATE
+  SECRET_READ
+  SECRET_UPDATE
+  SECRET_DELETE
+  SECRET_SHARE
+  SECRET_UNSHARE
+  SECRET_EXTERNAL_SHARE
+  SECRET_EXTERNAL_ACCESS
+  SECRET_VERSION_RESTORE
+  TENANT_VAULT_INIT
+  TENANT_VAULT_KEY_DISTRIBUTE
 }
 
 model AuditLog {
@@ -401,4 +435,93 @@ model OpenTab {
 
   @@unique([userId, connectionId])
   @@index([userId])
+}
+
+model VaultSecret {
+  id             String      @id @default(uuid())
+  name           String
+  description    String?
+  type           SecretType
+  scope          SecretScope
+  userId         String
+  teamId         String?
+  tenantId       String?
+  folderId       String?
+  encryptedData  String
+  dataIV         String
+  dataTag        String
+  metadata       Json?
+  tags           String[]    @default([])
+  isFavorite     Boolean     @default(false)
+  expiresAt      DateTime?
+  currentVersion Int         @default(1)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user     User               @relation("VaultSecretOwner", fields: [userId], references: [id])
+  team     Team?              @relation(fields: [teamId], references: [id])
+  tenant   Tenant?            @relation(fields: [tenantId], references: [id])
+  folder   VaultFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  versions VaultSecretVersion[]
+
+  @@index([userId, scope])
+  @@index([teamId])
+  @@index([tenantId, scope])
+  @@index([expiresAt])
+}
+
+model VaultSecretVersion {
+  id            String   @id @default(uuid())
+  secretId      String
+  version       Int
+  encryptedData String
+  dataIV        String
+  dataTag       String
+  changedBy     String
+  changeNote    String?
+  createdAt     DateTime @default(now())
+
+  secret  VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  changer User        @relation("SecretVersionChanger", fields: [changedBy], references: [id])
+
+  @@unique([secretId, version])
+  @@index([secretId])
+}
+
+model VaultFolder {
+  id        String      @id @default(uuid())
+  name      String
+  parentId  String?
+  userId    String
+  scope     SecretScope
+  teamId    String?
+  tenantId  String?
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  parent   VaultFolder?  @relation("VaultFolderTree", fields: [parentId], references: [id])
+  children VaultFolder[] @relation("VaultFolderTree")
+  user     User          @relation(fields: [userId], references: [id])
+  team     Team?         @relation(fields: [teamId], references: [id])
+  secrets  VaultSecret[]
+
+  @@index([userId, scope])
+  @@index([teamId])
+  @@index([tenantId])
+}
+
+model TenantVaultMember {
+  id                      String   @id @default(uuid())
+  tenantId                String
+  userId                  String
+  encryptedTenantVaultKey String
+  tenantVaultKeyIV        String
+  tenantVaultKeyTag       String
+  createdAt               DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
 }

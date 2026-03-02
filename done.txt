@@ -1480,3 +1480,36 @@
 
   FILE COINVOLTI:
     MODIFICATO: server/src/services/auth.service.ts (import lockVault, call in logout())
+
+
+================================================================================
+  SEZIONE F — PASSWORD KEYCHAIN / SECRET VAULT
+================================================================================
+
+------------------------------------------------------------------------------
+[x] VAULT-053 — Modelli Prisma e servizio CRUD backend per i secrets del keychain
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Created foundation for Password Keychain / Secret Vault system.
+    Added Prisma schema: SecretType and SecretScope enums, VaultSecret model
+    (encrypted JSON blob, multi-scope), VaultSecretVersion (version history),
+    VaultFolder (secret organization), TenantVaultMember (tenant key distribution),
+    11 new AuditAction values, hasTenantVaultKey on Tenant, relations on User/Team/Tenant.
+    Added SecretPayload discriminated union types (Login, SSH Key, Certificate, API Key, Secure Note).
+    Extended crypto.service.ts with tenant vault in-memory store and 7 functions
+    (generateTenantMasterKey, encryptTenantKey, decryptTenantKey, storeTenantVaultSession,
+    getTenantMasterKey, lockTenantVault, lockUserTenantVaults).
+    Added canViewSecret/canManageSecret to permission.service.ts with scope-aware auth.
+    Created secret.service.ts with full CRUD (createSecret, getSecret, updateSecret,
+    deleteSecret, listSecrets), versioning (listSecretVersions, restoreSecretVersion),
+    tenant vault init (initTenantVault, distributeTenantKeyToUser), and
+    resolveSecretEncryptionKey routing by scope.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (2 enums, 4 models, relations, AuditAction values)
+    MODIFICATO: server/src/lib/prisma.ts (SecretType, SecretScope re-exports)
+    MODIFICATO: server/src/types/index.ts (SecretPayload discriminated union)
+    MODIFICATO: server/src/services/crypto.service.ts (tenant vault store + 7 functions)
+    MODIFICATO: server/src/services/permission.service.ts (canViewSecret, canManageSecret)
+    CREATO:     server/src/services/secret.service.ts (full CRUD + versioning + tenant vault)

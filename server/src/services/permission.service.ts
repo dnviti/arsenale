@@ -209,6 +209,133 @@ export async function canManageFolder(
   return { allowed: false, folder: null, accessType: 'owner' };
 }
 
+// Secret access types and result interfaces
+
+type SecretAccessType = 'owner' | 'team' | 'tenant';
+
+interface SecretAccessResult {
+  allowed: boolean;
+  secret: any;
+  accessType: SecretAccessType;
+  teamRole?: string;
+}
+
+export async function canViewSecret(
+  userId: string,
+  secretId: string,
+  tenantId?: string | null
+): Promise<SecretAccessResult> {
+  const secret = await prisma.vaultSecret.findUnique({
+    where: { id: secretId },
+    include: {
+      team: { select: { tenantId: true } },
+    },
+  });
+  if (!secret) {
+    return { allowed: false, secret: null, accessType: 'owner' };
+  }
+
+  // Tenant isolation check
+  if (secret.scope === 'TEAM' && secret.team) {
+    assertSameTenant(tenantId, secret.team.tenantId);
+  }
+  if (secret.scope === 'TENANT') {
+    assertSameTenant(tenantId, secret.tenantId);
+  }
+
+  // PERSONAL: owner check
+  if (secret.scope === 'PERSONAL') {
+    if (secret.userId === userId) {
+      return { allowed: true, secret, accessType: 'owner' };
+    }
+    return { allowed: false, secret: null, accessType: 'owner' };
+  }
+
+  // TEAM: any team member can view
+  if (secret.scope === 'TEAM' && secret.teamId) {
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId: secret.teamId, userId } },
+    });
+    if (membership) {
+      return { allowed: true, secret, accessType: 'team', teamRole: membership.role };
+    }
+    return { allowed: false, secret: null, accessType: 'team' };
+  }
+
+  // TENANT: must have TenantVaultMember record
+  if (secret.scope === 'TENANT' && secret.tenantId) {
+    const tenantMember = await prisma.tenantVaultMember.findUnique({
+      where: { tenantId_userId: { tenantId: secret.tenantId, userId } },
+    });
+    if (tenantMember) {
+      return { allowed: true, secret, accessType: 'tenant' };
+    }
+    return { allowed: false, secret: null, accessType: 'tenant' };
+  }
+
+  return { allowed: false, secret: null, accessType: 'owner' };
+}
+
+export async function canManageSecret(
+  userId: string,
+  secretId: string,
+  tenantId?: string | null
+): Promise<SecretAccessResult> {
+  const secret = await prisma.vaultSecret.findUnique({
+    where: { id: secretId },
+    include: {
+      team: { select: { tenantId: true } },
+    },
+  });
+  if (!secret) {
+    return { allowed: false, secret: null, accessType: 'owner' };
+  }
+
+  // Tenant isolation check
+  if (secret.scope === 'TEAM' && secret.team) {
+    assertSameTenant(tenantId, secret.team.tenantId);
+  }
+  if (secret.scope === 'TENANT') {
+    assertSameTenant(tenantId, secret.tenantId);
+  }
+
+  // PERSONAL: owner check
+  if (secret.scope === 'PERSONAL') {
+    if (secret.userId === userId) {
+      return { allowed: true, secret, accessType: 'owner' };
+    }
+    return { allowed: false, secret: null, accessType: 'owner' };
+  }
+
+  // TEAM: TEAM_EDITOR+ can manage
+  if (secret.scope === 'TEAM' && secret.teamId) {
+    const membership = await prisma.teamMember.findUnique({
+      where: { teamId_userId: { teamId: secret.teamId, userId } },
+    });
+    if (membership && ROLE_HIERARCHY[membership.role] >= ROLE_HIERARCHY['TEAM_EDITOR']) {
+      return { allowed: true, secret, accessType: 'team', teamRole: membership.role };
+    }
+    return { allowed: false, secret: null, accessType: 'team' };
+  }
+
+  // TENANT: ADMIN or OWNER only
+  if (secret.scope === 'TENANT' && secret.tenantId) {
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { tenantId: true, tenantRole: true },
+    });
+    if (
+      user?.tenantId === secret.tenantId &&
+      (user.tenantRole === 'OWNER' || user.tenantRole === 'ADMIN')
+    ) {
+      return { allowed: true, secret, accessType: 'tenant' };
+    }
+    return { allowed: false, secret: null, accessType: 'tenant' };
+  }
+
+  return { allowed: false, secret: null, accessType: 'owner' };
+}
+
 export async function resolveEncryptionKey(
   userId: string,
   teamId?: string | null
