@@ -238,77 +238,6 @@
 
 
 ------------------------------------------------------------------------------
-[ ] VAULT-056 — Frontend pagina Keychain, store Zustand e API layer
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: VAULT-054
-
-  DESCRIZIONE:
-  Creare l'interfaccia frontend completa per il Password Keychain:
-  una pagina dedicata accessibile dalla sidebar, lo store Zustand per la
-  gestione dello stato secrets, il layer API, e tutti i componenti UI
-  necessari per visualizzare, creare, modificare, eliminare, cercare e
-  organizzare i secrets. Include la vista dettaglio con reveal/copy dei
-  campi sensibili e il dialog di sharing (analogo a ShareDialog per le
-  connessioni).
-
-  DETTAGLI TECNICI:
-  API layer (client/src/api/secrets.api.ts):
-    - Interfacce: SecretListItem, SecretDetail, SecretPayload (union types),
-      CreateSecretInput, UpdateSecretInput, SecretVersionItem, SecretShareData
-    - Funzioni: listSecrets, createSecret, getSecret, updateSecret, deleteSecret,
-      listVersions, restoreVersion, shareSecret, unshareSecret, listSecretShares,
-      updateSecretSharePermission, initTenantVault, distributeTenantKey,
-      getTenantVaultStatus
-
-  Store (client/src/store/secretStore.ts):
-    - State: secrets[], selectedSecret, folders[], loading, error, filters,
-      tenantVaultStatus
-    - Actions: fetchSecrets, fetchSecret, createSecret, updateSecret, deleteSecret,
-      toggleFavorite, setFilters, clearSelectedSecret, fetchTenantVaultStatus
-
-  Pagina Keychain (client/src/pages/KeychainPage.tsx):
-    - Layout due colonne: pannello navigazione (~300px) + area dettaglio
-    - Pannello sinistro: search bar, scope filter (All/Personal/Team/Tenant),
-      type filter dropdown, VaultFolder tree, lista secrets con icone tipo/scope
-    - Area destra: SecretDetailView o empty state
-    - Responsive: su mobile, lista e dettaglio sono viste separate
-
-  Componenti UI:
-    - SecretListPanel.tsx: lista scrollabile con icone tipo, badge scope,
-      warning scadenza, context menu (Edit/Delete/Share/Copy)
-    - SecretDetailView.tsx: header + campi specifici per tipo, reveal/copy
-      per campi sensibili con timer auto-hide 30s, bottoni azione
-    - SecretDialog.tsx: dialog create/edit con form dinamico per tipo:
-      LOGIN (username, password+generate, url),
-      SSH_KEY (privateKey textarea/file upload, publicKey, passphrase, algorithm),
-      CERTIFICATE (cert/key/chain textarea/file upload .pem/.crt/.key),
-      API_KEY (apiKey, endpoint, headers key-value),
-      SECURE_NOTE (large textarea)
-    - ShareSecretDialog.tsx: user search/email, permission picker, lista shares
-    - SecretVersionHistory.tsx: timeline versioni con restore
-
-  uiPreferencesStore — nuove keys:
-    keychainSidebarWidth, keychainScopeFilter, keychainTypeFilter,
-    keychainExpandedFolders, keychainSortBy
-
-  Routing: aggiungere /keychain in App.tsx, voce "Keychain" nella sidebar MainLayout
-
-  File coinvolti:
-    CREARE:     client/src/api/secrets.api.ts
-    CREARE:     client/src/store/secretStore.ts
-    CREARE:     client/src/pages/KeychainPage.tsx
-    CREARE:     client/src/components/Keychain/SecretListPanel.tsx
-    CREARE:     client/src/components/Keychain/SecretDetailView.tsx
-    CREARE:     client/src/components/Keychain/SecretDialog.tsx
-    CREARE:     client/src/components/Keychain/ShareSecretDialog.tsx
-    CREARE:     client/src/components/Keychain/SecretVersionHistory.tsx
-    MODIFICARE: client/src/store/uiPreferencesStore.ts (nuove preference keys)
-    MODIFICARE: client/src/components/Layout/MainLayout.tsx (sidebar link)
-    MODIFICARE: client/src/App.tsx (route /keychain)
-
-
-------------------------------------------------------------------------------
 [ ] VAULT-057 — Integrazione frontend ConnectionDialog con secret picker
 ------------------------------------------------------------------------------
   Priorita: MEDIA
@@ -1692,7 +1621,7 @@
    43. VAULT-053  Modelli Prisma e servizio CRUD backend secrets  [COMPLETATO]
    44. VAULT-054  API routes, controller e sharing secrets  [COMPLETATO]
    45. VAULT-055  Integrazione backend connessioni con vault secrets  [COMPLETATO]
-   46. VAULT-056  Frontend pagina Keychain, store e componenti
+   46. VAULT-056  Frontend pagina Keychain, store e componenti  [COMPLETATO]
    47. VAULT-057  Integrazione frontend ConnectionDialog con secret picker
    48. VAULT-058  External sharing: link temporanei condivisione esterna
    49. VAULT-059  Secret versioning UI, scadenza alert, audit migliorato

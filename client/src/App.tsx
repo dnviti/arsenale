@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ConnectionViewerPage from './pages/ConnectionViewerPage';
+import KeychainPage from './pages/KeychainPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import VaultSetupPage from './pages/VaultSetupPage';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
@@ -60,6 +61,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ConnectionViewerPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/keychain"
+        element={
+          <ProtectedRoute>
+            <KeychainPage />
           </ProtectedRoute>
         }
       />

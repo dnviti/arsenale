@@ -11,11 +11,14 @@ interface UiPreferences {
   sidebarCompact: boolean;
   sidebarTeamSections: Record<string, boolean>;
   settingsActiveTab: string;
+  keychainScopeFilter: string;
+  keychainTypeFilter: string;
+  keychainSortBy: string;
 }
 
 interface UiPreferencesState extends UiPreferences {
   set: <K extends keyof UiPreferences>(key: K, value: UiPreferences[K]) => void;
-  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections' | 'settingsActiveTab'>) => void;
+  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections' | 'settingsActiveTab' | 'keychainScopeFilter' | 'keychainTypeFilter' | 'keychainSortBy'>) => void;
   toggleTeamSection: (teamId: string) => void;
 }
 
@@ -29,6 +32,9 @@ const defaults: UiPreferences = {
   sidebarCompact: false,
   sidebarTeamSections: {},
   settingsActiveTab: 'profile',
+  keychainScopeFilter: 'ALL',
+  keychainTypeFilter: 'ALL',
+  keychainSortBy: 'name',
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(

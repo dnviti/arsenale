@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   AppBar, Toolbar, Typography, IconButton, Box, Chip, Menu, MenuItem,
   Snackbar, Alert, Avatar, Button,
@@ -11,6 +12,7 @@ import {
   History as HistoryIcon,
   DarkMode,
   LightMode,
+  VpnKey as KeychainIcon,
 } from '@mui/icons-material';
 import ConnectionTree from '../Sidebar/ConnectionTree';
 import TabBar from '../Tabs/TabBar';
@@ -39,6 +41,7 @@ import { useGatewayMonitor } from '../../hooks/useGatewayMonitor';
 const SIDEBAR_WIDTH = 280;
 
 export default function MainLayout() {
+  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
   const authLogout = useAuthStore((s) => s.logout);
   const refreshToken = useAuthStore((s) => s.refreshToken);
@@ -170,8 +173,16 @@ export default function MainLayout() {
             color={vaultUnlocked ? 'success' : 'error'}
             size="small"
             onClick={vaultUnlocked ? handleLockVault : undefined}
-            sx={{ mr: 2 }}
+            sx={{ mr: 1 }}
           />
+          <IconButton
+            color="inherit"
+            onClick={() => navigate('/keychain')}
+            title="Keychain"
+            sx={{ mr: 1 }}
+          >
+            <KeychainIcon />
+          </IconButton>
           <Box sx={{ flexGrow: 1 }} />
           <NotificationBell />
           <IconButton

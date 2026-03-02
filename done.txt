@@ -1576,3 +1576,36 @@
     MODIFICATO: server/src/services/vault.service.ts (revealPassword for vault-backed connections)
     MODIFICATO: server/src/services/permission.service.ts (credentialSecret in canViewConnection include)
     MODIFICATO: client/src/api/connections.api.ts (credentialSecretId in interfaces)
+
+------------------------------------------------------------------------------
+[x] VAULT-056 — Frontend pagina Keychain, store Zustand e API layer
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-054
+  COMPLETATO: Built complete frontend for Password Keychain. Created API layer
+    (secrets.api.ts) with 15 functions covering all secret CRUD, sharing, versioning,
+    and tenant vault endpoints. Created Zustand store (secretStore.ts) with secrets
+    list management, filters, and optimistic favorite toggle. Built KeychainPage with
+    two-column layout (320px list panel + detail view). SecretListPanel with search,
+    scope/type filters (persisted via uiPreferencesStore), scrollable list with type
+    icons, scope chips, expiry warnings, and right-click context menu. SecretDetailView
+    with type-specific field rendering for all 5 types, SensitiveField component with
+    reveal/copy and 30-second auto-hide timer, version history accordion. SecretDialog
+    with dynamic forms per type (LOGIN with password generator, SSH_KEY/CERTIFICATE with
+    file upload, API_KEY with dynamic header key-value rows, SECURE_NOTE). ShareSecretDialog
+    with UserPicker for tenant context, email fallback, permission picker, and share
+    management. SecretVersionHistory with restore confirmation dialog. Added /keychain
+    route in App.tsx and Keychain navigation icon in MainLayout AppBar.
+
+  FILE COINVOLTI:
+    CREATO:     client/src/api/secrets.api.ts (TypeScript interfaces + 15 API functions)
+    CREATO:     client/src/store/secretStore.ts (Zustand store: state, filters, CRUD actions)
+    CREATO:     client/src/pages/KeychainPage.tsx (two-column layout, dialog orchestration)
+    CREATO:     client/src/components/Keychain/SecretListPanel.tsx (search, filters, list, context menu)
+    CREATO:     client/src/components/Keychain/SecretDetailView.tsx (type-specific fields, reveal/copy, actions)
+    CREATO:     client/src/components/Keychain/SecretDialog.tsx (dynamic form for 5 types, file upload, password gen)
+    CREATO:     client/src/components/Keychain/ShareSecretDialog.tsx (user picker, permission, share management)
+    CREATO:     client/src/components/Keychain/SecretVersionHistory.tsx (version list, restore confirmation)
+    MODIFICATO: client/src/store/uiPreferencesStore.ts (keychainScopeFilter, keychainTypeFilter, keychainSortBy)
+    MODIFICATO: client/src/App.tsx (/keychain route in ProtectedRoute)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (Keychain icon in AppBar)
