@@ -1564,6 +1564,27 @@
     MODIFICATO: client/src/components/Dialogs/SettingsDialog.tsx (Orchestration tab)
 
 
+------------------------------------------------------------------------------
+[x] SSHGW-077 — Pipeline GitHub Actions dedicata per build container SSH Gateway
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSHGW-049
+  COMPLETATO: Created dedicated GitHub Actions workflow (.github/workflows/ssh-gateway-build.yml) with path-filtered triggers (ssh-gateway/**), QEMU + Buildx multi-arch builds (linux/amd64, linux/arm64), ghcr.io push on non-PR events, Trivy security scanning with SARIF upload to GitHub Security tab. Removed duplicate build-ssh-gateway job from docker-build.yml.
+
+  DESCRIZIONE:
+  Creare un workflow GitHub Actions standalone dedicato esclusivamente alla build
+  e push del container SSH Gateway, separato dal workflow multi-servizio esistente
+  (docker-build.yml). Il workflow dedicato permettera' trigger indipendenti basati
+  sui cambiamenti alla directory ssh-gateway/, evitando build non necessarie degli
+  altri container (server, client) quando vengono modificati solo i file del
+  gateway. Includere path filtering, build multi-architettura (amd64/arm64),
+  e security scan dell'immagine.
+
+  File coinvolti:
+    CREATO:     .github/workflows/ssh-gateway-build.yml
+    MODIFICATO: .github/workflows/docker-build.yml
+
+
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
 ================================================================================
