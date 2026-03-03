@@ -14,6 +14,9 @@ const vaultStore = new Map<string, VaultSession>();
 // In-memory team vault store: "${teamId}:${userId}" -> decrypted team master key
 const teamVaultStore = new Map<string, { teamKey: Buffer; expiresAt: number }>();
 
+// In-memory tenant vault store: "${tenantId}:${userId}" -> decrypted tenant master key
+const tenantVaultStore = new Map<string, { tenantKey: Buffer; expiresAt: number }>();
+
 // Cleanup expired sessions every minute
 setInterval(() => {
   const now = Date.now();
@@ -27,6 +30,12 @@ setInterval(() => {
     if (session.expiresAt < now) {
       session.teamKey.fill(0);
       teamVaultStore.delete(key);
+    }
+  }
+  for (const [key, session] of tenantVaultStore.entries()) {
+    if (session.expiresAt < now) {
+      session.tenantKey.fill(0);
+      tenantVaultStore.delete(key);
     }
   }
 }, 60_000);
@@ -98,6 +107,42 @@ export function decryptMasterKey(
   return Buffer.from(hex, 'hex');
 }
 
+// External share key derivation
+
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
+}
+
+export function deriveKeyFromToken(token: string, shareId: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const ikm = Buffer.from(token, 'base64url');
+    const salt = Buffer.alloc(0);
+    const info = Buffer.from(shareId, 'utf8');
+    crypto.hkdf('sha256', ikm, salt, info, KEY_LENGTH, (err, derivedKey) => {
+      if (err) return reject(err);
+      resolve(Buffer.from(derivedKey));
+    });
+  });
+}
+
+export async function deriveKeyFromTokenAndPin(
+  token: string,
+  pin: string,
+  salt: string
+): Promise<Buffer> {
+  return deriveKeyFromPassword(token + pin, salt);
+}
+
+// Server-level encryption (for data the server must decrypt autonomously, e.g. SSH key pairs)
+
+export function encryptWithServerKey(plaintext: string): EncryptedField {
+  return encrypt(plaintext, config.serverEncryptionKey);
+}
+
+export function decryptWithServerKey(field: EncryptedField): string {
+  return decrypt(field, config.serverEncryptionKey);
+}
+
 // Vault session management
 
 export function storeVaultSession(userId: string, masterKey: Buffer): void {
@@ -136,8 +181,9 @@ export function lockVault(userId: string): void {
     session.masterKey.fill(0);
     vaultStore.delete(userId);
   }
-  // Also lock all team vault sessions for this user
+  // Also lock all team and tenant vault sessions for this user
   lockUserTeamVaults(userId);
+  lockUserTenantVaults(userId);
 }
 
 export function isVaultUnlocked(userId: string): boolean {
@@ -199,6 +245,65 @@ export function lockUserTeamVaults(userId: string): void {
     if (key.endsWith(`:${userId}`)) {
       session.teamKey.fill(0);
       teamVaultStore.delete(key);
+    }
+  }
+}
+
+// Tenant vault session management
+
+export function generateTenantMasterKey(): Buffer {
+  return crypto.randomBytes(KEY_LENGTH);
+}
+
+export function encryptTenantKey(tenantKey: Buffer, userMasterKey: Buffer): EncryptedField {
+  return encrypt(tenantKey.toString('hex'), userMasterKey);
+}
+
+export function decryptTenantKey(encryptedField: EncryptedField, userMasterKey: Buffer): Buffer {
+  const hex = decrypt(encryptedField, userMasterKey);
+  return Buffer.from(hex, 'hex');
+}
+
+export function storeTenantVaultSession(tenantId: string, userId: string, tenantKey: Buffer): void {
+  const ttlMs = config.vaultTtlMinutes * 60 * 1000;
+  const key = `${tenantId}:${userId}`;
+  tenantVaultStore.set(key, {
+    tenantKey: Buffer.from(tenantKey), // defensive copy
+    expiresAt: Date.now() + ttlMs,
+  });
+}
+
+export function getTenantMasterKey(tenantId: string, userId: string): Buffer | null {
+  const key = `${tenantId}:${userId}`;
+  const session = tenantVaultStore.get(key);
+  if (!session) return null;
+
+  if (session.expiresAt < Date.now()) {
+    session.tenantKey.fill(0);
+    tenantVaultStore.delete(key);
+    return null;
+  }
+
+  // Sliding window: reset TTL on every successful access
+  const ttlMs = config.vaultTtlMinutes * 60 * 1000;
+  session.expiresAt = Date.now() + ttlMs;
+  return session.tenantKey;
+}
+
+export function lockTenantVault(tenantId: string): void {
+  for (const [key, session] of tenantVaultStore.entries()) {
+    if (key.startsWith(`${tenantId}:`)) {
+      session.tenantKey.fill(0);
+      tenantVaultStore.delete(key);
+    }
+  }
+}
+
+export function lockUserTenantVaults(userId: string): void {
+  for (const [key, session] of tenantVaultStore.entries()) {
+    if (key.endsWith(`:${userId}`)) {
+      session.tenantKey.fill(0);
+      tenantVaultStore.delete(key);
     }
   }
 }

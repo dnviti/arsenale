@@ -16,7 +16,7 @@ interface TenantState {
 
   fetchTenant: () => Promise<void>;
   createTenant: (name: string) => Promise<TenantData>;
-  updateTenant: (data: { name?: string }) => Promise<void>;
+  updateTenant: (data: { name?: string; defaultSessionTimeoutSeconds?: number }) => Promise<void>;
   deleteTenant: () => Promise<void>;
   fetchUsers: () => Promise<void>;
   inviteUser: (email: string, role: 'ADMIN' | 'MEMBER') => Promise<void>;
@@ -48,9 +48,9 @@ export const useTenantStore = create<TenantState>((set, get) => ({
   },
 
   createTenant: async (name) => {
-    const tenant = await createTenantApi(name);
+    const { tenant, accessToken, refreshToken, user } = await createTenantApi(name);
     set({ tenant });
-    useAuthStore.getState().updateUser({ tenantId: tenant.id, tenantRole: 'OWNER' });
+    useAuthStore.getState().setAuth(accessToken, refreshToken, user);
     return tenant;
   },
 

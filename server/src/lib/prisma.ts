@@ -1,3 +1,4 @@
+import './env';
 import { PrismaClient } from '../generated/prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -8,4 +9,4 @@ const adapter = new PrismaPg({
 const prisma = new PrismaClient({ adapter });
 
 export default prisma;
-export { Prisma, ConnectionType, Permission, AuditAction, NotificationType, TeamRole } from '../generated/prisma/client';
+export { Prisma, ConnectionType, GatewayType, GatewayHealthStatus, Permission, AuditAction, NotificationType, TeamRole, SecretType, SecretScope, SessionProtocol, SessionStatus, ManagedInstanceStatus } from '../generated/prisma/client';

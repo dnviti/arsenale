@@ -41,6 +41,40 @@ export async function share(req: AuthRequest, res: Response, next: NextFunction)
   }
 }
 
+const batchShareSchema = z.object({
+  connectionIds: z.array(z.string().uuid()).min(1).max(50),
+  target: z.union([
+    z.object({ email: z.string().email(), userId: z.undefined().optional() }),
+    z.object({ userId: z.string().uuid(), email: z.undefined().optional() }),
+  ]),
+  permission: z.enum(['READ_ONLY', 'FULL_ACCESS']),
+  folderName: z.string().optional(),
+});
+
+export async function batchShare(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { connectionIds, target, permission, folderName } = batchShareSchema.parse(req.body);
+    const result = await sharingService.batchShareConnections(
+      req.user!.userId,
+      connectionIds,
+      target,
+      permission,
+      req.user!.tenantId,
+      folderName
+    );
+    auditService.log({
+      userId: req.user!.userId, action: 'BATCH_SHARE',
+      targetType: 'Connection',
+      details: { connectionCount: connectionIds.length, shared: result.shared, failed: result.failed, permission },
+      ipAddress: req.ip,
+    });
+    res.status(200).json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
 export async function unshare(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const result = await sharingService.unshareConnection(

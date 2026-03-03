@@ -19,6 +19,12 @@ services:
     volumes:
       - rdm_drive:/guacd-drive
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 4822 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   server:
     build:
@@ -26,11 +32,17 @@ services:
       dockerfile: server/Dockerfile
     ports:
       - "3001:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
       guacd:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-rdm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-remote_desktop_manager}
       GUACD_HOST: guacd
@@ -52,8 +64,31 @@ services:
       dockerfile: client/Dockerfile
     ports:
       - "3000:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     depends_on:
-      - server
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # SSH Gateway (optional — remove or comment out if not needed)
+  # For multiple gateways, duplicate with different names and ports:
+  #   ssh-gateway-dmz:  ports: ["2222:2222"]
+  #   ssh-gateway-lan:  ports: ["2223:2222"]
+  ssh-gateway:
+    build:
+      context: .
+      dockerfile: ssh-gateway/Dockerfile
+    ports:
+      - "${SSH_GATEWAY_PORT:-2222}:2222"
+    environment:
+      SSH_AUTHORIZED_KEYS: ${SSH_AUTHORIZED_KEYS:-}
+    volumes:
+      - ./config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
     restart: unless-stopped
 
 volumes:

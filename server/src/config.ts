@@ -1,7 +1,33 @@
+import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+function resolveServerEncryptionKey(): Buffer {
+  const envKey = process.env.SERVER_ENCRYPTION_KEY?.trim();
+  if (envKey && envKey.length > 0) {
+    if (!/^[0-9a-fA-F]{64}$/.test(envKey)) {
+      throw new Error(
+        `SERVER_ENCRYPTION_KEY must be exactly 64 hex chars (32 bytes). ` +
+        `Got ${envKey.length} chars. Generate one with: ` +
+        `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`,
+      );
+    }
+    return Buffer.from(envKey, 'hex');
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'SERVER_ENCRYPTION_KEY is required in production. Generate one with: ' +
+      'node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"',
+    );
+  }
+  console.warn(
+    '[config] SERVER_ENCRYPTION_KEY not set — auto-generating for development. ' +
+    'SSH key pairs will not survive server restarts.',
+  );
+  return crypto.randomBytes(32);
+}
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
@@ -12,6 +38,8 @@ export const config = {
   guacdHost: process.env.GUACD_HOST || 'localhost',
   guacdPort: parseInt(process.env.GUACD_PORT || '4822', 10),
   guacamoleSecret: process.env.GUACAMOLE_SECRET || 'dev-guac-secret',
+  serverEncryptionKey: resolveServerEncryptionKey(),
+  gatewayApiToken: process.env.GATEWAY_API_TOKEN || '',
   vaultTtlMinutes: parseInt(process.env.VAULT_TTL_MINUTES || '30', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: (process.env.LOG_LEVEL || 'info') as 'error' | 'warn' | 'info' | 'debug',
@@ -49,6 +77,7 @@ export const config = {
   vonageApiKey: process.env.VONAGE_API_KEY || '',
   vonageApiSecret: process.env.VONAGE_API_SECRET || '',
   vonageFromNumber: process.env.VONAGE_FROM_NUMBER || '',
+  emailVerifyRequired: process.env.EMAIL_VERIFY_REQUIRED !== 'false',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
   oauth: {
     google: {
@@ -79,4 +108,21 @@ export const config = {
       scopes: process.env.OIDC_SCOPES || 'openid profile email',
     },
   },
+  keyRotationCron: process.env.KEY_ROTATION_CRON || '0 2 * * *',
+  keyRotationAdvanceDays: parseInt(process.env.KEY_ROTATION_ADVANCE_DAYS || '7', 10),
+  loginRateLimitWindowMs: parseInt(process.env.LOGIN_RATE_LIMIT_WINDOW_MS || String(15 * 60 * 1000), 10),
+  loginRateLimitMaxAttempts: parseInt(process.env.LOGIN_RATE_LIMIT_MAX_ATTEMPTS || '5', 10),
+  accountLockoutThreshold: parseInt(process.env.ACCOUNT_LOCKOUT_THRESHOLD || '10', 10),
+  accountLockoutDurationMs: parseInt(process.env.ACCOUNT_LOCKOUT_DURATION_MS || String(30 * 60 * 1000), 10),
+  sessionHeartbeatIntervalMs: parseInt(process.env.SESSION_HEARTBEAT_INTERVAL_MS || String(30 * 1000), 10),
+  sessionIdleThresholdMinutes: parseInt(process.env.SESSION_IDLE_THRESHOLD_MINUTES || '5', 10),
+  sessionCleanupRetentionDays: parseInt(process.env.SESSION_CLEANUP_RETENTION_DAYS || '30', 10),
+  sessionInactivityTimeoutSeconds: parseInt(process.env.SESSION_INACTIVITY_TIMEOUT_SECONDS || '3600', 10),
+  // Container orchestrator
+  orchestratorType: (process.env.ORCHESTRATOR_TYPE || '') as '' | 'docker' | 'kubernetes' | 'none',
+  dockerSocketPath: process.env.DOCKER_SOCKET_PATH || '/var/run/docker.sock',
+  dockerNetwork: process.env.DOCKER_NETWORK || '',
+  orchestratorK8sNamespace: process.env.ORCHESTRATOR_K8S_NAMESPACE || 'rdm',
+  orchestratorSshGatewayImage: process.env.ORCHESTRATOR_SSH_GATEWAY_IMAGE || 'ghcr.io/dnviti/remote-desktop-manager/ssh-gateway:latest',
+  orchestratorGuacdImage: process.env.ORCHESTRATOR_GUACD_IMAGE || 'guacamole/guacd:latest',
 };

@@ -1,0 +1,277 @@
+import prisma, { ManagedInstanceStatus } from '../lib/prisma';
+import * as managedGatewayService from './managedGateway.service';
+import * as sessionService from './session.service';
+import * as auditService from './audit.service';
+import { logger } from '../utils/logger';
+
+const LOG_PREFIX = '[autoscaler]';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface ScalingStatus {
+  gatewayId: string;
+  autoScale: boolean;
+  minReplicas: number;
+  maxReplicas: number;
+  sessionsPerInstance: number;
+  scaleDownCooldownSeconds: number;
+  currentReplicas: number;
+  activeSessions: number;
+  targetReplicas: number;
+  lastScaleAction: Date | null;
+  cooldownRemaining: number;
+  recommendation: 'scale-up' | 'scale-down' | 'stable';
+}
+
+// ---------------------------------------------------------------------------
+// Core: evaluateScaling — runs every 30s
+// ---------------------------------------------------------------------------
+
+export async function evaluateScaling(): Promise<void> {
+  const gateways = await prisma.gateway.findMany({
+    where: { isManaged: true, autoScale: true },
+    select: {
+      id: true,
+      minReplicas: true,
+      maxReplicas: true,
+      sessionsPerInstance: true,
+      scaleDownCooldownSeconds: true,
+      lastScaleAction: true,
+      desiredReplicas: true,
+    },
+  });
+
+  if (gateways.length === 0) return;
+
+  for (const gw of gateways) {
+    try {
+      await evaluateGatewayScaling(gw);
+    } catch (err) {
+      logger.error(
+        `${LOG_PREFIX} Scaling evaluation failed for gateway ${gw.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Per-gateway scaling evaluation
+// ---------------------------------------------------------------------------
+
+async function evaluateGatewayScaling(gw: {
+  id: string;
+  minReplicas: number;
+  maxReplicas: number;
+  sessionsPerInstance: number;
+  scaleDownCooldownSeconds: number;
+  lastScaleAction: Date | null;
+  desiredReplicas: number;
+}): Promise<void> {
+  // Count active sessions (ACTIVE + IDLE) for this gateway
+  const activeSessions = await sessionService.getActiveSessionCount({
+    gatewayId: gw.id,
+  });
+
+  // Count RUNNING/PROVISIONING instances
+  const currentReplicas = await prisma.managedGatewayInstance.count({
+    where: {
+      gatewayId: gw.id,
+      status: {
+        in: [ManagedInstanceStatus.RUNNING, ManagedInstanceStatus.PROVISIONING],
+      },
+    },
+  });
+
+  // Calculate target: ceil(activeSessions / sessionsPerInstance)
+  const rawTarget =
+    activeSessions === 0 ? 0 : Math.ceil(activeSessions / gw.sessionsPerInstance);
+
+  // Clamp between minReplicas and maxReplicas
+  const target = Math.max(gw.minReplicas, Math.min(rawTarget, gw.maxReplicas));
+
+  if (target > currentReplicas) {
+    // ---- Scale UP (immediate) ----
+    logger.info(
+      `${LOG_PREFIX} Gateway ${gw.id}: scaling UP ${currentReplicas} → ${target} ` +
+        `(${activeSessions} sessions, threshold ${gw.sessionsPerInstance}/instance)`,
+    );
+
+    await managedGatewayService.scaleGateway(gw.id, target);
+
+    await prisma.gateway.update({
+      where: { id: gw.id },
+      data: { lastScaleAction: new Date() },
+    });
+
+    auditService.log({
+      action: 'GATEWAY_SCALE_UP',
+      targetType: 'Gateway',
+      targetId: gw.id,
+      details: {
+        from: currentReplicas,
+        to: target,
+        activeSessions,
+        sessionsPerInstance: gw.sessionsPerInstance,
+        trigger: 'autoscaler',
+      },
+    });
+  } else if (target < currentReplicas) {
+    // ---- Scale DOWN (with cooldown check) ----
+    const now = Date.now();
+    const cooldownMs = gw.scaleDownCooldownSeconds * 1000;
+    const lastScale = gw.lastScaleAction?.getTime() ?? 0;
+
+    if (now - lastScale < cooldownMs) {
+      const remaining = Math.ceil((cooldownMs - (now - lastScale)) / 1000);
+      logger.debug(
+        `${LOG_PREFIX} Gateway ${gw.id}: scale-down deferred, cooldown ${remaining}s remaining`,
+      );
+      return;
+    }
+
+    logger.info(
+      `${LOG_PREFIX} Gateway ${gw.id}: scaling DOWN ${currentReplicas} → ${target} ` +
+        `(${activeSessions} sessions, threshold ${gw.sessionsPerInstance}/instance)`,
+    );
+
+    await scaleDownPreferEmpty(gw.id, currentReplicas, target);
+
+    await prisma.gateway.update({
+      where: { id: gw.id },
+      data: { lastScaleAction: new Date(), desiredReplicas: target },
+    });
+
+    auditService.log({
+      action: 'GATEWAY_SCALE_DOWN',
+      targetType: 'Gateway',
+      targetId: gw.id,
+      details: {
+        from: currentReplicas,
+        to: target,
+        activeSessions,
+        sessionsPerInstance: gw.sessionsPerInstance,
+        trigger: 'autoscaler',
+      },
+    });
+  }
+  // else: target === currentReplicas → no-op
+}
+
+// ---------------------------------------------------------------------------
+// Scale-down with preference for newest instances (LIFO)
+// ---------------------------------------------------------------------------
+
+async function scaleDownPreferEmpty(
+  gatewayId: string,
+  currentReplicas: number,
+  targetReplicas: number,
+): Promise<void> {
+  const toRemove = currentReplicas - targetReplicas;
+
+  // Get running instances sorted newest-first
+  const instances = await prisma.managedGatewayInstance.findMany({
+    where: {
+      gatewayId,
+      status: {
+        in: [ManagedInstanceStatus.RUNNING, ManagedInstanceStatus.PROVISIONING],
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  const instancesToRemove = instances.slice(0, toRemove);
+
+  for (const instance of instancesToRemove) {
+    try {
+      await managedGatewayService.removeGatewayInstance(instance.id);
+    } catch (err) {
+      logger.error(
+        `${LOG_PREFIX} Scale-down: failed to remove instance ${instance.id}: ${(err as Error).message}`,
+      );
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// getScalingStatus
+// ---------------------------------------------------------------------------
+
+export async function getScalingStatus(
+  gatewayId: string,
+): Promise<ScalingStatus> {
+  const gateway = await prisma.gateway.findUnique({
+    where: { id: gatewayId },
+    select: {
+      id: true,
+      autoScale: true,
+      minReplicas: true,
+      maxReplicas: true,
+      sessionsPerInstance: true,
+      scaleDownCooldownSeconds: true,
+      lastScaleAction: true,
+    },
+  });
+
+  if (!gateway) {
+    throw new Error('Gateway not found');
+  }
+
+  const [activeSessions, currentReplicas] = await Promise.all([
+    sessionService.getActiveSessionCount({ gatewayId }),
+    prisma.managedGatewayInstance.count({
+      where: {
+        gatewayId,
+        status: {
+          in: [
+            ManagedInstanceStatus.RUNNING,
+            ManagedInstanceStatus.PROVISIONING,
+          ],
+        },
+      },
+    }),
+  ]);
+
+  const rawTarget =
+    activeSessions === 0
+      ? 0
+      : Math.ceil(activeSessions / gateway.sessionsPerInstance);
+  const targetReplicas = Math.max(
+    gateway.minReplicas,
+    Math.min(rawTarget, gateway.maxReplicas),
+  );
+
+  let cooldownRemaining = 0;
+  if (gateway.lastScaleAction) {
+    const elapsed = Date.now() - gateway.lastScaleAction.getTime();
+    const cooldownMs = gateway.scaleDownCooldownSeconds * 1000;
+    if (elapsed < cooldownMs) {
+      cooldownRemaining = Math.ceil((cooldownMs - elapsed) / 1000);
+    }
+  }
+
+  let recommendation: 'scale-up' | 'scale-down' | 'stable';
+  if (targetReplicas > currentReplicas) {
+    recommendation = 'scale-up';
+  } else if (targetReplicas < currentReplicas) {
+    recommendation = 'scale-down';
+  } else {
+    recommendation = 'stable';
+  }
+
+  return {
+    gatewayId: gateway.id,
+    autoScale: gateway.autoScale,
+    minReplicas: gateway.minReplicas,
+    maxReplicas: gateway.maxReplicas,
+    sessionsPerInstance: gateway.sessionsPerInstance,
+    scaleDownCooldownSeconds: gateway.scaleDownCooldownSeconds,
+    currentReplicas,
+    activeSessions,
+    targetReplicas,
+    lastScaleAction: gateway.lastScaleAction,
+    cooldownRemaining,
+    recommendation,
+  };
+}

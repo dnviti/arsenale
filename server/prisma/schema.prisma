@@ -20,14 +20,20 @@ enum TeamRole {
 }
 
 model Tenant {
-  id        String   @id @default(uuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                 String   @id @default(uuid())
+  name               String
+  slug               String   @unique
+  hasTenantVaultKey            Boolean  @default(false)
+  defaultSessionTimeoutSeconds Int      @default(3600)
+  createdAt                    DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  users User[]
-  teams Team[]
+  users              User[]
+  teams              Team[]
+  gateways           Gateway[]
+  sshKeyPair         SshKeyPair?
+  vaultSecrets       VaultSecret[]
+  tenantVaultMembers TenantVaultMember[]
 }
 
 model Team {
@@ -38,10 +44,12 @@ model Team {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  tenant      Tenant         @relation(fields: [tenantId], references: [id])
-  members     TeamMember[]
-  connections Connection[]
-  folders     Folder[]
+  tenant       Tenant         @relation(fields: [tenantId], references: [id])
+  members      TeamMember[]
+  connections  Connection[]
+  folders      Folder[]
+  vaultSecrets VaultSecret[]
+  vaultFolders VaultFolder[]
 
   @@unique([tenantId, name])
 }
@@ -85,6 +93,8 @@ model User {
   emailVerified      Boolean     @default(false)
   emailVerifyToken   String?     @unique
   emailVerifyExpiry  DateTime?
+  failedLoginAttempts Int         @default(0)
+  lockedUntil         DateTime?
   tenantId           String?
   tenantRole         TenantRole?
   createdAt          DateTime    @default(now())
@@ -99,7 +109,17 @@ model User {
   oauthAccounts OAuthAccount[]
   auditLogs     AuditLog[]
   notifications Notification[]
-  teamMembers   TeamMember[]
+  teamMembers            TeamMember[]
+  gatewaysCreated        Gateway[]              @relation("GatewayCreator")
+  openTabs               OpenTab[]
+  vaultSecrets           VaultSecret[]          @relation("VaultSecretOwner")
+  secretVersionChanges   VaultSecretVersion[]   @relation("SecretVersionChanger")
+  vaultFolders           VaultFolder[]
+  tenantVaultMemberships TenantVaultMember[]
+  secretsSharedWithMe    SharedSecret[]         @relation("SecretSharedWith")
+  secretsSharedByMe      SharedSecret[]         @relation("SecretSharedBy")
+  externalSecretShares   ExternalSecretShare[]
+  activeSessions         ActiveSession[]
 }
 
 enum AuthProvider {
@@ -152,12 +172,13 @@ model Connection {
   port              Int
   folderId          String?
   teamId            String?
-  encryptedUsername  String
-  usernameIV        String
-  usernameTag       String
-  encryptedPassword String
-  passwordIV        String
-  passwordTag       String
+  encryptedUsername  String?
+  usernameIV        String?
+  usernameTag       String?
+  encryptedPassword String?
+  passwordIV        String?
+  passwordTag       String?
+  credentialSecretId String?
   description       String?
   isFavorite        Boolean        @default(false)
   enableDrive       Boolean        @default(false)
@@ -167,15 +188,125 @@ model Connection {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
-  folder Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  team   Team?   @relation(fields: [teamId], references: [id])
-  user   User    @relation(fields: [userId], references: [id])
-  shares SharedConnection[]
+  gatewayId         String?
+
+  folder           Folder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  team             Team?         @relation(fields: [teamId], references: [id])
+  user             User          @relation(fields: [userId], references: [id])
+  gateway          Gateway?      @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  credentialSecret VaultSecret?  @relation(fields: [credentialSecretId], references: [id], onDelete: SetNull)
+  shares           SharedConnection[]
+  openTabs         OpenTab[]
+  activeSessions   ActiveSession[]
 }
 
 enum ConnectionType {
   RDP
   SSH
+}
+
+enum GatewayType {
+  GUACD
+  SSH_BASTION
+  MANAGED_SSH
+}
+
+enum GatewayHealthStatus {
+  UNKNOWN
+  REACHABLE
+  UNREACHABLE
+}
+
+enum SessionProtocol {
+  SSH
+  RDP
+}
+
+enum SessionStatus {
+  ACTIVE
+  IDLE
+  CLOSED
+}
+
+enum ManagedInstanceStatus {
+  PROVISIONING
+  RUNNING
+  STOPPED
+  ERROR
+  REMOVING
+}
+
+model Gateway {
+  id          String      @id @default(uuid())
+  name        String
+  type        GatewayType
+  host        String
+  port        Int
+  description String?
+  isDefault   Boolean     @default(false)
+  tenantId    String
+  createdById String
+
+  encryptedUsername  String?
+  usernameIV         String?
+  usernameTag        String?
+  encryptedPassword  String?
+  passwordIV         String?
+  passwordTag        String?
+  encryptedSshKey    String?
+  sshKeyIV           String?
+  sshKeyTag          String?
+  apiPort            Int?
+
+  isManaged        Boolean @default(false)
+  desiredReplicas  Int     @default(1)
+
+  autoScale                Boolean  @default(false)
+  minReplicas              Int      @default(1)
+  maxReplicas              Int      @default(5)
+  sessionsPerInstance      Int      @default(10)
+  scaleDownCooldownSeconds Int      @default(300)
+  lastScaleAction          DateTime?
+
+  inactivityTimeoutSeconds Int @default(3600)
+
+  monitoringEnabled   Boolean             @default(true)
+  monitorIntervalMs   Int                 @default(5000)
+  lastHealthStatus    GatewayHealthStatus @default(UNKNOWN)
+  lastCheckedAt       DateTime?
+  lastLatencyMs       Int?
+  lastError           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id])
+  createdBy      User            @relation("GatewayCreator", fields: [createdById], references: [id])
+  connections        Connection[]
+  activeSessions     ActiveSession[]
+  managedInstances   ManagedGatewayInstance[]
+
+  @@index([tenantId])
+  @@index([tenantId, type, isDefault])
+}
+
+model SshKeyPair {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  encryptedPrivateKey String
+  privateKeyIV        String
+  privateKeyTag       String
+  publicKey           String
+  fingerprint         String
+  algorithm            String    @default("ed25519")
+  expiresAt            DateTime?
+  autoRotateEnabled    Boolean   @default(false)
+  rotationIntervalDays Int       @default(90)
+  lastAutoRotatedAt    DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 model SharedConnection {
@@ -204,6 +335,20 @@ enum Permission {
   FULL_ACCESS
 }
 
+enum SecretType {
+  LOGIN
+  SSH_KEY
+  CERTIFICATE
+  API_KEY
+  SECURE_NOTE
+}
+
+enum SecretScope {
+  PERSONAL
+  TEAM
+  TENANT
+}
+
 model RefreshToken {
   id        String   @id @default(uuid())
   token     String   @unique
@@ -218,6 +363,7 @@ enum AuditAction {
   LOGIN
   LOGIN_OAUTH
   LOGIN_TOTP
+  LOGIN_FAILURE
   LOGOUT
   REGISTER
   VAULT_UNLOCK
@@ -256,11 +402,40 @@ enum AuditAction {
   TEAM_REMOVE_MEMBER
   TEAM_UPDATE_MEMBER_ROLE
   EMAIL_TEST_SEND
+  GATEWAY_CREATE
+  GATEWAY_UPDATE
+  GATEWAY_DELETE
+  SSH_KEY_GENERATE
+  SSH_KEY_ROTATE
+  SSH_KEY_PUSH
+  SSH_KEY_AUTO_ROTATE
+  GATEWAY_DEPLOY
+  GATEWAY_UNDEPLOY
+  GATEWAY_SCALE
+  GATEWAY_SCALE_UP
+  GATEWAY_SCALE_DOWN
+  GATEWAY_RESTART
+  GATEWAY_HEALTH_CHECK
+  BATCH_SHARE
+  SESSION_START
+  SESSION_END
+  SESSION_TIMEOUT
+  SECRET_CREATE
+  SECRET_READ
+  SECRET_UPDATE
+  SECRET_DELETE
+  SECRET_SHARE
+  SECRET_UNSHARE
+  SECRET_EXTERNAL_SHARE
+  SECRET_EXTERNAL_ACCESS
+  SECRET_VERSION_RESTORE
+  TENANT_VAULT_INIT
+  TENANT_VAULT_KEY_DISTRIBUTE
 }
 
 model AuditLog {
   id         String      @id @default(uuid())
-  userId     String
+  userId     String?
   action     AuditAction
   targetType String?
   targetId   String?
@@ -268,7 +443,7 @@ model AuditLog {
   ipAddress  String?
   createdAt  DateTime    @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([action])
@@ -279,6 +454,10 @@ enum NotificationType {
   CONNECTION_SHARED
   SHARE_PERMISSION_UPDATED
   SHARE_REVOKED
+  SECRET_SHARED
+  SECRET_SHARE_REVOKED
+  SECRET_EXPIRING
+  SECRET_EXPIRED
 }
 
 model Notification {
@@ -294,4 +473,203 @@ model Notification {
 
   @@index([userId, read])
   @@index([userId, createdAt])
+}
+
+model OpenTab {
+  id           String     @id @default(uuid())
+  userId       String
+  connectionId String
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, connectionId])
+  @@index([userId])
+}
+
+model VaultSecret {
+  id             String      @id @default(uuid())
+  name           String
+  description    String?
+  type           SecretType
+  scope          SecretScope
+  userId         String
+  teamId         String?
+  tenantId       String?
+  folderId       String?
+  encryptedData  String
+  dataIV         String
+  dataTag        String
+  metadata       Json?
+  tags           String[]    @default([])
+  isFavorite     Boolean     @default(false)
+  expiresAt      DateTime?
+  currentVersion Int         @default(1)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user        User               @relation("VaultSecretOwner", fields: [userId], references: [id])
+  team        Team?              @relation(fields: [teamId], references: [id])
+  tenant      Tenant?            @relation(fields: [tenantId], references: [id])
+  folder      VaultFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  versions       VaultSecretVersion[]
+  shares         SharedSecret[]
+  externalShares ExternalSecretShare[]
+  connections    Connection[]
+
+  @@index([userId, scope])
+  @@index([teamId])
+  @@index([tenantId, scope])
+  @@index([expiresAt])
+}
+
+model VaultSecretVersion {
+  id            String   @id @default(uuid())
+  secretId      String
+  version       Int
+  encryptedData String
+  dataIV        String
+  dataTag       String
+  changedBy     String
+  changeNote    String?
+  createdAt     DateTime @default(now())
+
+  secret  VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  changer User        @relation("SecretVersionChanger", fields: [changedBy], references: [id])
+
+  @@unique([secretId, version])
+  @@index([secretId])
+}
+
+model SharedSecret {
+  id               String     @id @default(uuid())
+  secretId         String
+  sharedWithUserId String
+  sharedByUserId   String
+  permission       Permission
+  encryptedData    String
+  dataIV           String
+  dataTag          String
+  createdAt        DateTime   @default(now())
+
+  secret    VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  sharedWith User       @relation("SecretSharedWith", fields: [sharedWithUserId], references: [id])
+  sharedBy   User       @relation("SecretSharedBy", fields: [sharedByUserId], references: [id])
+
+  @@unique([secretId, sharedWithUserId])
+}
+
+model VaultFolder {
+  id        String      @id @default(uuid())
+  name      String
+  parentId  String?
+  userId    String
+  scope     SecretScope
+  teamId    String?
+  tenantId  String?
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  parent   VaultFolder?  @relation("VaultFolderTree", fields: [parentId], references: [id])
+  children VaultFolder[] @relation("VaultFolderTree")
+  user     User          @relation(fields: [userId], references: [id])
+  team     Team?         @relation(fields: [teamId], references: [id])
+  secrets  VaultSecret[]
+
+  @@index([userId, scope])
+  @@index([teamId])
+  @@index([tenantId])
+}
+
+model TenantVaultMember {
+  id                      String   @id @default(uuid())
+  tenantId                String
+  userId                  String
+  encryptedTenantVaultKey String
+  tenantVaultKeyIV        String
+  tenantVaultKeyTag       String
+  createdAt               DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+}
+
+model ExternalSecretShare {
+  id              String     @id @default(uuid())
+  secretId        String
+  createdByUserId String
+  tokenHash       String     @unique
+  encryptedData   String
+  dataIV          String
+  dataTag         String
+  hasPin          Boolean    @default(false)
+  pinSalt         String?
+  expiresAt       DateTime
+  maxAccessCount  Int?
+  accessCount     Int        @default(0)
+  secretType      SecretType
+  secretName      String
+  isRevoked       Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+
+  secret    VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+  createdBy User        @relation(fields: [createdByUserId], references: [id])
+
+  @@index([tokenHash])
+  @@index([expiresAt])
+}
+
+model ActiveSession {
+  id             String          @id @default(uuid())
+  userId         String
+  connectionId   String
+  gatewayId      String?
+  protocol       SessionProtocol
+  status         SessionStatus   @default(ACTIVE)
+  socketId       String?
+  guacTokenHash  String?
+  startedAt      DateTime        @default(now())
+  lastActivityAt DateTime        @default(now())
+  endedAt        DateTime?
+  metadata       Json?
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  gateway    Gateway?   @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([status])
+  @@index([gatewayId, status])
+  @@index([protocol, status])
+  @@index([lastActivityAt])
+  @@index([socketId])
+  @@index([guacTokenHash])
+}
+
+model ManagedGatewayInstance {
+  id               String                @id @default(uuid())
+  gatewayId        String
+  containerId      String                @unique
+  containerName    String
+  host             String
+  port             Int
+  status           ManagedInstanceStatus @default(PROVISIONING)
+  orchestratorType String
+  healthStatus     String?
+  lastHealthCheck  DateTime?
+  errorMessage         String?
+  consecutiveFailures  Int               @default(0)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  gateway          Gateway               @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+
+  @@index([gatewayId])
+  @@index([status])
 }

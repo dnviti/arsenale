@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ConnectionData } from '../api/connections.api';
+import { getPersistedTabs, syncPersistedTabs, clearPersistedTabs, PersistedTab } from '../api/tabs.api';
 import { addRecentConnection } from '../utils/recentConnections';
 import { useAuthStore } from './authStore';
 
@@ -22,6 +23,36 @@ interface TabsState {
   openTab: (connection: ConnectionData, credentials?: CredentialOverride) => void;
   closeTab: (tabId: string) => void;
   setActiveTab: (tabId: string) => void;
+  restoreTabs: (connections: ConnectionData[]) => Promise<void>;
+  clearAll: () => Promise<void>;
+}
+
+// Module-level debounce handle (not part of Zustand state)
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
+const SYNC_DEBOUNCE_MS = 1000;
+
+// Guard against double-restore
+let tabsRestored = false;
+
+function toPersistedTabs(tabs: Tab[], activeTabId: string | null): PersistedTab[] {
+  return tabs
+    .filter((t) => !t.credentials)
+    .map((t, index) => ({
+      connectionId: t.connection.id,
+      sortOrder: index,
+      isActive: t.id === activeTabId,
+    }));
+}
+
+function scheduleSyncToServer() {
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    const { tabs, activeTabId } = useTabsStore.getState();
+    const payload = toPersistedTabs(tabs, activeTabId);
+    syncPersistedTabs(payload).catch(() => {
+      // Silently ignore sync failures — tabs work fine in-memory
+    });
+  }, SYNC_DEBOUNCE_MS);
 }
 
 export const useTabsStore = create<TabsState>((set, get) => ({
@@ -43,6 +74,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       const existing = tabs.find((t) => t.connection.id === connection.id);
       if (existing) {
         set((state) => ({ activeTabId: existing.id, recentTick: state.recentTick + 1 }));
+        scheduleSyncToServer();
         return;
       }
     }
@@ -54,6 +86,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       activeTabId: tabId,
       recentTick: state.recentTick + 1,
     }));
+    scheduleSyncToServer();
   },
 
   closeTab: (tabId) => {
@@ -72,6 +105,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       })),
       activeTabId: newActiveId,
     });
+    scheduleSyncToServer();
   },
 
   setActiveTab: (tabId) => {
@@ -79,5 +113,59 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       activeTabId: tabId,
       tabs: state.tabs.map((t) => ({ ...t, active: t.id === tabId })),
     }));
+    scheduleSyncToServer();
+  },
+
+  restoreTabs: async (connections) => {
+    if (tabsRestored) return;
+    tabsRestored = true;
+
+    try {
+      const persisted = await getPersistedTabs();
+      if (persisted.length === 0) return;
+
+      const connMap = new Map<string, ConnectionData>();
+      connections.forEach((c) => connMap.set(c.id, c));
+
+      const validTabs = persisted
+        .filter((p) => connMap.has(p.connectionId))
+        .sort((a, b) => a.sortOrder - b.sortOrder);
+
+      if (validTabs.length === 0) return;
+
+      const activeConnectionId =
+        validTabs.find((p) => p.isActive)?.connectionId ?? validTabs[validTabs.length - 1].connectionId;
+
+      const restoredTabs: Tab[] = validTabs.map((p) => {
+        const connection = connMap.get(p.connectionId)!;
+        const tabId = `tab-${connection.id}-${Date.now()}`;
+        return {
+          id: tabId,
+          connection,
+          active: connection.id === activeConnectionId,
+        };
+      });
+
+      const newActiveId = restoredTabs.find((t) => t.active)?.id ?? null;
+
+      set({ tabs: restoredTabs, activeTabId: newActiveId });
+      // No sync after restore — the server already has this state
+    } catch {
+      // Silently ignore restore failures
+    }
+  },
+
+  clearAll: async () => {
+    if (syncTimer) {
+      clearTimeout(syncTimer);
+      syncTimer = null;
+    }
+    tabsRestored = false;
+    set({ tabs: [], activeTabId: null });
+    try {
+      await clearPersistedTabs();
+    } catch {
+      // Ignore — tab clear on logout is best-effort
+    }
   },
 }));

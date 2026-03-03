@@ -6,6 +6,12 @@ services:
     volumes:
       - ./data/drive:/guacd-drive
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 4822 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   postgres:
     image: postgres:16
@@ -23,6 +29,18 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # SSH Gateway (optional — uncomment to enable for local testing)
+  ssh-gateway:
+    build: ./ssh-gateway
+    ports:
+      - "${SSH_GATEWAY_PORT:-2222}:2222"
+      - "${SSH_GATEWAY_API_PORT:-8022}:8022"
+    env_file:
+      - .env
+    # environment:
+    #   - GATEWAY_API_TOKEN=${GATEWAY_API_TOKEN:-}
+    restart: unless-stopped
 
 volumes:
   pgdata_dev:

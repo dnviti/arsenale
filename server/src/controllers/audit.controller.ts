@@ -5,7 +5,7 @@ import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 
 const VALID_ACTIONS = [
-  'LOGIN', 'LOGIN_OAUTH', 'LOGIN_TOTP', 'LOGOUT', 'REGISTER',
+  'LOGIN', 'LOGIN_OAUTH', 'LOGIN_TOTP', 'LOGIN_FAILURE', 'LOGOUT', 'REGISTER',
   'VAULT_UNLOCK', 'VAULT_LOCK', 'VAULT_SETUP',
   'CREATE_CONNECTION', 'UPDATE_CONNECTION', 'DELETE_CONNECTION',
   'SHARE_CONNECTION', 'UNSHARE_CONNECTION', 'UPDATE_SHARE_PERMISSION',

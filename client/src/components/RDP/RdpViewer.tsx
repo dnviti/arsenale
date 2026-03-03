@@ -21,6 +21,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
   const activeRef = useRef(isActive);
   const keyboardRef = useRef<Guacamole.Keyboard | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [error, setError] = useState('');
   const [fileBrowserOpen, setFileBrowserOpen] = useState(false);
@@ -61,7 +62,8 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
           connectionId,
           ...(credentials && { username: credentials.username, password: credentials.password }),
         });
-        const { token } = res.data;
+        const { token, sessionId } = res.data;
+        sessionIdRef.current = sessionId ?? null;
 
         if (cancelled) return;
 
@@ -80,6 +82,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
         // Resize logic — only active after CONNECTED
         let connected = false;
         let resizeObserver: ResizeObserver | null = null;
+        let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
         const handleResize = () => {
           if (!connected || !displayRef.current) return;
@@ -116,6 +119,21 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
                   resizeObserver.observe(displayRef.current);
                 }
               }, 2000);
+              // Start heartbeat to keep the persistent session alive
+              if (sessionIdRef.current && !heartbeatInterval) {
+                heartbeatInterval = setInterval(() => {
+                  if (sessionIdRef.current) {
+                    api.post(`/sessions/rdp/${sessionIdRef.current}/heartbeat`).catch((err) => {
+                      if (err?.response?.status === 410) {
+                        setStatus('error');
+                        setError('Session expired due to inactivity. Please reconnect.');
+                        client.disconnect();
+                        if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
+                      }
+                    });
+                  }
+                }, 30_000);
+              }
               break;
             case 5: // DISCONNECTED
               connected = false;
@@ -173,6 +191,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
           resizeObserver?.disconnect();
           keyboard.onkeydown = null;
           keyboard.onkeyup = null;
+          if (heartbeatInterval) clearInterval(heartbeatInterval);
         };
       } catch (err: unknown) {
         if (cancelled) return;
@@ -195,6 +214,11 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
       if (clientRef.current) {
         clientRef.current.onclipboard = null;
         clientRef.current.disconnect();
+      }
+      // Signal the server to close the persistent session (fire-and-forget)
+      if (sessionIdRef.current) {
+        api.post(`/sessions/rdp/${sessionIdRef.current}/end`).catch(() => {});
+        sessionIdRef.current = null;
       }
       if (displayRef.current) {
         displayRef.current.blur();

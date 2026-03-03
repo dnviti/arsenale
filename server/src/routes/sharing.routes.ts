@@ -5,6 +5,7 @@ import * as sharingController from '../controllers/sharing.controller';
 const router = Router();
 
 router.use(authenticate);
+router.post('/batch-share', sharingController.batchShare);
 router.post('/:id/share', sharingController.share);
 router.delete('/:id/share/:userId', sharingController.unshare);
 router.put('/:id/share/:userId', sharingController.updatePermission);

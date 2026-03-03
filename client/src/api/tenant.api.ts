@@ -5,6 +5,7 @@ export interface TenantData {
   name: string;
   slug: string;
   userCount: number;
+  defaultSessionTimeoutSeconds: number;
   teamCount: number;
   createdAt: string;
   updatedAt: string;
@@ -26,7 +27,14 @@ export interface InviteResult {
   role: string;
 }
 
-export async function createTenant(name: string): Promise<TenantData> {
+export interface CreateTenantResponse {
+  tenant: TenantData;
+  accessToken: string;
+  refreshToken: string;
+  user: { id: string; email: string; username: string | null; avatarData: string | null; tenantId?: string; tenantRole?: string };
+}
+
+export async function createTenant(name: string): Promise<CreateTenantResponse> {
   const res = await api.post('/tenants', { name });
   return res.data;
 }
@@ -36,7 +44,7 @@ export async function getMyTenant(): Promise<TenantData> {
   return res.data;
 }
 
-export async function updateTenant(id: string, data: { name?: string }): Promise<TenantData> {
+export async function updateTenant(id: string, data: { name?: string; defaultSessionTimeoutSeconds?: number }): Promise<TenantData> {
   const res = await api.put(`/tenants/${id}`, data);
   return res.data;
 }

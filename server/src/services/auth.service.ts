@@ -14,9 +14,11 @@ import {
   encryptMasterKey,
   decryptMasterKey,
   storeVaultSession,
+  lockVault,
 } from './crypto.service';
 import { verifyCode as verifyTotpCode } from './totp.service';
 import { sendVerificationEmail } from './email';
+import * as auditService from './audit.service';
 
 const BCRYPT_ROUNDS = 12;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -37,8 +39,9 @@ export async function register(email: string, password: string) {
   const derivedKey = await deriveKeyFromPassword(password, vaultSalt);
   const encryptedVault = encryptMasterKey(masterKey, derivedKey);
 
-  const emailVerifyToken = crypto.randomBytes(32).toString('hex');
-  const emailVerifyExpiry = new Date(Date.now() + EMAIL_VERIFY_TTL_MS);
+  const needsVerification = config.emailVerifyRequired;
+  const emailVerifyToken = needsVerification ? crypto.randomBytes(32).toString('hex') : null;
+  const emailVerifyExpiry = needsVerification ? new Date(Date.now() + EMAIL_VERIFY_TTL_MS) : null;
 
   const user = await prisma.user.create({
     data: {
@@ -48,7 +51,7 @@ export async function register(email: string, password: string) {
       encryptedVaultKey: encryptedVault.ciphertext,
       vaultKeyIV: encryptedVault.iv,
       vaultKeyTag: encryptedVault.tag,
-      emailVerified: false,
+      emailVerified: !needsVerification,
       emailVerifyToken,
       emailVerifyExpiry,
     },
@@ -59,11 +62,19 @@ export async function register(email: string, password: string) {
   masterKey.fill(0);
   derivedKey.fill(0);
 
-  sendVerificationEmail(email, emailVerifyToken).catch((err) => {
-    logger.error('Failed to send verification email:', err);
-  });
+  if (needsVerification && emailVerifyToken) {
+    sendVerificationEmail(email, emailVerifyToken).catch((err) => {
+      logger.error('Failed to send verification email:', err);
+    });
+  }
 
-  return { message: 'Registration successful. Please check your email to verify your account.', userId: user.id };
+  return {
+    message: needsVerification
+      ? 'Registration successful. Please check your email to verify your account.'
+      : 'Registration successful. You can now log in.',
+    userId: user.id,
+    emailVerifyRequired: needsVerification,
+  };
 }
 
 export async function issueTokens(user: {
@@ -108,23 +119,81 @@ export async function issueTokens(user: {
   };
 }
 
-export async function login(email: string, password: string) {
+export async function login(email: string, password: string, ipAddress?: string | string[]) {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
+    auditService.log({
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'user_not_found', email },
+      ipAddress,
+    });
     throw new Error('Invalid email or password');
+  }
+
+  // Check account lockout
+  if (user.lockedUntil && user.lockedUntil > new Date()) {
+    const remainingMs = user.lockedUntil.getTime() - Date.now();
+    const remainingMin = Math.ceil(remainingMs / 60_000);
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'account_locked', email },
+      ipAddress,
+    });
+    throw new AppError(
+      `Account is temporarily locked. Try again in ${remainingMin} minute${remainingMin === 1 ? '' : 's'}.`,
+      423,
+    );
   }
 
   // OAuth-only users cannot use password login
   if (!user.passwordHash) {
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'oauth_only_account', email },
+      ipAddress,
+    });
     throw new AppError('This account uses social login. Please sign in with your OAuth provider.', 400);
   }
 
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) {
+    const newFailedAttempts = user.failedLoginAttempts + 1;
+    const lockout =
+      newFailedAttempts >= config.accountLockoutThreshold
+        ? { lockedUntil: new Date(Date.now() + config.accountLockoutDurationMs), failedLoginAttempts: 0 }
+        : { failedLoginAttempts: newFailedAttempts };
+    await prisma.user.update({ where: { id: user.id }, data: lockout });
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: {
+        reason: 'invalid_password',
+        email,
+        failedAttempts: newFailedAttempts,
+        accountLocked: newFailedAttempts >= config.accountLockoutThreshold,
+      },
+      ipAddress,
+    });
     throw new Error('Invalid email or password');
   }
 
-  if (!user.emailVerified) {
+  // Reset failed login counter on successful password check
+  if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { failedLoginAttempts: 0, lockedUntil: null },
+    });
+  }
+
+  if (config.emailVerifyRequired && !user.emailVerified) {
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'email_not_verified', email },
+      ipAddress,
+    });
     throw new AppError('Email not verified. Please check your inbox or resend the verification email.', 403);
   }
 
@@ -288,6 +357,11 @@ export async function logout(refreshToken: string): Promise<string | null> {
     select: { userId: true },
   });
   await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+
+  if (stored?.userId) {
+    lockVault(stored.userId);
+  }
+
   return stored?.userId ?? null;
 }
 

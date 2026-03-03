@@ -770,6 +770,134 @@
     MODIFICARE: .env.example
 
 
+------------------------------------------------------------------------------
+[x] SSHUI-028 — Sincronizzazione automatica tema terminale SSH con tema WebUI
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: SSHUI-027 (completato), THEME-011 (completato)
+  COMPLETATO: Added syncThemeWithWebUI toggle, syncLightTheme/syncDarkTheme presets to SshTerminalConfig. TerminalSettingsSection shows sync switch with light/dark preset dropdowns. SshTerminal dynamically syncs theme with WebUI light/dark mode via useThemeStore. Zod validation updated in user.controller.ts.
+
+  DESCRIZIONE:
+  Aggiungere un'opzione "Sync theme with WebUI" nelle impostazioni del terminale
+  SSH che, quando attiva, cambia automaticamente il tema del terminale in base
+  al tema light/dark scelto dall'utente per la WebUI. Quando il tema WebUI e'
+  light, il terminale usa un tema chiaro (es. solarized-light); quando e' dark,
+  usa un tema scuro (es. default-dark). L'utente puo' comunque scegliere
+  manualmente un tema diverso disattivando lo switch (comportamento attuale
+  invariato).
+
+  DETTAGLI TECNICI:
+  Frontend:
+    - Estendere SshTerminalConfig in client/src/constants/terminalThemes.ts:
+      aggiungere campo syncThemeWithWebUI?: boolean (default false)
+    - Aggiungere due campi opzionali per i preset da usare:
+      syncLightTheme?: string (default 'solarized-light')
+      syncDarkTheme?: string (default 'default-dark')
+    - TerminalSettingsSection.tsx: aggiungere switch "Sync theme with WebUI"
+      - Quando attivo: mostrare dropdown per scegliere il preset light e dark
+      - Quando attivo: disabilitare/nascondere il selettore tema manuale
+      - Quando disattivo: comportamento attuale (scelta manuale tema)
+    - SshTerminal.tsx: nel calcolo del tema effettivo, se syncThemeWithWebUI
+      e' true, leggere il mode da useThemeStore e applicare il preset
+      corrispondente (syncLightTheme o syncDarkTheme) al posto del tema
+      manuale
+    - mergeTerminalConfig(): rispettare la gerarchia esistente
+      (defaults -> user globals -> connection overrides)
+    - Aggiornare la live preview in TerminalSettingsSection per riflettere
+      il tema sincronizzato quando lo switch e' attivo
+  Backend:
+    - Nessuna modifica strutturale: i nuovi campi (syncThemeWithWebUI,
+      syncLightTheme, syncDarkTheme) transitano come JSON nei campi
+      User.sshDefaults e Connection.sshTerminalConfig gia' esistenti
+    - Aggiornare la validazione Zod in user.controller.ts per accettare
+      i nuovi campi opzionali
+  File coinvolti:
+    MODIFICARE: client/src/constants/terminalThemes.ts
+    MODIFICARE: client/src/components/Settings/TerminalSettingsSection.tsx
+    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx
+    MODIFICARE: server/src/controllers/user.controller.ts
+
+
+------------------------------------------------------------------------------
+[x] TABS-047 — Persistenza automatica tab aperti (server-side, cross-device)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Server-side tab persistence with cross-device sync. OpenTab Prisma model,
+    CRUD API (GET/PUT/DELETE /api/tabs), debounced client sync, tab restore on login,
+    Connect As tabs excluded for security, validation drops deleted/inaccessible connections.
+
+  DESCRIZIONE:
+  I tab aperti vengono persi al reload della pagina o al re-login. Aggiungere
+  la persistenza automatica server-side: quando l'utente ha tab aperti e
+  ricarica la pagina (o effettua il login da un altro dispositivo), tutti i
+  tab precedenti devono essere ripristinati automaticamente. La persistenza
+  e' nel database (non localStorage) per garantire il ripristino cross-device.
+  I tab con credenziali alternative (Connect As) NON devono essere persistiti
+  per ragioni di sicurezza. Al ripristino, i tab vanno validati: se una
+  connessione e' stata eliminata o l'utente ha perso l'accesso, quel tab
+  viene scartato silenziosamente.
+
+  DETTAGLI TECNICI:
+  Backend:
+    - Nuovo modello OpenTab in server/prisma/schema.prisma
+    - Creare server/src/services/tabs.service.ts
+    - Creare server/src/controllers/tabs.controller.ts
+    - Creare server/src/routes/tabs.routes.ts
+    - Montare le routes in server/src/app.ts
+  Frontend:
+    - Creare client/src/api/tabs.api.ts
+    - Modificare client/src/store/tabsStore.ts
+    - Modificare client/src/pages/DashboardPage.tsx
+    - Modificare client/src/components/Layout/MainLayout.tsx
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (nuovo modello OpenTab)
+    CREARE:     server/src/services/tabs.service.ts
+    CREARE:     server/src/controllers/tabs.controller.ts
+    CREARE:     server/src/routes/tabs.routes.ts
+    MODIFICARE: server/src/app.ts (montare tabs routes)
+    CREARE:     client/src/api/tabs.api.ts
+    MODIFICARE: client/src/store/tabsStore.ts
+    MODIFICARE: client/src/pages/DashboardPage.tsx
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx
+
+
+------------------------------------------------------------------------------
+[x] FOLD-048 — Context menu cartelle: Share Folder e Open All Connections
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SHR-005 (completato), FOLD-001 (completato)
+  COMPLETATO: Added "Open All" and "Share Folder" to folder context menu.
+    Open All: subfolder prompt + >5 confirmation dialog, bulk tab open.
+    Share Folder: batch share backend endpoint (POST /api/connections/batch-share)
+    with Promise.allSettled, ShareFolderDialog with connection preview, user picker,
+    permission selector, and result summary. BATCH_SHARE audit action added.
+
+  DESCRIZIONE:
+  Aggiungere due nuove azioni al menu contestuale delle cartelle:
+  1. "Open All" — apre un tab per ogni connessione nella cartella. Se la
+     cartella contiene sottocartelle, mostra un dialog che chiede all'utente
+     se includere anche le connessioni delle sottocartelle (con il conteggio
+     per ciascuna opzione). Se il totale supera 5 connessioni, mostra un
+     dialog di conferma con il conteggio prima di procedere.
+  2. "Share Folder" — condivide tutte le connessioni contenute nella cartella
+     e ricorsivamente nelle sottocartelle con un altro utente. Richiede un
+     nuovo endpoint backend per batch share (condivisione multipla atomica).
+
+  File coinvolti:
+    MODIFICARE: client/src/components/Sidebar/treeHelpers.tsx
+    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx
+    MODIFICARE: client/src/components/Sidebar/TeamConnectionSection.tsx
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx
+    CREARE:     client/src/components/Dialogs/ShareFolderDialog.tsx
+    MODIFICARE: client/src/api/sharing.api.ts
+    MODIFICARE: server/src/services/sharing.service.ts
+    MODIFICARE: server/src/controllers/sharing.controller.ts
+    MODIFICARE: server/src/routes/sharing.routes.ts
+    MODIFICARE: server/prisma/schema.prisma
+
+
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI
 ================================================================================
@@ -1000,3 +1128,761 @@
     MODIFICATO: server/src/controllers/connections.controller.ts
     MODIFICATO: server/src/controllers/folders.controller.ts
     MODIFICATO: server/src/controllers/sharing.controller.ts
+
+
+================================================================================
+  SEZIONE D — MULTI-BACKEND / MULTI-GATEWAY
+================================================================================
+
+------------------------------------------------------------------------------
+[x] GATE-036 — Modello Gateway e CRUD backend (Prisma + API)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: TENANT-020 (completato), GUARD-026 (completato)
+  COMPLETATO: Gateway model with GatewayType enum (GUACD/SSH_BASTION), full CRUD API (5 endpoints: list, create, update, delete, test connectivity), tenant isolation, encrypted SSH_BASTION credentials (AES-256-GCM), isDefault per-type-per-tenant transaction logic, connection reference check on delete, audit logging, Zod input validation, Connection.gatewayId FK added
+
+  DESCRIZIONE:
+  Creare l'entita' Gateway nel database e le relative API CRUD. Un Gateway
+  rappresenta un backend riutilizzabile (istanza guacd per RDP o bastion SSH)
+  attraverso cui instradare le connessioni verso sottoreti/VLAN diverse.
+  Casi d'uso: Proxmox con piu' SDN, datacenter multipli con subnet isolate,
+  ambienti dove si aprono solo le porte verso guacd e il gateway SSH.
+  I gateway sono tenant-scoped (ogni tenant gestisce i propri).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (Gateway, GatewayType, Connection.gatewayId)
+    MODIFICATO: server/src/app.ts (montare gateway routes)
+    CREATO:     server/src/routes/gateway.routes.ts
+    CREATO:     server/src/controllers/gateway.controller.ts
+    CREATO:     server/src/services/gateway.service.ts
+
+
+------------------------------------------------------------------------------
+[x] GATE-037 — Routing RDP tramite gateway guacd dinamico
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: GATE-036 (completato)
+  COMPLETATO: Dynamic guacd routing for RDP connections — permission.service.ts includes gateway relation in canViewConnection(), connection.service.ts passes gatewayId+gateway through getConnection(), rdp.service.ts extended with guacdHost/guacdPort in RdpConnectionParams and token config, rdp.handler.ts resolves gateway and validates GUACD type before passing to token generation. Fully backward compatible: no gateway = default guacd from env vars.
+
+  DESCRIZIONE:
+  Instradare le connessioni RDP attraverso l'istanza guacd specificata nel
+  gateway della connessione, invece di usare l'unica istanza guacd globale.
+  guacamole-lite supporta gia' il routing dinamico: basta includere
+  guacdHost e guacdPort nel token cifrato per ogni connessione.
+  Se nessun gateway e' assegnato, si usa il guacd di default da env vars
+  (comportamento attuale preservato).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/services/permission.service.ts (gateway include in canViewConnection)
+    MODIFICATO: server/src/services/connection.service.ts (gatewayId+gateway in getConnection)
+    MODIFICATO: server/src/services/rdp.service.ts (guacdHost/guacdPort in interface + token)
+    MODIFICATO: server/src/socket/rdp.handler.ts (gateway resolution + type validation)
+
+
+------------------------------------------------------------------------------
+[x] GATE-038 — Routing SSH tramite bastion/jump host
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: GATE-036 (completato)
+  COMPLETATO: SSH bastion/jump host routing — ssh.service.ts: createSshConnectionViaBastion() with SSH2 forwardOut() tunnel (bastion→target TCP channel, second SSH2 client on forwarded stream, SshSession with bastionClient ref). ssh.handler.ts: gateway type check (SSH_BASTION), credential decryption via getGatewayCredentials(), conditional routing, dual-client cleanup. Fully backward compatible: no gateway = direct SSH connection.
+
+  DESCRIZIONE:
+  Instradare le connessioni SSH attraverso un bastion host (jump host) quando
+  la connessione ha un gateway di tipo SSH_BASTION. Il server apre prima una
+  connessione SSH verso il bastion, poi un tunnel TCP verso l'host target,
+  e infine stabilisce la sessione SSH finale attraverso il tunnel.
+  Se nessun gateway e' assegnato, connessione diretta (comportamento attuale).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/services/ssh.service.ts (createSshConnectionViaBastion, BastionConnectionParams, SshSession.bastionClient)
+    MODIFICATO: server/src/socket/ssh.handler.ts (gateway check, bastion routing, dual cleanup)
+    MODIFICATO: server/src/services/connection.service.ts (gateway data in getConnection)
+    MODIFICATO: server/src/services/permission.service.ts (gateway include in canViewConnection)
+    MODIFICATO: server/src/services/gateway.service.ts (getGatewayCredentials)
+
+
+------------------------------------------------------------------------------
+[x] GATE-039 — Frontend gestione gateway e assegnazione connessioni
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: GATE-036 (completato), GATE-037 (completato), GATE-038 (completato)
+  COMPLETATO: Full frontend gateway management — gateway.api.ts (CRUD + test endpoints), gatewayStore.ts (Zustand store), GatewayDialog.tsx (create/edit with type-conditional SSH_BASTION credentials), GatewayList.tsx (management page with table, test connectivity, edit/delete), /settings/gateways route in App.tsx, navigation link in SettingsPage.tsx. ConnectionDialog.tsx: gateway dropdown filtered by connection type (GUACD for RDP, SSH_BASTION for SSH) with "None (Direct connection)" default. Server-side: added gatewayId to connection create/update Zod schemas and service layer.
+
+  DESCRIZIONE:
+  Interfaccia frontend per gestire i gateway e assegnarli alle connessioni.
+  Include: pagina di gestione gateway (CRUD + test connettivita') e
+  selettore gateway opzionale nel dialog di creazione/modifica connessione.
+
+  FILE COINVOLTI:
+    CREATO:     client/src/api/gateway.api.ts
+    CREATO:     client/src/store/gatewayStore.ts
+    CREATO:     client/src/components/gateway/GatewayList.tsx
+    CREATO:     client/src/components/gateway/GatewayDialog.tsx
+    MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (gateway dropdown)
+    MODIFICATO: client/src/api/connections.api.ts (gatewayId in interfaces)
+    MODIFICATO: client/src/App.tsx (/settings/gateways route)
+    MODIFICATO: client/src/pages/SettingsPage.tsx (Manage Gateways nav button)
+    MODIFICATO: server/src/controllers/connections.controller.ts (gatewayId in Zod schemas)
+    MODIFICATO: server/src/services/connection.service.ts (gatewayId in create/update)
+
+
+------------------------------------------------------------------------------
+[x] SSHGW-049 — Container image SSH Gateway gestito (Alpine + OpenSSH)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Alpine-based SSH gateway container (Dockerfile, entrypoint.sh, sshd_config) with tunnel-only user, pubkey auth, TCP forwarding only, no shell access. CI/CD job in docker-build.yml for GHCR. Services added to all docker-compose files (dev/base/prod). Env vars SSH_GATEWAY_PORT and SSH_AUTHORIZED_KEYS in .env.example.
+
+  FILE COINVOLTI:
+    CREATO:     ssh-gateway/Dockerfile
+    CREATO:     ssh-gateway/entrypoint.sh
+    CREATO:     ssh-gateway/sshd_config
+    MODIFICATO: .github/workflows/docker-build.yml (job build-ssh-gateway)
+    MODIFICATO: docker-compose.dev.yml (servizio ssh-gateway)
+    MODIFICATO: docker-compose.yml (servizio ssh-gateway)
+    MODIFICATO: docker-compose.prod.yml (servizio ssh-gateway)
+    MODIFICATO: .env.example (SSH_GATEWAY_PORT, SSH_AUTHORIZED_KEYS)
+
+
+------------------------------------------------------------------------------
+[x] UI-046 — Refactoring Settings page: tabbed category layout
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Converted all settings and activity log pages into full-screen modal dialogs rendered from MainLayout — user never leaves the main page. SettingsDialog with 7 tabs (Profile, Connections, Security, Organization, Teams, Gateways, Administration) using vertical MUI Tabs with responsive mobile layout. AuditLogDialog with filters/table/pagination. Extracted TenantSection, TeamSection, GatewaySection from their former page components. Removed 5 routes from App.tsx, deleted 6 dead files (SettingsPage, TenantSettingsPage, TeamManagementPage, AuditLogPage, OrganizationSection, GatewayList). Tab state persisted via uiPreferencesStore. OAuth link redirect handled via useState initializers.
+
+  FILE COINVOLTI:
+    CREATO:     client/src/components/Settings/TenantSection.tsx
+    CREATO:     client/src/components/Settings/TeamSection.tsx
+    CREATO:     client/src/components/Settings/GatewaySection.tsx
+    CREATO:     client/src/components/Dialogs/SettingsDialog.tsx
+    CREATO:     client/src/components/Dialogs/AuditLogDialog.tsx
+    CREATO:     client/src/components/Settings/ProfileSection.tsx
+    CREATO:     client/src/components/Settings/ChangePasswordSection.tsx
+    CREATO:     client/src/components/Settings/ConnectionDefaultsSection.tsx
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (dialog state, OAuth URL handling)
+    MODIFICATO: client/src/App.tsx (removed 5 routes)
+    MODIFICATO: client/src/store/uiPreferencesStore.ts (settingsActiveTab)
+    ELIMINATO:  client/src/pages/SettingsPage.tsx
+    ELIMINATO:  client/src/pages/TenantSettingsPage.tsx
+    ELIMINATO:  client/src/pages/TeamManagementPage.tsx
+    ELIMINATO:  client/src/pages/AuditLogPage.tsx
+    ELIMINATO:  client/src/components/Settings/OrganizationSection.tsx
+    ELIMINATO:  client/src/components/gateway/GatewayList.tsx
+
+
+------------------------------------------------------------------------------
+[x] SSHGW-050 — Generazione e gestione chiavi SSH server-side per gateway gestiti
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-049
+  COMPLETATO: Server-side SSH key pair generation and lifecycle management for managed gateways. SshKeyPair Prisma model (Ed25519, per-tenant, encrypted private key with server-level AES-256-GCM). sshkey.service.ts with generateKeyPair, getPublicKey, getPrivateKey, rotateKeyPair. Server-level encryption via SERVER_ENCRYPTION_KEY (config.ts, crypto.service.ts encryptWithServerKey/decryptWithServerKey). API endpoints: POST/GET /api/gateways/ssh-keypair, POST /ssh-keypair/rotate, GET /ssh-keypair/private. Protected with requireTenantRole('ADMIN'). Audit actions SSH_KEY_GENERATE, SSH_KEY_ROTATE.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (SshKeyPair model, Tenant rel.)
+    CREATO:     server/src/services/sshkey.service.ts
+    MODIFICATO: server/src/services/crypto.service.ts (encryptWithServerKey)
+    MODIFICATO: server/src/routes/gateway.routes.ts (keypair endpoints)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (keypair)
+    MODIFICATO: server/src/config.ts (SERVER_ENCRYPTION_KEY)
+    MODIFICATO: .env.example (SERVER_ENCRYPTION_KEY)
+
+
+------------------------------------------------------------------------------
+[x] SSHGW-051 — Integrazione gateway SSH gestito nel backend (MANAGED_SSH)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-049, SSHGW-050
+  COMPLETATO: Added MANAGED_SSH gateway type for server-managed SSH gateways. Prisma GatewayType enum extended + migration. SSH handler routes MANAGED_SSH connections using tenant's server-managed SSH key pair (via sshkey.service.getPrivateKey) with fixed username "tunnel", bypassing vault credential decryption. Gateway service validates tenant has SSH key pair on MANAGED_SSH creation and rejects user-supplied credentials. Zod schema updated. Client: GatewayDialog with MANAGED_SSH option (default port 2222, info alert, no credential fields), ConnectionDialog filters MANAGED_SSH for SSH connections, GatewaySection shows green "Managed SSH" chip.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (GatewayType enum + migration)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (Zod schema)
+    MODIFICATO: server/src/services/gateway.service.ts (MANAGED_SSH validation)
+    MODIFICATO: server/src/socket/ssh.handler.ts (MANAGED_SSH routing with key-based auth)
+    MODIFICATO: client/src/api/gateway.api.ts (MANAGED_SSH type)
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (MANAGED_SSH UI)
+    MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (gateway filter)
+    MODIFICATO: client/src/components/Settings/GatewaySection.tsx (Managed SSH chip)
+
+
+------------------------------------------------------------------------------
+[x] SSHGW-052 — Frontend gateway SSH gestito: UI, status e configurazione
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-050, SSHGW-051
+  COMPLETATO: Already fully implemented as part of SSHGW-050 and SSHGW-051. All frontend MANAGED_SSH support verified: gateway.api.ts (MANAGED_SSH type, SshKeyPairData interface, 4 keypair API functions), GatewayDialog.tsx (MANAGED_SSH MenuItem, info alert, hidden credentials, default port 2222), GatewaySection.tsx (admin-only SSH Key Pair section with generate/rotate/copy/download/accordion, green Managed SSH chip), ConnectionDialog.tsx (MANAGED_SSH in SSH gateway filter), gatewayStore.ts (sshKeyPair state, fetch/generate/rotate actions).
+
+  FILE COINVOLTI:
+    MODIFICATO: client/src/api/gateway.api.ts (MANAGED_SSH, keypair API)
+    MODIFICATO: client/src/store/gatewayStore.ts (keypair state/actions)
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (MANAGED_SSH)
+    MODIFICATO: client/src/components/Settings/GatewaySection.tsx (managed chip, keypair section)
+    MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (filter)
+
+
+------------------------------------------------------------------------------
+[x] SSHGW-053 — Push chiave pubblica SSH al gateway tramite API HTTP sidecar
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-050
+  COMPLETATO: Added HTTP sidecar API to SSH gateway container (BusyBox httpd + CGI script key-api.sh on port 8022, Bearer token auth via GATEWAY_API_TOKEN). Server: pushKeyToGateway() and pushKeyToAllManagedGateways() in gateway.service.ts, push-key route, auto-push on MANAGED_SSH gateway creation and on key rotation. Client: Push Key button per gateway row with success/error feedback, apiPort field in GatewayDialog, rotation auto-push with Alert showing results. Added apiPort column to Gateway model, SSH_KEY_PUSH audit action, busybox-extras to Alpine container.
+
+  FILE COINVOLTI:
+    CREATO:     ssh-gateway/key-api.sh (CGI handler for BusyBox httpd)
+    MODIFICATO: ssh-gateway/Dockerfile (busybox-extras, CGI dir, expose 8022)
+    MODIFICATO: ssh-gateway/entrypoint.sh (start httpd sidecar)
+    MODIFICATO: docker-compose.dev.yml (sidecar port, env_file)
+    MODIFICATO: .env.example (GATEWAY_API_TOKEN)
+    MODIFICATO: server/prisma/schema.prisma (Gateway.apiPort, SSH_KEY_PUSH)
+    MODIFICATO: server/src/config.ts (gatewayApiToken)
+    MODIFICATO: server/src/services/gateway.service.ts (pushKey, pushAll, apiPort)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (pushKey, auto-push)
+    MODIFICATO: server/src/routes/gateway.routes.ts (push-key route)
+    MODIFICATO: client/src/api/gateway.api.ts (apiPort, pushKey, RotateKeyPairResponse)
+    MODIFICATO: client/src/store/gatewayStore.ts (pushKey action, rotate response)
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (apiPort field)
+    MODIFICATO: client/src/components/Settings/GatewaySection.tsx (Push Key button, rotation push results)
+
+------------------------------------------------------------------------------
+[x] SSHGW-066 — Rotazione automatica chiave SSH tenant (nightly cron)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSHGW-050, SSHGW-053
+  COMPLETATO: Added automatic SSH key rotation via node-cron nightly job (default 02:00 UTC). SshKeyPair model extended with expiresAt, autoRotateEnabled, rotationIntervalDays, lastAutoRotatedAt fields. New scheduler.service.ts with processKeyRotations() that finds keys expiring within configurable advance window, rotates them preserving policy fields, pushes to all MANAGED_SSH gateways (best-effort), and logs SSH_KEY_AUTO_ROTATE audit action. New REST endpoints: PATCH/GET /ssh-keypair/rotation for managing rotation policy. sshkey.service.ts refactored with updateRotationPolicy() (auto-computes expiresAt when enabling) and getRotationStatus() (computed nextRotationDate + daysUntilRotation). Graceful shutdown handlers added. Backend-only, no frontend changes.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/services/scheduler.service.ts
+    MODIFICATO: server/package.json (node-cron, @types/node-cron)
+    MODIFICATO: server/prisma/schema.prisma (SshKeyPair rotation fields, SSH_KEY_AUTO_ROTATE)
+    MODIFICATO: server/src/config.ts (keyRotationCron, keyRotationAdvanceDays)
+    MODIFICATO: server/src/services/sshkey.service.ts (RotateOptions, updateRotationPolicy, getRotationStatus)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (updateRotationPolicy, getRotationStatus)
+    MODIFICATO: server/src/routes/gateway.routes.ts (PATCH/GET /ssh-keypair/rotation)
+    MODIFICATO: server/src/index.ts (startKeyRotationJob, graceful shutdown)
+    MODIFICATO: .env.example (KEY_ROTATION_CRON, KEY_ROTATION_ADVANCE_DAYS)
+
+------------------------------------------------------------------------------
+[x] GATE-067 — Monitoraggio continuo e automatico della raggiungibilita' dei gateway
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Added continuous server-side gateway health monitoring with configurable TCP probe intervals. Schema extended with GatewayHealthStatus enum, monitoringEnabled, monitorIntervalMs, lastHealthStatus, lastCheckedAt, lastLatencyMs, lastError fields. New tcpProbe.ts utility extracted from existing inline net.Socket logic. New gatewayMonitor.service.ts with interval-based probe engine (Map<gatewayId, Timeout>), persists results to DB and broadcasts via Socket.IO. New /gateway-monitor Socket.IO namespace with JWT auth and tenant-scoped rooms. Monitors auto-start on server boot and stop on shutdown. Gateway CRUD operations trigger start/stop/restart of monitors. Manual test now also persists results. Frontend: real-time Status column reads from store (updated via Socket.IO), GatewayDialog has monitoring toggle and interval field, useGatewayMonitor hook mounted in MainLayout.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/utils/tcpProbe.ts
+    CREATO:     server/src/services/gatewayMonitor.service.ts
+    CREATO:     server/src/socket/gatewayMonitor.handler.ts
+    CREATO:     client/src/hooks/useGatewayMonitor.ts
+    MODIFICATO: server/prisma/schema.prisma (GatewayHealthStatus enum, monitoring fields)
+    MODIFICATO: server/src/lib/prisma.ts (GatewayHealthStatus export)
+    MODIFICATO: server/src/index.ts (startAllMonitors, stopAllMonitors lifecycle)
+    MODIFICATO: server/src/socket/index.ts (setupGatewayMonitorHandler)
+    MODIFICATO: server/src/services/gateway.service.ts (publicSelect, input types, monitor lifecycle, tcpProbe refactor)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (Zod validation for monitoring fields)
+    MODIFICATO: client/src/api/gateway.api.ts (GatewayHealthStatus, GatewayHealthEvent, monitoring fields)
+    MODIFICATO: client/src/store/gatewayStore.ts (applyHealthUpdate action)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (useGatewayMonitor hook)
+    MODIFICATO: client/src/components/Settings/GatewaySection.tsx (real-time Status column)
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (monitoring config fields)
+
+
+------------------------------------------------------------------------------
+[x] HEALTH-068 — Health e readiness probe per tutti i servizi con ordinamento avvio
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added health service with liveness (GET /api/health) and readiness (GET /api/ready) endpoints checking server initialization, database connectivity, and guacd reachability. Docker healthchecks added to all compose files (dev, base, prod) and Dockerfiles (server: wget to /api/health, client: wget to localhost:80). depends_on with service_healthy conditions ensure correct startup ordering (postgres+guacd before server, server before client). Dev startup ordering via wait-on devDependency: client waits for server health before starting.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/services/health.service.ts
+    CREATO:     server/src/routes/health.routes.ts
+    MODIFICATO: server/src/app.ts (import + mount health routes)
+    MODIFICATO: server/src/index.ts (markServerReady in listen callback)
+    MODIFICATO: docker-compose.dev.yml (guacd healthcheck)
+    MODIFICATO: docker-compose.yml (all service healthchecks + depends_on)
+    MODIFICATO: docker-compose.prod.yml (all service healthchecks + depends_on)
+    MODIFICATO: server/Dockerfile (HEALTHCHECK instruction)
+    MODIFICATO: client/Dockerfile (HEALTHCHECK instruction)
+    MODIFICATO: package.json (wait-on devDep, dev:client:wait script, updated dev script)
+
+
+------------------------------------------------------------------------------
+[x] ORCH-060 — Session tracking persistente e monitoraggio sessioni attive
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-049, SSHGW-050
+  COMPLETATO: Database-backed ActiveSession model with Prisma migration, session lifecycle service (start, heartbeat, idle detection, close, orphan recovery), RDP session controller replacing stateless rdp.handler.ts, SSH handler integrated with session service (heartbeat on data events + explicit heartbeat), admin endpoints (list active sessions, count, count by gateway, terminate), client-side heartbeat for SSH (Socket.IO) and RDP (HTTP polling 30s), maintenance jobs (mark idle 60s, cleanup closed daily), crash recovery on server start/shutdown.
+
+  DESCRIZIONE:
+  Fondazione per l'auto-scaling e il monitoraggio gateway: implementare un
+  sistema di tracking persistente delle sessioni attive (SSH e RDP) nel
+  database. Attualmente le sessioni SSH sono tracciate solo in una Map
+  in-memory (activeSessions in ssh.handler.ts), mentre le sessioni RDP sono
+  completamente stateless (un token Guacamole viene generato e dimenticato).
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma
+    CREATO:     server/src/services/session.service.ts
+    CREATO:     server/src/controllers/session.controller.ts
+    CREATO:     server/src/routes/session.routes.ts
+    MODIFICATO: server/src/socket/ssh.handler.ts
+    ELIMINATO:  server/src/socket/rdp.handler.ts (logic moved to controller)
+    MODIFICATO: server/src/app.ts
+    MODIFICATO: server/src/index.ts
+    MODIFICATO: client/src/components/Terminal/SshTerminal.tsx
+    MODIFICATO: client/src/components/RDP/RdpViewer.tsx
+    CREATO:     client/src/api/sessions.api.ts
+
+
+------------------------------------------------------------------------------
+[x] ORCH-061 — Cleanup sessioni inattive con timeout configurabile
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: ORCH-060
+  COMPLETATO: Implemented configurable inactivity timeout with 3-tier resolution
+    (gateway > tenant > system fallback). New sessionCleanup.service runs every 60s,
+    force-disconnects expired SSH sockets, marks expired RDP sessions as CLOSED.
+    Gateway dialog and tenant settings expose timeout config. RDP heartbeat detects
+    410 response, SSH terminal handles session:timeout event.
+
+  DESCRIZIONE:
+  Implementare la chiusura automatica delle sessioni inattive dopo un
+  periodo di timeout configurabile. Il timeout predefinito e' 1 ora (3600
+  secondi) ma puo' essere modificato a livello di gateway o a livello
+  tenant tramite le impostazioni. Un cron job server-side controlla
+  periodicamente le sessioni il cui lastActivityAt supera il timeout e le
+  chiude automaticamente, liberando risorse.
+
+  File coinvolti:
+    MODIFICATO: server/prisma/schema.prisma (Gateway.inactivityTimeoutSeconds,
+                Tenant.defaultSessionTimeoutSeconds)
+    CREATO:     server/src/services/sessionCleanup.service.ts
+    MODIFICATO: server/src/index.ts (avvio cron job cleanup)
+    MODIFICATO: server/src/config.ts (sessionInactivityTimeoutSeconds)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (timeout Zod)
+    MODIFICATO: server/src/services/gateway.service.ts (timeout field)
+    MODIFICATO: server/src/controllers/tenant.controller.ts (timeout Zod)
+    MODIFICATO: server/src/services/tenant.service.ts (timeout field)
+    MODIFICATO: client/src/api/gateway.api.ts (inactivityTimeoutSeconds)
+    MODIFICATO: client/src/api/tenant.api.ts (defaultSessionTimeoutSeconds)
+    MODIFICATO: client/src/store/tenantStore.ts (updateTenant type)
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (timeout input)
+    MODIFICATO: client/src/components/Settings/TenantSection.tsx (timeout field)
+    MODIFICATO: client/src/components/RDP/RdpViewer.tsx (heartbeat 410 handling)
+    MODIFICATO: client/src/components/Terminal/SshTerminal.tsx (session:timeout event)
+
+
+------------------------------------------------------------------------------
+[x] ORCH-062 — Container orchestrator abstraction layer (Docker + K8s)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SSHGW-051
+  COMPLETATO: Created pluggable container orchestration abstraction layer with IOrchestratorProvider interface (8 methods: isAvailable, deployContainer, removeContainer, listContainers, getContainerStatus, restartContainer, updateContainerEnv, getContainerLogs). Three providers: DockerProvider (dockerode with socket-based communication, image pull, port bindings, healthchecks, SSH key exec, container recreation for env updates, multiplexed log demuxing), KubernetesProvider (@kubernetes/client-node v1.4.0 with Deployment+ClusterIP Service per container, rolling restarts via annotation patch, pod log retrieval), NoneProvider (safe fallback, 501 on mutations). Auto-detection factory (detectOrchestrator) with configurable override via ORCHESTRATOR_TYPE env var. Prisma ManagedGatewayInstance model for tracking deployed containers. 6 config properties for Docker socket path, K8s namespace, container images.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/orchestrator/types.ts
+    CREATO:     server/src/orchestrator/docker.provider.ts
+    CREATO:     server/src/orchestrator/kubernetes.provider.ts
+    CREATO:     server/src/orchestrator/index.ts
+    CREATO:     server/src/orchestrator/none.provider.ts
+    MODIFICATO: server/prisma/schema.prisma (ManagedInstanceStatus enum, ManagedGatewayInstance model, Gateway.managedInstances)
+    MODIFICATO: server/src/config.ts (6 orchestrator env var configs)
+    MODIFICATO: server/src/index.ts (orchestrator init at startup)
+    MODIFICATO: server/src/lib/prisma.ts (ManagedInstanceStatus re-export)
+    MODIFICATO: server/package.json (dockerode, @kubernetes/client-node, @types/dockerode)
+    MODIFICATO: .env.example (Container Orchestrator section with 7 env vars)
+
+
+------------------------------------------------------------------------------
+[x] ORCH-063 — Deploy e lifecycle management gateway containers
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: ORCH-062, SSHGW-050, SSHGW-051
+  COMPLETATO: Added managed gateway container lifecycle management —
+    deploy, remove, scale, reconcile, and health-check via the orchestrator
+    abstraction layer. 5 new API endpoints, automated health monitoring
+    (30s) and reconciliation (5m) cron jobs, SSH key push to managed
+    instances on rotation. Guarded by orchestrator availability.
+
+  File coinvolti:
+    MODIFICATO: server/prisma/schema.prisma (Gateway.isManaged,
+                desiredReplicas; ManagedGatewayInstance.consecutiveFailures;
+                5 new AuditAction values)
+    CREATO:     server/src/services/managedGateway.service.ts
+    MODIFICATO: server/src/services/sshkey.service.ts (push key on rotate)
+    MODIFICATO: server/src/services/gateway.service.ts (publicSelect,
+                listGateways counts, deleteGateway cleanup)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (deploy,
+                undeploy, scale, listInstances, restartInstance)
+    MODIFICATO: server/src/routes/gateway.routes.ts (5 new routes)
+    MODIFICATO: server/src/index.ts (health check + reconcile cron jobs)
+
+
+------------------------------------------------------------------------------
+[x] ORCH-064 — Auto-scaling gateway basato su sessioni attive
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: ORCH-060 (completato), ORCH-063 (completato)
+  COMPLETATO: Auto-scaling for managed gateways — new autoscaler.service.ts with evaluateScaling() (30s cron) that calculates target replicas from ceil(activeSessions/sessionsPerInstance) clamped to min/max, scales up immediately via scaleGateway(), scales down with configurable cooldown (LIFO instance removal). New GET/PUT /gateways/:id/scaling endpoints with Zod validation. 6 new Gateway schema fields (autoScale, minReplicas, maxReplicas, sessionsPerInstance, scaleDownCooldownSeconds, lastScaleAction). New audit actions GATEWAY_SCALE_UP/GATEWAY_SCALE_DOWN. MAX_REPLICAS increased to 20.
+
+  DESCRIZIONE:
+  Implementare l'auto-scaling dei gateway managed basato sul conteggio
+  delle sessioni attive. Ogni gateway puo' abilitare l'auto-scaling con
+  una policy configurabile: numero minimo e massimo di repliche, e soglia
+  "sessioni per istanza" che determina quando scalare.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (Gateway scaling fields, AuditAction values)
+    CREATO:     server/src/services/autoscaler.service.ts
+    MODIFICATO: server/src/index.ts (cron job autoscaler)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (scaling endpoints, Zod schemas)
+    MODIFICATO: server/src/routes/gateway.routes.ts (scaling routes)
+    MODIFICATO: server/src/services/gateway.service.ts (publicSelect scaling fields)
+    MODIFICATO: server/src/services/managedGateway.service.ts (MAX_REPLICAS 10→20)
+
+
+------------------------------------------------------------------------------
+[x] ORCH-065 — Frontend: dashboard sessioni attive, scaling controls,
+               monitoring
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: ORCH-060, ORCH-063, ORCH-064
+  COMPLETATO: Added Orchestration tab (OWNER/ADMIN only) to SettingsDialog with two sub-tabs: Active Sessions dashboard (metric cards, filterable session table with 10s auto-refresh polling, terminate session) and Gateway Scaling (per-gateway accordion with deploy/undeploy, replicas slider, auto-scale config, scaling status display, instance list with restart). Extended gateway.api.ts with 4 new interfaces and 11 API functions, gatewayStore.ts with 6 state fields and 11 actions, uiPreferencesStore.ts with 3 orchestration prefs. Added Managed badge and instance count to GatewaySection table. Added auto-scaling config Accordion to GatewayDialog for managed gateways.
+
+  File coinvolti:
+    MODIFICATO: client/src/api/gateway.api.ts (interfaces, API functions, GatewayData fields)
+    MODIFICATO: client/src/store/gatewayStore.ts (session/scaling state and actions)
+    MODIFICATO: client/src/store/uiPreferencesStore.ts (orchestration prefs)
+    CREATO:     client/src/components/orchestration/SessionDashboard.tsx
+    CREATO:     client/src/components/orchestration/GatewayInstanceList.tsx
+    CREATO:     client/src/components/orchestration/ScalingControls.tsx
+    CREATO:     client/src/components/orchestration/SessionTimeoutConfig.tsx
+    CREATO:     client/src/components/orchestration/OrchestrationSection.tsx
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx (scaling config, timeout component)
+    MODIFICATO: client/src/components/Settings/GatewaySection.tsx (Managed badge, instance count)
+    MODIFICATO: client/src/components/Dialogs/SettingsDialog.tsx (Orchestration tab)
+
+
+------------------------------------------------------------------------------
+[x] SSHGW-077 — Pipeline GitHub Actions dedicata per build container SSH Gateway
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSHGW-049
+  COMPLETATO: Created dedicated GitHub Actions workflow (.github/workflows/ssh-gateway-build.yml) with path-filtered triggers (ssh-gateway/**), QEMU + Buildx multi-arch builds (linux/amd64, linux/arm64), ghcr.io push on non-PR events, Trivy security scanning with SARIF upload to GitHub Security tab. Removed duplicate build-ssh-gateway job from docker-build.yml.
+
+  DESCRIZIONE:
+  Creare un workflow GitHub Actions standalone dedicato esclusivamente alla build
+  e push del container SSH Gateway, separato dal workflow multi-servizio esistente
+  (docker-build.yml). Il workflow dedicato permettera' trigger indipendenti basati
+  sui cambiamenti alla directory ssh-gateway/, evitando build non necessarie degli
+  altri container (server, client) quando vengono modificati solo i file del
+  gateway. Includere path filtering, build multi-architettura (amd64/arm64),
+  e security scan dell'immagine.
+
+  File coinvolti:
+    CREATO:     .github/workflows/ssh-gateway-build.yml
+    MODIFICATO: .github/workflows/docker-build.yml
+
+
+================================================================================
+  SEZIONE E — ZERO TRUST HARDENING
+================================================================================
+
+
+------------------------------------------------------------------------------
+[x] ZT-036 — Security headers (helmet middleware)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added helmet middleware to Express server for comprehensive HTTP security headers. Configured CSP (restrictive 'self' for all resource types, 'none' for objects/frame-ancestors), HSTS (1-year max-age with includeSubDomains), X-Frame-Options DENY, X-Content-Type-Options nosniff, Referrer-Policy strict-origin-when-cross-origin. Helmet placed before all route handlers in app.ts.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/app.ts (import helmet, app.use(helmet({...})) before routes)
+    MODIFICATO: server/package.json (added helmet dependency)
+
+
+------------------------------------------------------------------------------
+[x] ZT-037 — Rate limiting login e account lockout
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added IP-based rate limiting (express-rate-limit) on /login, /verify-totp, /verify-sms endpoints (5 attempts per 15-min window, configurable via env vars). Added per-account lockout: 10 consecutive failed passwords lock the account for 30 minutes (tracked via failedLoginAttempts/lockedUntil fields in User model). Reset on successful login. All thresholds configurable via environment variables.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/middleware/loginRateLimit.middleware.ts
+    MODIFICATO: server/src/config.ts (loginRateLimit + accountLockout config)
+    MODIFICATO: .env.example (rate limit env vars)
+    MODIFICATO: server/prisma/schema.prisma (User: failedLoginAttempts, lockedUntil)
+    MODIFICATO: server/src/services/auth.service.ts (lockout check + tracking)
+    MODIFICATO: server/src/routes/auth.routes.ts (applied loginRateLimiter middleware)
+
+------------------------------------------------------------------------------
+[x] ZT-038 — Audit sessioni SSH/RDP (session start/end)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: AUDIT-013 (completato)
+  COMPLETATO: Added SESSION_START and SESSION_END audit actions. SSH sessions log start after connection established and end on cleanup with duration. RDP sessions embed audit metadata (userId, connectionId, IP) in the encrypted Guacamole token and hook into guacamole-lite open/close events for reliable server-side session lifecycle tracking with duration.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/utils/format.ts (shared formatDuration utility)
+    MODIFICATO: server/prisma/schema.prisma (SESSION_START, SESSION_END in AuditAction enum)
+    MODIFICATO: server/src/socket/ssh.handler.ts (audit logging for SSH session start/end)
+    MODIFICATO: server/src/services/rdp.service.ts (metadata field in token payload)
+    MODIFICATO: server/src/socket/rdp.handler.ts (pass audit metadata when generating token)
+    MODIFICATO: server/src/index.ts (guacamole-lite open/close event hooks for RDP audit)
+
+
+------------------------------------------------------------------------------
+[x] ZT-039 — Audit tentativi di login falliti
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: AUDIT-013 (completato)
+  COMPLETATO: Added LOGIN_FAILURE audit action and made AuditLog.userId nullable to support "user not found" scenarios. Audit logging added at all 5 login failure points in auth.service.ts: user_not_found, account_locked, oauth_only_account, invalid_password (with failedAttempts/accountLocked details), and email_not_verified. IP address passed from controller to service. Client-side AuditLogDialog updated with label, error color, and filter support.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (LOGIN_FAILURE enum, AuditLog.userId nullable)
+    MODIFICATO: server/src/services/audit.service.ts (userId optional in AuditLogInput)
+    MODIFICATO: server/src/services/auth.service.ts (ipAddress param, 5 audit log calls)
+    MODIFICATO: server/src/controllers/auth.controller.ts (pass req.ip to login)
+    MODIFICATO: server/src/controllers/audit.controller.ts (LOGIN_FAILURE in VALID_ACTIONS)
+    MODIFICATO: client/src/api/audit.api.ts (LOGIN_FAILURE in AuditAction type)
+    MODIFICATO: client/src/components/Dialogs/AuditLogDialog.tsx (label, color, filter)
+
+------------------------------------------------------------------------------
+[x] ZT-040 — Lock vault al logout
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added lockVault(userId) call in auth.service.ts logout() function. After deleting the refresh token, the vault is immediately locked — the master key buffer is zeroed out (fill(0)) and removed from the in-memory store. All team vault sessions for the user are also cleared via lockUserTeamVaults(). This eliminates the 30-minute TTL exposure window where the master key remained in memory after logout.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/src/services/auth.service.ts (import lockVault, call in logout())
+
+
+================================================================================
+  SEZIONE F — PASSWORD KEYCHAIN / SECRET VAULT
+================================================================================
+
+------------------------------------------------------------------------------
+[x] VAULT-053 — Modelli Prisma e servizio CRUD backend per i secrets del keychain
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Created foundation for Password Keychain / Secret Vault system.
+    Added Prisma schema: SecretType and SecretScope enums, VaultSecret model
+    (encrypted JSON blob, multi-scope), VaultSecretVersion (version history),
+    VaultFolder (secret organization), TenantVaultMember (tenant key distribution),
+    11 new AuditAction values, hasTenantVaultKey on Tenant, relations on User/Team/Tenant.
+    Added SecretPayload discriminated union types (Login, SSH Key, Certificate, API Key, Secure Note).
+    Extended crypto.service.ts with tenant vault in-memory store and 7 functions
+    (generateTenantMasterKey, encryptTenantKey, decryptTenantKey, storeTenantVaultSession,
+    getTenantMasterKey, lockTenantVault, lockUserTenantVaults).
+    Added canViewSecret/canManageSecret to permission.service.ts with scope-aware auth.
+    Created secret.service.ts with full CRUD (createSecret, getSecret, updateSecret,
+    deleteSecret, listSecrets), versioning (listSecretVersions, restoreSecretVersion),
+    tenant vault init (initTenantVault, distributeTenantKeyToUser), and
+    resolveSecretEncryptionKey routing by scope.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (2 enums, 4 models, relations, AuditAction values)
+    MODIFICATO: server/src/lib/prisma.ts (SecretType, SecretScope re-exports)
+    MODIFICATO: server/src/types/index.ts (SecretPayload discriminated union)
+    MODIFICATO: server/src/services/crypto.service.ts (tenant vault store + 7 functions)
+    MODIFICATO: server/src/services/permission.service.ts (canViewSecret, canManageSecret)
+    CREATO:     server/src/services/secret.service.ts (full CRUD + versioning + tenant vault)
+
+------------------------------------------------------------------------------
+[x] VAULT-054 — API routes, controller e servizio sharing per i secrets
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-053
+  COMPLETATO: Exposed vault secrets via REST API with full Zod validation, audit
+    logging, and secret sharing between users/teams within tenant boundary.
+    Added SharedSecret Prisma model with encrypted data re-encryption pattern.
+    Extended NotificationType enum (SECRET_SHARED, SECRET_SHARE_REVOKED).
+    Created secret.controller.ts with discriminated union Zod schemas for 5 secret
+    types, 15 handlers (CRUD, versioning, sharing, tenant vault management).
+    Created secret.routes.ts mounted at /api/secrets with tenant-vault routes
+    ordered before /:id to avoid param collision.
+    Created secretSharing.service.ts with shareSecret (decrypt->re-encrypt->upsert->notify),
+    unshareSecret, updateSecretSharePermission, listSecretShares.
+    Updated permission.service.ts: canViewSecret now falls through scope checks
+    to SharedSecret lookup, enabling shared secret access.
+    Updated secret.service.ts: getSecret handles shared access type (decrypts from
+    SharedSecret table with user's personal key), listSecrets includes shared secrets
+    in unfiltered queries.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (SharedSecret model, NotificationType enum, User/VaultSecret relations)
+    CREATO:     server/src/controllers/secret.controller.ts (Zod schemas + 15 handlers)
+    CREATO:     server/src/routes/secret.routes.ts (15 routes at /api/secrets)
+    CREATO:     server/src/services/secretSharing.service.ts (share/unshare/updatePerm/listShares)
+    MODIFICATO: server/src/app.ts (mount /api/secrets)
+    MODIFICATO: server/src/services/permission.service.ts (shared secret access in canViewSecret)
+    MODIFICATO: server/src/services/secret.service.ts (shared secret read + list support)
+
+------------------------------------------------------------------------------
+[x] VAULT-055 — Integrazione backend connessioni con secrets del vault
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-053
+  COMPLETATO: Connections can now reference a VaultSecret (LOGIN or SSH_KEY) via
+    credentialSecretId instead of storing inline encrypted credentials. Added Prisma
+    migration making 6 credential columns nullable and adding credentialSecretId FK
+    with onDelete: SetNull. New resolveCredentialsFromSecret() in connection.service.ts
+    handles scope-based key resolution (PERSONAL/TEAM/TENANT/SHARED), decrypts secret
+    payload, validates type compatibility (LOGIN for RDP, LOGIN or SSH_KEY for SSH).
+    getConnectionCredentials() returns ResolvedCredentials with optional privateKey/passphrase.
+    SSH service supports private key authentication in both direct and bastion connections.
+    Sharing service skips credential re-encryption for vault-backed connections (recipient
+    resolves from vault secret at session time). Vault service revealPassword handles both
+    vault-backed and inline connections. Permission service includes credentialSecret in
+    canViewConnection. Client-side types updated with credentialSecretId fields. Fully
+    backward compatible — existing inline credential connections work unchanged.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (nullable creds, credentialSecretId FK, VaultSecret relation)
+    MODIFICATO: server/src/types/index.ts (SshKeySecretData.username, ResolvedCredentials)
+    MODIFICATO: server/src/services/connection.service.ts (resolveCredentialsFromSecret, getConnectionCredentials, create/update/get/list)
+    MODIFICATO: server/src/services/ssh.service.ts (privateKey/passphrase in SshConnectionParams and BastionConnectionParams)
+    MODIFICATO: server/src/socket/ssh.handler.ts (pass privateKey/passphrase through)
+    MODIFICATO: server/src/socket/rdp.handler.ts (SSH_KEY rejection guard)
+    MODIFICATO: server/src/controllers/connections.controller.ts (credentialSecretId in Zod schemas)
+    MODIFICATO: server/src/controllers/secret.controller.ts (username in sshKeyDataSchema)
+    MODIFICATO: server/src/services/sharing.service.ts (vault-backed connection sharing flow)
+    MODIFICATO: server/src/services/vault.service.ts (revealPassword for vault-backed connections)
+    MODIFICATO: server/src/services/permission.service.ts (credentialSecret in canViewConnection include)
+    MODIFICATO: client/src/api/connections.api.ts (credentialSecretId in interfaces)
+
+------------------------------------------------------------------------------
+[x] VAULT-056 — Frontend pagina Keychain, store Zustand e API layer
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-054
+  COMPLETATO: Built complete frontend for Password Keychain. Created API layer
+    (secrets.api.ts) with 15 functions covering all secret CRUD, sharing, versioning,
+    and tenant vault endpoints. Created Zustand store (secretStore.ts) with secrets
+    list management, filters, and optimistic favorite toggle. Built KeychainPage with
+    two-column layout (320px list panel + detail view). SecretListPanel with search,
+    scope/type filters (persisted via uiPreferencesStore), scrollable list with type
+    icons, scope chips, expiry warnings, and right-click context menu. SecretDetailView
+    with type-specific field rendering for all 5 types, SensitiveField component with
+    reveal/copy and 30-second auto-hide timer, version history accordion. SecretDialog
+    with dynamic forms per type (LOGIN with password generator, SSH_KEY/CERTIFICATE with
+    file upload, API_KEY with dynamic header key-value rows, SECURE_NOTE). ShareSecretDialog
+    with UserPicker for tenant context, email fallback, permission picker, and share
+    management. SecretVersionHistory with restore confirmation dialog. Added /keychain
+    route in App.tsx and Keychain navigation icon in MainLayout AppBar.
+
+  FILE COINVOLTI:
+    CREATO:     client/src/api/secrets.api.ts (TypeScript interfaces + 15 API functions)
+    CREATO:     client/src/store/secretStore.ts (Zustand store: state, filters, CRUD actions)
+    CREATO:     client/src/pages/KeychainPage.tsx (two-column layout, dialog orchestration)
+    CREATO:     client/src/components/Keychain/SecretListPanel.tsx (search, filters, list, context menu)
+    CREATO:     client/src/components/Keychain/SecretDetailView.tsx (type-specific fields, reveal/copy, actions)
+    CREATO:     client/src/components/Keychain/SecretDialog.tsx (dynamic form for 5 types, file upload, password gen)
+    CREATO:     client/src/components/Keychain/ShareSecretDialog.tsx (user picker, permission, share management)
+    CREATO:     client/src/components/Keychain/SecretVersionHistory.tsx (version list, restore confirmation)
+    MODIFICATO: client/src/store/uiPreferencesStore.ts (keychainScopeFilter, keychainTypeFilter, keychainSortBy)
+    MODIFICATO: client/src/App.tsx (/keychain route in ProtectedRoute)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (Keychain icon in AppBar)
+
+------------------------------------------------------------------------------
+[x] VAULT-057 — Integrazione frontend ConnectionDialog con secret picker
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: VAULT-055, VAULT-056
+  COMPLETATO: Added vault secret picker integration to ConnectionDialog and
+    ConnectAsDialog. Created SecretPicker.tsx component (MUI Autocomplete with
+    300ms debounced server-side search, type-filtered for RDP=LOGIN, SSH=LOGIN+SSH_KEY,
+    scope badges, vault lock awareness). Modified ConnectionDialog.tsx with
+    Manual/Keychain ToggleButtonGroup — keychain mode shows SecretPicker and hides
+    username/password fields; edit mode pre-selects keychain if credentialSecretId
+    exists; submit sends credentialSecretId or clears it. Modified ConnectAsDialog.tsx
+    to show linked secret name chip with type icon in "Use saved credentials" option.
+    No changes needed to connections.api.ts (types already had credentialSecretId).
+
+  FILE COINVOLTI:
+    CREATO:     client/src/components/Keychain/SecretPicker.tsx (Autocomplete, debounced search, type filtering)
+    MODIFICATO: client/src/components/Dialogs/ConnectionDialog.tsx (credential mode toggle, SecretPicker integration)
+    MODIFICATO: client/src/components/Dialogs/ConnectAsDialog.tsx (secret name display in saved credentials option)
+
+------------------------------------------------------------------------------
+[x] VAULT-058 — External sharing: link temporanei per condivisione esterna
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: VAULT-054
+  COMPLETATO: Implemented external secret sharing via temporary links with
+    zero-knowledge cryptographic model. Backend: added ExternalSecretShare Prisma
+    model with migration; extended crypto.service.ts with hashToken (SHA-256),
+    deriveKeyFromToken (HKDF-SHA256), deriveKeyFromTokenAndPin (Argon2id); created
+    externalShare.service.ts (create, access, info, revoke, list, cleanup);
+    created externalShare.controller.ts with Zod validation; created
+    publicShare.routes.ts (public, rate-limited 10 req/min/IP); added authenticated
+    routes to secret.routes.ts; mounted /api/share in app.ts; added hourly cleanup
+    scheduler in index.ts. Frontend: added external share API types and functions
+    (authenticated + public axios instance) to secrets.api.ts; created
+    ExternalShareDialog.tsx (expiry presets, max access count, optional PIN,
+    copy-to-clipboard, existing shares list with revoke); created PublicSharePage.tsx
+    (standalone public page, PIN prompt, type-aware secret field rendering); added
+    /share/:token route to App.tsx; added External Share button to SecretDetailView;
+    integrated ExternalShareDialog into KeychainPage.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (ExternalSecretShare model, User/VaultSecret relations)
+    MODIFICATO: server/src/services/crypto.service.ts (hashToken, deriveKeyFromToken, deriveKeyFromTokenAndPin)
+    CREATO:     server/src/services/externalShare.service.ts
+    CREATO:     server/src/controllers/externalShare.controller.ts
+    CREATO:     server/src/routes/publicShare.routes.ts
+    MODIFICATO: server/src/routes/secret.routes.ts (external share routes)
+    MODIFICATO: server/src/app.ts (mount /api/share)
+    MODIFICATO: server/src/index.ts (cleanup scheduler)
+    MODIFICATO: client/src/api/secrets.api.ts (external share types and API functions)
+    CREATO:     client/src/components/Keychain/ExternalShareDialog.tsx
+    CREATO:     client/src/pages/PublicSharePage.tsx
+    MODIFICATO: client/src/App.tsx (public route /share/:token)
+    MODIFICATO: client/src/components/Keychain/SecretDetailView.tsx (External Share button)
+    MODIFICATO: client/src/pages/KeychainPage.tsx (ExternalShareDialog integration)
+
+
+------------------------------------------------------------------------------
+[x] VAULT-059 — Secret versioning UI, scadenza con alert, e audit migliorato
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: VAULT-056, VAULT-054
+  COMPLETATO: Implemented three keychain refinements. (1) Version data endpoint:
+    added GET /api/secrets/:id/versions/:version/data to decrypt and return specific
+    version data; added getSecretVersionData() in secret.service.ts with permission
+    checks and scope-aware decryption; shared secret users get 403 (correct security
+    behavior). (2) Secret expiry notifications: created secretExpiry.service.ts with
+    checkExpiringSecrets() that queries secrets expiring within 30 days, determines
+    recipients by scope (PERSONAL->owner, TEAM->team admin, TENANT->tenant admin),
+    deduplicates notifications within 24h, creates SECRET_EXPIRING/SECRET_EXPIRED
+    notifications with real-time Socket.IO push; registered 6-hour interval in index.ts;
+    added SECRET_EXPIRING and SECRET_EXPIRED to NotificationType enum with migration.
+    (3) Enhanced frontend: rewrote SecretVersionHistory.tsx with timeline layout (dots +
+    connector lines), "View" button that fetches decrypted version data, field-by-field
+    diff highlighting (changed fields in orange); added Alert banner in SecretDetailView
+    for secrets expiring within 30 days; improved chip label in SecretListPanel; added
+    Badge on keychain icon in MainLayout showing count of secrets expiring within 7 days;
+    expanded AuditLogDialog with 30+ new audit action labels and color coding for
+    SECRET_*, TENANT_VAULT_*, TENANT_*, TEAM_*, GATEWAY_*, SSH_KEY_*, SESSION_*, and
+    SMS_* actions; expanded AuditAction type union in audit.api.ts; added expiringCount
+    state and fetchExpiringCount() to secretStore.
+
+  FILE COINVOLTI:
+    MODIFICATO: server/prisma/schema.prisma (SECRET_EXPIRING, SECRET_EXPIRED in NotificationType)
+    CREATO:     server/src/services/secretExpiry.service.ts
+    MODIFICATO: server/src/index.ts (6-hour expiry check interval)
+    MODIFICATO: server/src/services/secret.service.ts (getSecretVersionData)
+    MODIFICATO: server/src/controllers/secret.controller.ts (getVersionData handler)
+    MODIFICATO: server/src/routes/secret.routes.ts (GET /:id/versions/:version/data)
+    MODIFICATO: client/src/api/secrets.api.ts (getSecretVersionData function)
+    MODIFICATO: client/src/api/audit.api.ts (expanded AuditAction type)
+    MODIFICATO: client/src/store/secretStore.ts (expiringCount, fetchExpiringCount)
+    MODIFICATO: client/src/components/Keychain/SecretVersionHistory.tsx (timeline UI, view, diff)
+    MODIFICATO: client/src/components/Keychain/SecretDetailView.tsx (Alert banner, currentData prop)
+    MODIFICATO: client/src/components/Keychain/SecretListPanel.tsx (chip label improvement)
+    MODIFICATO: client/src/components/Layout/MainLayout.tsx (Badge on keychain icon)
+    MODIFICATO: client/src/components/Dialogs/AuditLogDialog.tsx (30+ new action labels and colors)

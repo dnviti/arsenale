@@ -1,3 +1,5 @@
+import { execSync } from 'child_process';
+import path from 'path';
 import http from 'http';
 import app from './app';
 import { config } from './config';
@@ -5,6 +7,33 @@ import { initializePassport } from './config/passport';
 import { setupSocketIO } from './socket';
 import { logger, toGuacamoleLogLevel } from './utils/logger';
 import prisma from './lib/prisma';
+import { startKeyRotationJob, stopAllJobs } from './services/scheduler.service';
+import { startAllMonitors, stopAllMonitors } from './services/gatewayMonitor.service';
+import { cleanupExpiredShares } from './services/externalShare.service';
+import { checkExpiringSecrets } from './services/secretExpiry.service';
+import { markServerReady } from './services/health.service';
+import * as sessionService from './services/session.service';
+import { initSessionCleanup, checkAndCloseInactiveSessions } from './services/sessionCleanup.service';
+import { detectOrchestrator, OrchestratorType } from './orchestrator';
+import * as managedGatewayService from './services/managedGateway.service';
+import * as autoscalerService from './services/autoscaler.service';
+
+async function runDatabaseMigrations() {
+  const serverDir = path.resolve(__dirname, '..');
+  try {
+    logger.info('Running database migrations...');
+    execSync('npx prisma migrate deploy', {
+      cwd: serverDir,
+      stdio: 'pipe',
+      env: { ...process.env },
+    });
+    logger.info('Database migrations applied successfully');
+  } catch (err) {
+    const message = err instanceof Error ? err.message : err;
+    logger.error('Database migration failed:', message);
+    throw err;
+  }
+}
 
 async function runStartupMigrations() {
   // Mark existing users without emailVerified as verified so they aren't locked out
@@ -30,13 +59,98 @@ async function runStartupMigrations() {
 }
 
 async function main() {
+  await runDatabaseMigrations();
   await runStartupMigrations();
+
+  // Recover orphaned sessions from previous server instance
+  const recovered = await sessionService.recoverOrphanedSessions();
+  if (recovered > 0) {
+    logger.info(`Recovered ${recovered} orphaned session(s) from previous server instance`);
+  }
+
   await initializePassport();
 
   const server = http.createServer(app);
 
   // Setup Socket.io for SSH
-  setupSocketIO(server);
+  const io = setupSocketIO(server);
+
+  // Initialize session cleanup with Socket.IO reference
+  initSessionCleanup(io);
+
+  // Start scheduled jobs (SSH key rotation cron)
+  startKeyRotationJob();
+
+  // Start gateway health monitors
+  startAllMonitors();
+
+  // Detect and initialize container orchestrator
+  const orchestrator = await detectOrchestrator();
+  logger.info(`Orchestrator provider: ${orchestrator.type}`);
+
+  // Managed gateway health check and reconciliation (only if orchestrator available)
+  if (orchestrator.type !== OrchestratorType.NONE) {
+    setInterval(() => {
+      managedGatewayService.healthCheck().catch((err) => {
+        logger.error('Managed gateway health check failed:', err);
+      });
+    }, 30 * 1000);
+
+    setInterval(() => {
+      managedGatewayService.reconcileAll().catch((err) => {
+        logger.error('Managed gateway reconciliation failed:', err);
+      });
+    }, 5 * 60 * 1000);
+
+    setInterval(() => {
+      autoscalerService.evaluateScaling().catch((err) => {
+        logger.error('Auto-scaling evaluation failed:', err);
+      });
+    }, 30 * 1000);
+
+    logger.info('[managed-gateway] Health check (30s), reconciliation (5m), and auto-scaling (30s) scheduled');
+  }
+
+  // Cleanup expired external shares every hour
+  setInterval(() => {
+    cleanupExpiredShares().catch((err) => {
+      logger.error('Failed to cleanup expired external shares:', err);
+    });
+  }, 60 * 60 * 1000);
+
+  // Check for expiring secrets every 6 hours
+  setInterval(() => {
+    checkExpiringSecrets().catch((err) => {
+      logger.error('Secret expiry check failed:', err);
+    });
+  }, 6 * 60 * 60 * 1000);
+
+  // Mark idle sessions every minute
+  setInterval(() => {
+    sessionService.markIdleSessions(config.sessionIdleThresholdMinutes).then((count) => {
+      if (count > 0) logger.info(`Marked ${count} session(s) as idle`);
+    }).catch((err) => {
+      logger.error('Failed to mark idle sessions:', err);
+    });
+  }, 60 * 1000);
+
+  // Close inactive sessions every minute
+  setInterval(() => {
+    checkAndCloseInactiveSessions().then((count) => {
+      if (count > 0) logger.info(`Session cleanup: closed ${count} inactive session(s)`);
+    }).catch((err) => {
+      logger.error('Session inactivity cleanup failed:', err);
+    });
+  }, 60 * 1000);
+
+  // Cleanup old closed sessions daily
+  setInterval(() => {
+    sessionService.cleanupClosedSessions(config.sessionCleanupRetentionDays).then((count) => {
+      if (count > 0) logger.info(`Cleaned up ${count} old closed session(s)`);
+    }).catch((err) => {
+      logger.error('Failed to cleanup closed sessions:', err);
+    });
+  }, 24 * 60 * 60 * 1000);
 
   // Setup guacamole-lite for RDP
   if (config.nodeEnv !== 'test') {
@@ -69,6 +183,32 @@ async function main() {
         );
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      guacServer.on('open', (clientConnection: any) => {
+        const metadata = clientConnection.connectionSettings?.metadata;
+        if (metadata) {
+          logger.debug(`Guacamole RDP tunnel opened for connection ${metadata.connectionId}`);
+        }
+      });
+
+      // Safety net: close persistent session if client didn't explicitly end it
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      guacServer.on('close', (clientConnection: any) => {
+        try {
+          const token = clientConnection.connectionSettings?.token;
+          if (token) {
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
+            const crypto = require('crypto');
+            const hash = crypto.createHash('sha256').update(token).digest('hex');
+            sessionService.endSessionByGuacTokenHash(hash).catch((err: unknown) => {
+              logger.error('Failed to end RDP session by guac token:', err);
+            });
+          }
+        } catch {
+          // Ignore — session will be cleaned up by idle timeout
+        }
+      });
+
       logger.info(
         `Guacamole WebSocket server listening on port ${config.guacamoleWsPort}`
       );
@@ -83,7 +223,32 @@ async function main() {
   server.listen(config.port, () => {
     logger.info(`Server running on port ${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
+    markServerReady();
   });
+
+  const shutdown = async () => {
+    logger.info('Shutting down...');
+    stopAllMonitors();
+    stopAllJobs();
+
+    // Close all active sessions gracefully
+    try {
+      const closed = await sessionService.recoverOrphanedSessions();
+      if (closed > 0) {
+        logger.info(`Closed ${closed} active session(s) on shutdown`);
+      }
+    } catch (err) {
+      logger.error('Failed to close sessions on shutdown:', err);
+    }
+
+    server.close(() => {
+      logger.info('HTTP server closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 }
 
 main().catch((err) => logger.error(err));

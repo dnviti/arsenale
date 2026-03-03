@@ -17,6 +17,15 @@
 
 
 
+
+
+
+
+
+
+
+
+
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI
 ================================================================================
@@ -36,102 +45,6 @@
 ================================================================================
 
 
-------------------------------------------------------------------------------
-[ ] GATE-037 — Routing RDP tramite gateway guacd dinamico
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: GATE-036
-
-  DESCRIZIONE:
-  Instradare le connessioni RDP attraverso l'istanza guacd specificata nel
-  gateway della connessione, invece di usare l'unica istanza guacd globale.
-  guacamole-lite supporta gia' il routing dinamico: basta includere
-  guacdHost e guacdPort nel token cifrato per ogni connessione.
-  Se nessun gateway e' assegnato, si usa il guacd di default da env vars
-  (comportamento attuale preservato).
-
-  DETTAGLI TECNICI:
-  Backend:
-    - rdp.service.ts generateGuacamoleToken(): aggiungere parametri opzionali
-      guacdHost e guacdPort. Se presenti, includerli nell'oggetto connection
-      del token: { connection: { type: 'rdp', guacdHost, guacdPort, settings } }
-    - connection.controller.ts (endpoint sessione RDP): quando la connessione
-      ha un gatewayId, caricare il Gateway e passare host/port del gateway
-      a generateGuacamoleToken()
-    - connection.service.ts: includere relazione gateway nelle query connessioni
-    - Fallback: nessun gateway = guacd da config (GUACD_HOST/GUACD_PORT)
-    - NOTA: guacamole-lite gestisce tutto internamente — un singolo server
-      WebSocket (porta 3002) instrada verso guacd diversi in base al token
-  File coinvolti:
-    MODIFICARE: server/src/services/rdp.service.ts
-    MODIFICARE: server/src/controllers/connection.controller.ts
-    MODIFICARE: server/src/services/connection.service.ts
-
-
-------------------------------------------------------------------------------
-[ ] GATE-038 — Routing SSH tramite bastion/jump host
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: GATE-036
-
-  DESCRIZIONE:
-  Instradare le connessioni SSH attraverso un bastion host (jump host) quando
-  la connessione ha un gateway di tipo SSH_BASTION. Il server apre prima una
-  connessione SSH verso il bastion, poi un tunnel TCP verso l'host target,
-  e infine stabilisce la sessione SSH finale attraverso il tunnel.
-  Se nessun gateway e' assegnato, connessione diretta (comportamento attuale).
-
-  DETTAGLI TECNICI:
-  Backend:
-    - ssh.service.ts: nuova funzione createSshConnectionViaBastion() che:
-      1. Connette al bastion host con credenziali del Gateway (decifrate dalla vault)
-      2. Apre un canale TCP forwarded (client.forwardOut()) verso target host:port
-      3. Crea un secondo SSH2 Client sullo stream forwarded verso il target
-      4. Restituisce la sessione finale (stessa interfaccia SshSession)
-    - ssh.handler.ts: controllare se la connessione ha un gateway SSH_BASTION;
-      se si', usare createSshConnectionViaBastion() al posto di createSshConnection()
-    - SFTP: funziona automaticamente (stesso client SSH2 sottostante)
-    - Gestione cleanup: chiudere entrambi i client SSH (bastion + target)
-      quando la sessione termina
-    - Fallback: nessun gateway = connessione diretta (createSshConnection)
-  File coinvolti:
-    MODIFICARE: server/src/services/ssh.service.ts
-    MODIFICARE: server/src/socket/ssh.handler.ts
-    MODIFICARE: server/src/services/connection.service.ts
-
-
-------------------------------------------------------------------------------
-[ ] GATE-039 — Frontend gestione gateway e assegnazione connessioni
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: GATE-036, GATE-037, GATE-038
-
-  DESCRIZIONE:
-  Interfaccia frontend per gestire i gateway e assegnarli alle connessioni.
-  Include: pagina di gestione gateway (CRUD + test connettivita') e
-  selettore gateway opzionale nel dialog di creazione/modifica connessione.
-
-  DETTAGLI TECNICI:
-  Frontend:
-    - API layer: client/src/api/gateway.api.ts (CRUD + test endpoint)
-    - Store: client/src/store/gatewayStore.ts (Zustand, lista gateway)
-    - Pagina gestione gateway (admin area o Settings):
-      - Lista gateway: nome, tipo (GUACD/SSH_BASTION), host:port, descrizione
-      - Dialog crea/modifica gateway (campi: nome, tipo, host, porta,
-        credenziali per SSH_BASTION, descrizione, flag default)
-      - Bottone "Test connessione" per ogni gateway
-      - Indicatore visuale per gateway default
-    - ConnectionDialog.tsx: aggiungere dropdown opzionale "Gateway"
-      - Filtrato per tipo connessione: gateway GUACD per RDP, SSH_BASTION per SSH
-      - Opzione "Nessuno (connessione diretta)" come default
-      - Mostrare host:port del gateway selezionato come hint
-  File coinvolti:
-    CREARE:     client/src/api/gateway.api.ts
-    CREARE:     client/src/store/gatewayStore.ts
-    CREARE:     client/src/components/gateway/GatewayList.tsx
-    CREARE:     client/src/components/gateway/GatewayDialog.tsx
-    MODIFICARE: client/src/components/connections/ConnectionDialog.tsx
-
 
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
@@ -143,143 +56,10 @@
 ------------------------------------------------------------------------------
 
 
-------------------------------------------------------------------------------
-[ ] ZT-036 — Security headers (helmet middleware)
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Aggiungere il middleware helmet per impostare gli header HTTP di sicurezza
-  standard. Attualmente l'app non invia nessun header di sicurezza (CSP, HSTS,
-  X-Frame-Options, X-Content-Type-Options, Referrer-Policy), esponendola a
-  attacchi XSS, clickjacking e content sniffing.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - Installare helmet: npm install helmet
-    - Aggiungere app.use(helmet({...})) in server/src/app.ts prima delle routes
-    - Configurare Content-Security-Policy per permettere le risorse del client
-    - Configurare HSTS con max-age appropriato (31536000s = 1 anno)
-    - Abilitare X-Frame-Options: DENY (l'app non deve essere in iframe)
-    - Abilitare X-Content-Type-Options: nosniff
-    - Configurare Referrer-Policy: strict-origin-when-cross-origin
-  File coinvolti:
-    - server/src/app.ts
-    - server/package.json
 
 
-------------------------------------------------------------------------------
-[ ] ZT-037 — Rate limiting login e account lockout
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Aggiungere rate limiting sull'endpoint POST /api/auth/login per prevenire
-  attacchi brute-force. Attualmente non c'e' nessun limite ai tentativi
-  di login, permettendo attacchi automatizzati illimitati.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - Creare middleware server/src/middleware/loginRateLimit.middleware.ts
-    - Usare express-rate-limit (gia' pattern esistente in smsRateLimit.middleware.ts)
-    - Limiti: 5 tentativi per 15 minuti per IP (configurabile via env vars)
-    - Window sliding, risposta 429 con Retry-After header
-    - Opzionale: tracciare tentativi falliti per email per lockout account
-      (es. 10 fallimenti consecutivi → lockout 30 minuti)
-    - Applicare il middleware su POST /login in auth.routes.ts
-  File coinvolti:
-    - server/src/middleware/loginRateLimit.middleware.ts (nuovo)
-    - server/src/routes/auth.routes.ts
 
 
-------------------------------------------------------------------------------
-[ ] ZT-038 — Audit sessioni SSH/RDP (session start/end)
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: AUDIT-013 (completato)
-
-  DESCRIZIONE:
-  Registrare nel log audit l'inizio e la fine di ogni sessione SSH e RDP.
-  Attualmente le sessioni remote non vengono loggate: non si puo' sapere
-  chi si e' connesso a quale host, quando, e per quanto tempo.
-  Questo e' un requisito fondamentale Zero Trust.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - Aggiungere SESSION_START e SESSION_END all'enum AuditAction in schema.prisma
-    - Eseguire migrazione Prisma (db:push o db:migrate)
-    - SSH handler (server/src/socket/ssh.handler.ts):
-      - Loggare SESSION_START quando la connessione SSH e' stabilita
-        (details: { connectionId, host, port, protocol: 'SSH' })
-      - Loggare SESSION_END su disconnect/cleanup
-        (details: { connectionId, duration, protocol: 'SSH' })
-    - RDP handler (server/src/socket/rdp.handler.ts o rdp.service.ts):
-      - Loggare SESSION_START quando il token Guacamole viene generato
-        (details: { connectionId, host, port, protocol: 'RDP' })
-      - Loggare SESSION_END quando la sessione WebSocket viene chiusa
-        (details: { connectionId, duration, protocol: 'RDP' })
-  File coinvolti:
-    - server/prisma/schema.prisma (enum AuditAction)
-    - server/src/socket/ssh.handler.ts
-    - server/src/socket/rdp.handler.ts o server/src/services/rdp.service.ts
-
-
-------------------------------------------------------------------------------
-[ ] ZT-039 — Audit tentativi di login falliti
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: AUDIT-013 (completato)
-
-  DESCRIZIONE:
-  Registrare nel log audit ogni tentativo di login fallito (password errata,
-  email non trovata, email non verificata). Attualmente i login falliti
-  non vengono tracciati, rendendo impossibile rilevare attacchi brute-force
-  o compromissioni di account.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - Aggiungere LOGIN_FAILURE all'enum AuditAction in schema.prisma
-    - Eseguire migrazione Prisma
-    - In auth.service.ts login():
-      - Loggare LOGIN_FAILURE prima di lanciare l'errore per password errata
-        (details: { reason: 'invalid_password', email }, ipAddress da req)
-      - Loggare LOGIN_FAILURE per email non trovata
-        (details: { reason: 'user_not_found', email })
-      - Loggare LOGIN_FAILURE per email non verificata
-        (details: { reason: 'email_not_verified', email })
-    - Nota: il login fallito non ha un userId valido (l'utente potrebbe non
-      esistere), quindi usare userId null o un valore speciale
-  File coinvolti:
-    - server/prisma/schema.prisma (enum AuditAction)
-    - server/src/services/auth.service.ts
-    - server/src/controllers/auth.controller.ts (passare IP al service)
-
-
-------------------------------------------------------------------------------
-[ ] ZT-040 — Lock vault al logout
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Bloccare la vault (rimuovere la master key dalla memoria) quando l'utente
-  effettua il logout. Attualmente la funzione logout() cancella solo il
-  refresh token dal DB, ma la master key resta in memoria fino alla scadenza
-  del TTL (default 30 minuti), creando una finestra di esposizione.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - In auth.service.ts logout(): dopo aver cancellato il refresh token,
-      chiamare la funzione di lock vault dal crypto.service.ts
-    - Verificare che deleteVaultSession() o lockVault() azzeri il buffer
-      della master key (fill(0)) prima di rimuoverlo dalla Map
-    - Considerare anche il lock della team vault se presente
-    - Loggare VAULT_LOCK nell'audit (gia' presente nell'enum)
-  File coinvolti:
-    - server/src/services/auth.service.ts (logout function)
-    - server/src/services/crypto.service.ts (importare lockVault)
 
 
 ------------------------------------------------------------------------------
@@ -450,6 +230,624 @@
 
 
 ================================================================================
+  SEZIONE F — PASSWORD KEYCHAIN / SECRET VAULT
+================================================================================
+
+
+
+
+
+
+
+
+
+================================================================================
+  SEZIONE G — GATEWAY ORCHESTRATION / AUTO-SCALING
+================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+================================================================================
+  SEZIONE H — SCOUTED FEATURES (2026-03-02)
+================================================================================
+
+
+------------------------------------------------------------------------------
+[ ] PROTO-069 — Supporto protocollo VNC via backend nativo Guacamole
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Aggiungere VNC come terzo protocollo di connessione. Il demone guacd gia'
+  gestisce connessioni VNC nativamente (stesso meccanismo di RDP), quindi
+  l'infrastruttura backend e' gia' presente. VNC e' essenziale per
+  connettersi a server Linux con desktop grafico, VM headless, console
+  KVM/IPMI, e interfacce Proxmox/ESXi. Tutti i principali competitor
+  (mRemoteNG, Royal TS, Devolutions RDM, MobaXterm) supportano VNC.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Estendere enum ConnectionType con VNC
+    - Aggiungere campo vncSettings Json? al modello Connection
+    - Eseguire migrazione Prisma
+
+  Backend:
+    - Creare server/src/services/vnc.service.ts:
+      - generateVncGuacamoleToken(): genera token cifrato con parametri
+        VNC per guacamole-lite (hostname, port, password, color-depth,
+        cursor, read-only, clipboard-encoding, swap-red-blue)
+      - Supporto gateway GUACD (stessa logica di rdp.service.ts)
+    - Estendere server/src/socket/rdp.handler.ts (o creare vnc.handler.ts):
+      - Endpoint POST /sessions/vnc per generazione token
+      - Riutilizzare lo stesso WebSocket tunnel guacamole-lite (gia' attivo
+        sulla porta 3002)
+    - connections.controller.ts: aggiungere VNC ai Zod schemas
+    - connection.service.ts: supportare tipo VNC nel CRUD
+
+  Frontend:
+    - Creare client/src/components/VNC/VncViewer.tsx:
+      - Riutilizzare la logica di RdpViewer.tsx (entrambi usano
+        guacamole-common-js per il rendering)
+      - Adattare per parametri VNC-specifici
+    - ConnectionDialog.tsx: aggiungere tipo VNC con impostazioni dedicate:
+      - Color depth (8-bit, 16-bit, 24-bit, 32-bit)
+      - Cursor mode (local, remote)
+      - Read-only toggle
+      - Clipboard encoding (ISO 8859-1, UTF-8, UTF-16, CP1252)
+      - Swap red/blue toggle (per server con canali colore invertiti)
+    - TabPanel.tsx: gestire rendering VncViewer per tab tipo VNC
+    - Opzionale: VncSettingsSection per impostazioni globali VNC
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (ConnectionType, Connection.vncSettings)
+    CREARE:     server/src/services/vnc.service.ts
+    MODIFICARE: server/src/socket/rdp.handler.ts (o CREARE vnc.handler.ts)
+    MODIFICARE: server/src/controllers/connections.controller.ts (Zod VNC)
+    MODIFICARE: server/src/services/connection.service.ts (VNC support)
+    CREARE:     client/src/components/VNC/VncViewer.tsx
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx (VNC type)
+    MODIFICARE: client/src/components/Tabs/TabPanel.tsx (VNC rendering)
+
+
+------------------------------------------------------------------------------
+[ ] REC-070 — Registrazione e riproduzione sessioni SSH e RDP
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: ORCH-060 (session tracking)
+
+  DESCRIZIONE:
+  Registrare le sessioni SSH e RDP per compliance, formazione e audit
+  avanzato. Per le sessioni RDP, Guacamole supporta la registrazione
+  nativa server-side tramite parametri nel token (recording-path,
+  recording-name). Per SSH, i dati del terminale possono essere catturati
+  come stream I/O con timestamp (formato asciinema/asciicast v2) e
+  riprodotti in-browser con xterm.js. Le registrazioni creano una traccia
+  di audit immutabile, complementare ai log testuali gia' esistenti.
+  Questa e' una delle funzionalita' enterprise piu' richieste (presente
+  in Devolutions RDM, Teleport, HashiCorp Boundary).
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Nuovo modello SessionRecording:
+        model SessionRecording {
+          id              String   @id @default(uuid())
+          userId          String
+          connectionId    String
+          protocol        String   // SSH | RDP | VNC
+          filePath        String   // percorso file registrazione
+          fileSize        Int?
+          duration        Int?     // durata in secondi
+          format          String   // 'asciicast' | 'guac' | 'webm'
+          status          String   @default("RECORDING") // RECORDING | COMPLETE | ERROR
+          createdAt       DateTime @default(now())
+          completedAt     DateTime?
+
+          user       User       @relation(fields: [userId], references: [id])
+          connection Connection @relation(fields: [connectionId], references: [id])
+
+          @@index([userId])
+          @@index([connectionId])
+          @@index([createdAt])
+        }
+    - Aggiungere relazioni in User e Connection
+    - Aggiungere AuditAction: SESSION_RECORD_START, SESSION_RECORD_VIEW
+    - Eseguire migrazione Prisma
+
+  Backend — RDP recording:
+    - vnc/rdp.service.ts: aggiungere parametri Guacamole al token:
+      recording-path: /recordings/{userId}/{sessionId}
+      recording-name: {timestamp}.guac
+      recording-include-keys: true (opzionale, per keystroke logging)
+    - Il file .guac viene scritto da guacd nella directory configurata
+    - Post-sessione: convertire .guac in .webm con guac-encode (o servire
+      direttamente il formato Guacamole per il player nativo)
+
+  Backend — SSH recording:
+    - In ssh.handler.ts: intercettare i dati del canale SSH (stream.on
+      'data') e scrivere ogni chunk con timestamp nel formato asciicast v2
+      (JSON Lines: {"version":2,"width":W,"height":H} header + [time,
+      "o", data] events)
+    - Salvare il file .cast nella directory configurata
+    - Aggiornare metadata nel DB alla fine della sessione
+
+  Backend — Storage e API:
+    - Creare server/src/services/recording.service.ts:
+      - startRecording(), completeRecording(), getRecording(),
+        listRecordings(), deleteRecording(), streamRecordingFile()
+    - Directory configurabile via env var RECORDING_PATH (default
+      ./recordings/)
+    - API: GET /api/recordings (lista), GET /api/recordings/:id/stream
+      (download/stream file), DELETE /api/recordings/:id
+    - Policy: recording obbligatorio/opzionale configurabile per tenant
+
+  Frontend:
+    - Creare player SSH: componente xterm.js in modalita' replay che
+      legge il file .cast e riproduce i dati con timing originale
+      (play/pause/seek/speed controls)
+    - Creare player RDP: componente video HTML5 per .webm, oppure
+      integrare guacamole-common-js session player per formato .guac
+    - RecordingsPage o sezione in Settings/Administration: lista
+      registrazioni con filtri (utente, connessione, data), play inline,
+      download
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (SessionRecording, AuditAction)
+    CREARE:     server/src/services/recording.service.ts
+    CREARE:     server/src/routes/recording.routes.ts
+    CREARE:     server/src/controllers/recording.controller.ts
+    MODIFICARE: server/src/socket/ssh.handler.ts (cattura stream I/O)
+    MODIFICARE: server/src/services/rdp.service.ts (parametri recording)
+    MODIFICARE: server/src/config.ts (RECORDING_PATH, recording policy)
+    CREARE:     client/src/components/Recording/SshPlayer.tsx
+    CREARE:     client/src/components/Recording/RdpPlayer.tsx
+    CREARE:     client/src/api/recordings.api.ts
+    MODIFICARE: server/src/app.ts (mount recording routes)
+
+
+------------------------------------------------------------------------------
+[ ] IO-071 — Import/export connessioni (CSV, JSON, mRemoteNG, file RDP)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Permettere l'importazione e l'esportazione delle connessioni in diversi
+  formati per facilitare la migrazione da altri strumenti e il backup.
+  Formati supportati in export: CSV e JSON. Formati supportati in import:
+  CSV (con mapping colonne), JSON, XML mRemoteNG, e file .rdp standard.
+  L'export puo' opzionalmente includere le credenziali (richiede vault
+  sbloccata e conferma esplicita). L'import cifra automaticamente le
+  credenziali importate con la vault key dell'utente.
+  Tutti i principali competitor (mRemoteNG, Royal TS, Devolutions RDM)
+  supportano import/export.
+
+  DETTAGLI TECNICI:
+  Backend:
+    - Creare server/src/services/importExport.service.ts:
+      - exportConnections(userId, format, options): decifra credenziali
+        se richiesto, genera CSV o JSON
+      - importConnectionsFromCsv(userId, csvData, columnMapping):
+        parsing con mapping colonne, validazione, cifratura credenziali
+      - importConnectionsFromJson(userId, jsonData): validazione schema,
+        cifratura
+      - importConnectionsFromMremoteng(userId, xmlData): parsing XML
+        mRemoteNG (confCons.xml), mapping campi (Name, Hostname, Port,
+        Protocol, Username, Password, Description, Panel→Folder)
+      - importConnectionsFromRdp(userId, rdpFileContent): parsing formato
+        .rdp (key:type:value), estrazione full address, username, ecc.
+      - Duplicate detection: confronto per host+port+type, opzione skip/
+        overwrite/rename
+    - Creare controller e routes:
+      - POST /api/connections/export (body: { format, includeCredentials })
+      - POST /api/connections/import (multipart/form-data, file + options)
+      - Proteggere con authenticate, vault unlock required per credentials
+
+  Frontend:
+    - Creare client/src/components/Dialogs/ImportDialog.tsx:
+      - Step 1: file upload (drag & drop, accept .csv, .json, .xml, .rdp)
+      - Step 2: formato auto-detect + preview dati
+      - Step 3: per CSV, mapping colonne (dropdown per ogni colonna)
+      - Step 4: duplicate handling (skip/overwrite/rename)
+      - Step 5: risultato con conteggio importati/skippati/errori
+    - Creare client/src/components/Dialogs/ExportDialog.tsx:
+      - Selezione formato (CSV/JSON)
+      - Toggle "Include credentials" (warning di sicurezza)
+      - Selezione scope (tutte, cartella specifica, selezione)
+    - Aggiungere bottoni Import/Export nel context menu sidebar o settings
+    - Creare client/src/api/importExport.api.ts
+
+  File coinvolti:
+    CREARE:     server/src/services/importExport.service.ts
+    CREARE:     server/src/controllers/importExport.controller.ts
+    CREARE:     server/src/routes/importExport.routes.ts
+    MODIFICARE: server/src/app.ts (mount import/export routes)
+    CREARE:     client/src/components/Dialogs/ImportDialog.tsx
+    CREARE:     client/src/components/Dialogs/ExportDialog.tsx
+    CREARE:     client/src/api/importExport.api.ts
+    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx (bottoni)
+
+
+------------------------------------------------------------------------------
+[ ] UX-072 — Indicatore raggiungibilita' connessioni nella sidebar
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Mostrare un indicatore visivo (pallino verde/rosso/grigio) accanto a
+  ogni connessione nella sidebar per indicare se l'host target e'
+  raggiungibile. Utilizza probe TCP periodici riutilizzando l'utility
+  tcpProbe.ts gia' sviluppata per il monitoraggio gateway (GATE-067).
+  L'indicatore da' visibilita' immediata sullo stato delle macchine
+  prima di tentare una connessione. Configurabile per tenant (on/off,
+  intervallo). I risultati vengono trasmessi via Socket.IO per
+  aggiornamenti in tempo reale. Rispetta i confini di rete: se una
+  connessione ha un gateway assegnato, il probe viene effettuato
+  attraverso il gateway (SSH probe via bastion, TCP diretto per guacd).
+
+  DETTAGLI TECNICI:
+  Backend:
+    - Creare server/src/services/connectionMonitor.service.ts:
+      - startMonitoring(connections[]): avvia probe periodici per le
+        connessioni dell'utente (interval configurabile, default 60s)
+      - stopMonitoring(userId): ferma i probe
+      - probeConnection(connection): TCP probe verso host:port, timeout 5s
+        - Se connessione ha gateway SSH_BASTION/MANAGED_SSH: eseguire
+          il probe dal server (il target e' raggiungibile solo via gateway)
+        - Se connessione ha gateway GUACD: TCP probe diretto (il server
+          deve raggiungere l'host)
+      - Risultato: { connectionId, status: 'online'|'offline'|'unknown',
+        latencyMs, checkedAt }
+    - Socket.IO namespace /connection-monitor:
+      - Broadcast stato a user room quando cambia
+      - Client si connette al login, riceve aggiornamenti
+    - Endpoint opzionale: POST /api/connections/:id/probe (probe singolo
+      on-demand)
+    - Configurazione tenant: monitoringEnabled, monitorIntervalSeconds
+      (da aggiungere a Tenant o come setting separato)
+
+  Frontend:
+    - Estendere ConnectionTree.tsx:
+      - Piccolo pallino colorato (8px) prima del nome connessione:
+        verde = online, rosso = offline, grigio = unknown/disabled
+      - Tooltip con latenza e ultimo check
+    - Creare client/src/hooks/useConnectionMonitor.ts:
+      - Connessione al namespace Socket.IO /connection-monitor
+      - Stato locale: Map<connectionId, { status, latencyMs, checkedAt }>
+    - Estendere connectionsStore.ts o creare store dedicato:
+      - connectionHealth: Record<string, HealthStatus>
+      - updateConnectionHealth action
+    - uiPreferencesStore: toggle per mostrare/nascondere indicatori
+    - Riutilizzare server/src/utils/tcpProbe.ts (gia' esistente)
+
+  File coinvolti:
+    CREARE:     server/src/services/connectionMonitor.service.ts
+    CREARE:     server/src/socket/connectionMonitor.handler.ts
+    CREARE:     client/src/hooks/useConnectionMonitor.ts
+    MODIFICARE: server/src/socket/index.ts (setup handler)
+    MODIFICARE: server/src/index.ts (avvio monitor)
+    MODIFICARE: client/src/components/Sidebar/ConnectionTree.tsx (indicatore)
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx (hook)
+    MODIFICARE: client/src/store/uiPreferencesStore.ts (toggle)
+
+
+================================================================================
+  SEZIONE I — SSO & DOMAIN CREDENTIAL PASSTHROUGH (Scouted 2026-03-02)
+================================================================================
+
+
+------------------------------------------------------------------------------
+[ ] SSO-073 — RDP domain field: schema, dialogs, Guacamole token
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Aggiungere il campo `domain` alle connessioni RDP. Guacamole supporta
+  nativamente il parametro `domain` per l'autenticazione NLA, ma attualmente
+  l'app non lo passa mai. Questo task aggiunge domain come campo opzionale
+  cifrato su Connection, estende ConnectionDialog e ConnectAsDialog con un
+  input Domain (visibile solo per RDP), e lo propaga a generateGuacamoleToken().
+  Il campo domain viene anche aggiunto ai vault secrets di tipo LOGIN.
+
+  DETTAGLI TECNICI:
+  Prisma (server/prisma/schema.prisma):
+    - Aggiungere al modello Connection:
+        encryptedDomain  String?
+        domainIV         String?
+        domainTag        String?
+    - Migrazione Prisma (colonne nullable, nessuna perdita dati)
+
+  Server types (server/src/types/index.ts):
+    - Aggiungere `domain?: string` a LoginSecretData
+    - Aggiungere `domain?: string` a ResolvedCredentials (o equivalente)
+
+  Server services:
+    - server/src/services/rdp.service.ts:
+      - Aggiungere `domain?: string` a RdpConnectionParams
+      - In generateGuacamoleToken(): se params.domain e' truthy, aggiungere
+        `settings.domain = params.domain` all'oggetto config (riga 82)
+    - server/src/services/connection.service.ts:
+      - createConnection(): cifrare domain insieme a username/password
+      - updateConnection(): cifrare domain se fornito
+      - getConnectionCredentials(): decifrare domain da Connection o da
+        LoginSecretData quando si usa un vault secret
+
+  Server handler (server/src/socket/rdp.handler.ts):
+    - sessionSchema: aggiungere `domain: z.string().optional()`
+    - POST /rdp: passare domain override o domain risolto a
+      generateGuacamoleToken()
+
+  Client:
+    - client/src/store/tabsStore.ts: aggiungere `domain?: string` a
+      CredentialOverride
+    - client/src/api/connections.api.ts: aggiungere `domain?: string`
+      a ConnectionInput, ConnectionUpdate, ConnectionData
+    - client/src/components/Dialogs/ConnectionDialog.tsx: aggiungere
+      TextField "Domain (optional)" visibile quando type=RDP
+    - client/src/components/Dialogs/ConnectAsDialog.tsx: aggiungere
+      TextField "Domain (optional)" in modalita' manual per RDP
+    - client/src/components/RDP/RdpViewer.tsx: passare credentials.domain
+      nel body POST /sessions/rdp
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (Connection domain fields)
+    MODIFICARE: server/src/types/index.ts (LoginSecretData, ResolvedCredentials)
+    MODIFICARE: server/src/services/rdp.service.ts (RdpConnectionParams, token)
+    MODIFICARE: server/src/services/connection.service.ts (encrypt/decrypt domain)
+    MODIFICARE: server/src/socket/rdp.handler.ts (sessionSchema, domain param)
+    MODIFICARE: client/src/store/tabsStore.ts (CredentialOverride)
+    MODIFICARE: client/src/api/connections.api.ts (domain field)
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx (Domain input)
+    MODIFICARE: client/src/components/Dialogs/ConnectAsDialog.tsx (Domain input)
+    MODIFICARE: client/src/components/RDP/RdpViewer.tsx (domain nel POST body)
+
+
+------------------------------------------------------------------------------
+[ ] SSO-074 — SAML 2.0 SSO authentication via Passport.js
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: OAUTH-029 (completato), OIDC-035 (completato)
+
+  DESCRIZIONE:
+  Aggiungere SAML 2.0 come metodo di autenticazione enterprise accanto ai
+  provider OAuth2/OIDC esistenti. Usa @node-saml/passport-saml con IdP
+  metadata URL per configurazione automatica. Cattura attributi SAML
+  inclusi UPN (User Principal Name), domain e group memberships dalla
+  assertion. Salva le informazioni domain estratte su OAuthAccount (nuova
+  colonna JSON samlAttributes) per permettere alle feature downstream di
+  inferire il dominio AD dell'utente. Supporta SP-initiated e IdP-initiated
+  SSO. Compatibile con Azure AD/Entra ID, Okta, OneLogin, ADFS, FreeIPA
+  (via Ipsilon), Keycloak, Authentik, e qualsiasi IdP SAML 2.0.
+
+  DETTAGLI TECNICI:
+  Dipendenza npm (server/package.json):
+    - @node-saml/passport-saml (successore di passport-saml)
+
+  Variabili ambiente (.env.example):
+    SAML_ENTRY_POINT=             # IdP SSO URL
+    SAML_ISSUER=rdm-app           # SP Entity ID
+    SAML_CALLBACK_URL=http://localhost:3001/api/auth/saml/callback
+    SAML_CERT=                    # IdP signing certificate (PEM, single line)
+    SAML_METADATA_URL=            # Opzionale: auto-fetch IdP metadata
+    SAML_WANT_AUTHN_RESPONSE_SIGNED=true
+    SAML_PROVIDER_NAME=SAML SSO
+
+  Config (server/src/config.ts):
+    - Aggiungere blocco `saml` sotto `oauth`:
+      saml: { enabled, entryPoint, issuer, callbackUrl, cert, metadataUrl,
+              wantAuthnResponseSigned, providerName }
+
+  Prisma schema:
+    - Aggiungere SAML all'enum AuthProvider: LOCAL | GOOGLE | MICROSOFT |
+      GITHUB | OIDC | SAML
+    - Aggiungere al modello OAuthAccount:
+        samlAttributes  Json?   // UPN, domain, groups dall'assertion
+    - Migrazione Prisma
+
+  Passport strategy (server/src/config/passport.ts):
+    - Registrare nuova strategia SAML con claim mapping:
+      - Email da nameID o claim emailaddress
+      - UPN da claim upn
+      - Domain da UPN (user@domain.com -> domain.com) o da claim
+        windowsdomainname
+      - Groups da claim Group (array)
+    - Nota: il verify callback SAML ha firma diversa (profile, done) vs
+      OAuth (accessToken, refreshToken, profile, done) — creare
+      makeSamlVerifyCallback() separato
+
+  Routes (server/src/routes/oauth.routes.ts):
+    - GET /api/auth/saml -> avvia login SAML (passport.authenticate('saml'))
+    - POST /api/auth/saml/callback -> gestisce assertion response SAML
+      (SAML usa POST per ACS, non GET come OAuth)
+    - GET /api/auth/saml/metadata -> serve SP metadata XML per config IdP
+    - Nota: aggiungere express.urlencoded() solo sulla route SAML callback
+
+  Frontend:
+    - client/src/components/Auth/OAuthButtons.tsx: aggiungere bottone SAML
+      con label dal providerName dell'endpoint /api/auth/oauth/providers
+    - Callback flow: stesso flusso di OIDC (redirect → server handles →
+      redirect back con token)
+
+  File coinvolti:
+    MODIFICARE: server/package.json (@node-saml/passport-saml)
+    MODIFICARE: server/prisma/schema.prisma (AuthProvider enum, samlAttributes)
+    MODIFICARE: server/src/config.ts (blocco config SAML)
+    MODIFICARE: server/src/config/passport.ts (registrazione strategia SAML)
+    MODIFICARE: server/src/routes/oauth.routes.ts (route SAML + POST callback)
+    MODIFICARE: server/src/controllers/oauth.controller.ts (gestione provider SAML)
+    MODIFICARE: server/src/services/oauth.service.ts (storage samlAttributes)
+    MODIFICARE: server/src/app.ts (express.urlencoded per SAML callback)
+    MODIFICARE: client/src/components/Auth/OAuthButtons.tsx (bottone SAML)
+    MODIFICARE: .env.example (variabili SAML)
+
+
+------------------------------------------------------------------------------
+[ ] SSO-075 — User domain credential profile (domain identity)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSO-073
+
+  DESCRIZIONE:
+  Permettere agli utenti di configurare una "identita' di dominio" sul loro
+  profilo: nome dominio AD, username di dominio, e opzionalmente una password
+  di dominio salvata cifrata nel vault. Questo profilo serve come source of
+  truth per le credenziali domain quando si usa la modalita' "domain
+  passthrough" (SSO-076). Auto-inferenza: quando un utente SAML/OIDC fa login
+  con un UPN (es. john@contoso.com), il sistema suggerisce automaticamente
+  domain=CONTOSO, username=john. Gli utenti possono anche configurare
+  manualmente la loro identita' di dominio nelle Settings. La password domain,
+  se salvata, e' cifrata con la master key del vault e segue lo stesso
+  lifecycle lock/unlock.
+
+  DETTAGLI TECNICI:
+  Prisma schema (server/prisma/schema.prisma):
+    - Aggiungere al modello User:
+        domainName               String?   // es. "CONTOSO" o "contoso.com"
+        domainUsername           String?   // es. "john.doe"
+        encryptedDomainPassword  String?
+        domainPasswordIV         String?
+        domainPasswordTag        String?
+        domainAutoInferred       Boolean   @default(false)
+    - Aggiungere a AuditAction enum:
+        DOMAIN_PROFILE_UPDATE, DOMAIN_PROFILE_CLEAR
+
+  Server service (server/src/services/domain.service.ts) — NUOVO:
+    - resolveDomainCredentials(userId): restituisce { domain, username,
+      password }. Decifra password da User con vault master key. Lancia
+      errore se vault e' locked.
+    - inferDomainIdentity(email, samlAttributes?): euristica per derivare
+      NETBIOS domain + username:
+        1. SAML claim windowsdomainname -> domain (priorita' massima)
+        2. SAML claim UPN -> split a @ -> domain dal suffisso, username
+           dal prefisso
+        3. Email -> split a @ -> domain = uppercase primo segmento
+           (es. CONTOSO da contoso.com), username = local part
+
+  Server controller (server/src/controllers/user.controller.ts):
+    - GET  /api/user/domain-profile -> getDomainProfile
+    - PUT  /api/user/domain-profile -> updateDomainProfile
+    - DELETE /api/user/domain-profile -> clearDomainProfile
+    - POST /api/user/domain-profile/infer -> inferDomainIdentity
+    - Zod schemas per validazione
+
+  Server routes (server/src/routes/user.routes.ts):
+    - Aggiungere 4 route sotto authenticate middleware
+
+  OAuth service (server/src/services/oauth.service.ts):
+    - findOrCreateOAuthUser: dopo login SAML, se utente non ha domain
+      profile e SAML attributes contengono UPN/domain, auto-impostare
+      domainName + domainUsername con domainAutoInferred=true (solo al
+      primo login, non sovrascrivere config manuale)
+
+  Frontend:
+    - client/src/components/Settings/DomainProfileSection.tsx — NUOVO:
+      - Mostra identita' domain corrente (domain\username) o "Not configured"
+      - Bottone "Auto-detect" -> chiama endpoint infer, mostra suggerimento
+      - Campi: Domain, Username, Password (opzionale, salvata nel vault)
+      - Bottoni Save / Clear
+    - client/src/pages/SettingsPage.tsx: aggiungere DomainProfileSection
+    - client/src/api/user.api.ts: getDomainProfile(), updateDomainProfile(),
+      clearDomainProfile(), inferDomainProfile()
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (User domain fields, AuditAction)
+    CREARE:     server/src/services/domain.service.ts
+    MODIFICARE: server/src/services/user.service.ts (domain profile CRUD)
+    MODIFICARE: server/src/controllers/user.controller.ts (domain endpoints)
+    MODIFICARE: server/src/routes/user.routes.ts (domain routes)
+    MODIFICARE: server/src/services/oauth.service.ts (auto-infer su SAML login)
+    MODIFICARE: server/src/types/index.ts (DomainProfile interface)
+    CREARE:     client/src/components/Settings/DomainProfileSection.tsx
+    MODIFICARE: client/src/api/user.api.ts (domain profile API)
+    MODIFICARE: client/src/pages/SettingsPage.tsx (domain profile section)
+
+
+------------------------------------------------------------------------------
+[ ] SSO-076 — Credential passthrough: domain profile to RDP/SSH connections
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSO-073, SSO-075
+
+  DESCRIZIONE:
+  Aggiungere una nuova modalita' ConnectAs "Use domain credentials" che applica
+  automaticamente il domain credential profile dell'utente (SSO-075) quando si
+  connette a target RDP o SSH. Per RDP, domain/username/password vengono passati
+  a Guacamole. Per SSH, il formato domain\username viene usato per target Windows.
+  Aggiungere anche un'impostazione per connessione "default credential mode"
+  (saved/domain/prompt) cosi' le connessioni possono essere configurate per
+  usare automaticamente il profilo domain. Quando l'utente clicca Connect su una
+  connessione con defaultCredentialMode='domain', il sistema risolve il domain
+  profile senza mostrare alcun dialog.
+
+  DETTAGLI TECNICI:
+  Prisma schema (server/prisma/schema.prisma):
+    - Aggiungere al modello Connection:
+        defaultCredentialMode  String?  // 'saved' | 'domain' | 'prompt' | null
+
+  Server handler (server/src/socket/rdp.handler.ts):
+    - sessionSchema: aggiungere credentialMode: z.enum(['saved','domain',
+      'manual']).optional()
+    - POST /rdp: quando credentialMode='domain':
+      1. Chiamare domain.service.resolveDomainCredentials(userId)
+      2. Usare domain, username, password restituiti
+      3. Passare a generateGuacamoleToken() con parametro domain
+
+  Server handler (server/src/socket/ssh.handler.ts):
+    - session:start data: aggiungere credentialMode?: string
+    - Quando credentialMode='domain': risolvere da domain.service
+
+  Client dialogs:
+    - client/src/components/Dialogs/ConnectAsDialog.tsx:
+      - Aggiungere quarta radio: 'domain' — "Use domain credentials"
+      - Mostra anteprima read-only domain\username dal profilo
+      - Se profilo non configurato, mostrare helper text con link a Settings
+    - client/src/components/Dialogs/ConnectionDialog.tsx:
+      - Aggiungere select "Default Credential Mode" nelle impostazioni:
+        "Use saved credentials" (default), "Use domain credentials",
+        "Always prompt"
+
+  Client store e viewers:
+    - client/src/store/tabsStore.ts: aggiungere credentialMode? a
+      CredentialOverride
+    - client/src/components/RDP/RdpViewer.tsx: quando credentialMode='domain',
+      POST a /sessions/rdp con { connectionId, credentialMode: 'domain' }
+    - client/src/components/Terminal/SshTerminal.tsx: emettere session:start
+      con { connectionId, credentialMode: 'domain' }
+    - client/src/store/authStore.ts: cacheare domain profile info
+      (domain, username, hasDomainPassword) per ConnectAsDialog
+
+  Comportamento quick-connect:
+    - Doppio click su connessione con defaultCredentialMode='domain':
+      applica credenziali domain automaticamente senza aprire ConnectAsDialog
+    - defaultCredentialMode='prompt': apre sempre ConnectAsDialog
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma (Connection.defaultCredentialMode)
+    MODIFICARE: server/src/services/connection.service.ts (CRUD credential mode)
+    MODIFICARE: server/src/socket/rdp.handler.ts (domain credential resolution)
+    MODIFICARE: server/src/socket/ssh.handler.ts (domain credential resolution)
+    MODIFICARE: server/src/types/index.ts (CredentialMode type)
+    MODIFICARE: client/src/store/tabsStore.ts (credentialMode in override)
+    MODIFICARE: client/src/components/Dialogs/ConnectAsDialog.tsx (4a modalita')
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx (default mode)
+    MODIFICARE: client/src/components/RDP/RdpViewer.tsx (domain mode)
+    MODIFICARE: client/src/components/Terminal/SshTerminal.tsx (domain mode)
+    MODIFICARE: client/src/store/authStore.ts (domain profile cache)
+    MODIFICARE: client/src/api/connections.api.ts (defaultCredentialMode)
+
+
+================================================================================
   ORDINE DI IMPLEMENTAZIONE CONSIGLIATO
 ================================================================================
 
@@ -470,6 +868,7 @@
    10. FAVS-014    Preferiti e recenti                          [COMPLETATO]
    11. RDPFS-018   Drive redirection RDP (file transfer)        [COMPLETATO]
    12. SSHUI-027   Personalizzazione terminale SSH (font, temi, opzioni) [COMPLETATO]
+   12b. SSHUI-028  Sync automatico tema terminale SSH con tema WebUI     [COMPLETATO]
    13. RDPSET-028  Personalizzazione sessioni RDP (qualita', risoluzione) [COMPLETATO]
    14. SFTP-019    Trasferimento file SFTP (SSH)                         [COMPLETATO]
 
@@ -500,24 +899,60 @@
    32. OIDC-035  Supporto provider OAuth2/OIDC generico (Authentik, Keycloak, etc.)  [COMPLETATO]
 
   Fase 8 — Multi-backend / Multi-gateway:
-   33. GATE-036  Modello Gateway e CRUD backend (Prisma + API)                         [IN CORSO]
-   34. GATE-037  Routing RDP tramite gateway guacd dinamico
-   35. GATE-038  Routing SSH tramite bastion/jump host (parallelizzabile con 34)
-   36. GATE-039  Frontend gestione gateway e assegnazione connessioni
+   33. GATE-036  Modello Gateway e CRUD backend (Prisma + API)                         [COMPLETATO]
+   34. GATE-037  Routing RDP tramite gateway guacd dinamico                             [COMPLETATO]
+   35. GATE-038  Routing SSH tramite bastion/jump host (parallelizzabile con 34)  [COMPLETATO]
+   36. GATE-039  Frontend gestione gateway e assegnazione connessioni              [COMPLETATO]
+
+  Fase 8b — UX refactoring:
+   37. UI-046    Refactoring Settings page: tabbed category layout              [COMPLETATO]
+   37b. TABS-047  Persistenza automatica tab aperti (server-side, cross-device)  [COMPLETATO]
+   37c. FOLD-048  Context menu cartelle: Share Folder e Open All Connections     [COMPLETATO]
+
+  Fase 8c — SSH Gateway gestito (container managed):
+   38. SSHGW-049  Container image SSH Gateway (Alpine + OpenSSH, CI/CD)       [IN CORSO]
+   39. SSHGW-050  Generazione e gestione chiavi SSH server-side
+   40. SSHGW-051  Integrazione gateway managed nel backend (MANAGED_SSH + key auth)
+   41. SSHGW-052  Frontend gateway SSH gestito: UI, status e configurazione  [COMPLETATO]
+   42. SSHGW-053  Push chiave pubblica SSH al gateway tramite HTTP sidecar  [COMPLETATO]
+   42b. SSHGW-066  Rotazione automatica chiave SSH tenant (nightly cron)  [COMPLETATO]
+
+  Fase 8d — Password Keychain / Secret Vault:
+   43. VAULT-053  Modelli Prisma e servizio CRUD backend secrets  [COMPLETATO]
+   44. VAULT-054  API routes, controller e sharing secrets  [COMPLETATO]
+   45. VAULT-055  Integrazione backend connessioni con vault secrets  [COMPLETATO]
+   46. VAULT-056  Frontend pagina Keychain, store e componenti  [COMPLETATO]
+   47. VAULT-057  Integrazione frontend ConnectionDialog con secret picker  [COMPLETATO]
+   48. VAULT-058  External sharing: link temporanei condivisione esterna  [COMPLETATO]
+   49. VAULT-059  Secret versioning UI, scadenza alert, audit migliorato  [COMPLETATO]
+
+  Fase 8e — Gateway Orchestration e Auto-Scaling:
+   50. ORCH-060  Session tracking persistente e monitoraggio sessioni attive  [COMPLETATO]
+   51. ORCH-061  Cleanup sessioni inattive con timeout configurabile  [COMPLETATO]
+   52. ORCH-062  Container orchestrator abstraction layer (Docker + K8s)  [COMPLETATO]
+   53. ORCH-063  Deploy e lifecycle management gateway containers  [COMPLETATO]
+   54. ORCH-064  Auto-scaling gateway basato su sessioni attive  [COMPLETATO]
+   55. ORCH-065  Frontend dashboard sessioni, scaling controls, monitoring  [COMPLETATO]
 
   Fase 9 — Zero Trust hardening (Tier 1, priorita' alta):
-   37. ZT-036   Security headers (helmet middleware)
-   38. ZT-037   Rate limiting login e account lockout
-   39. ZT-038   Audit sessioni SSH/RDP (session start/end)
-   40. ZT-039   Audit tentativi di login falliti
-   41. ZT-040   Lock vault al logout
+   56. ZT-036   Security headers (helmet middleware)
+   57. ZT-037   Rate limiting login e account lockout
+   58. ZT-038   Audit sessioni SSH/RDP (session start/end)         [COMPLETATO]
+   59. ZT-039   Audit tentativi di login falliti
+   60. ZT-040   Lock vault al logout
 
   Fase 10 — Zero Trust hardening (Tier 2, core ZT):
-   42. ZT-041   Policy MFA obbligatorio a livello tenant
-   43. ZT-042   Rotazione refresh token
-   44. ZT-043   Fix validazione certificato RDP (default ignoreCert)
-   45. ZT-044   Cifratura TOTP secret a riposo
-   46. ZT-045   Vista audit log per admin tenant
+   61. ZT-041   Policy MFA obbligatorio a livello tenant
+   62. ZT-042   Rotazione refresh token
+   63. ZT-043   Fix validazione certificato RDP (default ignoreCert)
+   64. ZT-044   Cifratura TOTP secret a riposo
+   65. ZT-045   Vista audit log per admin tenant
+
+  Fase 11 — SSO & Domain Credential Passthrough:
+   66. SSO-073  RDP domain field: schema, dialogs, Guacamole token
+   67. SSO-074  SAML 2.0 SSO authentication via Passport.js
+   68. SSO-075  User domain credential profile (domain identity)
+   69. SSO-076  Credential passthrough: domain profile to connections
 
 ================================================================================
   NOTE
@@ -610,4 +1045,168 @@
   - ZT-044 richiede script di migrazione per re-cifrare segreti TOTP esistenti
   - ZT-045 nuovo endpoint /api/audit/tenant protetto da requireTenantRole('ADMIN')
   - ZT-045 permette a OWNER/ADMIN di vedere i log di tutti gli utenti del tenant
+  - SSHUI-028 aggiunge solo un campo boolean + due preset al JSON esistente,
+    nessuna migrazione Prisma necessaria
+  - SSHUI-028 il sync e' opzionale (default off): comportamento attuale invariato
+  - SSHUI-028 l'utente puo' scegliere quale preset light e dark usare per il sync
+  - UI-046 e' un refactoring puramente frontend, nessuna modifica backend
+  - UI-046 estrae 4 componenti dalla JSX inline di SettingsPage e riutilizza
+    i 6 componenti sezione gia' esistenti senza modifiche
+  - UI-046 il tab Administration e' visibile solo a OWNER/ADMIN del tenant
+  - UI-046 il tab attivo e' persistito in uiPreferencesStore + URL ?tab= param
+  - UI-046 responsive: su schermi < 768px, tab orizzontali in alto
+  - TABS-047 persistenza server-side (DB), non localStorage: i tab si ripristinano
+    su qualsiasi dispositivo dopo il login
+  - TABS-047 nuovo modello OpenTab in Prisma con @@unique([userId, connectionId])
+  - TABS-047 esclude tab con credenziali override (Connect As) dalla persistenza
+    per ragioni di sicurezza
+  - TABS-047 al restore NON registra le connessioni come "recenti" (non e' un'apertura
+    volontaria)
+  - TABS-047 il restore avviene dopo fetchConnections() per validare che le
+    connessioni esistano ancora e l'utente abbia ancora accesso
+  - TABS-047 sync debounced (~1s) per batchare cambiamenti rapidi (apertura/chiusura
+    multipla di tab) in una singola PUT
+  - TABS-047 al logout i tab vengono svuotati (clearAll) per evitare cross-user leakage
+  - FOLD-048 "Share Folder" e' batch share di connessioni (non condivisione
+    della cartella come entita'): il modello SharedConnection resta invariato
+  - FOLD-048 la condivisione cartella e' ricorsiva (include sottocartelle)
+  - FOLD-048 "Open All" chiede all'utente se includere sottocartelle quando presenti
+  - FOLD-048 "Open All" mostra conferma se > 5 connessioni
+  - FOLD-048 batch share limitato a 50 connessioni per richiesta
+  - FOLD-048 richiede migrazione Prisma per BATCH_SHARE nell'enum AuditAction
+  - SSHGW-049 e' un container indipendente, non richiede codice nel server
+  - SSHGW-049 il container usa solo port forwarding TCP, nessun accesso shell
+  - SSHGW-049 la directory ssh-gateway/ e' un nuovo workspace root-level
+    (non un npm workspace — solo Dockerfile + config)
+  - SSHGW-050 la chiave privata SSH e' cifrata con SERVER_ENCRYPTION_KEY (env var),
+    NON con la vault utente — il server deve decifrare autonomamente durante
+    le connessioni SSH senza richiedere vault unlock
+  - SSHGW-050 ogni tenant ha una sola coppia di chiavi (1:1 Tenant→SshKeyPair)
+  - SSHGW-050 rotazione chiave richiede aggiornamento manuale dei container
+    gateway (nuova chiave pubblica da iniettare)
+  - SSHGW-051 aggiunge MANAGED_SSH all'enum GatewayType: richiede migrazione Prisma
+  - SSHGW-051 per MANAGED_SSH: username fisso "tunnel", auth via privateKey,
+    nessuna credenziale dal vault utente
+  - SSHGW-051 backward compatible: SSH_BASTION funziona come prima con password
+  - SSHGW-051 ssh2 supporta nativamente privateKey nel metodo connect()
+  - SSHGW-052 la sezione SSH Key Pair e' visibile solo a OWNER/ADMIN del tenant
+  - SSHGW-052 il dropdown gateway nel ConnectionDialog filtra MANAGED_SSH
+    e SSH_BASTION per connessioni SSH (entrambi validi)
+  - SSHGW-052 nessuna nuova pagina/route: la gestione keypair vive nella
+    pagina /settings/gateways esistente
+  - SSHGW-053 e' indipendente dai task di orchestrazione (ORCH-060+)
+  - SSHGW-053 il sidecar HTTP nel container gateway e' protetto da shared
+    secret token (GATEWAY_API_TOKEN), ogni richiesta richiede Bearer token
+  - SSHGW-053 il server HTTP sidecar gira sulla porta 8022, non esposta
+    all'host in produzione (solo rete interna Docker)
+  - SSHGW-053 endpoint POST /authorized-keys sovrascrive authorized_keys,
+    GET /authorized-keys verifica le chiavi attualmente configurate
+  - SSHGW-053 GATEWAY_API_TOKEN deve essere una stringa random crittografica
+    (64 caratteri hex), condivisa tra .env del server e del container gateway
+  - SSHGW-066 usa node-cron (non setInterval) per espressioni cron standard
+  - SSHGW-066 il cron e' configurabile via KEY_ROTATION_CRON; default 02:00 UTC
+  - SSHGW-066 advance days = 7: una chiave che scade il 15/03 viene ruotata
+    entro il 08/03, garantendo zero interruzioni
+  - SSHGW-066 expiresAt null = chiave senza scadenza, non viene mai auto-ruotata
+  - SSHGW-066 autoRotateEnabled default false: backward compatible, nessun
+    tenant esistente viene ruotato automaticamente senza opt-in esplicito
+  - SSHGW-066 il push ai gateway e' best-effort: se un gateway non risponde,
+    la rotazione non viene annullata (logged and continued)
+  - SSHGW-066 audit action dedicata SSH_KEY_AUTO_ROTATE distingue rotazione
+    automatica da manuale (SSH_KEY_ROTATE)
+  - SSHGW-066 nessuna modifica frontend: la task e' backend-only, API-first
+  - SSHGW-066 l'admin configura la policy via PATCH /ssh-keypair/rotation
+    (curl o futuro UI), la rotazione avviene senza intervento
+  - VAULT-053 il tenant key segue lo stesso pattern esatto del team key:
+    AES-256 random, cifrato per-membro con master key, cached in memory con TTL
+  - VAULT-053 i secrets usano un singolo blob JSON cifrato (encryptedData) invece
+    di colonne separate per campo — supporta tipi diversi senza schema changes
+  - VAULT-053 ogni update crea una VaultSecretVersion con snapshot cifrato
+  - VAULT-054 lo sharing secrets riusa l'enum Permission (READ_ONLY/FULL_ACCESS)
+    e il pattern decrypt->re-encrypt identico a SharedConnection
+  - VAULT-054 la distribuzione tenant key richiede che entrambi i vault
+    (distributor e target) siano unlocked, come per le team key
+  - VAULT-055 credentialSecretId e' nullable con onDelete: SetNull — se il
+    secret viene eliminato, la connessione torna a credenziali inline
+  - VAULT-055 backward compatible: connessioni senza credentialSecretId
+    funzionano esattamente come prima
+  - VAULT-055 per SSH_KEY: ssh2 supporta nativamente privateKey nel connect()
+  - VAULT-055 per RDP: solo secrets tipo LOGIN sono compatibili
+  - VAULT-056 file upload per SSH_KEY e CERTIFICATE accetta .pem, .key, .crt, .pub
+  - VAULT-056 campi sensibili auto-hide dopo 30 secondi dal reveal
+  - VAULT-057 il SecretPicker filtra per tipo compatibile in base al tipo connessione
+  - VAULT-058 zero-knowledge: il token e' la chiave, il DB salva solo SHA-256(token)
+  - VAULT-058 con PIN: chiave = Argon2id(token+pin, salt) — secondo fattore
+  - VAULT-058 senza PIN: chiave = HKDF(token) — URL alone grants access
+  - VAULT-058 endpoint pubblico /api/share/:token NON ha authenticate middleware
+  - VAULT-058 cleanup automatico shares scaduti via cron job
+  - VAULT-059 cron job scadenza ogni 6 ore, notifiche per fasce (30/7/1/0 giorni)
+  - VAULT-059 evita notifiche duplicate controllando le ultime 24h
+  - ORCH-060 sostituisce e amplia ZT-038: il session tracking persistente copre
+    sia il requisito di audit sessioni che la base per auto-scaling
+  - ORCH-060 il heartbeat client SSH usa Socket.IO events (gia' connesso),
+    il heartbeat RDP usa REST API (no socket server-side per RDP)
+  - ORCH-060 metadata della sessione (host, port, gateway) sono salvati come Json
+    per flessibilita', non come colonne separate
+  - ORCH-060 guacToken e' l'hash SHA-256 del token Guacamole, per evitare di
+    salvare in chiaro credenziali embedded nel token
+  - ORCH-061 il cleanup SSH disconnette il socket forzatamente, attivando la
+    cleanup chain esistente in ssh.handler.ts (stream.close -> client.end)
+  - ORCH-061 il cleanup RDP marca solo il DB perche' il traffico RDP e' gestito
+    da guacamole-lite (nessun socket server-side da chiudere)
+  - ORCH-061 il cron job gira ogni 60 secondi; il timeout minimo e' 60 secondi
+  - ORCH-062 Docker provider: updateContainerEnv() per SSH gateways usa
+    docker exec invece di recreate per aggiornare authorized_keys senza downtime
+  - ORCH-062 Kubernetes provider: updateContainerEnv() patcha il Deployment env,
+    K8s gestisce il rolling restart automaticamente
+  - ORCH-062 NoneProvider non lancia errori per listContainers/getStatus (returns
+    empty), lancia solo per deployContainer/removeContainer
+  - ORCH-062 auto-detection: K8s ha priorita' su Docker perche' un pod Docker
+    in K8s ha accesso a entrambi, ma l'approccio K8s-native e' preferibile
+  - ORCH-063 scale-down preferisce rimuovere istanze senza sessioni attive;
+    non forza mai la disconnessione degli utenti
+  - ORCH-063 key rotation push: Docker usa exec asincrono, K8s usa patch + rolling
+    update; in entrambi i casi la propagazione non e' istantanea
+  - ORCH-063 health check: 3 check unhealthy consecutivi prima di restart per
+    evitare riavvii durante deploy (container in fase di avvio)
+  - ORCH-063 reconcileAll() e' il safety net: se un container viene rimosso
+    manualmente, il reconcile lo rileva e ne crea uno nuovo
+  - ORCH-064 scale-up immediato, scale-down con cooldown minimo 60 secondi
+  - ORCH-064 se tutte le istanze hanno sessioni attive e il target richiede
+    scale-down, il sistema attende senza forzare disconnessioni
+  - ORCH-064 la valutazione usa ceil(): con 11 sessioni e threshold 10,
+    target = 2 istanze
+  - ORCH-064 maxReplicas capped a 20 per tenant per evitare esaurimento risorse
+  - ORCH-065 polling ogni 10 secondi per la dashboard; non usa WebSocket per
+    semplicita' (i dati non sono real-time critico)
+  - ORCH-065 tab "Orchestration" visibile solo a OWNER/ADMIN del tenant
+  - ORCH-065 GatewayDialog diventa significativamente piu' complesso con i
+    controlli managed/scaling; considerare split in sotto-componenti
+  - SSO-073 il parametro domain Guacamole e' nativo: basta aggiungere
+    settings.domain nel token cifrato (stessa logica di username/password)
+  - SSO-073 il domain e' cifrato a riposo come username/password (AES-256-GCM)
+  - SSO-073 per SSH, il formato domain\username e' supportato solo da Windows
+    OpenSSH; non prependere su target Linux
+  - SSO-074 SAML usa POST per l'ACS callback (non GET come OAuth) — richiede
+    express.urlencoded() scoped solo sulla route SAML
+  - SSO-074 il verify callback SAML ha firma diversa da OAuth: (profile, done)
+    vs (accessToken, refreshToken, profile, done) — creare callback dedicato
+  - SSO-074 compatibile con: Azure AD/Entra, Okta, OneLogin, ADFS, FreeIPA
+    (via Ipsilon), Keycloak, Authentik, e qualsiasi IdP SAML 2.0
+  - SSO-074 FreeIPA puo' anche usare OIDC-035 via Keycloak federato — due
+    percorsi di integrazione possibili senza LDAP diretto
+  - SSO-074 richiede migrazione Prisma per aggiungere SAML all'enum AuthProvider
+  - SSO-075 la password domain e' cifrata con la vault master key (stesso
+    pattern di connection credentials) — vault deve essere unlocked
+  - SSO-075 se l'utente cambia vault password, la domain password deve essere
+    ri-cifrata nella stessa transazione (aggiungere a changePassword flow)
+  - SSO-075 auto-inferenza: SAML UPN john@contoso.com -> domain=CONTOSO,
+    username=john; email fallback con stesso algoritmo
+  - SSO-075 domainAutoInferred=true solo al primo login SAML; non sovrascrive
+    configurazione manuale dell'utente
+  - SSO-076 il quick-connect (doppio click) su connessione con
+    defaultCredentialMode='domain' bypassa il ConnectAsDialog
+  - SSO-076 defaultCredentialMode='prompt' forza sempre l'apertura del dialog
+  - SSO-076 audit: aggiungere credentialSource ('saved'|'domain'|'manual')
+    nei details di SESSION_START per tracciabilita' admin
 ================================================================================

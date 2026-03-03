@@ -15,6 +15,10 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Refresh lock: when multiple requests get 401 simultaneously,
+// only the first one triggers a refresh; the rest wait for it.
+let refreshPromise: Promise<string> | null = null;
+
 // Response interceptor: handle 401 and refresh
 api.interceptors.response.use(
   (response) => response,
@@ -27,10 +31,21 @@ api.interceptors.response.use(
       const refreshToken = useAuthStore.getState().refreshToken;
       if (refreshToken) {
         try {
-          const res = await axios.post('/api/auth/refresh', { refreshToken });
-          const { accessToken, user } = res.data;
-          useAuthStore.getState().setAccessToken(accessToken);
-          if (user) useAuthStore.getState().updateUser(user);
+          if (!refreshPromise) {
+            refreshPromise = axios
+              .post('/api/auth/refresh', { refreshToken })
+              .then((res) => {
+                const { accessToken, user } = res.data;
+                useAuthStore.getState().setAccessToken(accessToken);
+                if (user) useAuthStore.getState().updateUser(user);
+                return accessToken as string;
+              })
+              .finally(() => {
+                refreshPromise = null;
+              });
+          }
+
+          const accessToken = await refreshPromise;
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
           return api(originalRequest);
         } catch {

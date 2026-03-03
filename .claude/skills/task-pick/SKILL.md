@@ -2,6 +2,7 @@
 name: task-pick
 description: Pick up the next task for implementation. Prioritizes verifying and closing in-progress tasks before picking new ones.
 disable-model-invocation: true
+allowed-tools: Bash, Read, Grep, Glob, Edit, Write, TaskOutput
 argument-hint: "[TASK-CODE]"
 ---
 
@@ -84,9 +85,60 @@ Perform these verification checks:
      - Fix ALL errors and warnings reported
      - Re-run `npm run verify` (or `npm run build`) until it passes with zero errors
      - Only proceed to step 2 when the quality gate passes
-  2. Present the verification report to the user (including SAST/quality gate result)
-  3. **Run the Step 6 completion flow** (Confirm → Close → Commit) for this task
-  4. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
+  2. **Smoke-Test (MANDATORY):** After the quality gate passes, verify the app starts without runtime errors:
+
+     **2a. Start the application:**
+     Run `npm run predev && npm run dev` using the Bash tool with `run_in_background: true`.
+
+     **2b. Wait for startup and check ports:**
+     Wait 8 seconds (`sleep 8`), then verify ports 3000 and 3001 are listening:
+     ```bash
+     netstat -ano 2>/dev/null | grep -E ":(3000|3001)\s" | grep LISTENING
+     ```
+
+     **2c. Check for startup errors:**
+     Read the background process output using `TaskOutput`. Scan for these error patterns:
+     - `EADDRINUSE` — port conflict
+     - `Cannot find module` — missing dependency
+     - `ECONNREFUSED` — database connection failed
+     - `Error`, `TypeError`, `SyntaxError` — code bugs
+     - `prisma` — schema or migration errors
+
+     **Note on false positives:** Ignore occurrences of "error" that appear in variable names, file paths, log format strings, or middleware names (e.g., `errorHandler`, `error.middleware.ts`). Only flag actual runtime errors.
+
+     **2d. Decision:**
+     - **If startup errors are found:** Fix all errors, then re-run `npm run verify` and repeat the smoke-test from 2a (max 2 retries total). If still failing after retries, present the errors to the user and stop.
+     - **If no errors (or only false positives):** Proceed to 2e.
+
+     **2e. Stop the application (MANDATORY — no processes must remain):**
+     Kill all processes on dev ports:
+     ```bash
+     for port in 3000 3001 3002; do
+       pids=$(netstat -ano 2>/dev/null | grep -E ":${port}\s" | grep LISTENING | awk '{print $5}' | sort -u | tr -d '\r')
+       for pid in $pids; do
+         if [ -n "$pid" ] && [ "$pid" != "0" ]; then
+           taskkill /PID "$pid" /F /T 2>/dev/null || true
+         fi
+       done
+     done
+     ```
+     Then verify all ports are free:
+     ```bash
+     sleep 2
+     remaining=$(netstat -ano 2>/dev/null | grep -E ":(3000|3001|3002)\s" | grep LISTENING)
+     if [ -n "$remaining" ]; then
+       echo "WARNING: Ports still in use, retrying..."
+       echo "$remaining" | awk '{print $5}' | sort -u | tr -d '\r' | while read pid; do
+         [ -n "$pid" ] && [ "$pid" != "0" ] && taskkill /PID "$pid" /F /T 2>/dev/null || true
+       done
+       sleep 2
+     fi
+     ```
+     Run a final check to confirm no processes remain on ports 3000, 3001, 3002. If any remain after 2 retries, inform the user.
+
+  3. Present the verification report to the user (including SAST/quality gate result and smoke-test result)
+  4. **Run the Step 6 completion flow** (Confirm → Close → Commit) for this task
+  5. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
 
 - **Some checks fail (task partially implemented or not implemented):**
   1. Present the verification report showing what is implemented and what is missing

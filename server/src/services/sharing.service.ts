@@ -56,7 +56,58 @@ export async function shareConnection(
     );
   }
 
-  // Decrypt with appropriate key (personal or team)
+  // Vault-backed connections: credentials resolved at session time from the vault secret.
+  // No inline credential re-encryption needed — the shared user must have access to the vault secret.
+  if (connection.credentialSecretId) {
+    const shared = await prisma.sharedConnection.upsert({
+      where: {
+        connectionId_sharedWithUserId: {
+          connectionId,
+          sharedWithUserId: targetUser.id,
+        },
+      },
+      create: {
+        connectionId,
+        sharedWithUserId: targetUser.id,
+        sharedByUserId: actingUserId,
+        permission,
+      },
+      update: { permission },
+    });
+
+    // Notify target user
+    const actor = await prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { username: true, email: true },
+    });
+    const actorName = actor?.username || actor?.email || 'Someone';
+    const msg = `${actorName} shared "${connection.name}" with you (${permission === 'FULL_ACCESS' ? 'Full Access' : 'Read Only'})`;
+
+    createNotificationAsync({
+      userId: targetUser.id,
+      type: 'CONNECTION_SHARED',
+      message: msg,
+      relatedId: connectionId,
+    });
+
+    emitNotification(targetUser.id, {
+      id: shared.id,
+      type: 'CONNECTION_SHARED',
+      message: msg,
+      read: false,
+      relatedId: connectionId,
+      createdAt: new Date(),
+    });
+
+    return { id: shared.id, permission: shared.permission, sharedWith: targetUser.email };
+  }
+
+  // Inline credentials: decrypt and re-encrypt for target user
+  if (!connection.encryptedUsername || !connection.usernameIV || !connection.usernameTag ||
+      !connection.encryptedPassword || !connection.passwordIV || !connection.passwordTag) {
+    throw new AppError('Connection has no credentials to share', 400);
+  }
+
   let decryptionKey: Buffer;
   if (connection.teamId) {
     decryptionKey = await resolveTeamKey(connection.teamId, actingUserId);
@@ -148,6 +199,87 @@ export async function shareConnection(
     permission: shared.permission,
     sharedWith: targetUser.email,
   };
+}
+
+export interface BatchShareResult {
+  shared: number;
+  failed: number;
+  alreadyShared: number;
+  errors: Array<{ connectionId: string; reason: string }>;
+}
+
+export async function batchShareConnections(
+  actingUserId: string,
+  connectionIds: string[],
+  target: { email?: string; userId?: string },
+  permission: Permission,
+  tenantId?: string | null,
+  folderName?: string
+): Promise<BatchShareResult> {
+  // Resolve target user once
+  let targetUser;
+  if (target.userId) {
+    targetUser = await prisma.user.findUnique({ where: { id: target.userId } });
+  } else if (target.email) {
+    targetUser = await prisma.user.findUnique({ where: { email: target.email } });
+  }
+  if (!targetUser) throw new AppError('User not found', 404);
+  if (targetUser.id === actingUserId) {
+    throw new AppError('Cannot share with yourself', 400);
+  }
+
+  const results = await Promise.allSettled(
+    connectionIds.map((connectionId) =>
+      shareConnection(actingUserId, connectionId, { userId: targetUser!.id }, permission, tenantId)
+    )
+  );
+
+  let shared = 0;
+  let failed = 0;
+  let alreadyShared = 0;
+  const errors: Array<{ connectionId: string; reason: string }> = [];
+
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      shared++;
+    } else {
+      const reason = result.reason instanceof AppError ? result.reason.message : 'Unknown error';
+      if (reason.includes('already')) {
+        alreadyShared++;
+      } else {
+        failed++;
+        errors.push({ connectionId: connectionIds[index], reason });
+      }
+    }
+  });
+
+  // Send a single summary notification
+  if (shared > 0) {
+    const actor = await prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { username: true, email: true },
+    });
+    const actorName = actor?.username || actor?.email || 'Someone';
+    const permLabel = permission === 'FULL_ACCESS' ? 'Full Access' : 'Read Only';
+    const folderPart = folderName ? ` from folder "${folderName}"` : '';
+    const msg = `${actorName} shared ${shared} connection${shared > 1 ? 's' : ''}${folderPart} with you (${permLabel})`;
+
+    createNotificationAsync({
+      userId: targetUser.id,
+      type: 'CONNECTION_SHARED',
+      message: msg,
+    });
+    emitNotification(targetUser.id, {
+      id: '',
+      type: 'CONNECTION_SHARED',
+      message: msg,
+      read: false,
+      relatedId: connectionIds[0],
+      createdAt: new Date(),
+    });
+  }
+
+  return { shared, failed, alreadyShared, errors };
 }
 
 export async function unshareConnection(

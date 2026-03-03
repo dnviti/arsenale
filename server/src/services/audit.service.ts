@@ -4,7 +4,7 @@ import { logger } from '../utils/logger';
 export { AuditAction };
 
 export interface AuditLogInput {
-  userId: string;
+  userId?: string | null;
   action: AuditAction;
   targetType?: string;
   targetId?: string;
@@ -19,7 +19,7 @@ export function log(input: AuditLogInput): void {
   prisma.auditLog
     .create({
       data: {
-        userId: input.userId,
+        userId: input.userId ?? null,
         action: input.action,
         targetType: input.targetType ?? null,
         targetId: input.targetId ?? null,

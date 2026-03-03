@@ -1,15 +1,16 @@
+import { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ConnectionViewerPage from './pages/ConnectionViewerPage';
-import SettingsPage from './pages/SettingsPage';
-import TenantSettingsPage from './pages/TenantSettingsPage';
-import TeamManagementPage from './pages/TeamManagementPage';
-import AuditLogPage from './pages/AuditLogPage';
+import KeychainPage from './pages/KeychainPage';
 import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import VaultSetupPage from './pages/VaultSetupPage';
+import PublicSharePage from './pages/PublicSharePage';
+import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
 import { useAuthStore } from './store/authStore';
+import { useVaultStore } from './store/vaultStore';
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -20,9 +21,26 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const user = useAuthStore((s) => s.user);
+  const checkStatus = useVaultStore((s) => s.checkStatus);
+  const startPolling = useVaultStore((s) => s.startPolling);
+  const stopPolling = useVaultStore((s) => s.stopPolling);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    checkStatus();
+    startPolling();
+    return () => stopPolling();
+  }, [isAuthenticated, checkStatus, startPolling, stopPolling]);
+
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (user?.vaultSetupComplete === false) return <Navigate to="/oauth/vault-setup" replace />;
-  return <>{children}</>;
+
+  return (
+    <>
+      {children}
+      <VaultLockedOverlay />
+    </>
+  );
 }
 
 export default function App() {
@@ -48,37 +66,14 @@ export default function App() {
         }
       />
       <Route
-        path="/settings"
+        path="/keychain"
         element={
           <ProtectedRoute>
-            <SettingsPage />
+            <KeychainPage />
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/settings/tenant"
-        element={
-          <ProtectedRoute>
-            <TenantSettingsPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings/teams"
-        element={
-          <ProtectedRoute>
-            <TeamManagementPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/audit-log"
-        element={
-          <ProtectedRoute>
-            <AuditLogPage />
-          </ProtectedRoute>
-        }
-      />
+      <Route path="/share/:token" element={<PublicSharePage />} />
       <Route
         path="/*"
         element={

@@ -68,3 +68,60 @@ export interface RdpSettings {
   console?: boolean;
   timezone?: string;
 }
+
+// --- Secret Payload Types (discriminated union) ---
+
+export interface LoginSecretData {
+  type: 'LOGIN';
+  username: string;
+  password: string;
+  url?: string;
+  notes?: string;
+}
+
+export interface SshKeySecretData {
+  type: 'SSH_KEY';
+  username?: string;
+  privateKey: string;
+  publicKey?: string;
+  passphrase?: string;
+  algorithm?: string;
+  notes?: string;
+}
+
+export interface CertificateSecretData {
+  type: 'CERTIFICATE';
+  certificate: string;
+  privateKey: string;
+  chain?: string;
+  passphrase?: string;
+  expiresAt?: string;
+  notes?: string;
+}
+
+export interface ApiKeySecretData {
+  type: 'API_KEY';
+  apiKey: string;
+  endpoint?: string;
+  headers?: Record<string, string>;
+  notes?: string;
+}
+
+export interface SecureNoteSecretData {
+  type: 'SECURE_NOTE';
+  content: string;
+}
+
+export type SecretPayload =
+  | LoginSecretData
+  | SshKeySecretData
+  | CertificateSecretData
+  | ApiKeySecretData
+  | SecureNoteSecretData;
+
+export interface ResolvedCredentials {
+  username: string;
+  password: string;
+  privateKey?: string;
+  passphrase?: string;
+}

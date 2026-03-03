@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  RadioGroup, Radio, FormControlLabel, Alert, Box,
+  RadioGroup, Radio, FormControlLabel, Alert, Box, Typography, Chip,
 } from '@mui/material';
+import { VpnKey, Key } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { useTabsStore } from '../../store/tabsStore';
 import { ConnectionData } from '../../api/connections.api';
@@ -76,7 +77,23 @@ export default function ConnectAsDialog({ open, onClose, connection }: ConnectAs
           <FormControlLabel
             value="saved"
             control={<Radio />}
-            label="Use saved credentials"
+            label={
+              connection?.credentialSecretId ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Typography variant="body2">Use saved credentials</Typography>
+                  <Chip
+                    icon={connection.credentialSecretType === 'SSH_KEY'
+                      ? <Key fontSize="small" />
+                      : <VpnKey fontSize="small" />}
+                    label={connection.credentialSecretName ?? 'Keychain secret'}
+                    size="small"
+                    variant="outlined"
+                  />
+                </Box>
+              ) : (
+                'Use saved credentials'
+              )
+            }
           />
           <FormControlLabel
             value="profile"

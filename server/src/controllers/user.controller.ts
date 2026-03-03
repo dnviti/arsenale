@@ -26,6 +26,9 @@ const sshDefaultsSchema = z.object({
   customColors: z.record(z.string(), z.string()).optional(),
   scrollback: z.number().int().min(100).max(10000).optional(),
   bellStyle: z.enum(['none', 'sound', 'visual']).optional(),
+  syncThemeWithWebUI: z.boolean().optional(),
+  syncLightTheme: z.string().optional(),
+  syncDarkTheme: z.string().optional(),
 });
 
 const rdpDefaultsSchema = z.object({
