@@ -3,8 +3,11 @@ import { z } from 'zod';
 import { AuthRequest } from '../types';
 import * as gatewayService from '../services/gateway.service';
 import * as sshKeyService from '../services/sshkey.service';
+import * as managedGatewayService from '../services/managedGateway.service';
 import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
+import prisma from '../lib/prisma';
+import { getOrchestrator } from '../orchestrator';
 
 const createSchema = z.object({
   name: z.string().min(1).max(100),
@@ -20,6 +23,10 @@ const createSchema = z.object({
   monitoringEnabled: z.boolean().optional(),
   monitorIntervalMs: z.number().int().min(1000).max(3600000).optional(),
   inactivityTimeoutSeconds: z.number().int().min(60).max(86400).optional(),
+});
+
+const scaleSchema = z.object({
+  replicas: z.number().int().min(0).max(10),
 });
 
 const rotationPolicySchema = z.object({
@@ -279,6 +286,136 @@ export async function getRotationStatus(req: AuthRequest, res: Response, next: N
   try {
     const result = await sshKeyService.getRotationStatus(req.user!.tenantId!);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Managed gateway lifecycle endpoints
+// ---------------------------------------------------------------------------
+
+export async function deploy(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gatewayId = req.params.id as string;
+
+    // Verify gateway belongs to tenant
+    const gateway = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId: req.user!.tenantId! },
+    });
+    if (!gateway) return next(new AppError('Gateway not found', 404));
+
+    if (gateway.type !== 'MANAGED_SSH' && gateway.type !== 'GUACD') {
+      return next(new AppError('Only MANAGED_SSH and GUACD gateways can be deployed as managed containers', 400));
+    }
+
+    const result = await managedGatewayService.deployGatewayInstance(gatewayId, req.user!.userId);
+
+    // Update managed state
+    const instanceCount = await prisma.managedGatewayInstance.count({
+      where: { gatewayId, status: { notIn: ['ERROR', 'REMOVING'] } },
+    });
+    await prisma.gateway.update({
+      where: { id: gatewayId },
+      data: { isManaged: true, desiredReplicas: instanceCount },
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function undeploy(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gatewayId = req.params.id as string;
+
+    // Verify gateway belongs to tenant
+    const gateway = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId: req.user!.tenantId! },
+    });
+    if (!gateway) return next(new AppError('Gateway not found', 404));
+
+    await managedGatewayService.scaleGateway(gatewayId, 0, req.user!.userId);
+    res.json({ undeployed: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function scale(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gatewayId = req.params.id as string;
+
+    // Verify gateway belongs to tenant
+    const gateway = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId: req.user!.tenantId! },
+    });
+    if (!gateway) return next(new AppError('Gateway not found', 404));
+
+    const { replicas } = scaleSchema.parse(req.body);
+    const result = await managedGatewayService.scaleGateway(gatewayId, replicas, req.user!.userId);
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+export async function listInstances(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gatewayId = req.params.id as string;
+
+    // Verify gateway belongs to tenant
+    const gateway = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId: req.user!.tenantId! },
+    });
+    if (!gateway) return next(new AppError('Gateway not found', 404));
+
+    const instances = await prisma.managedGatewayInstance.findMany({
+      where: { gatewayId },
+      orderBy: { createdAt: 'asc' },
+    });
+    res.json(instances);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function restartInstance(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gatewayId = req.params.id as string;
+    const instanceId = req.params.instanceId as string;
+
+    // Verify gateway belongs to tenant
+    const gateway = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId: req.user!.tenantId! },
+    });
+    if (!gateway) return next(new AppError('Gateway not found', 404));
+
+    const instance = await prisma.managedGatewayInstance.findFirst({
+      where: { id: instanceId, gatewayId },
+    });
+    if (!instance) return next(new AppError('Instance not found', 404));
+
+    const orchestrator = getOrchestrator();
+    await orchestrator.restartContainer(instance.containerId);
+
+    await prisma.managedGatewayInstance.update({
+      where: { id: instanceId },
+      data: { consecutiveFailures: 0, errorMessage: null },
+    });
+
+    auditService.log({
+      userId: req.user!.userId,
+      action: 'GATEWAY_RESTART' as const,
+      targetType: 'ManagedGatewayInstance',
+      targetId: instanceId,
+      details: { gatewayId, containerId: instance.containerId },
+      ipAddress: req.ip,
+    });
+
+    res.json({ restarted: true });
   } catch (err) {
     next(err);
   }

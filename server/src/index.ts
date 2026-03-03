@@ -14,7 +14,8 @@ import { checkExpiringSecrets } from './services/secretExpiry.service';
 import { markServerReady } from './services/health.service';
 import * as sessionService from './services/session.service';
 import { initSessionCleanup, checkAndCloseInactiveSessions } from './services/sessionCleanup.service';
-import { detectOrchestrator } from './orchestrator';
+import { detectOrchestrator, OrchestratorType } from './orchestrator';
+import * as managedGatewayService from './services/managedGateway.service';
 
 async function runDatabaseMigrations() {
   const serverDir = path.resolve(__dirname, '..');
@@ -85,6 +86,23 @@ async function main() {
   // Detect and initialize container orchestrator
   const orchestrator = await detectOrchestrator();
   logger.info(`Orchestrator provider: ${orchestrator.type}`);
+
+  // Managed gateway health check and reconciliation (only if orchestrator available)
+  if (orchestrator.type !== OrchestratorType.NONE) {
+    setInterval(() => {
+      managedGatewayService.healthCheck().catch((err) => {
+        logger.error('Managed gateway health check failed:', err);
+      });
+    }, 30 * 1000);
+
+    setInterval(() => {
+      managedGatewayService.reconcileAll().catch((err) => {
+        logger.error('Managed gateway reconciliation failed:', err);
+      });
+    }, 5 * 60 * 1000);
+
+    logger.info('[managed-gateway] Health check (30s) and reconciliation (5m) scheduled');
+  }
 
   // Cleanup expired external shares every hour
   setInterval(() => {

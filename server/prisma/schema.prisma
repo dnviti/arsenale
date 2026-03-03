@@ -258,6 +258,9 @@ model Gateway {
   sshKeyTag          String?
   apiPort            Int?
 
+  isManaged        Boolean @default(false)
+  desiredReplicas  Int     @default(1)
+
   inactivityTimeoutSeconds Int @default(3600)
 
   monitoringEnabled   Boolean             @default(true)
@@ -399,6 +402,11 @@ enum AuditAction {
   SSH_KEY_ROTATE
   SSH_KEY_PUSH
   SSH_KEY_AUTO_ROTATE
+  GATEWAY_DEPLOY
+  GATEWAY_UNDEPLOY
+  GATEWAY_SCALE
+  GATEWAY_RESTART
+  GATEWAY_HEALTH_CHECK
   BATCH_SHARE
   SESSION_START
   SESSION_END
@@ -646,9 +654,10 @@ model ManagedGatewayInstance {
   orchestratorType String
   healthStatus     String?
   lastHealthCheck  DateTime?
-  errorMessage     String?
-  createdAt        DateTime              @default(now())
-  updatedAt        DateTime              @updatedAt
+  errorMessage         String?
+  consecutiveFailures  Int               @default(0)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
 
   gateway          Gateway               @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
 

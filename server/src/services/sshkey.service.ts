@@ -4,6 +4,8 @@ import prisma from '../lib/prisma';
 import { encryptWithServerKey, decryptWithServerKey } from './crypto.service';
 import { AppError } from '../middleware/error.middleware';
 import { config } from '../config';
+import { logger } from '../utils/logger';
+import { pushSshKeyToInstances } from './managedGateway.service';
 
 export interface SshKeyPairResponse {
   id: string;
@@ -156,6 +158,19 @@ export async function rotateKeyPair(
       },
     });
   });
+
+  // Push new key to managed gateway instances (best-effort)
+  try {
+    const results = await pushSshKeyToInstances(tenantId, publicKey);
+    const failed = results.filter(r => !r.ok);
+    if (failed.length > 0) {
+      logger.warn(
+        `[sshkey] Key push failed for ${failed.length}/${results.length} managed instances after rotation`,
+      );
+    }
+  } catch (err) {
+    logger.warn(`[sshkey] Failed to push rotated key to managed instances: ${(err as Error).message}`);
+  }
 
   return {
     id: record.id,

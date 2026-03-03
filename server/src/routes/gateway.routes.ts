@@ -24,4 +24,11 @@ router.delete('/:id', requireTenantRole('ADMIN'), gatewayController.remove);
 router.post('/:id/test', gatewayController.testConnectivity);
 router.post('/:id/push-key', requireTenantRole('ADMIN'), gatewayController.pushKey);
 
+// Managed gateway lifecycle
+router.post('/:id/deploy', requireTenantRole('ADMIN'), gatewayController.deploy);
+router.delete('/:id/deploy', requireTenantRole('ADMIN'), gatewayController.undeploy);
+router.post('/:id/scale', requireTenantRole('ADMIN'), gatewayController.scale);
+router.get('/:id/instances', requireTenantRole('ADMIN'), gatewayController.listInstances);
+router.post('/:id/instances/:instanceId/restart', requireTenantRole('ADMIN'), gatewayController.restartInstance);
+
 export default router;

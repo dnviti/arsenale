@@ -1494,6 +1494,31 @@
     MODIFICATO: .env.example (Container Orchestrator section with 7 env vars)
 
 
+------------------------------------------------------------------------------
+[x] ORCH-063 — Deploy e lifecycle management gateway containers
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: ORCH-062, SSHGW-050, SSHGW-051
+  COMPLETATO: Added managed gateway container lifecycle management —
+    deploy, remove, scale, reconcile, and health-check via the orchestrator
+    abstraction layer. 5 new API endpoints, automated health monitoring
+    (30s) and reconciliation (5m) cron jobs, SSH key push to managed
+    instances on rotation. Guarded by orchestrator availability.
+
+  File coinvolti:
+    MODIFICATO: server/prisma/schema.prisma (Gateway.isManaged,
+                desiredReplicas; ManagedGatewayInstance.consecutiveFailures;
+                5 new AuditAction values)
+    CREATO:     server/src/services/managedGateway.service.ts
+    MODIFICATO: server/src/services/sshkey.service.ts (push key on rotate)
+    MODIFICATO: server/src/services/gateway.service.ts (publicSelect,
+                listGateways counts, deleteGateway cleanup)
+    MODIFICATO: server/src/controllers/gateway.controller.ts (deploy,
+                undeploy, scale, listInstances, restartInstance)
+    MODIFICATO: server/src/routes/gateway.routes.ts (5 new routes)
+    MODIFICATO: server/src/index.ts (health check + reconcile cron jobs)
+
+
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
 ================================================================================

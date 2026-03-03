@@ -5,6 +5,8 @@ import { encrypt, decrypt, getMasterKey } from './crypto.service';
 import { config } from '../config';
 import { tcpProbe } from '../utils/tcpProbe';
 import { startMonitor, stopMonitor, restartMonitor } from './gatewayMonitor.service';
+import { logger } from '../utils/logger';
+import { removeGatewayInstance } from './managedGateway.service';
 
 export interface CreateGatewayInput {
   name: string;
@@ -59,6 +61,8 @@ const publicSelect = {
   lastCheckedAt: true,
   lastLatencyMs: true,
   lastError: true,
+  isManaged: true,
+  desiredReplicas: true,
 } as const;
 
 function requireMasterKey(userId: string): Buffer {
@@ -70,13 +74,31 @@ function requireMasterKey(userId: string): Buffer {
 export async function listGateways(tenantId: string) {
   const gateways = await prisma.gateway.findMany({
     where: { tenantId },
-    select: publicSelect,
+    select: {
+      ...publicSelect,
+      _count: { select: { managedInstances: true } },
+    },
     orderBy: [{ type: 'asc' }, { name: 'asc' }],
   });
-  return gateways.map(({ encryptedSshKey, ...gw }) => ({
-    ...gw,
-    hasSshKey: encryptedSshKey != null,
-  }));
+
+  const result = await Promise.all(
+    gateways.map(async ({ encryptedSshKey, _count, ...gw }) => {
+      const base = {
+        ...gw,
+        hasSshKey: encryptedSshKey != null,
+        totalInstances: _count.managedInstances,
+      };
+      if (!gw.isManaged || _count.managedInstances === 0) {
+        return { ...base, runningInstances: 0 };
+      }
+      const runningInstances = await prisma.managedGatewayInstance.count({
+        where: { gatewayId: gw.id, status: 'RUNNING' },
+      });
+      return { ...base, runningInstances };
+    }),
+  );
+
+  return result;
 }
 
 export async function createGateway(
@@ -264,6 +286,18 @@ export async function deleteGateway(tenantId: string, gatewayId: string) {
       `Cannot delete gateway: ${connectionCount} connection(s) are using it. Reassign or remove those connections first.`,
       409,
     );
+  }
+
+  // Remove all managed container instances before deleting the gateway record
+  const instances = await prisma.managedGatewayInstance.findMany({
+    where: { gatewayId },
+  });
+  for (const instance of instances) {
+    try {
+      await removeGatewayInstance(instance.id);
+    } catch (err) {
+      logger.warn(`Failed to remove managed instance ${instance.id} during gateway deletion: ${(err as Error).message}`);
+    }
   }
 
   await prisma.gateway.delete({ where: { id: gatewayId } });
