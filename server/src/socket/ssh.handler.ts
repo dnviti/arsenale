@@ -8,6 +8,7 @@ import { AuthPayload, SftpEntry } from '../types';
 import { createSshConnection, createSshConnectionViaBastion, createSftpSession, resizeSshTerminal, SshSession } from '../services/ssh.service';
 import { getConnectionCredentials, getConnection } from '../services/connection.service';
 import { getGatewayCredentials } from '../services/gateway.service';
+import { selectInstance } from '../services/loadBalancer.service';
 import { getPrivateKey as getTenantPrivateKey } from '../services/sshkey.service';
 import * as sessionService from '../services/session.service';
 import { logger } from '../utils/logger';
@@ -116,6 +117,7 @@ export function setupSshHandler(io: Server) {
         }
 
         let session: SshSession;
+        let selectedInstanceId: string | undefined;
 
         if (conn.gateway) {
           if (conn.gateway.type !== 'SSH_BASTION' && conn.gateway.type !== 'MANAGED_SSH') {
@@ -153,9 +155,21 @@ export function setupSshHandler(io: Server) {
             bastionPrivateKey = gatewayCreds.sshPrivateKey ?? undefined;
           }
 
+          let bastionHost = conn.gateway.host;
+          let bastionPort = conn.gateway.port;
+
+          if (conn.gateway.isManaged) {
+            const inst = await selectInstance(conn.gateway.id, conn.gateway.lbStrategy);
+            if (inst) {
+              bastionHost = inst.host;
+              bastionPort = inst.port;
+              selectedInstanceId = inst.id;
+            }
+          }
+
           session = await createSshConnectionViaBastion({
-            bastionHost: conn.gateway.host,
-            bastionPort: conn.gateway.port,
+            bastionHost,
+            bastionPort,
             bastionUsername,
             bastionPassword,
             bastionPrivateKey,
@@ -188,6 +202,7 @@ export function setupSshHandler(io: Server) {
           userId: user.userId,
           connectionId: data.connectionId,
           gatewayId: conn.gatewayId ?? undefined,
+          instanceId: selectedInstanceId,
           protocol: 'SSH',
           socketId: socket.id,
           ipAddress: clientIp,

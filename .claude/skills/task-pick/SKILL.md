@@ -81,11 +81,21 @@ Perform these verification checks:
 **0c. Decision based on verification result:**
 
 - **ALL checks pass (task fully implemented):**
-  1. **SAST/Quality Gate (MANDATORY):** Before closing the task, run `npm run verify` (typecheck + lint + sast + build). If this script does not exist yet (SAST-031 not implemented), run `npm run build` as a minimum gate. If the verify/build fails:
+  1. **Prisma Migration (if needed):** Check whether `server/prisma/schema.prisma` has uncommitted changes:
+     ```bash
+     git diff --name-only HEAD -- server/prisma/schema.prisma
+     ```
+     - **If the schema was modified:** Create a migration using the task code as the migration name (lowercase, hyphenated):
+       ```bash
+       npm run db:migrate -w server -- --name <task-code-lowercase>
+       ```
+       For example, for task `GATE-078` run `--name gate-078`. Wait for the migration to complete and verify the new migration directory was created under `server/prisma/migrations/`.
+     - **If the schema was NOT modified:** Skip this step.
+  2. **SAST/Quality Gate (MANDATORY):** Before closing the task, run `npm run verify` (typecheck + lint + sast + build). If this script does not exist yet (SAST-031 not implemented), run `npm run build` as a minimum gate. If the verify/build fails:
      - Fix ALL errors and warnings reported
      - Re-run `npm run verify` (or `npm run build`) until it passes with zero errors
      - Only proceed to step 2 when the quality gate passes
-  2. **Smoke-Test (MANDATORY):** After the quality gate passes, verify the app starts without runtime errors:
+  3. **Smoke-Test (MANDATORY):** After the quality gate passes, verify the app starts without runtime errors:
 
      **2a. Start the application:**
      Run `npm run predev && npm run dev` using the Bash tool with `run_in_background: true`.
@@ -136,9 +146,9 @@ Perform these verification checks:
      ```
      Run a final check to confirm no processes remain on ports 3000, 3001, 3002. If any remain after 2 retries, inform the user.
 
-  3. Present the verification report to the user (including SAST/quality gate result and smoke-test result)
-  4. **Run the Step 6 completion flow** (Confirm → Close → Commit) for this task
-  5. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
+  4. Present the verification report to the user (including Prisma migration, SAST/quality gate result, and smoke-test result)
+  5. **Run the Step 6 completion flow** (Confirm → Close → Commit) for this task
+  6. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
 
 - **Some checks fail (task partially implemented or not implemented):**
   1. Present the verification report showing what is implemented and what is missing
@@ -192,7 +202,8 @@ Present a clear English-language briefing:
 5. **Files to Create/Modify**: Every file with what needs to happen in each
 6. **Dependencies**: Status of all dependencies (check done.txt for completed deps)
 7. **Risks**: Any concerns found during exploration
-8. **Quality Gate**: Remind that `npm run verify` (or `npm run build` if SAST-031 not yet done) must pass before the task can be closed
+8. **Prisma Migration**: If the task involves changes to `server/prisma/schema.prisma`, note that a migration will be created automatically during task closure (before the quality gate)
+9. **Quality Gate**: Remind that `npm run verify` (or `npm run build` if SAST-031 not yet done) must pass before the task can be closed
 
 After presenting the briefing, ask the user: "Ready to start implementation, or would you like to adjust the approach?"
 

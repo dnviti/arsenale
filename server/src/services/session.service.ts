@@ -10,6 +10,7 @@ export interface StartSessionParams {
   userId: string;
   connectionId: string;
   gatewayId?: string | null;
+  instanceId?: string | null;
   protocol: SessionProtocol;
   socketId?: string;
   guacToken?: string;
@@ -36,6 +37,8 @@ export interface ActiveSessionDTO {
   connectionPort: number;
   gatewayId: string | null;
   gatewayName: string | null;
+  instanceId: string | null;
+  instanceName: string | null;
   protocol: SessionProtocol;
   status: SessionStatus;
   startedAt: Date;
@@ -59,6 +62,7 @@ export async function startSession(params: StartSessionParams): Promise<string> 
         userId: params.userId,
         connectionId: params.connectionId,
         gatewayId: params.gatewayId ?? null,
+        instanceId: params.instanceId ?? null,
         protocol: params.protocol,
         status: 'ACTIVE',
         socketId: params.socketId ?? null,
@@ -182,6 +186,7 @@ export async function getActiveSessions(
       user: { select: { email: true, username: true } },
       connection: { select: { name: true, host: true, port: true } },
       gateway: { select: { name: true } },
+      instance: { select: { containerName: true } },
     },
     orderBy: { startedAt: 'desc' },
   });
@@ -198,6 +203,8 @@ export async function getActiveSessions(
     connectionPort: s.connection.port,
     gatewayId: s.gatewayId,
     gatewayName: s.gateway?.name ?? null,
+    instanceId: s.instanceId,
+    instanceName: s.instance?.containerName ?? null,
     protocol: s.protocol,
     status: s.status,
     startedAt: s.startedAt,

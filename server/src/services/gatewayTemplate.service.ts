@@ -23,6 +23,8 @@ export interface CreateTemplateInput {
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
 }
 
 export interface UpdateTemplateInput {
@@ -40,6 +42,8 @@ export interface UpdateTemplateInput {
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
 }
 
 export async function listTemplates(tenantId: string) {
@@ -71,6 +75,8 @@ export async function createTemplate(
       monitoringEnabled: input.monitoringEnabled,
       monitorIntervalMs: input.monitorIntervalMs,
       inactivityTimeoutSeconds: input.inactivityTimeoutSeconds,
+      publishPorts: input.publishPorts,
+      lbStrategy: input.lbStrategy,
       tenantId,
       createdById: userId,
     },
@@ -153,6 +159,8 @@ export async function deployFromTemplate(
       monitoringEnabled: template.monitoringEnabled,
       monitorIntervalMs: template.monitorIntervalMs,
       inactivityTimeoutSeconds: template.inactivityTimeoutSeconds,
+      publishPorts: template.publishPorts,
+      lbStrategy: template.lbStrategy,
       tenantId,
       createdById: userId,
       templateId,

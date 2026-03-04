@@ -239,6 +239,11 @@ enum ManagedInstanceStatus {
   REMOVING
 }
 
+enum LoadBalancingStrategy {
+  ROUND_ROBIN
+  LEAST_CONNECTIONS
+}
+
 model Gateway {
   id          String      @id @default(uuid())
   name        String
@@ -264,6 +269,8 @@ model Gateway {
   templateId       String?
 
   isManaged        Boolean @default(false)
+  publishPorts     Boolean @default(false)
+  lbStrategy       LoadBalancingStrategy @default(ROUND_ROBIN)
   desiredReplicas  Int     @default(1)
 
   autoScale                Boolean  @default(false)
@@ -312,6 +319,8 @@ model GatewayTemplate {
   monitoringEnabled        Boolean     @default(true)
   monitorIntervalMs        Int         @default(5000)
   inactivityTimeoutSeconds Int         @default(3600)
+  publishPorts             Boolean     @default(false)
+  lbStrategy               LoadBalancingStrategy @default(ROUND_ROBIN)
   tenantId                 String
   createdById              String
   createdAt                DateTime    @default(now())
@@ -669,6 +678,7 @@ model ActiveSession {
   userId         String
   connectionId   String
   gatewayId      String?
+  instanceId     String?
   protocol       SessionProtocol
   status         SessionStatus   @default(ACTIVE)
   socketId       String?
@@ -680,7 +690,8 @@ model ActiveSession {
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  gateway    Gateway?   @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  gateway    Gateway?                @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
+  instance   ManagedGatewayInstance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
   @@index([status])
@@ -689,6 +700,7 @@ model ActiveSession {
   @@index([lastActivityAt])
   @@index([socketId])
   @@index([guacTokenHash])
+  @@index([instanceId, status])
 }
 
 model ManagedGatewayInstance {
@@ -708,6 +720,7 @@ model ManagedGatewayInstance {
   updatedAt            DateTime          @updatedAt
 
   gateway          Gateway               @relation(fields: [gatewayId], references: [id], onDelete: Cascade)
+  sessions         ActiveSession[]
 
   @@index([gatewayId])
   @@index([status])

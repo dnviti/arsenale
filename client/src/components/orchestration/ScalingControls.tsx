@@ -44,6 +44,9 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
   useEffect(() => {
     if (gateway.isManaged) {
       fetchScalingStatus(gatewayId);
+      // Poll scaling status to keep replica counts in sync with auto-scaler
+      const interval = setInterval(() => fetchScalingStatus(gatewayId), 10_000);
+      return () => clearInterval(interval);
     }
   }, [gatewayId, gateway.isManaged, fetchScalingStatus]);
 
@@ -55,6 +58,13 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
     setSessionsPerInstance(String(gateway.sessionsPerInstance));
     setCooldown(String(gateway.scaleDownCooldownSeconds));
   }, [gateway]);
+
+  // Keep slider in sync with auto-scaler's target replicas
+  useEffect(() => {
+    if (scalingStatus && gateway.autoScale) {
+      setReplicas(scalingStatus.targetReplicas);
+    }
+  }, [scalingStatus, gateway.autoScale]);
 
   const handleDeploy = async () => {
     setLoading(true);
@@ -148,8 +158,8 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
         )}
       </Stack>
 
-      {/* Replicas slider (only when managed) */}
-      {gateway.isManaged && (
+      {/* Replicas slider (only when managed and auto-scale is off) */}
+      {gateway.isManaged && !gateway.autoScale && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <Typography variant="subtitle2" gutterBottom>Manual Scaling</Typography>
           <Stack direction="row" spacing={2} alignItems="center">
@@ -265,6 +275,24 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
               </Typography>
             )}
           </Stack>
+          {scalingStatus.instanceSessions && scalingStatus.instanceSessions.length > 0 && (
+            <Box sx={{ mt: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Per-instance distribution:
+              </Typography>
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mt: 0.5 }}>
+                {scalingStatus.instanceSessions.map((is) => (
+                  <Chip
+                    key={is.instanceId}
+                    label={`${is.containerName.split('-').pop()}: ${is.count}`}
+                    size="small"
+                    variant="outlined"
+                    color={is.count === 0 ? 'default' : 'primary'}
+                  />
+                ))}
+              </Stack>
+            </Box>
+          )}
         </Paper>
       )}
 

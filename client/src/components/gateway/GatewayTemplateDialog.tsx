@@ -28,6 +28,8 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
   const [maxReplicasVal, setMaxReplicasVal] = useState('5');
   const [sessPerInstance, setSessPerInstance] = useState('10');
   const [cooldownVal, setCooldownVal] = useState('300');
+  const [publishPorts, setPublishPorts] = useState(false);
+  const [lbStrategy, setLbStrategy] = useState<'ROUND_ROBIN' | 'LEAST_CONNECTIONS'>('ROUND_ROBIN');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const createTemplate = useGatewayStore((s) => s.createTemplate);
@@ -51,6 +53,8 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       setMaxReplicasVal(String(template.maxReplicas));
       setSessPerInstance(String(template.sessionsPerInstance));
       setCooldownVal(String(template.scaleDownCooldownSeconds));
+      setPublishPorts(template.publishPorts ?? false);
+      setLbStrategy(template.lbStrategy ?? 'ROUND_ROBIN');
     } else if (open) {
       setName('');
       setType('MANAGED_SSH');
@@ -66,6 +70,8 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       setMaxReplicasVal('5');
       setSessPerInstance('10');
       setCooldownVal('300');
+      setPublishPorts(false);
+      setLbStrategy('ROUND_ROBIN');
     }
     setError('');
   }, [open, template]);
@@ -112,6 +118,8 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
         maxReplicas: parseInt(maxReplicasVal, 10),
         sessionsPerInstance: parseInt(sessPerInstance, 10),
         scaleDownCooldownSeconds: parseInt(cooldownVal, 10),
+        publishPorts,
+        lbStrategy,
       };
       if (isEditMode && template) {
         await updateTemplate(template.id, data);
@@ -174,8 +182,44 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
               type="number"
               sx={{ width: 120 }}
               required
+              disabled={publishPorts && isManagedType}
+              helperText={publishPorts && isManagedType ? 'Host port auto-assigned at deploy' : undefined}
             />
           </Box>
+
+          {isManagedType && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={publishPorts}
+                  onChange={(_, v) => {
+                    setPublishPorts(v);
+                    if (v) {
+                      if (!host) setHost('localhost');
+                      const defaultPort = type === 'GUACD' ? '4822' : '2222';
+                      setPort(defaultPort);
+                    }
+                  }}
+                  size="small"
+                />
+              }
+              label="Publish Ports (external access)"
+            />
+          )}
+
+          {isManagedType && (
+            <FormControl fullWidth size="small">
+              <InputLabel>Load Balancing Strategy</InputLabel>
+              <Select
+                value={lbStrategy}
+                label="Load Balancing Strategy"
+                onChange={(e) => setLbStrategy(e.target.value as 'ROUND_ROBIN' | 'LEAST_CONNECTIONS')}
+              >
+                <MenuItem value="ROUND_ROBIN">Round Robin</MenuItem>
+                <MenuItem value="LEAST_CONNECTIONS">Least Connections</MenuItem>
+              </Select>
+            </FormControl>
+          )}
 
           <TextField
             label="Description"
@@ -194,6 +238,8 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
               onChange={(e) => setApiPort(e.target.value)}
               type="number"
               fullWidth
+              disabled={publishPorts}
+              helperText={publishPorts ? 'Auto-assigned at deploy' : undefined}
             />
           )}
 

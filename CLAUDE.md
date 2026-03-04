@@ -119,6 +119,17 @@ Tasks are split across three files by status:
 
 When a task changes status, move it to the corresponding file.
 
+### Idea Files
+
+Ideas are stored separately from tasks and must be explicitly approved before entering the task pipeline:
+
+| File | Purpose |
+|------|---------|
+| `ideas.txt` | Ideas awaiting evaluation |
+| `idea-disapproved.txt` | Rejected ideas archive |
+
+Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `/idea-refactor` to update ideas based on codebase changes, and `/idea-disapprove` to reject an idea. Ideas must never be picked up directly by `/task-pick`.
+
 ### File Naming Conventions
 
 | Layer | Pattern | Example |

@@ -24,6 +24,8 @@ export interface GatewayData {
   lastLatencyMs: number | null;
   lastError: string | null;
   isManaged: boolean;
+  publishPorts: boolean;
+  lbStrategy: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   desiredReplicas: number;
   autoScale: boolean;
   minReplicas: number;
@@ -47,6 +49,8 @@ export interface GatewayInput {
   password?: string;
   sshPrivateKey?: string;
   apiPort?: number;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
@@ -62,6 +66,8 @@ export interface GatewayUpdate {
   password?: string;
   sshPrivateKey?: string;
   apiPort?: number | null;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
@@ -164,6 +170,8 @@ export interface ActiveSessionData {
   connectionPort: number;
   gatewayId: string | null;
   gatewayName: string | null;
+  instanceId: string | null;
+  instanceName: string | null;
   protocol: 'SSH' | 'RDP';
   status: 'ACTIVE' | 'IDLE' | 'CLOSED';
   startedAt: string;
@@ -263,6 +271,7 @@ export interface ScalingStatusData {
   lastScaleAction: string | null;
   cooldownRemaining: number;
   recommendation: 'scale-up' | 'scale-down' | 'stable';
+  instanceSessions: Array<{ instanceId: string; containerName: string; count: number }>;
 }
 
 export interface ScalingConfigInput {
@@ -304,6 +313,8 @@ export interface GatewayTemplateData {
   monitoringEnabled: boolean;
   monitorIntervalMs: number;
   inactivityTimeoutSeconds: number;
+  publishPorts: boolean;
+  lbStrategy: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   tenantId: string;
   createdById: string;
   createdAt: string;
@@ -323,6 +334,8 @@ export interface GatewayTemplateInput {
   maxReplicas?: number;
   sessionsPerInstance?: number;
   scaleDownCooldownSeconds?: number;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;

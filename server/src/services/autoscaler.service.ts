@@ -23,6 +23,7 @@ export interface ScalingStatus {
   lastScaleAction: Date | null;
   cooldownRemaining: number;
   recommendation: 'scale-up' | 'scale-down' | 'stable';
+  instanceSessions: Array<{ instanceId: string; containerName: string; count: number }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,7 +161,7 @@ async function evaluateGatewayScaling(gw: {
 }
 
 // ---------------------------------------------------------------------------
-// Scale-down with preference for newest instances (LIFO)
+// Scale-down: prefer removing instances with zero sessions, then fewest sessions, then LIFO
 // ---------------------------------------------------------------------------
 
 async function scaleDownPreferEmpty(
@@ -170,7 +171,7 @@ async function scaleDownPreferEmpty(
 ): Promise<void> {
   const toRemove = currentReplicas - targetReplicas;
 
-  // Get running instances sorted newest-first
+  // Get running instances with active session counts, newest-first as tiebreaker
   const instances = await prisma.managedGatewayInstance.findMany({
     where: {
       gatewayId,
@@ -178,10 +179,20 @@ async function scaleDownPreferEmpty(
         in: [ManagedInstanceStatus.RUNNING, ManagedInstanceStatus.PROVISIONING],
       },
     },
+    include: {
+      _count: {
+        select: {
+          sessions: { where: { status: { not: 'CLOSED' } } },
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
 
-  const instancesToRemove = instances.slice(0, toRemove);
+  // Sort by session count ascending (zero-session first); createdAt desc is preserved as tiebreaker
+  const sorted = [...instances].sort((a, b) => a._count.sessions - b._count.sessions);
+
+  const instancesToRemove = sorted.slice(0, toRemove);
 
   for (const instance of instancesToRemove) {
     try {
@@ -218,7 +229,7 @@ export async function getScalingStatus(
     throw new Error('Gateway not found');
   }
 
-  const [activeSessions, currentReplicas] = await Promise.all([
+  const [activeSessions, currentReplicas, instanceSessionData] = await Promise.all([
     sessionService.getActiveSessionCount({ gatewayId }),
     prisma.managedGatewayInstance.count({
       where: {
@@ -230,6 +241,24 @@ export async function getScalingStatus(
           ],
         },
       },
+    }),
+    prisma.managedGatewayInstance.findMany({
+      where: {
+        gatewayId,
+        status: {
+          in: [ManagedInstanceStatus.RUNNING, ManagedInstanceStatus.PROVISIONING],
+        },
+      },
+      select: {
+        id: true,
+        containerName: true,
+        _count: {
+          select: {
+            sessions: { where: { status: { not: 'CLOSED' } } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
     }),
   ]);
 
@@ -273,5 +302,10 @@ export async function getScalingStatus(
     lastScaleAction: gateway.lastScaleAction,
     cooldownRemaining,
     recommendation,
+    instanceSessions: instanceSessionData.map((i) => ({
+      instanceId: i.id,
+      containerName: i.containerName,
+      count: i._count.sessions,
+    })),
   };
 }

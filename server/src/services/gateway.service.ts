@@ -19,6 +19,8 @@ export interface CreateGatewayInput {
   password?: string;
   sshPrivateKey?: string;
   apiPort?: number;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
@@ -34,6 +36,8 @@ export interface UpdateGatewayInput {
   password?: string;
   sshPrivateKey?: string;
   apiPort?: number | null;
+  publishPorts?: boolean;
+  lbStrategy?: 'ROUND_ROBIN' | 'LEAST_CONNECTIONS';
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
@@ -62,6 +66,8 @@ const publicSelect = {
   lastLatencyMs: true,
   lastError: true,
   isManaged: true,
+  publishPorts: true,
+  lbStrategy: true,
   desiredReplicas: true,
   autoScale: true,
   minReplicas: true,
@@ -179,6 +185,8 @@ export async function createGateway(
         monitoringEnabled: input.monitoringEnabled ?? true,
         monitorIntervalMs: input.monitorIntervalMs ?? 5000,
         inactivityTimeoutSeconds: input.inactivityTimeoutSeconds ?? 3600,
+        publishPorts: input.publishPorts ?? false,
+        lbStrategy: input.lbStrategy ?? 'ROUND_ROBIN',
         tenantId,
         createdById: userId,
         ...encData,
@@ -189,7 +197,10 @@ export async function createGateway(
     return { ...rest, hasSshKey: _k != null };
   });
 
-  if (input.monitoringEnabled ?? true) {
+  // Skip TCP monitoring for managed+publishPorts gateways — their gateway-level
+  // host:port is an internal container port.  Health is derived from instances.
+  const isManagedPublished = input.publishPorts && (input.type === 'MANAGED_SSH' || input.type === 'GUACD');
+  if ((input.monitoringEnabled ?? true) && !isManagedPublished) {
     startMonitor(gateway.id, input.host, input.port, tenantId, input.monitorIntervalMs ?? 5000);
   }
 
@@ -216,6 +227,8 @@ export async function updateGateway(
   if (input.monitoringEnabled !== undefined) data.monitoringEnabled = input.monitoringEnabled;
   if (input.monitorIntervalMs !== undefined) data.monitorIntervalMs = input.monitorIntervalMs;
   if (input.inactivityTimeoutSeconds !== undefined) data.inactivityTimeoutSeconds = input.inactivityTimeoutSeconds;
+  if (input.publishPorts !== undefined) data.publishPorts = input.publishPorts;
+  if (input.lbStrategy !== undefined) data.lbStrategy = input.lbStrategy;
 
   if (input.username !== undefined || input.password !== undefined || input.sshPrivateKey !== undefined) {
     if (existing.type !== 'SSH_BASTION') {
@@ -264,15 +277,22 @@ export async function updateGateway(
 
   const needsMonitorRestart =
     input.host !== undefined || input.port !== undefined ||
-    input.monitorIntervalMs !== undefined || input.monitoringEnabled !== undefined;
+    input.monitorIntervalMs !== undefined || input.monitoringEnabled !== undefined ||
+    input.publishPorts !== undefined;
 
   if (needsMonitorRestart) {
     const current = await prisma.gateway.findUnique({
       where: { id: gatewayId },
-      select: { host: true, port: true, monitorIntervalMs: true, monitoringEnabled: true, tenantId: true },
+      select: { host: true, port: true, type: true, monitorIntervalMs: true, monitoringEnabled: true, publishPorts: true, tenantId: true },
     });
     if (current) {
-      restartMonitor(gatewayId, current.host, current.port, current.tenantId, current.monitorIntervalMs, current.monitoringEnabled);
+      const isManagedPublished = current.publishPorts && (current.type === 'MANAGED_SSH' || current.type === 'GUACD');
+      if (isManagedPublished) {
+        // Stop any existing monitor — TCP probing is meaningless for published-port gateways
+        stopMonitor(gatewayId);
+      } else {
+        restartMonitor(gatewayId, current.host, current.port, current.tenantId, current.monitorIntervalMs, current.monitoringEnabled);
+      }
     }
   }
 
@@ -360,11 +380,29 @@ export async function testGatewayConnectivity(
 ): Promise<{ reachable: boolean; latencyMs: number | null; error: string | null }> {
   const gateway = await prisma.gateway.findFirst({
     where: { id: gatewayId, tenantId },
-    select: { host: true, port: true },
+    select: { host: true, port: true, type: true, publishPorts: true },
   });
   if (!gateway) throw new AppError('Gateway not found', 404);
 
-  const result = await tcpProbe(gateway.host, gateway.port, 5000);
+  let probeHost = gateway.host;
+  let probePort = gateway.port;
+
+  // For managed+publishPorts gateways, probe the first running instance instead
+  // of the gateway-level host:port (which is an internal container port).
+  const isManagedPublished = gateway.publishPorts && (gateway.type === 'MANAGED_SSH' || gateway.type === 'GUACD');
+  if (isManagedPublished) {
+    const instance = await prisma.managedGatewayInstance.findFirst({
+      where: { gatewayId, status: 'RUNNING' },
+      select: { host: true, port: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (instance) {
+      probeHost = instance.host;
+      probePort = instance.port;
+    }
+  }
+
+  const result = await tcpProbe(probeHost, probePort, 5000);
 
   await prisma.gateway.update({
     where: { id: gatewayId },

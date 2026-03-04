@@ -89,12 +89,19 @@ export function restartMonitor(
 export async function startAllMonitors() {
   const gateways = await prisma.gateway.findMany({
     where: { monitoringEnabled: true },
-    select: { id: true, host: true, port: true, tenantId: true, monitorIntervalMs: true },
+    select: { id: true, host: true, port: true, tenantId: true, monitorIntervalMs: true, publishPorts: true, type: true },
   });
 
-  logger.info(`[gateway-monitor] Starting monitors for ${gateways.length} gateway(s)`);
+  // Skip TCP monitoring for managed+publishPorts gateways — their gateway-level
+  // host:port is an internal container port that isn't published.  Health for these
+  // is derived from instance status instead.
+  const probeable = gateways.filter(
+    (gw) => !(gw.publishPorts && (gw.type === 'MANAGED_SSH' || gw.type === 'GUACD')),
+  );
 
-  for (const gw of gateways) {
+  logger.info(`[gateway-monitor] Starting monitors for ${probeable.length}/${gateways.length} gateway(s) (${gateways.length - probeable.length} skipped — publishPorts)`);
+
+  for (const gw of probeable) {
     startMonitor(gw.id, gw.host, gw.port, gw.tenantId, gw.monitorIntervalMs);
   }
 }

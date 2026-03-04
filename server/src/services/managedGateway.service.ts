@@ -9,6 +9,7 @@ import { config } from '../config';
 import { AppError } from '../middleware/error.middleware';
 import * as auditService from './audit.service';
 import { logger } from '../utils/logger';
+import { findFreePort } from '../utils/freePort';
 
 const MAX_REPLICAS = 20;
 const HEALTH_CHECK_FAILURE_THRESHOLD = 3;
@@ -33,6 +34,8 @@ function buildContainerConfig(
   gateway: { id: string; name: string; type: string; port: number; tenantId: string },
   instanceIndex: number,
   publicKey?: string,
+  hostPort?: number,
+  apiHostPort?: number,
 ): ContainerConfig {
   const suffix = `${gateway.id.slice(0, 8)}-${instanceIndex}`;
   const tenantSlug = gateway.tenantId.slice(0, 8);
@@ -48,7 +51,10 @@ function buildContainerConfig(
       env: {
         ...(publicKey ? { SSH_AUTHORIZED_KEYS: publicKey } : {}),
       },
-      ports: [{ container: 2222 }],
+      ports: [
+        { container: 2222, ...(hostPort != null ? { host: hostPort } : {}) },
+        ...(apiHostPort != null ? [{ container: 8022, host: apiHostPort }] : []),
+      ],
       labels: {
         'rdm.managed': 'true',
         'rdm.gateway-id': gateway.id,
@@ -66,7 +72,7 @@ function buildContainerConfig(
     name: baseName,
     namespace: k8sNamespace,
     env: {},
-    ports: [{ container: 4822 }],
+    ports: [{ container: 4822, ...(hostPort != null ? { host: hostPort } : {}) }],
     labels: {
       'rdm.managed': 'true',
       'rdm.gateway-id': gateway.id,
@@ -116,7 +122,17 @@ export async function deployGatewayInstance(
     where: { gatewayId },
   });
 
-  const containerConfig = buildContainerConfig(gateway, existingCount, publicKey);
+  let hostPort: number | undefined;
+  let apiHostPort: number | undefined;
+  if (gateway.publishPorts) {
+    hostPort = await findFreePort();
+    if (gateway.type === 'MANAGED_SSH') {
+      apiHostPort = await findFreePort();
+    }
+    logger.info(`${LOG_PREFIX} publishPorts enabled — assigned free host port ${hostPort}${apiHostPort ? `, api port ${apiHostPort}` : ''} for gateway ${gatewayId}`);
+  }
+
+  const containerConfig = buildContainerConfig(gateway, existingCount, publicKey, hostPort, apiHostPort);
 
   let containerInfo;
   try {
@@ -146,6 +162,8 @@ export async function deployGatewayInstance(
   let host: string;
   if (orchestrator.type === OrchestratorType.KUBERNETES) {
     host = containerConfig.name;
+  } else if (gateway.publishPorts && containerInfo.ports[0]?.host) {
+    host = gateway.host || 'localhost';
   } else if (containerInfo.ports[0]?.host) {
     host = 'localhost';
   } else if (config.dockerNetwork) {
@@ -181,6 +199,15 @@ export async function deployGatewayInstance(
         containerName: containerInfo.name,
         orchestratorType: orchestrator.type,
       },
+    });
+  }
+
+  // When publishPorts is enabled for MANAGED_SSH, update gateway.apiPort
+  // with the published API sidecar port so pushKeyToGateway can reach it.
+  if (apiHostPort != null) {
+    await prisma.gateway.update({
+      where: { id: gatewayId },
+      data: { apiPort: apiHostPort },
     });
   }
 

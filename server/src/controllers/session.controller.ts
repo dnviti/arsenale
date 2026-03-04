@@ -6,6 +6,7 @@ import { AuthRequest, RdpSettings } from '../types';
 import { getConnection, getConnectionCredentials } from '../services/connection.service';
 import { generateGuacamoleToken, mergeRdpSettings } from '../services/rdp.service';
 import * as sessionService from '../services/session.service';
+import { selectInstance } from '../services/loadBalancer.service';
 import { AppError } from '../middleware/error.middleware';
 
 const sessionSchema = z.object({
@@ -31,6 +32,7 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
     // Resolve gateway for dynamic guacd routing
     let guacdHost: string | undefined;
     let guacdPort: number | undefined;
+    let selectedInstanceId: string | undefined;
 
     if (conn.gateway) {
       if (conn.gateway.type !== 'GUACD') {
@@ -38,6 +40,15 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       }
       guacdHost = conn.gateway.host;
       guacdPort = conn.gateway.port;
+
+      if (conn.gateway.isManaged) {
+        const inst = await selectInstance(conn.gateway.id, conn.gateway.lbStrategy);
+        if (inst) {
+          guacdHost = inst.host;
+          guacdPort = inst.port;
+          selectedInstanceId = inst.id;
+        }
+      }
     }
 
     let username: string;
@@ -90,6 +101,7 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       userId: req.user!.userId,
       connectionId,
       gatewayId: conn.gatewayId ?? undefined,
+      instanceId: selectedInstanceId,
       protocol: 'RDP',
       guacToken: token,
       ipAddress: req.ip ?? undefined,

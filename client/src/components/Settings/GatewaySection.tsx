@@ -455,6 +455,16 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
                               {gw.isManaged && (
                                 <Chip label="Managed" size="small" color="secondary" variant="outlined" />
                               )}
+                              {gw.publishPorts && (
+                                <Chip label="Published" size="small" color="info" variant="outlined" />
+                              )}
+                              {gw.isManaged && (
+                                <Chip
+                                  label={gw.lbStrategy === 'LEAST_CONNECTIONS' ? 'Least Conn' : 'Round Robin'}
+                                  size="small"
+                                  variant="outlined"
+                                />
+                              )}
                               {gw.isManaged && (
                                 <Typography variant="caption" color="text.secondary">
                                   {gw.runningInstances}/{gw.totalInstances} instances
@@ -476,10 +486,25 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
                             />
                           </TableCell>
                           <TableCell>
-                            <Typography variant="body2">{gw.host}:{gw.port}</Typography>
+                            {gw.publishPorts && gw.isManaged ? (
+                              <Typography variant="body2" color="text.secondary" fontStyle="italic">Per instance</Typography>
+                            ) : (
+                              <Typography variant="body2">{gw.host}:{gw.port}</Typography>
+                            )}
                           </TableCell>
                           <TableCell>
-                            {test?.loading ? (
+                            {gw.publishPorts && gw.isManaged ? (
+                              // For published-port managed gateways, derive status from instances
+                              gw.totalInstances === 0 ? (
+                                <Typography variant="caption" color="text.secondary">No instances</Typography>
+                              ) : gw.runningInstances === gw.totalInstances ? (
+                                <Chip label={`${gw.runningInstances}/${gw.totalInstances} healthy`} size="small" color="success" />
+                              ) : gw.runningInstances > 0 ? (
+                                <Chip label={`${gw.runningInstances}/${gw.totalInstances} healthy`} size="small" color="warning" />
+                              ) : (
+                                <Chip label={`0/${gw.totalInstances} healthy`} size="small" color="error" />
+                              )
+                            ) : test?.loading ? (
                               <CircularProgress size={16} />
                             ) : gw.lastHealthStatus === 'REACHABLE' ? (
                               <Tooltip title={gw.lastCheckedAt ? `Last checked: ${new Date(gw.lastCheckedAt).toLocaleTimeString()}` : ''}>

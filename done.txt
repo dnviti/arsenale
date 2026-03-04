@@ -1666,6 +1666,44 @@
     MODIFICATO: .env.example
 
 
+------------------------------------------------------------------------------
+[x] GATE-080 — Load balancing delle connessioni su istanze di gateway gestiti
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: GATE-078 (completato), GATE-079 (completato)
+  COMPLETATO: Application-level load balancing for managed gateway instances — LoadBalancingStrategy enum (ROUND_ROBIN, LEAST_CONNECTIONS) added to Gateway and GatewayTemplate. New loadBalancer.service.ts with selectInstance() that queries healthy RUNNING instances and selects by strategy. SSH handler and RDP controller now route through selected instance when gateway isManaged. ActiveSession tracks instanceId with SetNull on delete. Autoscaler improved with session-aware scale-down (zero-session instances removed first). Frontend: LB strategy selector in gateway/template dialogs, strategy chip in gateway list, per-instance session distribution in scaling controls.
+
+  DESCRIZIONE:
+  Attualmente le connessioni vengono instradate verso l'host:port statico del
+  gateway, ignorando completamente le singole istanze ManagedGatewayInstance
+  deployate dall'orchestratore. Questo significa che scalare un gateway gestito
+  non distribuisce il carico tra le istanze. Questo task implementa un sistema
+  di load balancing a livello applicativo: quando una connessione SSH o RDP
+  viene avviata attraverso un gateway gestito con piu' istanze, il sistema
+  seleziona automaticamente l'istanza ottimale in base alla strategia
+  configurata (round-robin o least-connections). La sessione viene poi
+  associata all'istanza specifica per consentire un tracking accurato e
+  decisioni di scaling piu' intelligenti.
+
+  FILE COINVOLTI:
+    CREATO:     server/src/services/loadBalancer.service.ts
+    MODIFICATO: server/prisma/schema.prisma
+    MODIFICATO: server/src/lib/prisma.ts
+    MODIFICATO: server/src/services/permission.service.ts
+    MODIFICATO: server/src/socket/ssh.handler.ts
+    MODIFICATO: server/src/controllers/session.controller.ts
+    MODIFICATO: server/src/services/session.service.ts
+    MODIFICATO: server/src/services/gateway.service.ts
+    MODIFICATO: server/src/services/gatewayTemplate.service.ts
+    MODIFICATO: server/src/controllers/gateway.controller.ts
+    MODIFICATO: server/src/services/autoscaler.service.ts
+    MODIFICATO: client/src/api/gateway.api.ts
+    MODIFICATO: client/src/components/gateway/GatewayDialog.tsx
+    MODIFICATO: client/src/components/gateway/GatewayTemplateDialog.tsx
+    MODIFICATO: client/src/components/Settings/GatewaySection.tsx
+    MODIFICATO: client/src/components/orchestration/ScalingControls.tsx
+
+
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
 ================================================================================

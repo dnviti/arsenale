@@ -22,6 +22,8 @@ const createSchema = z.object({
   password: z.string().optional(),
   sshPrivateKey: z.string().optional(),
   apiPort: z.number().int().min(1).max(65535).optional(),
+  publishPorts: z.boolean().optional(),
+  lbStrategy: z.enum(['ROUND_ROBIN', 'LEAST_CONNECTIONS']).optional(),
   monitoringEnabled: z.boolean().optional(),
   monitorIntervalMs: z.number().int().min(1000).max(3600000).optional(),
   inactivityTimeoutSeconds: z.number().int().min(60).max(86400).optional(),
@@ -68,6 +70,8 @@ const createTemplateSchema = z.object({
   monitoringEnabled: z.boolean().optional(),
   monitorIntervalMs: z.number().int().min(1000).max(3600000).optional(),
   inactivityTimeoutSeconds: z.number().int().min(60).max(86400).optional(),
+  publishPorts: z.boolean().optional(),
+  lbStrategy: z.enum(['ROUND_ROBIN', 'LEAST_CONNECTIONS']).optional(),
 });
 
 const updateTemplateSchema = createTemplateSchema.partial();
@@ -82,6 +86,8 @@ const updateSchema = z.object({
   password: z.string().optional(),
   sshPrivateKey: z.string().optional(),
   apiPort: z.number().int().min(1).max(65535).nullable().optional(),
+  publishPorts: z.boolean().optional(),
+  lbStrategy: z.enum(['ROUND_ROBIN', 'LEAST_CONNECTIONS']).optional(),
   monitoringEnabled: z.boolean().optional(),
   monitorIntervalMs: z.number().int().min(1000).max(3600000).optional(),
   inactivityTimeoutSeconds: z.number().int().min(60).max(86400).optional(),

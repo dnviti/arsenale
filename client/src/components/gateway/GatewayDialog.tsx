@@ -34,6 +34,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const [maxReplicasVal, setMaxReplicasVal] = useState('5');
   const [sessPerInstance, setSessPerInstance] = useState('10');
   const [cooldownVal, setCooldownVal] = useState('300');
+  const [publishPorts, setPublishPorts] = useState(false);
+  const [lbStrategy, setLbStrategy] = useState<'ROUND_ROBIN' | 'LEAST_CONNECTIONS'>('ROUND_ROBIN');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [scalingSaving, setScalingSaving] = useState(false);
@@ -63,6 +65,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       setMaxReplicasVal(String(gateway.maxReplicas));
       setSessPerInstance(String(gateway.sessionsPerInstance));
       setCooldownVal(String(gateway.scaleDownCooldownSeconds));
+      setPublishPorts(gateway.publishPorts ?? false);
+      setLbStrategy(gateway.lbStrategy ?? 'ROUND_ROBIN');
     } else if (open) {
       setName('');
       setType('GUACD');
@@ -82,6 +86,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       setMaxReplicasVal('5');
       setSessPerInstance('10');
       setCooldownVal('300');
+      setPublishPorts(false);
+      setLbStrategy('ROUND_ROBIN');
     }
     setError('');
   }, [open, gateway]);
@@ -135,6 +141,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           if (password) data.password = password;
           if (sshPrivateKey) data.sshPrivateKey = sshPrivateKey;
         }
+        if (publishPorts !== (gateway.publishPorts ?? false)) data.publishPorts = publishPorts;
+        if ((type === 'MANAGED_SSH' || type === 'GUACD') && lbStrategy !== (gateway.lbStrategy ?? 'ROUND_ROBIN')) data.lbStrategy = lbStrategy;
         if (monitoringEnabled !== gateway.monitoringEnabled) data.monitoringEnabled = monitoringEnabled;
         const intervalNum = parseInt(monitorIntervalMs, 10);
         if (intervalNum && intervalNum !== gateway.monitorIntervalMs) data.monitorIntervalMs = intervalNum;
@@ -157,6 +165,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           ...(type === 'SSH_BASTION' && password ? { password } : {}),
           ...(type === 'SSH_BASTION' && sshPrivateKey ? { sshPrivateKey } : {}),
           ...(type === 'MANAGED_SSH' && apiPortNum ? { apiPort: apiPortNum } : {}),
+          ...((type === 'MANAGED_SSH' || type === 'GUACD') && publishPorts ? { publishPorts } : {}),
+          ...((type === 'MANAGED_SSH' || type === 'GUACD') ? { lbStrategy } : {}),
         });
       }
       handleClose();
@@ -189,6 +199,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     setMaxReplicasVal('5');
     setSessPerInstance('10');
     setCooldownVal('300');
+    setPublishPorts(false);
+    setLbStrategy('ROUND_ROBIN');
     setError('');
     onClose();
   };
@@ -233,8 +245,46 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
               onChange={(e) => setApiPort(e.target.value)}
               type="number"
               fullWidth
-              helperText="HTTP port for the key management sidecar (default: 8022)"
+              disabled={publishPorts}
+              helperText={publishPorts ? 'Auto-assigned at deploy' : 'HTTP port for the key management sidecar (default: 8022)'}
             />
+          )}
+          {(type === 'MANAGED_SSH' || type === 'GUACD') && (
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={publishPorts}
+                  onChange={(_, v) => {
+                    setPublishPorts(v);
+                    if (v) {
+                      if (!host) setHost('localhost');
+                      const defaultPort = type === 'GUACD' ? '4822' : '2222';
+                      setPort(defaultPort);
+                    }
+                  }}
+                  size="small"
+                />
+              }
+              label="Publish Ports (external access)"
+            />
+          )}
+          {publishPorts && (type === 'MANAGED_SSH' || type === 'GUACD') && (
+            <Alert severity="info" sx={{ py: 0.5 }}>
+              Each deployed instance will get a unique randomly-assigned host port for external access.
+            </Alert>
+          )}
+          {(type === 'MANAGED_SSH' || type === 'GUACD') && (
+            <FormControl fullWidth size="small">
+              <InputLabel>Load Balancing Strategy</InputLabel>
+              <Select
+                value={lbStrategy}
+                label="Load Balancing Strategy"
+                onChange={(e) => setLbStrategy(e.target.value as 'ROUND_ROBIN' | 'LEAST_CONNECTIONS')}
+              >
+                <MenuItem value="ROUND_ROBIN">Round Robin</MenuItem>
+                <MenuItem value="LEAST_CONNECTIONS">Least Connections</MenuItem>
+              </Select>
+            </FormControl>
           )}
           <Box sx={{ display: 'flex', gap: 2 }}>
             <TextField
@@ -250,6 +300,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
               onChange={(e) => setPort(e.target.value)}
               type="number"
               sx={{ width: 120 }}
+              disabled={publishPorts && (type === 'MANAGED_SSH' || type === 'GUACD')}
+              helperText={publishPorts && (type === 'MANAGED_SSH' || type === 'GUACD') ? 'Host port auto-assigned at deploy' : undefined}
             />
           </Box>
           {type === 'SSH_BASTION' && (
