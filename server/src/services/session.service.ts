@@ -69,6 +69,7 @@ export async function startSession(params: StartSessionParams): Promise<string> 
         guacTokenHash: params.guacToken ? hashToken(params.guacToken) : null,
         metadata: (params.metadata as Prisma.InputJsonValue) ?? Prisma.JsonNull,
       },
+      include: { gateway: params.gatewayId ? { select: { name: true } } : false },
     });
 
     auditService.log({
@@ -80,8 +81,10 @@ export async function startSession(params: StartSessionParams): Promise<string> 
         sessionId: session.id,
         protocol: params.protocol,
         ...(params.metadata ?? {}),
+        ...(params.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: params.instanceId ?? null } : {}),
       },
       ipAddress: params.ipAddress,
+      gatewayId: params.gatewayId,
     });
 
     return session.id;
@@ -98,6 +101,7 @@ export async function endSession(
   try {
     const session = await prisma.activeSession.findUnique({
       where: { id: sessionId },
+      include: { gateway: { select: { name: true } } },
     });
     if (!session || session.status === 'CLOSED') return;
 
@@ -120,7 +124,9 @@ export async function endSession(
         durationMs,
         durationFormatted: formatDuration(durationMs),
         ...(reason ? { reason } : {}),
+        ...(session.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId } : {}),
       },
+      gatewayId: session.gatewayId,
     });
   } catch (err) {
     logger.error('Failed to end session:', err);
@@ -286,6 +292,7 @@ export async function cleanupClosedSessions(retentionDays: number): Promise<numb
 export async function recoverOrphanedSessions(): Promise<number> {
   const orphaned = await prisma.activeSession.findMany({
     where: { status: { not: 'CLOSED' } },
+    include: { gateway: { select: { name: true } } },
   });
 
   if (orphaned.length === 0) return 0;
@@ -308,7 +315,9 @@ export async function recoverOrphanedSessions(): Promise<number> {
         reason: 'server_restart',
         durationMs: now.getTime() - session.startedAt.getTime(),
         durationFormatted: formatDuration(now.getTime() - session.startedAt.getTime()),
+        ...(session.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId } : {}),
       },
+      gatewayId: session.gatewayId,
     });
   }
 

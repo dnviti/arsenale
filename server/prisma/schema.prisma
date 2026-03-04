@@ -495,6 +495,7 @@ model AuditLog {
   targetId   String?
   details    Json?
   ipAddress  String?
+  gatewayId  String?
   createdAt  DateTime    @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -502,6 +503,7 @@ model AuditLog {
   @@index([userId])
   @@index([action])
   @@index([createdAt])
+  @@index([gatewayId])
 }
 
 enum NotificationType {

@@ -36,7 +36,13 @@ export interface AuditLogEntry {
   targetId: string | null;
   details: Record<string, unknown> | null;
   ipAddress: string | null;
+  gatewayId: string | null;
   createdAt: string;
+}
+
+export interface AuditGateway {
+  id: string;
+  name: string;
 }
 
 export interface AuditLogResponse {
@@ -56,11 +62,17 @@ export interface AuditLogParams {
   search?: string;
   targetType?: string;
   ipAddress?: string;
+  gatewayId?: string;
   sortBy?: 'createdAt' | 'action';
   sortOrder?: 'asc' | 'desc';
 }
 
 export async function getAuditLogs(params: AuditLogParams = {}): Promise<AuditLogResponse> {
   const res = await api.get('/audit', { params });
+  return res.data;
+}
+
+export async function getAuditGateways(): Promise<AuditGateway[]> {
+  const res = await api.get('/audit/gateways');
   return res.data;
 }

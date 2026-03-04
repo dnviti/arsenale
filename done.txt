@@ -960,6 +960,24 @@
     MODIFICARE: server/src/routes/sharing.routes.ts
     MODIFICARE: server/prisma/schema.prisma
 
+------------------------------------------------------------------------------
+[x] AUDIT-083 — Registrare info gateway nelle voci audit log delle sessioni
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: AUDIT-082 (completato), GATE-080 (completato)
+  COMPLETATO: Added gatewayId column + index to AuditLog Prisma model, enriched session audit entries (SESSION_START, SESSION_END, SESSION_TIMEOUT) with gatewayId, gatewayName, and instanceId details. Added GET /audit/gateways endpoint returning distinct gateways from logs with fallback for deleted gateways. Frontend: gateway filter dropdown in AuditLogDialog, persisted via uiPreferencesStore.
+
+  File coinvolti:
+    MODIFICARE: server/prisma/schema.prisma
+    MODIFICARE: server/src/services/audit.service.ts
+    MODIFICARE: server/src/services/session.service.ts
+    MODIFICARE: server/src/services/sessionCleanup.service.ts
+    MODIFICARE: server/src/controllers/audit.controller.ts
+    MODIFICARE: server/src/routes/audit.routes.ts
+    MODIFICARE: client/src/api/audit.api.ts
+    MODIFICARE: client/src/store/uiPreferencesStore.ts
+    MODIFICARE: client/src/components/Dialogs/AuditLogDialog.tsx
+
 
 ================================================================================
   SEZIONE C — MULTI-TENANT / TEAMS / PERMESSI

@@ -10,6 +10,7 @@ export interface AuditLogInput {
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string | string[];
+  gatewayId?: string | null;
 }
 
 /**
@@ -25,6 +26,7 @@ export function log(input: AuditLogInput): void {
         targetId: input.targetId ?? null,
         details: (input.details as Prisma.InputJsonValue) ?? undefined,
         ipAddress: (Array.isArray(input.ipAddress) ? input.ipAddress[0] : input.ipAddress) ?? null,
+        gatewayId: input.gatewayId ?? null,
       },
     })
     .catch((err) => {
@@ -42,6 +44,7 @@ export interface AuditLogQuery {
   search?: string;
   targetType?: string;
   ipAddress?: string;
+  gatewayId?: string;
   sortBy?: 'createdAt' | 'action';
   sortOrder?: 'asc' | 'desc';
 }
@@ -53,7 +56,13 @@ export interface AuditLogEntry {
   targetId: string | null;
   details: unknown;
   ipAddress: string | null;
+  gatewayId: string | null;
   createdAt: Date;
+}
+
+export interface AuditGateway {
+  id: string;
+  name: string;
 }
 
 export interface PaginatedAuditLogs {
@@ -82,6 +91,9 @@ export async function getAuditLogs(query: AuditLogQuery): Promise<PaginatedAudit
   }
   if (query.ipAddress) {
     where.ipAddress = { contains: query.ipAddress, mode: 'insensitive' };
+  }
+  if (query.gatewayId) {
+    where.gatewayId = query.gatewayId;
   }
   if (query.search) {
     const term = query.search;
@@ -114,6 +126,7 @@ export async function getAuditLogs(query: AuditLogQuery): Promise<PaginatedAudit
         targetId: true,
         details: true,
         ipAddress: true,
+        gatewayId: true,
         createdAt: true,
       },
     }),
@@ -127,4 +140,26 @@ export async function getAuditLogs(query: AuditLogQuery): Promise<PaginatedAudit
     limit,
     totalPages: Math.ceil(total / limit),
   };
+}
+
+export async function getAuditGateways(userId: string): Promise<AuditGateway[]> {
+  const rows = await prisma.auditLog.findMany({
+    where: { userId, gatewayId: { not: null } },
+    select: { gatewayId: true },
+    distinct: ['gatewayId'],
+  });
+
+  const gatewayIds = rows.map((r) => r.gatewayId!);
+  if (gatewayIds.length === 0) return [];
+
+  const gateways = await prisma.gateway.findMany({
+    where: { id: { in: gatewayIds } },
+    select: { id: true, name: true },
+  });
+
+  const nameMap = new Map(gateways.map((g) => [g.id, g.name]));
+  return gatewayIds.map((id) => ({
+    id,
+    name: nameMap.get(id) ?? `Deleted (${id.slice(0, 8)}…)`,
+  }));
 }

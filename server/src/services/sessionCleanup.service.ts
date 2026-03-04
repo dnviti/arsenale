@@ -16,7 +16,7 @@ export async function checkAndCloseInactiveSessions(): Promise<number> {
     const sessions = await prisma.activeSession.findMany({
       where: { status: { in: ['ACTIVE', 'IDLE'] } },
       include: {
-        gateway: { select: { inactivityTimeoutSeconds: true } },
+        gateway: { select: { id: true, name: true, inactivityTimeoutSeconds: true } },
         user: { select: { tenant: { select: { defaultSessionTimeoutSeconds: true } } } },
       },
     });
@@ -55,7 +55,9 @@ export async function checkAndCloseInactiveSessions(): Promise<number> {
           durationFormatted: formatDuration(durationMs),
           inactivitySeconds: Math.round(inactiveMs / 1000),
           effectiveTimeoutSeconds: effectiveTimeout,
+          ...(session.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId } : {}),
         },
+        gatewayId: session.gatewayId,
       });
 
       // For SSH sessions: force-disconnect the socket to trigger cleanup chain

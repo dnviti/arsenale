@@ -12,7 +12,7 @@ import {
   KeyboardArrowDown as ExpandIcon,
   KeyboardArrowUp as CollapseIcon,
 } from '@mui/icons-material';
-import { getAuditLogs, AuditLogEntry, AuditAction, AuditLogParams } from '../../api/audit.api';
+import { getAuditLogs, getAuditGateways, AuditLogEntry, AuditAction, AuditLogParams, AuditGateway } from '../../api/audit.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 
 const SlideUp = forwardRef(function SlideUp(
@@ -163,6 +163,7 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
   const auditLogAction = useUiPreferencesStore((s) => s.auditLogAction);
   const auditLogSearch = useUiPreferencesStore((s) => s.auditLogSearch);
   const auditLogTargetType = useUiPreferencesStore((s) => s.auditLogTargetType);
+  const auditLogGatewayId = useUiPreferencesStore((s) => s.auditLogGatewayId);
   const auditLogSortBy = useUiPreferencesStore((s) => s.auditLogSortBy);
   const auditLogSortOrder = useUiPreferencesStore((s) => s.auditLogSortOrder);
   const setUiPref = useUiPreferencesStore((s) => s.set);
@@ -178,6 +179,7 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
   const [error, setError] = useState('');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(auditLogSearch);
+  const [gateways, setGateways] = useState<AuditGateway[]>([]);
 
   // Debounce search input → store
   useEffect(() => {
@@ -201,6 +203,7 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
       if (auditLogAction) params.action = auditLogAction as AuditAction;
       if (auditLogSearch) params.search = auditLogSearch;
       if (auditLogTargetType) params.targetType = auditLogTargetType;
+      if (auditLogGatewayId) params.gatewayId = auditLogGatewayId;
       if (ipAddress) params.ipAddress = ipAddress;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
@@ -213,10 +216,13 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, auditLogAction, auditLogSearch, auditLogTargetType, ipAddress, startDate, endDate, auditLogSortBy, auditLogSortOrder]);
+  }, [page, rowsPerPage, auditLogAction, auditLogSearch, auditLogTargetType, auditLogGatewayId, ipAddress, startDate, endDate, auditLogSortBy, auditLogSortOrder]);
 
   useEffect(() => {
-    if (open) fetchLogs();
+    if (open) {
+      fetchLogs();
+      getAuditGateways().then(setGateways).catch(() => {});
+    }
   }, [open, fetchLogs]);
 
   const handleChangePage = (_: unknown, newPage: number) => {
@@ -238,7 +244,7 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
     setPage(0);
   };
 
-  const hasActiveFilters = auditLogAction || auditLogSearch || auditLogTargetType || ipAddress || startDate || endDate;
+  const hasActiveFilters = auditLogAction || auditLogSearch || auditLogTargetType || auditLogGatewayId || ipAddress || startDate || endDate;
 
   return (
     <Dialog
@@ -309,6 +315,24 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
                   ))}
                 </Select>
               </FormControl>
+              {gateways.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel>Gateway</InputLabel>
+                  <Select
+                    value={auditLogGatewayId}
+                    label="Gateway"
+                    onChange={(e) => {
+                      setUiPref('auditLogGatewayId', e.target.value);
+                      setPage(0);
+                    }}
+                  >
+                    <MenuItem value="">All Gateways</MenuItem>
+                    {gateways.map((gw) => (
+                      <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
               <TextField
                 size="small"
                 label="IP Address"

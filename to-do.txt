@@ -18,62 +18,6 @@
 ================================================================================
 
 
-------------------------------------------------------------------------------
-[ ] AUDIT-083 — Registrare info gateway nelle voci audit log delle sessioni
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: AUDIT-082 (completato), GATE-080 (completato)
-
-  DESCRIZIONE:
-  Attualmente le voci audit log per SESSION_START, SESSION_END e SESSION_TIMEOUT
-  registrano solo sessionId e protocollo, ma non indicano quale gateway (e quale
-  istanza managed) ha gestito la richiesta. Questa informazione e' cruciale per
-  il troubleshooting e il monitoraggio operativo. Il task aggiunge un campo
-  dedicato gatewayId al modello AuditLog per filtraggio efficiente, arricchisce
-  i dettagli JSON con gatewayId, gatewayName e instanceId, e aggiunge un filtro
-  gateway nella UI dell'audit log.
-
-  DETTAGLI TECNICI:
-  1. Schema Prisma — aggiungere colonna opzionale `gatewayId String?` e indice
-     `@@index([gatewayId])` al modello AuditLog. Nessuna FK verso Gateway per
-     preservare lo storico anche dopo eliminazione del gateway.
-
-  2. audit.service.ts — aggiungere `gatewayId` a AuditLogInput, passarlo in
-     log(), aggiungere filtro `gatewayId` a getAuditLogs(), aggiungere campo
-     a AuditLogEntry. Nuova funzione getAuditGateways() che ritorna i gateway
-     distinti presenti nei log con fallback per gateway eliminati.
-
-  3. session.service.ts — in startSession() risolvere il nome gateway e
-     includere gatewayId, gatewayName, instanceId nei details dell'audit log.
-     Passare gatewayId come campo top-level. Stesse modifiche in endSession()
-     e recoverOrphanedSessions() usando include gateway nella query.
-
-  4. sessionCleanup.service.ts — in checkAndCloseInactiveSessions() includere
-     gateway.name nella query e aggiungere info gateway nelle voci SESSION_TIMEOUT.
-
-  5. audit.controller.ts — aggiungere gatewayId allo schema Zod di validazione
-     query. Nuovo handler listGateways per endpoint filtro.
-     audit.routes.ts — aggiungere GET /audit/gateways.
-
-  6. audit.api.ts — aggiungere gatewayId a AuditLogEntry e AuditLogParams.
-     Nuovo tipo AuditGateway e funzione getAuditGateways().
-
-  7. uiPreferencesStore.ts — aggiungere preferenza auditLogGatewayId.
-
-  8. AuditLogDialog.tsx — aggiungere dropdown filtro Gateway che carica la
-     lista gateways all'apertura, passare gatewayId alla query, includere
-     nel calcolo hasActiveFilters.
-
-  File coinvolti:
-    MODIFICARE: server/prisma/schema.prisma
-    MODIFICARE: server/src/services/audit.service.ts
-    MODIFICARE: server/src/services/session.service.ts
-    MODIFICARE: server/src/services/sessionCleanup.service.ts
-    MODIFICARE: server/src/controllers/audit.controller.ts
-    MODIFICARE: server/src/routes/audit.routes.ts
-    MODIFICARE: client/src/api/audit.api.ts
-    MODIFICARE: client/src/store/uiPreferencesStore.ts
-    MODIFICARE: client/src/components/Dialogs/AuditLogDialog.tsx
 
 
 

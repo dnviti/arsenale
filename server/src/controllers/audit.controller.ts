@@ -18,6 +18,7 @@ const querySchema = z.object({
   search: z.string().max(200).optional(),
   targetType: z.string().max(100).optional(),
   ipAddress: z.string().max(45).optional(),
+  gatewayId: z.string().uuid().optional(),
   sortBy: z.enum(VALID_SORT_FIELDS).default('createdAt'),
   sortOrder: z.enum(VALID_SORT_ORDERS).default('desc'),
 });
@@ -33,6 +34,15 @@ export async function list(req: AuthRequest, res: Response, next: NextFunction) 
     res.json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+export async function listGateways(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gateways = await auditService.getAuditGateways(req.user!.userId);
+    res.json(gateways);
+  } catch (err) {
     next(err);
   }
 }

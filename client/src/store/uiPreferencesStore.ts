@@ -21,13 +21,14 @@ interface UiPreferences {
   auditLogAction: string;
   auditLogSearch: string;
   auditLogTargetType: string;
+  auditLogGatewayId: string;
   auditLogSortBy: string;
   auditLogSortOrder: string;
 }
 
 interface UiPreferencesState extends UiPreferences {
   set: <K extends keyof UiPreferences>(key: K, value: UiPreferences[K]) => void;
-  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections' | 'settingsActiveTab' | 'keychainScopeFilter' | 'keychainTypeFilter' | 'keychainSortBy' | 'orchestrationDashboardTab' | 'orchestrationRefreshInterval' | 'gatewayActiveSubTab' | 'auditLogAction' | 'auditLogSearch' | 'auditLogTargetType' | 'auditLogSortBy' | 'auditLogSortOrder'>) => void;
+  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections' | 'settingsActiveTab' | 'keychainScopeFilter' | 'keychainTypeFilter' | 'keychainSortBy' | 'orchestrationDashboardTab' | 'orchestrationRefreshInterval' | 'gatewayActiveSubTab' | 'auditLogAction' | 'auditLogSearch' | 'auditLogTargetType' | 'auditLogGatewayId' | 'auditLogSortBy' | 'auditLogSortOrder'>) => void;
   toggleTeamSection: (teamId: string) => void;
 }
 
@@ -51,6 +52,7 @@ const defaults: UiPreferences = {
   auditLogAction: '',
   auditLogSearch: '',
   auditLogTargetType: '',
+  auditLogGatewayId: '',
   auditLogSortBy: 'createdAt',
   auditLogSortOrder: 'desc',
 };
