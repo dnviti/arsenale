@@ -147,7 +147,7 @@ Perform these verification checks:
      Run a final check to confirm no processes remain on ports 3000, 3001, 3002. If any remain after 2 retries, inform the user.
 
   4. Present the verification report to the user (including Prisma migration, SAST/quality gate result, and smoke-test result)
-  5. **Run the Step 6 completion flow** (Confirm → Close → Commit) for this task
+  5. **Run the Step 6 completion flow** (Testing Guide → Confirm → Close → Commit) for this task
   6. **Continue to the next `[~]` task** in progressing.txt — repeat Step 0b
 
 - **Some checks fail (task partially implemented or not implemented):**
@@ -213,7 +213,30 @@ After presenting the briefing, ask the user: "Ready to start implementation, or 
 
 After a task has been **fully implemented and the quality gate (`npm run verify`) passes**, execute this completion flow:
 
-**6a. Ask for user confirmation:**
+**6a. Present a Testing Guide:**
+
+Before asking the user to confirm, generate and present a **manual testing guide** specific to the task that was just implemented. Derive the guide from the task's DETTAGLI TECNICI and FILE COINVOLTI sections.
+
+Present it in this format:
+
+> ### Testing Guide for [TASK-CODE] — [Task Title]
+>
+> **Prerequisites:**
+> - [What needs to be running — e.g., `npm run dev`, Docker containers, specific env vars]
+>
+> **Steps to test:**
+> 1. [Concrete action the user can perform in the browser or terminal]
+>    - **Expected:** [What they should see or what should happen]
+> 2. [Next action]
+>    - **Expected:** [Result]
+> 3. [Continue as needed...]
+>
+> **Edge cases to check:**
+> - [2–3 edge cases worth verifying — e.g., empty states, error handling, permissions, invalid input]
+
+The guide must be actionable and specific — use real URLs (e.g., `http://localhost:3000/...`), real UI element names, and real API endpoints from the implementation. Do not use generic placeholders.
+
+**6b. Ask for user confirmation:**
 
 Present a summary of what was done and ask the user to confirm:
 
@@ -225,10 +248,10 @@ Present a summary of what was done and ask the user to confirm:
 > Can you confirm this task is done?"
 
 Use `AskUserQuestion` with options:
-- **"Yes, task is done"** — proceed to 6b
+- **"Yes, task is done"** — proceed to 6c
 - **"Not yet, needs more work"** — stop the completion flow; the task stays as `[~]` in `progressing.txt`
 
-**6b. Move task to done.txt (automatic on confirmation):**
+**6c. Move task to done.txt (automatic on confirmation):**
 
 Once the user confirms the work is done:
 
@@ -240,7 +263,7 @@ Once the user confirms the work is done:
 6. If the task appears in the recommended order section of `to-do.txt`, update its status annotation to `[COMPLETATO]`
 7. Inform the user: "Task [TASK-CODE] has been moved to done.txt."
 
-**6c. Ask to commit:**
+**6d. Ask to commit:**
 
 After closing the task, ask the user:
 
