@@ -119,27 +119,9 @@ export async function create(req: AuthRequest, res: Response, next: NextFunction
       ipAddress: req.ip,
     });
 
-    // Best-effort auto-push key for MANAGED_SSH gateways
-    let keyPushed = false;
-    let keyPushError: string | undefined;
-    if (data.type === 'MANAGED_SSH' && data.apiPort) {
-      try {
-        await gatewayService.pushKeyToGateway(req.user!.tenantId!, result.id);
-        keyPushed = true;
-        auditService.log({
-          userId: req.user!.userId,
-          action: 'SSH_KEY_PUSH',
-          targetType: 'Gateway',
-          targetId: result.id,
-          details: { auto: true },
-          ipAddress: req.ip,
-        });
-      } catch (err) {
-        keyPushError = (err as Error).message;
-      }
-    }
-
-    res.status(201).json({ ...result, keyPushed, keyPushError });
+    // Note: for MANAGED_SSH gateways the SSH key is baked into instances
+    // at deploy time via SSH_AUTHORIZED_KEYS env var. No push needed here.
+    res.status(201).json(result);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
@@ -264,18 +246,21 @@ export async function rotateSshKeyPair(req: AuthRequest, res: Response, next: Ne
 export async function pushKey(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const gatewayId = req.params.id as string;
-    const result = await gatewayService.pushKeyToGateway(
+    const results = await gatewayService.pushKeyToGateway(
       req.user!.tenantId!,
       gatewayId,
     );
+    const succeeded = results.filter(r => r.ok).length;
+    const failed = results.filter(r => !r.ok).length;
     auditService.log({
       userId: req.user!.userId,
       action: 'SSH_KEY_PUSH',
       targetType: 'Gateway',
       targetId: gatewayId,
       ipAddress: req.ip,
+      details: { instances: results.length, succeeded, failed },
     });
-    res.json(result);
+    res.json({ ok: failed === 0, instances: results });
   } catch (err) {
     next(err);
   }
@@ -459,6 +444,45 @@ export async function restartInstance(req: AuthRequest, res: Response, next: Nex
     });
 
     res.json({ restarted: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function getInstanceLogs(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const gatewayId = req.params.id as string;
+    const instanceId = req.params.instanceId as string;
+    const tail = Math.max(1, Math.min(parseInt(req.query.tail as string, 10) || 200, 5000));
+
+    const gateway = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId: req.user!.tenantId! },
+    });
+    if (!gateway) return next(new AppError('Gateway not found', 404));
+
+    const instance = await prisma.managedGatewayInstance.findFirst({
+      where: { id: instanceId, gatewayId },
+    });
+    if (!instance) return next(new AppError('Instance not found', 404));
+
+    const orchestrator = getOrchestrator();
+    const logs = await orchestrator.getContainerLogs(instance.containerId, tail);
+
+    auditService.log({
+      userId: req.user!.userId,
+      action: 'GATEWAY_VIEW_LOGS' as const,
+      targetType: 'ManagedGatewayInstance',
+      targetId: instanceId,
+      details: { gatewayId, containerId: instance.containerId, tail },
+      ipAddress: req.ip,
+    });
+
+    res.json({
+      logs,
+      containerId: instance.containerId,
+      containerName: instance.containerName,
+      timestamp: new Date().toISOString(),
+    });
   } catch (err) {
     next(err);
   }

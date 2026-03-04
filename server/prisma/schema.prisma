@@ -463,6 +463,7 @@ enum AuditAction {
   GATEWAY_SCALE_UP
   GATEWAY_SCALE_DOWN
   GATEWAY_RESTART
+  GATEWAY_VIEW_LOGS
   GATEWAY_HEALTH_CHECK
   BATCH_SHARE
   SESSION_START
@@ -718,6 +719,7 @@ model ManagedGatewayInstance {
   containerName    String
   host             String
   port             Int
+  apiPort          Int?
   status           ManagedInstanceStatus @default(PROVISIONING)
   orchestratorType String
   healthStatus     String?

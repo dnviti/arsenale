@@ -1,11 +1,12 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Chip, IconButton, Tooltip, Typography, Paper,
 } from '@mui/material';
-import { RestartAlt as RestartIcon } from '@mui/icons-material';
+import { RestartAlt as RestartIcon, Article as ArticleIcon } from '@mui/icons-material';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { ManagedInstanceData } from '../../api/gateway.api';
+import ContainerLogDialog from './ContainerLogDialog';
 
 type InstanceStatus = 'PROVISIONING' | 'RUNNING' | 'STOPPED' | 'ERROR' | 'REMOVING';
 
@@ -27,6 +28,8 @@ export default function GatewayInstanceList({ gatewayId }: GatewayInstanceListPr
   const instances = useGatewayStore((s) => s.instances[gatewayId] ?? EMPTY_INSTANCES);
   const fetchInstances = useGatewayStore((s) => s.fetchInstances);
   const restartInstance = useGatewayStore((s) => s.restartInstance);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsInstance, setLogsInstance] = useState<ManagedInstanceData | null>(null);
 
   useEffect(() => {
     fetchInstances(gatewayId);
@@ -41,6 +44,7 @@ export default function GatewayInstanceList({ gatewayId }: GatewayInstanceListPr
   }
 
   return (
+    <>
     <TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
       <Table size="small">
         <TableHead>
@@ -90,6 +94,17 @@ export default function GatewayInstanceList({ gatewayId }: GatewayInstanceListPr
                 </Typography>
               </TableCell>
               <TableCell align="right">
+                <Tooltip title="View logs">
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={() => { setLogsInstance(inst); setLogsOpen(true); }}
+                      disabled={inst.status === 'PROVISIONING'}
+                    >
+                      <ArticleIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
                 <Tooltip title="Restart instance">
                   <span>
                     <IconButton
@@ -107,5 +122,12 @@ export default function GatewayInstanceList({ gatewayId }: GatewayInstanceListPr
         </TableBody>
       </Table>
     </TableContainer>
+    <ContainerLogDialog
+      open={logsOpen}
+      onClose={() => setLogsOpen(false)}
+      gatewayId={gatewayId}
+      instance={logsInstance}
+    />
+    </>
   );
 }

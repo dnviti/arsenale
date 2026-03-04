@@ -256,6 +256,24 @@ export async function restartGatewayInstance(
   return res.data;
 }
 
+export interface ContainerLogsData {
+  logs: string;
+  containerId: string;
+  containerName: string;
+  timestamp: string;
+}
+
+export async function getInstanceLogs(
+  gatewayId: string,
+  instanceId: string,
+  tail?: number,
+): Promise<ContainerLogsData> {
+  const res = await api.get(`/gateways/${gatewayId}/instances/${instanceId}/logs`, {
+    params: tail != null ? { tail } : undefined,
+  });
+  return res.data;
+}
+
 // ---------- Auto-Scaling Configuration ----------
 
 export interface ScalingStatusData {

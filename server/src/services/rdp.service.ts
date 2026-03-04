@@ -46,7 +46,7 @@ export function mergeRdpSettings(
     disableAudio: true,
     enableAudioInput: false,
     security: 'nla',
-    ignoreCert: true,
+    ignoreCert: false,
     console: false,
   };
 
@@ -85,7 +85,7 @@ export function generateGuacamoleToken(params: RdpConnectionParams): string {
     username: params.username,
     password: params.password,
     security: rdp.security ?? 'nla',
-    'ignore-cert': boolStr(rdp.ignoreCert, true),
+    'ignore-cert': boolStr(rdp.ignoreCert, false),
     'enable-wallpaper': boolStr(rdp.enableWallpaper, false),
     'enable-theming': boolStr(rdp.enableTheming, true),
     'enable-font-smoothing': boolStr(rdp.enableFontSmoothing, true),

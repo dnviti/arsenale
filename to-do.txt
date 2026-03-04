@@ -69,31 +69,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] ZT-043 — Fix validazione certificato RDP (default ignoreCert)
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Cambiare il default di ignoreCert da true a false per le connessioni RDP.
-  Attualmente tutte le connessioni RDP ignorano la validazione del certificato
-  del server remoto, rendendo possibili attacchi man-in-the-middle.
-  L'override per connessione (per certificati self-signed) e' gia' disponibile.
-
-  DETTAGLI TECNICI:
-  Backend:
-    - In server/src/services/rdp.service.ts mergeRdpSettings():
-      cambiare ignoreCert: true → ignoreCert: false nei default
-    - In generateGuacamoleToken(): cambiare il fallback da true a false
-    - Connessioni esistenti che richiedono self-signed cert possono
-      impostare ignoreCert: true individualmente nelle impostazioni RDP
-  Frontend:
-    - Verificare che il toggle ignoreCert sia visibile nel dialog
-      impostazioni connessione RDP (dovrebbe gia' esserci)
-    - Opzionale: mostrare un avviso quando l'utente abilita ignoreCert
-  File coinvolti:
-    - server/src/services/rdp.service.ts
 
 
 ------------------------------------------------------------------------------
@@ -249,6 +224,7 @@
     MODIFICARE: client/src/components/gateway/GatewayDialog.tsx
     MODIFICARE: client/src/components/gateway/GatewayTemplateDialog.tsx
     MODIFICARE: client/src/components/Settings/GatewaySection.tsx
+
 
 
 

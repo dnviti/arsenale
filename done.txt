@@ -1785,6 +1785,30 @@
     MODIFICATO: client/src/components/orchestration/ScalingControls.tsx
 
 
+------------------------------------------------------------------------------
+[x] GATE-084 — Visualizzazione log dei container gestiti dalla web UI
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: ORCH-063
+  COMPLETATO: Added container logs viewing from the web UI. Backend: new
+    GET /gateways/:id/instances/:instanceId/logs endpoint with configurable
+    tail parameter (100-5000, default 200), tenant-scoped authorization, and
+    GATEWAY_VIEW_LOGS audit action. Frontend: ContainerLogDialog component
+    with dark monospace log display, tail line selector (100/200/500/1000),
+    resizable panel (drag handle), full-screen toggle, and live view mode
+    (auto-refresh every 3s with pulsing green indicator). ArticleIcon button
+    added to GatewayInstanceList actions column. Prisma migration for new
+    AuditAction enum value.
+
+  File coinvolti:
+    CREATO:     client/src/components/orchestration/ContainerLogDialog.tsx
+    MODIFICATO: server/src/routes/gateway.routes.ts
+    MODIFICATO: server/src/controllers/gateway.controller.ts
+    MODIFICATO: server/prisma/schema.prisma (GATEWAY_VIEW_LOGS AuditAction)
+    MODIFICATO: client/src/api/gateway.api.ts (getInstanceLogs, ContainerLogsData)
+    MODIFICATO: client/src/components/orchestration/GatewayInstanceList.tsx
+
+
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
 ================================================================================
@@ -1905,6 +1929,23 @@
     MODIFICATO: client/src/api/client.ts (interceptor saves rotated token)
     MODIFICATO: client/src/hooks/useAuth.ts (bootstrap saves rotated token)
     MODIFICATO: client/src/pages/ConnectionViewerPage.tsx (popup bootstrap saves rotated token)
+
+
+------------------------------------------------------------------------------
+[x] ZT-043 — Fix validazione certificato RDP (default ignoreCert)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Changed ignoreCert default from true to false in both
+    server/src/services/rdp.service.ts (mergeRdpSettings defaults and
+    generateGuacamoleToken fallback) and client/src/constants/rdpDefaults.ts.
+    RDP connections now validate server certificates by default, preventing
+    MITM attacks. Users can still enable ignoreCert per-connection for
+    self-signed certificates.
+
+  File coinvolti:
+    MODIFICATO: server/src/services/rdp.service.ts
+    MODIFICATO: client/src/constants/rdpDefaults.ts
 
 
 ================================================================================
