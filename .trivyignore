@@ -1,7 +1,0 @@
-# Trivy false positives and known acceptable risks
-
-# .env.example contains placeholder values, not real secrets
-.env.example
-
-# compose.dev.yml contains development-only database password
-compose.dev.yml

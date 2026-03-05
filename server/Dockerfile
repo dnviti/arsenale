@@ -13,6 +13,11 @@ RUN npx tsc
 
 RUN npm prune --production
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup \
+    && chown -R appuser:appgroup /app
+
+USER appuser
+
 EXPOSE 3001 3002
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=5 --start-period=30s \

@@ -679,6 +679,7 @@ model ExternalSecretShare {
   dataTag         String
   hasPin          Boolean    @default(false)
   pinSalt         String?
+  tokenSalt       String?
   expiresAt       DateTime
   maxAccessCount  Int?
   accessCount     Int        @default(0)

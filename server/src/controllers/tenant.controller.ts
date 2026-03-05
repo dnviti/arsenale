@@ -6,6 +6,7 @@ import * as auditService from '../services/audit.service';
 import * as authService from '../services/auth.service';
 import { AppError } from '../middleware/error.middleware';
 import prisma from '../lib/prisma';
+import { setRefreshTokenCookie, setCsrfCookie } from '../utils/cookie';
 
 const createTenantSchema = z.object({
   name: z.string().min(2).max(100),
@@ -44,10 +45,12 @@ export async function createTenant(req: AuthRequest, res: Response, next: NextFu
       details: { name },
       ipAddress: req.ip,
     });
+    setRefreshTokenCookie(res, tokens.refreshToken);
+    const csrfToken = setCsrfCookie(res);
     res.status(201).json({
       tenant,
       accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
+      csrfToken,
       user: tokens.user,
     });
   } catch (err) {

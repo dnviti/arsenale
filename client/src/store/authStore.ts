@@ -13,12 +13,12 @@ interface User {
 
 interface AuthState {
   accessToken: string | null;
-  refreshToken: string | null;
+  csrfToken: string | null;
   user: User | null;
   isAuthenticated: boolean;
-  setAuth: (accessToken: string, refreshToken: string, user: User) => void;
+  setAuth: (accessToken: string, csrfToken: string, user: User) => void;
   setAccessToken: (token: string) => void;
-  setRefreshToken: (token: string) => void;
+  setCsrfToken: (token: string) => void;
   updateUser: (data: Partial<User>) => void;
   logout: () => void;
 }
@@ -27,13 +27,13 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       accessToken: null,
-      refreshToken: null,
+      csrfToken: null,
       user: null,
       isAuthenticated: false,
-      setAuth: (accessToken, refreshToken, user) =>
-        set({ accessToken, refreshToken, user, isAuthenticated: true }),
+      setAuth: (accessToken, csrfToken, user) =>
+        set({ accessToken, csrfToken, user, isAuthenticated: true }),
       setAccessToken: (accessToken) => set({ accessToken }),
-      setRefreshToken: (refreshToken) => set({ refreshToken }),
+      setCsrfToken: (csrfToken) => set({ csrfToken }),
       updateUser: (data) => {
         const current = get().user;
         if (current) set({ user: { ...current, ...data } });
@@ -41,7 +41,7 @@ export const useAuthStore = create<AuthState>()(
       logout: () =>
         set({
           accessToken: null,
-          refreshToken: null,
+          csrfToken: null,
           user: null,
           isAuthenticated: false,
         }),
@@ -49,10 +49,9 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'rdm-auth',
       partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        csrfToken: state.csrfToken,
       }),
     }
   )

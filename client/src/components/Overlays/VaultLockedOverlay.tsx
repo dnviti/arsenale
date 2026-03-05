@@ -10,7 +10,6 @@ export default function VaultLockedOverlay() {
   const unlocked = useVaultStore((s) => s.unlocked);
   const initialized = useVaultStore((s) => s.initialized);
   const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
   const authLogout = useAuthStore((s) => s.logout);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -36,9 +35,7 @@ export default function VaultLockedOverlay() {
   };
 
   const handleLogout = async () => {
-    if (refreshToken) {
-      try { await logoutApi(refreshToken); } catch {}
-    }
+    try { await logoutApi(); } catch {}
     authLogout();
   };
 

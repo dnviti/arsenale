@@ -123,7 +123,8 @@ if [[ "$MODE" != "quick" ]]; then
     aquasec/trivy:latest fs /project \
     --scanners vuln,misconfig,secret \
     --severity HIGH,CRITICAL \
-    --ignorefile /project/.trivyignore \
+    --ignorefile /project/.trivyignore.yaml \
+    --skip-dirs node_modules \
     --exit-code 1 \
     2>&1
   TRIVY_FS_EXIT=$?

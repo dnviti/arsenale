@@ -14,3 +14,5 @@ WORKDIR /app
 
 # Ensure the node user owns the workspace and the node_modules mount point
 RUN mkdir -p /app/node_modules && chown -R node:node /app
+
+USER node

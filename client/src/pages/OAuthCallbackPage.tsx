@@ -14,7 +14,7 @@ export default function OAuthCallbackPage() {
   /* eslint-disable react-hooks/set-state-in-effect -- one-time OAuth callback processing */
   useEffect(() => {
     const accessToken = searchParams.get('accessToken');
-    const refreshToken = searchParams.get('refreshToken');
+    const csrfToken = searchParams.get('csrfToken');
     const needsVaultSetup = searchParams.get('needsVaultSetup') === 'true';
     const userId = searchParams.get('userId');
     const email = searchParams.get('email');
@@ -27,7 +27,7 @@ export default function OAuthCallbackPage() {
       return;
     }
 
-    if (!accessToken || !refreshToken || !userId || !email) {
+    if (!accessToken || !csrfToken || !userId || !email) {
       setError('Invalid OAuth callback parameters');
       return;
     }
@@ -39,7 +39,7 @@ export default function OAuthCallbackPage() {
       avatarData,
       vaultSetupComplete: !needsVaultSetup,
     };
-    setAuth(accessToken, refreshToken, user);
+    setAuth(accessToken, csrfToken, user);
 
     // Remove tokens from URL
     window.history.replaceState({}, '', '/oauth/callback');

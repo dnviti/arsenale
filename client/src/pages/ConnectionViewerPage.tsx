@@ -10,7 +10,7 @@ import RdpViewer from '../components/RDP/RdpViewer';
 export default function ConnectionViewerPage() {
   const { id } = useParams<{ id: string }>();
   const accessToken = useAuthStore((s) => s.accessToken);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
 
   const [authReady, setAuthReady] = useState(Boolean(accessToken));
@@ -25,11 +25,15 @@ export default function ConnectionViewerPage() {
       setAuthReady(true);
       return;
     }
-    if (refreshToken) {
-      axios.post('/api/auth/refresh', { refreshToken })
+    if (isAuthenticated) {
+      const csrfToken = useAuthStore.getState().csrfToken;
+      axios.post('/api/auth/refresh', {}, {
+        withCredentials: true,
+        headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+      })
         .then((res) => {
           setAccessToken(res.data.accessToken);
-          if (res.data.refreshToken) useAuthStore.getState().setRefreshToken(res.data.refreshToken);
+          if (res.data.csrfToken) useAuthStore.getState().setCsrfToken(res.data.csrfToken);
           setAuthReady(true);
         })
         .catch(() => {
@@ -40,7 +44,7 @@ export default function ConnectionViewerPage() {
       setError('Not authenticated. Please log in.');
       setLoading(false);
     }
-  }, [accessToken, refreshToken, setAccessToken]);
+  }, [accessToken, isAuthenticated, setAccessToken]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Fetch connection data once auth is ready

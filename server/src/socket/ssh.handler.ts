@@ -254,20 +254,22 @@ export function setupSshHandler(io: Server) {
         });
 
         session.client.on('error', (err) => {
-          socket.emit('session:error', { message: err.message });
+          logger.error('SSH connection error:', err.message);
+          socket.emit('session:error', { message: 'Connection failed. Please check your credentials and try again.' });
           cleanup(sessionId);
         });
 
         if (session.bastionClient) {
           session.bastionClient.on('error', (err) => {
-            socket.emit('session:error', { message: `Bastion error: ${err.message}` });
+            logger.error('SSH bastion error:', err.message);
+            socket.emit('session:error', { message: 'Gateway connection failed. Please check gateway configuration.' });
             cleanup(sessionId);
           });
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Connection failed';
         logSessionError(message);
-        socket.emit('session:error', { message });
+        socket.emit('session:error', { message: 'Connection failed. Please check your credentials and try again.' });
       }
     });
 

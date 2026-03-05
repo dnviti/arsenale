@@ -33,7 +33,7 @@ export interface InviteResult {
 export interface CreateTenantResponse {
   tenant: TenantData;
   accessToken: string;
-  refreshToken: string;
+  csrfToken: string;
   user: { id: string; email: string; username: string | null; avatarData: string | null; tenantId?: string; tenantRole?: string };
 }
 

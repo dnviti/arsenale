@@ -76,8 +76,8 @@ export default function LoginPage() {
     return () => clearInterval(countdownRef.current);
   }, [resendCountdown > 0]);
 
-  const completeLogin = (data: { accessToken: string; refreshToken: string; user: { id: string; email: string; username: string | null; avatarData: string | null } }) => {
-    setAuth(data.accessToken, data.refreshToken, data.user);
+  const completeLogin = (data: { accessToken: string; csrfToken: string; user: { id: string; email: string; username: string | null; avatarData: string | null } }) => {
+    setAuth(data.accessToken, data.csrfToken, data.user);
     setVaultUnlocked(true);
     navigate('/');
   };

@@ -8,7 +8,7 @@ export type LoginResponse =
   | { requiresMFA: true; requiresTOTP?: boolean; methods: MfaMethod[]; tempToken: string }
   | { mfaSetupRequired: true; tempToken: string }
   | { requiresTOTP: true; tempToken: string }
-  | { requiresTOTP?: false; accessToken: string; refreshToken: string; user: UserInfo };
+  | { requiresTOTP?: false; accessToken: string; csrfToken: string; user: UserInfo };
 
 export async function loginApi(email: string, password: string): Promise<LoginResponse> {
   const res = await api.post('/auth/login', { email, password });
@@ -17,7 +17,7 @@ export async function loginApi(email: string, password: string): Promise<LoginRe
 
 export async function verifyTotpApi(tempToken: string, code: string) {
   const res = await api.post('/auth/verify-totp', { tempToken, code });
-  return res.data as { accessToken: string; refreshToken: string; user: UserInfo };
+  return res.data as { accessToken: string; csrfToken: string; user: UserInfo };
 }
 
 export async function requestSmsCodeApi(tempToken: string) {
@@ -27,7 +27,7 @@ export async function requestSmsCodeApi(tempToken: string) {
 
 export async function verifySmsApi(tempToken: string, code: string) {
   const res = await api.post('/auth/verify-sms', { tempToken, code });
-  return res.data as { accessToken: string; refreshToken: string; user: UserInfo };
+  return res.data as { accessToken: string; csrfToken: string; user: UserInfo };
 }
 
 export async function mfaSetupInitApi(tempToken: string) {
@@ -37,7 +37,7 @@ export async function mfaSetupInitApi(tempToken: string) {
 
 export async function mfaSetupVerifyApi(tempToken: string, code: string) {
   const res = await api.post('/auth/mfa-setup/verify', { tempToken, code });
-  return res.data as { accessToken: string; refreshToken: string; user: UserInfo };
+  return res.data as { accessToken: string; csrfToken: string; user: UserInfo };
 }
 
 export async function registerApi(email: string, password: string) {
@@ -45,15 +45,15 @@ export async function registerApi(email: string, password: string) {
   return res.data as { message: string; emailVerifyRequired: boolean };
 }
 
-export async function refreshApi(refreshToken: string) {
-  const res = await api.post('/auth/refresh', { refreshToken });
+export async function refreshApi() {
+  const res = await api.post('/auth/refresh');
   return res.data as {
     accessToken: string;
-    refreshToken: string;
+    csrfToken: string;
     user: { id: string; email: string; username: string | null; avatarData: string | null };
   };
 }
 
-export async function logoutApi(refreshToken: string) {
-  await api.post('/auth/logout', { refreshToken });
+export async function logoutApi() {
+  await api.post('/auth/logout');
 }

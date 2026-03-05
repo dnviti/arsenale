@@ -10,6 +10,7 @@ import * as oauthService from '../services/oauth.service';
 import * as auditService from '../services/audit.service';
 import { issueTokens } from '../services/auth.service';
 import { logger } from '../utils/logger';
+import { setRefreshTokenCookie, setCsrfCookie } from '../utils/cookie';
 
 type OAuthProvider = 'google' | 'microsoft' | 'github' | 'oidc';
 
@@ -57,9 +58,7 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
     try {
       if (err || !data) {
         logger.error('OAuth authentication failed:', err?.message || 'No data');
-        return res.redirect(
-          `${config.clientUrl}/login?error=${encodeURIComponent(err?.message || 'Authentication failed')}`
-        );
+        return res.redirect(`${config.clientUrl}/login?error=authentication_failed`);
       }
 
       const { oauthProfile, oauthTokens } = data;
@@ -93,9 +92,12 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
         ipAddress: req.ip,
       });
 
+      setRefreshTokenCookie(res, tokens.refreshToken);
+      const csrfToken = setCsrfCookie(res);
+
       const params = new URLSearchParams({
         accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
+        csrfToken,
         needsVaultSetup: String(!result.user.vaultSetupComplete),
         userId: result.user.id,
         email: result.user.email,
@@ -108,8 +110,7 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
       res.redirect(`${config.clientUrl}/oauth/callback?${params.toString()}`);
     } catch (error) {
       logger.error('OAuth callback error:', error);
-      const message = error instanceof Error ? error.message : 'OAuth login failed';
-      res.redirect(`${config.clientUrl}/login?error=${encodeURIComponent(message)}`);
+      res.redirect(`${config.clientUrl}/login?error=authentication_failed`);
     }
   })(req, res, next);
 }

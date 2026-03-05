@@ -44,7 +44,6 @@ const SIDEBAR_WIDTH = 280;
 export default function MainLayout() {
   const user = useAuthStore((s) => s.user);
   const authLogout = useAuthStore((s) => s.logout);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
   const vaultUnlocked = useVaultStore((s) => s.unlocked);
   const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
   const vaultInitialized = useVaultStore((s) => s.initialized);
@@ -143,9 +142,7 @@ export default function MainLayout() {
 
   const handleLogout = async () => {
     setAnchorEl(null);
-    if (refreshToken) {
-      try { await logoutApi(refreshToken); } catch {}
-    }
+    try { await logoutApi(); } catch {}
     await useTabsStore.getState().clearAll();
     authLogout();
   };

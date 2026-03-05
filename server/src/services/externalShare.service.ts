@@ -88,13 +88,15 @@ export async function createExternalShare(
   // 5. Derive encryption key for the share
   let derivedKey: Buffer;
   let pinSalt: string | null = null;
+  let tokenSalt: string | null = null;
   const hasPin = !!input.pin;
 
   if (input.pin) {
     pinSalt = generateSalt();
     derivedKey = await deriveKeyFromTokenAndPin(rawToken, input.pin, pinSalt);
   } else {
-    derivedKey = await deriveKeyFromToken(rawToken, shareId);
+    tokenSalt = crypto.randomBytes(32).toString('base64');
+    derivedKey = await deriveKeyFromToken(rawToken, shareId, tokenSalt);
   }
 
   // 6. Re-encrypt the secret data with the derived key
@@ -116,6 +118,7 @@ export async function createExternalShare(
       dataTag: encrypted.tag,
       hasPin,
       pinSalt,
+      tokenSalt,
       expiresAt,
       maxAccessCount: input.maxAccessCount ?? null,
       secretType: secret.type,
@@ -195,7 +198,7 @@ export async function accessExternalShare(
     throw new AppError('Access limit reached', 410);
   }
 
-  if (share.hasPin && !pin) {
+  if (share.hasPin && (!pin || pin.trim() === '')) {
     throw new AppError('PIN is required', 400);
   }
 
@@ -205,7 +208,7 @@ export async function accessExternalShare(
     if (share.hasPin) {
       derivedKey = await deriveKeyFromTokenAndPin(token, pin!, share.pinSalt!);
     } else {
-      derivedKey = await deriveKeyFromToken(token, share.id);
+      derivedKey = await deriveKeyFromToken(token, share.id, share.tokenSalt ?? undefined);
     }
   } catch {
     throw new AppError('Failed to derive decryption key', 500);

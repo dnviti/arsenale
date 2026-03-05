@@ -4,13 +4,17 @@ import { useAuthStore } from '../store/authStore';
 const api = axios.create({
   baseURL: '/api',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
-// Request interceptor: attach JWT
+// Request interceptor: attach JWT and CSRF token
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken;
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+  const { accessToken, csrfToken } = useAuthStore.getState();
+  if (accessToken) {
+    config.headers.Authorization = `Bearer ${accessToken}`;
+  }
+  if (csrfToken && (config.url?.includes('/auth/refresh') || config.url?.includes('/auth/logout'))) {
+    config.headers['X-CSRF-Token'] = csrfToken;
   }
   return config;
 });
@@ -28,16 +32,19 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      const refreshToken = useAuthStore.getState().refreshToken;
-      if (refreshToken) {
+      const { isAuthenticated, csrfToken } = useAuthStore.getState();
+      if (isAuthenticated) {
         try {
           if (!refreshPromise) {
             refreshPromise = axios
-              .post('/api/auth/refresh', { refreshToken })
+              .post('/api/auth/refresh', {}, {
+                withCredentials: true,
+                headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+              })
               .then((res) => {
-                const { accessToken, refreshToken: newRefreshToken, user } = res.data;
+                const { accessToken, csrfToken: newCsrfToken, user } = res.data;
                 useAuthStore.getState().setAccessToken(accessToken);
-                if (newRefreshToken) useAuthStore.getState().setRefreshToken(newRefreshToken);
+                if (newCsrfToken) useAuthStore.getState().setCsrfToken(newCsrfToken);
                 if (user) useAuthStore.getState().updateUser(user);
                 return accessToken as string;
               })

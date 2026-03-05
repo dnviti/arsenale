@@ -32,7 +32,13 @@ function resolveServerEncryptionKey(): Buffer {
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   guacamoleWsPort: parseInt(process.env.GUACAMOLE_WS_PORT || '3002', 10),
-  jwtSecret: process.env.JWT_SECRET || 'dev-secret-change-me',
+  jwtSecret: (() => {
+    const secret = process.env.JWT_SECRET;
+    if (!secret && process.env.NODE_ENV === 'production') {
+      throw new Error('JWT_SECRET is required in production');
+    }
+    return secret || 'dev-secret-change-me';
+  })(),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   guacdHost: process.env.GUACD_HOST || 'localhost',
@@ -110,6 +116,14 @@ export const config = {
       callbackUrl: process.env.OIDC_CALLBACK_URL || 'http://localhost:3001/api/auth/oidc/callback',
       scopes: process.env.OIDC_SCOPES || 'openid profile email',
     },
+  },
+  cookie: {
+    refreshTokenName: 'rdm-rt',
+    csrfTokenName: 'rdm-csrf',
+    path: '/api/auth',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict' as const,
+    httpOnly: true,
   },
   keyRotationCron: process.env.KEY_ROTATION_CRON || '0 2 * * *',
   keyRotationAdvanceDays: parseInt(process.env.KEY_ROTATION_ADVANCE_DAYS || '7', 10),

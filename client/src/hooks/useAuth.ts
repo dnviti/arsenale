@@ -5,14 +5,14 @@ import { refreshApi } from '../api/auth.api';
 
 export function useAuth() {
   const navigate = useNavigate();
-  const { isAuthenticated, refreshToken, setAccessToken, logout } = useAuthStore();
+  const { isAuthenticated, accessToken, setAccessToken, logout } = useAuthStore();
 
   useEffect(() => {
-    if (!isAuthenticated && refreshToken) {
-      refreshApi(refreshToken)
+    if (isAuthenticated && !accessToken) {
+      refreshApi()
         .then((data) => {
           setAccessToken(data.accessToken);
-          if (data.refreshToken) useAuthStore.getState().setRefreshToken(data.refreshToken);
+          if (data.csrfToken) useAuthStore.getState().setCsrfToken(data.csrfToken);
           if (data.user) useAuthStore.getState().updateUser(data.user);
         })
         .catch(() => {

@@ -23,6 +23,7 @@
     "@vonage/server-sdk": "^3.26.4",
     "argon2": "^0.44.0",
     "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dockerode": "^4.0.9",
     "dotenv": "^17.3.1",
@@ -50,6 +51,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/dockerode": "^4.0.1",
     "@types/express": "^5.0.6",

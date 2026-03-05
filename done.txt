@@ -263,6 +263,86 @@
 ================================================================================
 
 ------------------------------------------------------------------------------
+[x] SAST-090 — Script e pipeline CI/CD per analisi di sicurezza del codice
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: SAST-031 (completato)
+  COMPLETATO: Created security.yml CI workflow (npm audit, CodeQL, Trivy fs,
+    Trivy container image matrix), local security-scan.sh script with
+    --quick/default/--docker modes, enforced workflow_run dependency chain
+    (Security -> Verify -> Docker Build / SSH GW Build), removed || true from
+    sast/audit steps, created .trivyignore, fixed multer vulnerability.
+
+  DESCRIZIONE:
+  Implementare uno script locale e un workflow GitHub Actions dedicato per
+  l'analisi di sicurezza del codice, e stabilire una catena di dipendenze
+  obbligatoria tra le pipeline. Attualmente il progetto ha solo npm audit
+  (con || true che ne annulla l'efficacia) ed eslint-plugin-security, e
+  le pipeline (verify, docker-build, ssh-gateway-build) girano in modo
+  indipendente senza gate obbligatori. Mancano SAST avanzato (CodeQL),
+  scansione filesystem per secret e misconfiguration (Trivy fs), e
+  scansione container per le immagini server/client.
+  Il task crea un security gate completo e impone l'ordine:
+    security.yml PASS -> verify.yml PASS -> docker-build / ssh-gateway-build
+  Nessuna build viene eseguita se security o verify falliscono.
+
+  DETTAGLI TECNICI:
+  1) Script locale scripts/security-scan.sh:
+    - Riutilizzare scripts/container-runtime.sh per detection docker/podman
+    - Modalita' --quick: solo npm audit + eslint security (veloce)
+    - Modalita' default: + Trivy fs scan (vuln, misconfig, secret)
+    - Modalita' --docker: + build e scan immagini Docker (server, client,
+      ssh-gateway)
+    - Trivy eseguito via container: nessuna installazione locale richiesta
+    - Exit code non-zero se trovate vulnerabilita' HIGH/CRITICAL
+    - Output colorato con summary finale
+
+  2) Workflow .github/workflows/security.yml:
+    - Trigger: push/PR su main + schedule settimanale + workflow_dispatch
+    - Job dependency-audit: npm audit senza || true
+    - Job codeql-analysis: CodeQL per JavaScript/TypeScript con upload SARIF
+    - Job trivy-filesystem: Trivy fs scan con upload SARIF
+    - Job trivy-container-images: matrix build+scan di server, client,
+      ssh-gateway con upload SARIF al GitHub Security tab
+    - Permissions: security-events: write, contents: read
+
+  3) Catena di dipendenze obbligatoria tra workflow:
+    - security.yml e' il primo gate: deve passare prima di tutto
+    - verify.yml dipende da security.yml: aggiungere
+      workflow_run con workflow: ["Security"] e types: [completed],
+      e un check iniziale che verifica conclusion == 'success'
+    - docker-build.yml dipende da verify.yml: aggiungere
+      workflow_run con workflow: ["Verify"] e types: [completed],
+      e check che conclusion == 'success'
+    - ssh-gateway-build.yml dipende da verify.yml: stesso pattern
+    - Ordine risultante: Security -> Verify -> Docker Build / SSH GW Build
+    - Mantenere workflow_dispatch su tutti i workflow per trigger manuale
+    - Le PR non possono fare merge se security o verify falliscono
+      (configurare branch protection rules nel README/docs)
+
+  4) Correzioni agli script esistenti:
+    - package.json: rimuovere || true da sast cosi' che npm audit faccia
+      effettivamente fallire la build quando ci sono vulnerabilita' note
+      moderate o superiori; aggiungere script "security" per scan completo
+    - verify.yml: rimuovere || true dal dependency audit step, cambiare
+      trigger da push/PR a workflow_run dipendente da security.yml
+    - .trivyignore per falsi positivi (.env.example)
+    - Se ci sono vulnerabilita' preesistenti non risolvibili, valutare
+      --omit=dev o .npmrc con configurazione audit specifica invece di
+      silenziare tutto con || true
+
+  File coinvolti:
+    CREARE:     scripts/security-scan.sh
+    CREARE:     .github/workflows/security.yml
+    CREARE:     .trivyignore
+    MODIFICARE: package.json
+    MODIFICARE: .github/workflows/verify.yml
+    MODIFICARE: .github/workflows/docker-build.yml
+    MODIFICARE: .github/workflows/ssh-gateway-build.yml
+    MODIFICARE: .gitignore
+
+
+------------------------------------------------------------------------------
 [x] LOG-085 — Logging avanzato con livelli verbose/debug configurabili
 ------------------------------------------------------------------------------
   Priorita: MEDIA
@@ -1955,6 +2035,54 @@
   File coinvolti:
     MODIFICATO: server/src/services/rdp.service.ts
     MODIFICATO: client/src/constants/rdpDefaults.ts
+
+------------------------------------------------------------------------------
+[x] ZT-091 — Token storage sicuro: refresh token in HttpOnly cookie
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Moved refresh token from localStorage to HttpOnly Secure cookie
+    (rdm-rt) and kept access token in memory only (Zustand without persistence).
+    Added CSRF double-submit cookie protection (rdm-csrf) with timingSafeEqual
+    validation on /refresh and /logout. Created server/src/utils/cookie.ts
+    (setRefreshTokenCookie, setCsrfCookie, clearAuthCookies) and
+    server/src/middleware/csrf.middleware.ts. Updated auth/oauth/tenant controllers
+    to set cookies via Set-Cookie headers. Client: removed refreshToken from store,
+    added withCredentials:true, X-CSRF-Token header injection, and silent refresh
+    on mount when isAuthenticated but no accessToken in memory.
+
+  File coinvolti:
+    CREATO:     server/src/utils/cookie.ts
+    CREATO:     server/src/middleware/csrf.middleware.ts
+    MODIFICATO: server/src/config.ts
+    MODIFICATO: server/src/app.ts
+    MODIFICATO: server/src/controllers/auth.controller.ts
+    MODIFICATO: server/src/controllers/oauth.controller.ts
+    MODIFICATO: server/src/controllers/tenant.controller.ts
+    MODIFICATO: server/src/routes/auth.routes.ts
+    MODIFICATO: client/src/store/authStore.ts
+    MODIFICATO: client/src/api/client.ts
+    MODIFICATO: client/src/api/auth.api.ts
+    MODIFICATO: client/src/api/tenant.api.ts
+    MODIFICATO: client/src/hooks/useAuth.ts
+    MODIFICATO: client/src/pages/LoginPage.tsx
+
+------------------------------------------------------------------------------
+[x] ZT-092 — HKDF salt randomico per external share senza PIN
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+  COMPLETATO: Added random 32-byte HKDF salt for external shares without PIN.
+    Added nullable tokenSalt field to ExternalSecretShare model (migration zt-092).
+    Modified deriveKeyFromToken() to accept optional salt parameter with backward-
+    compatible fallback to empty buffer. createExternalShare() generates random
+    salt for no-PIN shares; accessExternalShare() passes stored tokenSalt to
+    derivation. Old shares without salt continue to work via null/undefined fallback.
+
+  File coinvolti:
+    MODIFICATO: server/prisma/schema.prisma (tokenSalt String? on ExternalSecretShare)
+    MODIFICATO: server/src/services/crypto.service.ts (optional salt param in deriveKeyFromToken)
+    MODIFICATO: server/src/services/externalShare.service.ts (generate & use tokenSalt)
 
 
 ================================================================================

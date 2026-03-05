@@ -41,6 +41,7 @@ export default function RegisterPage() {
     e.preventDefault();
     setError('');
 
+    // eslint-disable-next-line security/detect-possible-timing-attacks -- client-side UI validation, not a security comparison
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       return;

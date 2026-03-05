@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import passport from 'passport';
 import authRoutes from './routes/auth.routes';
 import oauthRoutes from './routes/oauth.routes';
@@ -46,8 +47,10 @@ app.use(helmet({
   frameguard: { action: 'deny' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
-app.use(cors({ origin: ['http://localhost:3000'], credentials: true }));
+if (config.nodeEnv === 'production') app.set('trust proxy', 1);
+app.use(cors({ origin: [config.clientUrl], credentials: true }));
 app.use(express.json({ limit: '500kb' }));
+app.use(cookieParser());
 app.use(passport.initialize());
 if (config.logHttpRequests) app.use(requestLogger);
 

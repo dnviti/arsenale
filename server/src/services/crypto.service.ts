@@ -124,12 +124,12 @@ export function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-export function deriveKeyFromToken(token: string, shareId: string): Promise<Buffer> {
+export function deriveKeyFromToken(token: string, shareId: string, salt?: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const ikm = Buffer.from(token, 'base64url');
-    const salt = Buffer.alloc(0);
+    const saltBuf = salt ? Buffer.from(salt, 'base64') : Buffer.alloc(0);
     const info = Buffer.from(shareId, 'utf8');
-    crypto.hkdf('sha256', ikm, salt, info, KEY_LENGTH, (err, derivedKey) => {
+    crypto.hkdf('sha256', ikm, saltBuf, info, KEY_LENGTH, (err, derivedKey) => {
       if (err) return reject(err);
       resolve(Buffer.from(derivedKey));
     });

@@ -16,18 +16,18 @@ function getUserDrivePath(userId: string): string {
 
 export async function ensureUserDrive(userId: string): Promise<string> {
   const dirPath = getUserDrivePath(userId);
-  await fs.mkdir(dirPath, { recursive: true });
+  await fs.mkdir(dirPath, { recursive: true }); // eslint-disable-line security/detect-non-literal-fs-filename -- userId is sanitized in getUserDrivePath
   return dirPath;
 }
 
 export async function listFiles(userId: string): Promise<FileInfo[]> {
   const dirPath = getUserDrivePath(userId);
   try {
-    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const entries = await fs.readdir(dirPath, { withFileTypes: true }); // eslint-disable-line security/detect-non-literal-fs-filename -- sanitized path
     const files: FileInfo[] = [];
     for (const entry of entries) {
       if (entry.isFile()) {
-        const stat = await fs.stat(path.join(dirPath, entry.name));
+        const stat = await fs.stat(path.join(dirPath, entry.name)); // eslint-disable-line security/detect-non-literal-fs-filename -- sanitized path
         files.push({
           name: entry.name,
           size: stat.size,
@@ -58,7 +58,7 @@ export async function getFilePath(userId: string, fileName: string): Promise<str
 
 export async function deleteFile(userId: string, fileName: string): Promise<void> {
   const filePath = await getFilePath(userId, fileName);
-  await fs.unlink(filePath);
+  await fs.unlink(filePath); // eslint-disable-line security/detect-non-literal-fs-filename -- path validated by getFilePath
 }
 
 export async function checkQuota(userId: string, additionalBytes: number): Promise<void> {

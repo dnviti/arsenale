@@ -4,6 +4,7 @@ import * as authService from '../services/auth.service';
 import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 import { config } from '../config';
+import { setRefreshTokenCookie, setCsrfCookie, clearAuthCookies } from '../utils/cookie';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -13,10 +14,6 @@ const registerSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
-});
-
-const refreshSchema = z.object({
-  refreshToken: z.string(),
 });
 
 export async function register(req: Request, res: Response, next: NextFunction) {
@@ -63,9 +60,11 @@ export async function login(req: Request, res: Response, next: NextFunction) {
       });
     } else if (!('requiresMFA' in result) || !result.requiresMFA) {
       auditService.log({ userId: result.user.id, action: 'LOGIN', ipAddress: req.ip });
+      setRefreshTokenCookie(res, result.refreshToken);
+      const csrfToken = setCsrfCookie(res);
       res.json({
         accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
+        csrfToken,
         user: result.user,
       });
     }
@@ -88,7 +87,9 @@ export async function verifyTotp(req: Request, res: Response, next: NextFunction
     const { tempToken, code } = verifyTotpSchema.parse(req.body);
     const result = await authService.verifyTotp(tempToken, code);
     auditService.log({ userId: result.user.id, action: 'LOGIN_TOTP', ipAddress: req.ip });
-    res.json(result);
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfCookie(res);
+    res.json({ accessToken: result.accessToken, csrfToken, user: result.user });
   } catch (err) {
     if (err instanceof z.ZodError) {
       return next(new AppError('Invalid code format', 400));
@@ -131,7 +132,9 @@ export async function verifySms(req: Request, res: Response, next: NextFunction)
     const { tempToken, code } = verifySmsSchema.parse(req.body);
     const result = await authService.verifySmsCode(tempToken, code);
     auditService.log({ userId: result.user.id, action: 'LOGIN_SMS', ipAddress: req.ip });
-    res.json(result);
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfCookie(res);
+    res.json({ accessToken: result.accessToken, csrfToken, user: result.user });
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError('Invalid code format', 400));
     if (err instanceof Error) {
@@ -145,14 +148,17 @@ export async function verifySms(req: Request, res: Response, next: NextFunction)
 
 export async function refresh(req: Request, res: Response, next: NextFunction) {
   try {
-    const { refreshToken } = refreshSchema.parse(req.body);
-    const result = await authService.refreshAccessToken(refreshToken);
-    res.json(result);
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return next(new AppError(err.issues[0].message, 400));
+    const refreshToken = req.cookies?.[config.cookie.refreshTokenName];
+    if (!refreshToken) {
+      return next(new AppError('Missing refresh token', 401));
     }
+    const result = await authService.refreshAccessToken(refreshToken);
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfCookie(res);
+    res.json({ accessToken: result.accessToken, csrfToken, user: result.user });
+  } catch (err) {
     if (err instanceof Error && err.message.includes('refresh token')) {
+      clearAuthCookies(res);
       return next(new AppError(err.message, 401));
     }
     next(err);
@@ -161,11 +167,14 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 
 export async function logout(req: Request, res: Response, next: NextFunction) {
   try {
-    const { refreshToken } = refreshSchema.parse(req.body);
-    const userId = await authService.logout(refreshToken);
-    if (userId) {
-      auditService.log({ userId, action: 'LOGOUT', ipAddress: req.ip });
+    const refreshToken = req.cookies?.[config.cookie.refreshTokenName];
+    if (refreshToken) {
+      const userId = await authService.logout(refreshToken);
+      if (userId) {
+        auditService.log({ userId, action: 'LOGOUT', ipAddress: req.ip });
+      }
     }
+    clearAuthCookies(res);
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -239,7 +248,9 @@ export async function mfaSetupVerify(req: Request, res: Response, next: NextFunc
     const result = await authService.verifyMfaSetupDuringLogin(tempToken, code);
     auditService.log({ userId: result.user.id, action: 'TOTP_ENABLE', ipAddress: req.ip });
     auditService.log({ userId: result.user.id, action: 'LOGIN', ipAddress: req.ip });
-    res.json(result);
+    setRefreshTokenCookie(res, result.refreshToken);
+    const csrfToken = setCsrfCookie(res);
+    res.json({ accessToken: result.accessToken, csrfToken, user: result.user });
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError('Invalid code format', 400));
     if (err instanceof AppError) return next(err);
