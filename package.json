@@ -46,7 +46,10 @@
     "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "sast": "npm audit --audit-level=moderate || true",
+    "sast": "npm audit --audit-level=critical",
+    "security": "./scripts/security-scan.sh",
+    "security:quick": "./scripts/security-scan.sh --quick",
+    "security:docker": "./scripts/security-scan.sh --docker",
     "verify": "npm run typecheck && npm run lint && npm run sast && npm run build"
   },
   "devDependencies": {

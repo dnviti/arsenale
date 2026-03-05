@@ -9,6 +9,9 @@ on:
     branches: ["main"]
     paths:
       - "ssh-gateway/**"
+  workflow_run:
+    workflows: ['Verify']
+    types: [completed]
   workflow_dispatch:
 
 env:
@@ -16,7 +19,16 @@ env:
   IMAGE_NAME: ${{ github.repository }}/ssh-gateway
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
+    steps:
+      - run: echo "Verify gate passed"
+
   build-and-push:
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,6 +37,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -58,7 +72,7 @@ jobs:
           context: ./ssh-gateway
           file: ./ssh-gateway/Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push') }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

@@ -156,6 +156,9 @@ server/src/generated/
 # Scratch / test scripts
 test_token*.mjs
 
+# Security scan artifacts
+trivy-*.sarif
+
 # Internal task tracker (not for public consumption)
 to-do.txt
 progressing.txt
