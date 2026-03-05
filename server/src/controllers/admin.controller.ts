@@ -4,9 +4,14 @@ import { AuthRequest } from '../types';
 import { sendEmail, getEmailStatus } from '../services/email';
 import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
+import * as appConfigService from '../services/appConfig.service';
 
 const testEmailSchema = z.object({
   to: z.string().email(),
+});
+
+const selfSignupSchema = z.object({
+  enabled: z.boolean(),
 });
 
 export async function emailStatus(
@@ -59,5 +64,42 @@ export async function sendTestEmail(
         500,
       ),
     );
+  }
+}
+
+export async function getAppConfig(
+  _req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const selfSignupEnabled = await appConfigService.getSelfSignupEnabled();
+    res.json({ selfSignupEnabled });
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function setSelfSignup(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+) {
+  try {
+    const { enabled } = selfSignupSchema.parse(req.body);
+    await appConfigService.setSelfSignupEnabled(enabled);
+
+    auditService.log({
+      userId: req.user!.userId,
+      action: 'APP_CONFIG_UPDATE',
+      details: { key: 'selfSignupEnabled', value: enabled },
+      ipAddress: req.ip,
+    });
+
+    res.json({ selfSignupEnabled: enabled });
+  } catch (err) {
+    if (err instanceof z.ZodError)
+      return next(new AppError(err.issues[0].message, 400));
+    next(err);
   }
 }

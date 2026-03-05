@@ -1,8 +1,19 @@
 import prisma from '../lib/prisma';
+import bcrypt from 'bcrypt';
 import { AppError } from '../middleware/error.middleware';
 import * as sshKeyService from './sshkey.service';
 import * as auditService from './audit.service';
 import { logger } from '../utils/logger';
+import {
+  generateSalt,
+  generateMasterKey,
+  deriveKeyFromPassword,
+  encryptMasterKey,
+  generateRecoveryKey,
+  encryptMasterKeyWithRecovery,
+} from './crypto.service';
+
+const BCRYPT_ROUNDS = 12;
 
 function generateSlug(name: string): string {
   return name
@@ -188,6 +199,7 @@ export async function listTenantUsers(tenantId: string) {
       tenantRole: true,
       totpEnabled: true,
       smsMfaEnabled: true,
+      enabled: true,
       createdAt: true,
     },
     orderBy: { email: 'asc' },
@@ -306,4 +318,115 @@ export async function removeUser(tenantId: string, targetUserId: string, actingU
   });
 
   return { removed: true };
+}
+
+export async function createUser(
+  tenantId: string,
+  data: { email: string; username?: string; password: string; role: 'ADMIN' | 'MEMBER' },
+  _actingUserId: string,
+) {
+  // Check for existing user
+  const existing = await prisma.user.findUnique({ where: { email: data.email } });
+  if (existing) {
+    if (existing.tenantId === tenantId) {
+      throw new AppError('User is already a member of this organization', 400);
+    }
+    if (existing.tenantId) {
+      throw new AppError('A user with this email already belongs to another organization', 400);
+    }
+    throw new AppError('A user with this email already exists', 409);
+  }
+
+  // Hash password
+  const passwordHash = await bcrypt.hash(data.password, BCRYPT_ROUNDS);
+
+  // Vault encryption setup (identical to auth.service register flow)
+  const vaultSalt = generateSalt();
+  const masterKey = generateMasterKey();
+  const derivedKey = await deriveKeyFromPassword(data.password, vaultSalt);
+  const encryptedVault = encryptMasterKey(masterKey, derivedKey);
+
+  // Recovery key
+  const recoveryKey = generateRecoveryKey();
+  const recoveryResult = await encryptMasterKeyWithRecovery(masterKey, recoveryKey);
+
+  const user = await prisma.user.create({
+    data: {
+      email: data.email,
+      username: data.username || null,
+      passwordHash,
+      vaultSalt,
+      encryptedVaultKey: encryptedVault.ciphertext,
+      vaultKeyIV: encryptedVault.iv,
+      vaultKeyTag: encryptedVault.tag,
+      encryptedVaultRecoveryKey: recoveryResult.encrypted.ciphertext,
+      vaultRecoveryKeyIV: recoveryResult.encrypted.iv,
+      vaultRecoveryKeyTag: recoveryResult.encrypted.tag,
+      vaultRecoveryKeySalt: recoveryResult.salt,
+      emailVerified: true,
+      tenantId,
+      tenantRole: data.role,
+    },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      tenantRole: true,
+      createdAt: true,
+    },
+  });
+
+  // Zero sensitive data
+  masterKey.fill(0);
+  derivedKey.fill(0);
+
+  return { user, recoveryKey };
+}
+
+export async function toggleUserEnabled(
+  tenantId: string,
+  targetUserId: string,
+  enabled: boolean,
+  actingUserId: string,
+) {
+  const targetUser = await prisma.user.findFirst({
+    where: { id: targetUserId, tenantId },
+  });
+  if (!targetUser) {
+    throw new AppError('User not found in this organization', 404);
+  }
+
+  if (targetUserId === actingUserId) {
+    throw new AppError('Cannot disable your own account', 400);
+  }
+
+  if (!enabled && targetUser.tenantRole === 'OWNER') {
+    const enabledOwnerCount = await prisma.user.count({
+      where: { tenantId, tenantRole: 'OWNER', enabled: true },
+    });
+    if (enabledOwnerCount <= 1) {
+      throw new AppError('Cannot disable the last active owner', 400);
+    }
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: targetUserId },
+    data: { enabled },
+    select: {
+      id: true,
+      email: true,
+      username: true,
+      tenantRole: true,
+      enabled: true,
+    },
+  });
+
+  // If disabling, revoke all refresh tokens to force immediate logout
+  if (!enabled) {
+    await prisma.refreshToken.deleteMany({
+      where: { userId: targetUserId },
+    });
+  }
+
+  return updated;
 }

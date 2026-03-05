@@ -59,8 +59,16 @@ export default function LoginPage() {
     }
     const oauthError = searchParams.get('error');
     if (oauthError) {
-      setError(decodeURIComponent(oauthError));
+      const errorCode = searchParams.get('code');
+      if (errorCode === 'registration_disabled') {
+        setError('Public registration is currently disabled. Contact your organization administrator to get an account.');
+      } else if (errorCode === 'account_disabled') {
+        setError('Your account has been disabled. Contact your organization administrator.');
+      } else {
+        setError(decodeURIComponent(oauthError));
+      }
       searchParams.delete('error');
+      searchParams.delete('code');
       setSearchParams(searchParams, { replace: true });
     }
   }, []);

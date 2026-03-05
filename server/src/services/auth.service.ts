@@ -25,12 +25,18 @@ import { verifyCode as verifyTotpCode, getDecryptedSecret } from './totp.service
 import { encrypt, getMasterKey } from './crypto.service';
 import { sendVerificationEmail } from './email';
 import * as auditService from './audit.service';
+import { getSelfSignupEnabled } from './appConfig.service';
 
 const BCRYPT_ROUNDS = 12;
 const RESEND_COOLDOWN_MS = 60 * 1000;
 const EMAIL_VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 
 export async function register(email: string, password: string) {
+  const selfSignupEnabled = await getSelfSignupEnabled();
+  if (!selfSignupEnabled) {
+    throw new AppError('Registration is currently disabled. Contact your administrator.', 403);
+  }
+
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
     throw new Error('Email already registered');
@@ -150,6 +156,17 @@ export async function login(email: string, password: string, ipAddress?: string 
       ipAddress,
     });
     throw new Error('Invalid email or password');
+  }
+
+  // Check if account is disabled
+  if (!user.enabled) {
+    auditService.log({
+      userId: user.id,
+      action: 'LOGIN_FAILURE',
+      details: { reason: 'account_disabled', email },
+      ipAddress,
+    });
+    throw new AppError('Your account has been disabled. Contact your administrator.', 403);
   }
 
   // Check account lockout
@@ -494,6 +511,14 @@ export async function refreshAccessToken(refreshToken: string) {
   // Token has expired
   if (stored.expiresAt < new Date()) {
     await prisma.refreshToken.delete({ where: { id: stored.id } });
+    throw new Error('Invalid or expired refresh token');
+  }
+
+  // Block disabled users
+  if (!stored.user.enabled) {
+    await prisma.refreshToken.deleteMany({
+      where: { tokenFamily: stored.tokenFamily },
+    });
     throw new Error('Invalid or expired refresh token');
   }
 

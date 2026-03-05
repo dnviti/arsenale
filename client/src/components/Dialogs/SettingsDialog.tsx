@@ -29,6 +29,7 @@ import TenantSection from '../Settings/TenantSection';
 import TeamSection from '../Settings/TeamSection';
 import GatewaySection from '../Settings/GatewaySection';
 import EmailProviderSection from '../Settings/EmailProviderSection';
+import SelfSignupSection from '../Settings/SelfSignupSection';
 import TenantAuditLogSection from '../Settings/TenantAuditLogSection';
 
 const SlideUp = forwardRef(function SlideUp(
@@ -203,6 +204,7 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
           )}
           {resolvedTab === 'administration' && (
             <Stack spacing={3}>
+              <SelfSignupSection />
               <EmailProviderSection />
               <TenantAuditLogSection />
             </Stack>

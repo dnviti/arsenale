@@ -9,5 +9,7 @@ router.use(authenticate);
 
 router.get('/email/status', requireTenantRole('ADMIN'), adminController.emailStatus);
 router.post('/email/test', requireTenantRole('ADMIN'), adminController.sendTestEmail);
+router.get('/app-config', requireTenantRole('ADMIN'), adminController.getAppConfig);
+router.put('/app-config/self-signup', requireTenantRole('ADMIN'), adminController.setSelfSignup);
 
 export default router;

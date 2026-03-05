@@ -16,6 +16,7 @@ const registrationRateLimiter = rateLimit({
 
 const router = Router();
 
+router.get('/config', authController.publicAuthConfig);
 router.post('/register', registrationRateLimiter, authController.register);
 router.get('/verify-email', authController.verifyEmail);
 router.post('/resend-verification', authController.resendVerification);

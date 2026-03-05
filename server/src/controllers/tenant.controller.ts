@@ -7,6 +7,7 @@ import * as authService from '../services/auth.service';
 import { AppError } from '../middleware/error.middleware';
 import prisma from '../lib/prisma';
 import { setRefreshTokenCookie, setCsrfCookie } from '../utils/cookie';
+import { logger } from '../utils/logger';
 
 const createTenantSchema = z.object({
   name: z.string().min(2).max(100),
@@ -26,6 +27,18 @@ const inviteUserSchema = z.object({
 
 const updateRoleSchema = z.object({
   role: z.enum(['OWNER', 'ADMIN', 'MEMBER']),
+});
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  username: z.string().min(1).max(100).optional(),
+  password: z.string().min(8),
+  role: z.enum(['ADMIN', 'MEMBER']),
+  sendWelcomeEmail: z.boolean().optional().default(false),
+});
+
+const toggleUserEnabledSchema = z.object({
+  enabled: z.boolean(),
 });
 
 export async function createTenant(req: AuthRequest, res: Response, next: NextFunction) {
@@ -179,6 +192,63 @@ export async function getMfaStats(req: AuthRequest, res: Response, next: NextFun
     const stats = await tenantService.getTenantMfaStats(tenantId);
     res.json(stats);
   } catch (err) {
+    next(err);
+  }
+}
+
+export async function createUser(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const data = createUserSchema.parse(req.body);
+    const tenantId = req.params.id as string;
+    const result = await tenantService.createUser(
+      tenantId,
+      { email: data.email, username: data.username, password: data.password, role: data.role },
+      req.user!.userId,
+    );
+
+    if (data.sendWelcomeEmail) {
+      import('../services/email').then(({ sendWelcomeEmail }) => {
+        sendWelcomeEmail(data.email, data.password).catch((err: unknown) => {
+          logger.error('Failed to send welcome email:', err);
+        });
+      });
+    }
+
+    auditService.log({
+      userId: req.user!.userId,
+      action: 'TENANT_CREATE_USER',
+      targetType: 'User',
+      targetId: result.user.id,
+      details: { email: data.email, role: data.role, tenantId },
+      ipAddress: req.ip,
+    });
+
+    res.status(201).json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+export async function toggleUserEnabled(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const { enabled } = toggleUserEnabledSchema.parse(req.body);
+    const tenantId = req.params.id as string;
+    const targetUserId = req.params.userId as string;
+    const result = await tenantService.toggleUserEnabled(tenantId, targetUserId, enabled, req.user!.userId);
+
+    auditService.log({
+      userId: req.user!.userId,
+      action: 'TENANT_TOGGLE_USER',
+      targetType: 'User',
+      targetId: targetUserId,
+      details: { enabled, tenantId },
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
     next(err);
   }
 }

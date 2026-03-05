@@ -98,6 +98,7 @@ model User {
   smsOtpExpiresAt    DateTime?
   webauthnEnabled    Boolean     @default(false)
   vaultAutoLockMinutes Int?
+  enabled            Boolean     @default(true)
   emailVerified      Boolean     @default(false)
   emailVerifyToken   String?     @unique
   emailVerifyExpiry  DateTime?
@@ -519,6 +520,9 @@ enum AuditAction {
   PASSWORD_RESET_FAILURE
   VAULT_RECOVERY_KEY_GENERATED
   VAULT_RESET
+  TENANT_CREATE_USER
+  TENANT_TOGGLE_USER
+  APP_CONFIG_UPDATE
 }
 
 model AuditLog {
@@ -787,4 +791,10 @@ model ManagedGatewayInstance {
 
   @@index([gatewayId])
   @@index([status])
+}
+
+model AppConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

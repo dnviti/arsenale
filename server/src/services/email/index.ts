@@ -107,6 +107,38 @@ export async function sendPasswordResetEmail(
   });
 }
 
+export async function sendWelcomeEmail(
+  to: string,
+  temporaryPassword: string,
+): Promise<void> {
+  const loginUrl = `${config.clientUrl}/login`;
+
+  const send = getSendFn();
+  if (!send) {
+    logger.info('========================================');
+    logger.info('WELCOME EMAIL (dev mode):');
+    logger.info(`  To: ${to}`);
+    logger.info(`  Temporary password: ${temporaryPassword}`);
+    logger.info(`  Login URL: ${loginUrl}`);
+    logger.info('========================================');
+    return;
+  }
+
+  await send({
+    to,
+    subject: 'Your account has been created — Remote Desktop Manager',
+    html: `
+      <h2>Welcome to Remote Desktop Manager</h2>
+      <p>An administrator has created an account for you.</p>
+      <p><strong>Email:</strong> ${to}</p>
+      <p><strong>Temporary password:</strong> ${temporaryPassword}</p>
+      <p><a href="${loginUrl}">Sign in to your account</a></p>
+      <p>We recommend changing your password after your first login.</p>
+    `,
+    text: `Welcome to Remote Desktop Manager\n\nAn administrator has created an account for you.\nEmail: ${to}\nTemporary password: ${temporaryPassword}\nLogin: ${loginUrl}\n\nPlease change your password after your first login.`,
+  });
+}
+
 export function getEmailStatus(): {
   provider: string;
   configured: boolean;

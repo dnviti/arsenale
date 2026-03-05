@@ -26,5 +26,7 @@ router.get('/:id/users', requireTenant, requireOwnTenant, tenantController.listU
 router.post('/:id/invite', requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), tenantController.inviteUser);
 router.put('/:id/users/:userId', requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), tenantController.updateUserRole);
 router.delete('/:id/users/:userId', requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), tenantController.removeUser);
+router.post('/:id/users', requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), tenantController.createUser);
+router.patch('/:id/users/:userId/enabled', requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), tenantController.toggleUserEnabled);
 
 export default router;

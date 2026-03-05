@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import {
-  TenantData, TenantUser,
+  TenantData, TenantUser, CreateUserData, CreateUserResult,
   getMyTenant, createTenant as createTenantApi,
   updateTenant as updateTenantApi, deleteTenant as deleteTenantApi,
   listTenantUsers, inviteUser as inviteUserApi,
   updateUserRole as updateUserRoleApi, removeUser as removeUserApi,
+  createTenantUser, toggleUserEnabled as toggleUserEnabledApi,
 } from '../api/tenant.api';
 import { useAuthStore } from './authStore';
 
@@ -22,6 +23,8 @@ interface TenantState {
   inviteUser: (email: string, role: 'ADMIN' | 'MEMBER') => Promise<void>;
   updateUserRole: (userId: string, role: 'OWNER' | 'ADMIN' | 'MEMBER') => Promise<void>;
   removeUser: (userId: string) => Promise<void>;
+  createUser: (data: CreateUserData) => Promise<CreateUserResult>;
+  toggleUserEnabled: (userId: string, enabled: boolean) => Promise<void>;
   reset: () => void;
 }
 
@@ -99,6 +102,21 @@ export const useTenantStore = create<TenantState>((set, get) => ({
     const { tenant } = get();
     if (!tenant) return;
     await removeUserApi(tenant.id, userId);
+    await get().fetchUsers();
+  },
+
+  createUser: async (data) => {
+    const { tenant } = get();
+    if (!tenant) throw new Error('No tenant');
+    const result = await createTenantUser(tenant.id, data);
+    await get().fetchUsers();
+    return result;
+  },
+
+  toggleUserEnabled: async (userId, enabled) => {
+    const { tenant } = get();
+    if (!tenant) return;
+    await toggleUserEnabledApi(tenant.id, userId, enabled);
     await get().fetchUsers();
   },
 

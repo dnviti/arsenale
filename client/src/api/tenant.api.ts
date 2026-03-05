@@ -21,7 +21,27 @@ export interface TenantUser {
   tenantRole: string;
   totpEnabled: boolean;
   smsMfaEnabled: boolean;
+  enabled: boolean;
   createdAt: string;
+}
+
+export interface CreateUserData {
+  email: string;
+  username?: string;
+  password: string;
+  role: 'ADMIN' | 'MEMBER';
+  sendWelcomeEmail?: boolean;
+}
+
+export interface CreateUserResult {
+  user: {
+    id: string;
+    email: string;
+    username: string | null;
+    tenantRole: string;
+    createdAt: string;
+  };
+  recoveryKey: string;
 }
 
 export interface InviteResult {
@@ -91,5 +111,22 @@ export async function removeUser(
   userId: string,
 ): Promise<{ removed: boolean }> {
   const res = await api.delete(`/tenants/${tenantId}/users/${userId}`);
+  return res.data;
+}
+
+export async function createTenantUser(
+  tenantId: string,
+  data: CreateUserData,
+): Promise<CreateUserResult> {
+  const res = await api.post(`/tenants/${tenantId}/users`, data);
+  return res.data;
+}
+
+export async function toggleUserEnabled(
+  tenantId: string,
+  userId: string,
+  enabled: boolean,
+): Promise<TenantUser> {
+  const res = await api.patch(`/tenants/${tenantId}/users/${userId}/enabled`, { enabled });
   return res.data;
 }

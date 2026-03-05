@@ -6,6 +6,7 @@ import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 import { config } from '../config';
 import { setRefreshTokenCookie, setCsrfCookie, clearAuthCookies } from '../utils/cookie';
+import { getPublicConfig } from '../services/appConfig.service';
 
 const registerSchema = z.object({
   email: z.string().email(),
@@ -389,6 +390,15 @@ export async function completePasswordReset(req: Request, res: Response, next: N
       if (err.message.includes('token')) return next(new AppError(err.message, 400));
       if (err.message.includes('SMS')) return next(new AppError(err.message, 401));
     }
+    next(err);
+  }
+}
+
+export async function publicAuthConfig(_req: Request, res: Response, next: NextFunction) {
+  try {
+    const cfg = await getPublicConfig();
+    res.json(cfg);
+  } catch (err) {
     next(err);
   }
 }

@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma';
 import { OAuthProfile } from '../config/passport';
 import { AppError } from '../middleware/error.middleware';
+import { getSelfSignupEnabled } from './appConfig.service';
 import {
   generateSalt,
   generateMasterKey,
@@ -38,13 +39,17 @@ export async function findOrCreateOAuthUser(
       user: {
         select: {
           id: true, email: true, username: true, avatarData: true,
-          vaultSetupComplete: true, tenantId: true, tenantRole: true,
+          vaultSetupComplete: true, tenantId: true, tenantRole: true, enabled: true,
         },
       },
     },
   });
 
   if (existingOAuth) {
+    if (!existingOAuth.user.enabled) {
+      throw new AppError('Your account has been disabled. Contact your administrator.', 403);
+    }
+
     // Update stored OAuth tokens
     await prisma.oAuthAccount.update({
       where: { id: existingOAuth.id },
@@ -55,7 +60,8 @@ export async function findOrCreateOAuthUser(
       },
     });
 
-    return { user: existingOAuth.user, isNewUser: false };
+    const { enabled: _e1, ...oauthUser } = existingOAuth.user;
+    return { user: oauthUser, isNewUser: false };
   }
 
   // 2. No existing OAuth link — check if a user with this email already exists
@@ -63,11 +69,15 @@ export async function findOrCreateOAuthUser(
     where: { email: profile.email },
     select: {
       id: true, email: true, username: true, avatarData: true,
-      vaultSetupComplete: true, tenantId: true, tenantRole: true,
+      vaultSetupComplete: true, tenantId: true, tenantRole: true, enabled: true,
     },
   });
 
   if (existingUser) {
+    if (!existingUser.enabled) {
+      throw new AppError('Your account has been disabled. Contact your administrator.', 403);
+    }
+
     // Auto-link: existing user gains a new OAuth account
     await prisma.oAuthAccount.create({
       data: {
@@ -80,10 +90,17 @@ export async function findOrCreateOAuthUser(
       },
     });
 
-    return { user: existingUser, isNewUser: false };
+    const { enabled: _e2, ...linkUser } = existingUser;
+    return { user: linkUser, isNewUser: false };
   }
 
-  // 3. Brand new user — create User + OAuthAccount in a transaction
+  // 3. Brand new user — check if self-signup is enabled
+  const selfSignupEnabled = await getSelfSignupEnabled();
+  if (!selfSignupEnabled) {
+    throw new AppError('Registration is currently disabled. Contact your administrator.', 403);
+  }
+
+  // Create User + OAuthAccount in a transaction
   const newUser = await prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
       data: {

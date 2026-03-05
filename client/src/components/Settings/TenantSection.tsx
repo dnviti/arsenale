@@ -5,11 +5,12 @@ import {
   Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogContentText,
   DialogActions, Alert, CircularProgress, Box, IconButton, FormControlLabel, Switch,
 } from '@mui/material';
-import { PersonAdd, Delete as DeleteIcon } from '@mui/icons-material';
+import { PersonAdd, Delete as DeleteIcon, GroupAdd } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { useTenantStore } from '../../store/tenantStore';
 import { getTenantMfaStats } from '../../api/tenant.api';
 import InviteDialog from '../Dialogs/InviteDialog';
+import CreateUserDialog from '../Dialogs/CreateUserDialog';
 
 const TENANT_ROLES = ['OWNER', 'ADMIN', 'MEMBER'] as const;
 
@@ -30,6 +31,7 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
   const fetchUsers = useTenantStore((s) => s.fetchUsers);
   const updateUserRole = useTenantStore((s) => s.updateUserRole);
   const removeUser = useTenantStore((s) => s.removeUser);
+  const toggleUserEnabled = useTenantStore((s) => s.toggleUserEnabled);
 
   const [editName, setEditName] = useState('');
   const [nameError, setNameError] = useState('');
@@ -54,6 +56,8 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
   const [vaultAutoLockMax, setVaultAutoLockMax] = useState<string>('none');
   const [savingVaultLock, setSavingVaultLock] = useState(false);
   const [vaultLockError, setVaultLockError] = useState('');
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [togglingUser, setTogglingUser] = useState<string | null>(null);
 
   const tenantRole = user?.tenantRole;
   const isAdmin = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
@@ -199,6 +203,21 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
         'Failed to update role'
       );
+    }
+  };
+
+  const handleToggleEnabled = async (userId: string, enabled: boolean) => {
+    setTogglingUser(userId);
+    setError('');
+    try {
+      await toggleUserEnabled(userId, enabled);
+    } catch (err: unknown) {
+      setError(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ||
+        'Failed to update user status'
+      );
+    } finally {
+      setTogglingUser(null);
     }
   };
 
@@ -396,14 +415,24 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
             <Typography variant="h6" sx={{ flexGrow: 1 }}>Members</Typography>
             {isAdmin && (
-              <Button
-                startIcon={<PersonAdd />}
-                variant="outlined"
-                size="small"
-                onClick={() => setInviteOpen(true)}
-              >
-                Invite
-              </Button>
+              <Stack direction="row" spacing={1}>
+                <Button
+                  startIcon={<GroupAdd />}
+                  variant="contained"
+                  size="small"
+                  onClick={() => setCreateUserOpen(true)}
+                >
+                  Create User
+                </Button>
+                <Button
+                  startIcon={<PersonAdd />}
+                  variant="outlined"
+                  size="small"
+                  onClick={() => setInviteOpen(true)}
+                >
+                  Invite
+                </Button>
+              </Stack>
             )}
           </Box>
           {usersLoading ? (
@@ -418,12 +447,13 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
                     <TableCell>User</TableCell>
                     <TableCell>Role</TableCell>
                     <TableCell>MFA</TableCell>
+                    {isAdmin && <TableCell>Status</TableCell>}
                     {isAdmin && <TableCell align="right">Actions</TableCell>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {users.map((u) => (
-                    <TableRow key={u.id}>
+                    <TableRow key={u.id} sx={u.enabled === false ? { opacity: 0.5 } : undefined}>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Avatar src={u.avatarData || undefined} sx={{ width: 28, height: 28 }}>
@@ -466,6 +496,20 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
                         )}
                       </TableCell>
                       {isAdmin && (
+                        <TableCell>
+                          {u.id === user?.id ? (
+                            <Chip label="Active" color="success" size="small" />
+                          ) : (
+                            <Switch
+                              size="small"
+                              checked={u.enabled !== false}
+                              disabled={togglingUser === u.id}
+                              onChange={(_, checked) => handleToggleEnabled(u.id, checked)}
+                            />
+                          )}
+                        </TableCell>
+                      )}
+                      {isAdmin && (
                         <TableCell align="right">
                           {u.id !== user?.id && (
                             <IconButton
@@ -498,6 +542,7 @@ export default function TenantSection({ onNavigateToTab }: TenantSectionProps) {
       </Card>
 
       <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
+      <CreateUserDialog open={createUserOpen} onClose={() => setCreateUserOpen(false)} />
 
       {/* Delete org confirmation */}
       <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>

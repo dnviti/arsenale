@@ -20,3 +20,17 @@ export async function sendTestEmail(
   );
   return data;
 }
+
+export interface AppConfig {
+  selfSignupEnabled: boolean;
+}
+
+export async function getAppConfig(): Promise<AppConfig> {
+  const { data } = await api.get<AppConfig>('/admin/app-config');
+  return data;
+}
+
+export async function setSelfSignup(enabled: boolean): Promise<AppConfig> {
+  const { data } = await api.put<AppConfig>('/admin/app-config/self-signup', { enabled });
+  return data;
+}

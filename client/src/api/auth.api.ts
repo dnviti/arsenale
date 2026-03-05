@@ -67,3 +67,8 @@ export async function refreshApi() {
 export async function logoutApi() {
   await api.post('/auth/logout');
 }
+
+export async function getPublicConfig(): Promise<{ selfSignupEnabled: boolean }> {
+  const res = await api.get('/auth/config');
+  return res.data;
+}

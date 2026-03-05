@@ -3,7 +3,7 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
   Box, Card, CardContent, TextField, Button, Typography, Alert, Link,
 } from '@mui/material';
-import { registerApi } from '../api/auth.api';
+import { registerApi, getPublicConfig } from '../api/auth.api';
 import { resendVerificationEmail } from '../api/email.api';
 import OAuthButtons from '../components/OAuthButtons';
 
@@ -19,7 +19,14 @@ export default function RegisterPage() {
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
   const [resendCountdown, setResendCountdown] = useState(0);
+  const [signupDisabled, setSignupDisabled] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  useEffect(() => {
+    getPublicConfig()
+      .then((cfg) => { if (!cfg.selfSignupEnabled) setSignupDisabled(true); })
+      .catch(() => { /* fail-open: server guard is authoritative */ });
+  }, []);
 
   useEffect(() => {
     if (resendCountdown <= 0) {
@@ -98,7 +105,17 @@ export default function RegisterPage() {
             Create Account
           </Typography>
 
-          {registered ? (
+          {signupDisabled ? (
+            <>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Public registration is currently disabled. Please contact your organization administrator to get an account.
+              </Alert>
+              <Typography variant="body2" align="center">
+                Already have an account?{' '}
+                <Link component={RouterLink} to="/login">Sign in</Link>
+              </Typography>
+            </>
+          ) : registered ? (
             <>
               <Alert severity="success" sx={{ mb: 2 }}>
                 {successMessage}
