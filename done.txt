@@ -291,6 +291,15 @@
 ================================================================================
 
 ------------------------------------------------------------------------------
+[x] DOCK-099 — Rimuovere esposizione porta 80 dal container client nginx
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+  COMPLETATO: Replaced FROM nginx:alpine with FROM alpine:3.21 + apk add nginx
+    in client/Dockerfile to avoid inheriting EXPOSE 80 from the base image.
+    Fixed 5 stale port 80 references in docs/deployment.md and docs/architecture.md.
+
+------------------------------------------------------------------------------
 [x] SAST-090 — Script e pipeline CI/CD per analisi di sicurezza del codice
 ------------------------------------------------------------------------------
   Priorita: ALTA

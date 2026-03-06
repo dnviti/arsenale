@@ -8,7 +8,11 @@ RUN npm install
 COPY client/ .
 RUN npm run build
 
-FROM nginx:alpine
+FROM alpine:3.21
+
+RUN apk add --no-cache nginx \
+    && mkdir -p /etc/nginx/conf.d /usr/share/nginx/html
+
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY client/nginx.main.conf /etc/nginx/nginx.conf
 COPY client/nginx.conf /etc/nginx/conf.d/default.conf

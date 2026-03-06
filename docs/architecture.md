@@ -188,7 +188,7 @@ Docker internal network:
   postgres (no exposed port)
   guacd (no exposed port)
   server :3001, :3002
-  client (nginx) :80 → mapped to host :3000
+  client (nginx) :8080 → mapped to host :3000
 ```
 
 ### Ports

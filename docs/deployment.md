@@ -120,7 +120,7 @@ docker compose --env-file .env.production up -d --build
 │       │                              │               │
 │  ┌──────────────────────────────────────────┐       │
 │  │              client (nginx)              │       │
-│  │              :80 → host :3000            │       │
+│  │              :8080 → host :3000           │       │
 │  └──────────────────────────────────────────┘       │
 └─────────────────────────────────────────────────────┘
 ```
@@ -130,7 +130,7 @@ docker compose --env-file .env.production up -d --build
 | postgres | `postgres:16` | Internal only | — |
 | guacd | `guacamole/guacd` | Internal only | — |
 | server | Custom (`server/Dockerfile`) | 3001:3001 | postgres (healthy), guacd (started) |
-| client | Custom (`client/Dockerfile`) | 3000:80 | server |
+| client | Custom (`client/Dockerfile`) | 3000:8080 | server |
 
 ### Service Details
 
@@ -151,10 +151,10 @@ docker compose --env-file .env.production up -d --build
 - Environment: `DATABASE_URL`, `GUACD_HOST=guacd`, `NODE_ENV=production`, secrets from `.env.production`
 
 **client**:
-- Multi-stage build: Node 22 Alpine (build) → nginx Alpine (runtime)
+- Multi-stage build: Node 22 Alpine (build) → Alpine 3.21 with nginx (runtime)
 - Serves Vite build output from `/usr/share/nginx/html`
 - nginx config from `client/nginx.conf`
-- Exposes port 80 (mapped to host 3000)
+- Exposes port 8080 (mapped to host 3000)
 
 ### Volume Management
 
