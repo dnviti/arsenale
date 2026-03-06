@@ -55,7 +55,7 @@ function buildContainerConfig(
       namespace: k8sNamespace,
       env: {
         ...(publicKey ? { SSH_AUTHORIZED_KEYS: publicKey } : {}),
-        ...(apiHostPort ? { GATEWAY_API_TOKEN: config.gatewayApiToken } : {}),
+        ...(config.gatewayApiToken ? { GATEWAY_API_TOKEN: config.gatewayApiToken } : {}),
       },
       ports: [
         { container: 2222, ...(hostPort != null ? { host: hostPort } : {}) },
@@ -189,7 +189,7 @@ export async function deployGatewayInstance(
       containerName: containerInfo.name,
       host,
       port,
-      apiPort: apiHostPort ?? null,
+      apiPort: apiHostPort ?? (gateway.type === 'MANAGED_SSH' && config.gatewayApiToken ? 8022 : null),
       status: ManagedInstanceStatus.RUNNING,
       orchestratorType: orchestrator.type,
       healthStatus: 'healthy',

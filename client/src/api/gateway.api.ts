@@ -343,8 +343,8 @@ export interface GatewayTemplateData {
 export interface GatewayTemplateInput {
   name: string;
   type: 'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH';
-  host: string;
-  port: number;
+  host?: string;
+  port?: number;
   description?: string;
   apiPort?: number;
   autoScale?: boolean;

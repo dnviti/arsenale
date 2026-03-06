@@ -64,7 +64,7 @@ const createTemplateSchema = z.object({
   name: z.string().min(1).max(100),
   type: z.enum(['GUACD', 'SSH_BASTION', 'MANAGED_SSH']),
   host: z.string().default(''),
-  port: z.number().int().min(1).max(65535),
+  port: z.number().int().min(1).max(65535).optional(),
   description: z.string().max(500).optional(),
   apiPort: z.number().int().min(1).max(65535).optional(),
   autoScale: z.boolean().optional(),
@@ -77,9 +77,36 @@ const createTemplateSchema = z.object({
   inactivityTimeoutSeconds: z.number().int().min(60).max(86400).optional(),
   publishPorts: z.boolean().optional(),
   lbStrategy: z.enum(['ROUND_ROBIN', 'LEAST_CONNECTIONS']).optional(),
-});
+}).transform((data) => {
+  const isManagedType = data.type === 'MANAGED_SSH' || data.type === 'GUACD';
+  return {
+    ...data,
+    host: isManagedType ? '' : data.host,
+    port: data.port ?? (data.type === 'MANAGED_SSH' ? 2222 : data.type === 'GUACD' ? 4822 : undefined),
+  };
+}).refine(
+  (data) => data.port !== undefined,
+  { message: 'Port is required for SSH Bastion gateways', path: ['port'] },
+);
 
-const updateTemplateSchema = createTemplateSchema.partial();
+const updateTemplateSchema = z.object({
+  name: z.string().min(1).max(100),
+  type: z.enum(['GUACD', 'SSH_BASTION', 'MANAGED_SSH']),
+  host: z.string(),
+  port: z.number().int().min(1).max(65535),
+  description: z.string().max(500),
+  apiPort: z.number().int().min(1).max(65535),
+  autoScale: z.boolean(),
+  minReplicas: z.number().int().min(0).max(20),
+  maxReplicas: z.number().int().min(1).max(20),
+  sessionsPerInstance: z.number().int().min(1).max(100),
+  scaleDownCooldownSeconds: z.number().int().min(60).max(3600),
+  monitoringEnabled: z.boolean(),
+  monitorIntervalMs: z.number().int().min(1000).max(3600000),
+  inactivityTimeoutSeconds: z.number().int().min(60).max(86400),
+  publishPorts: z.boolean(),
+  lbStrategy: z.enum(['ROUND_ROBIN', 'LEAST_CONNECTIONS']),
+}).partial();
 
 const updateSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -599,10 +626,11 @@ export async function listTemplates(req: AuthRequest, res: Response, next: NextF
 export async function createTemplate(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const data = createTemplateSchema.parse(req.body);
+    // .refine() guarantees port is always defined (defaults for managed types, required for SSH_BASTION)
     const result = await gatewayTemplateService.createTemplate(
       req.user!.userId,
       req.user!.tenantId!,
-      data,
+      data as typeof data & { port: number },
     );
     auditService.log({
       userId: req.user!.userId,

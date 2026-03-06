@@ -59,7 +59,7 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       setName('');
       setType('MANAGED_SSH');
       setHost('');
-      setPort('2222');
+      setPort('22');
       setDescription('');
       setApiPort('8022');
       setMonitoringEnabled(true);
@@ -78,9 +78,8 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
 
   const handleTypeChange = (newType: 'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH') => {
     setType(newType);
-    const defaultPort = newType === 'GUACD' ? '4822' : newType === 'MANAGED_SSH' ? '2222' : '22';
-    if (!port || port === '4822' || port === '22' || port === '2222') {
-      setPort(defaultPort);
+    if (newType === 'SSH_BASTION') {
+      if (!port || port === '4822' || port === '2222') setPort('22');
     }
     if (newType === 'MANAGED_SSH' && !apiPort) {
       setApiPort('8022');
@@ -92,12 +91,16 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
   const isManagedType = type === 'MANAGED_SSH' || type === 'GUACD';
 
   const handleSave = async () => {
-    if (!name.trim() || !port.trim()) {
-      setError('Name and port are required');
+    if (!name.trim()) {
+      setError('Name is required');
       return;
     }
     if (!isManagedType && !host.trim()) {
       setError('Host is required for SSH Bastion gateways');
+      return;
+    }
+    if (!isManagedType && !port.trim()) {
+      setError('Port is required for SSH Bastion gateways');
       return;
     }
     setLoading(true);
@@ -106,8 +109,7 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       const data = {
         name: name.trim(),
         type,
-        host: host.trim(),
-        port: parseInt(port, 10),
+        ...(!isManagedType ? { host: host.trim(), port: parseInt(port, 10) } : {}),
         description: description.trim() || undefined,
         apiPort: apiPort ? parseInt(apiPort, 10) : undefined,
         monitoringEnabled,
@@ -165,41 +167,36 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
             </Select>
           </FormControl>
 
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              label={isManagedType ? 'Host (optional)' : 'Host'}
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              fullWidth
-              required={!isManagedType}
-              placeholder={isManagedType ? 'Auto-resolved from container name' : ''}
-              helperText={isManagedType && !host ? 'Leave blank to use the container name as hostname' : ''}
-            />
-            <TextField
-              label="Port"
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              type="number"
-              sx={{ width: 120 }}
-              required
-              disabled={publishPorts && isManagedType}
-              helperText={publishPorts && isManagedType ? 'Host port auto-assigned at deploy' : undefined}
-            />
-          </Box>
+          {isManagedType ? (
+            <Alert severity="info" variant="outlined">
+              Host and port are automatically assigned by the orchestrator when instances are deployed.
+            </Alert>
+          ) : (
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                label="Host"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                fullWidth
+                required
+              />
+              <TextField
+                label="Port"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                type="number"
+                sx={{ width: 120 }}
+                required
+              />
+            </Box>
+          )}
 
           {isManagedType && (
             <FormControlLabel
               control={
                 <Switch
                   checked={publishPorts}
-                  onChange={(_, v) => {
-                    setPublishPorts(v);
-                    if (v) {
-                      if (!host) setHost('localhost');
-                      const defaultPort = type === 'GUACD' ? '4822' : '2222';
-                      setPort(defaultPort);
-                    }
-                  }}
+                  onChange={(_, v) => setPublishPorts(v)}
                   size="small"
                 />
               }

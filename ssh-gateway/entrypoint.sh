@@ -1,12 +1,6 @@
 #!/bin/sh
 set -e
 
-# Generate host keys if not present (persisted via volume mount)
-if [ ! -f /etc/ssh/ssh_host_ed25519_key ]; then
-    echo "Generating SSH host keys..."
-    ssh-keygen -A
-fi
-
 # Set up authorized_keys from environment variable and/or volume mount
 AUTH_KEYS_FILE="/home/tunnel/.ssh/authorized_keys"
 : > "$AUTH_KEYS_FILE"
@@ -28,8 +22,6 @@ if [ ! -s "$AUTH_KEYS_FILE" ]; then
     echo "WARNING: No authorized keys configured. Set SSH_AUTHORIZED_KEYS env var or mount /config/authorized_keys"
 fi
 
-# Fix permissions
-chown tunnel:tunnel "$AUTH_KEYS_FILE"
 chmod 600 "$AUTH_KEYS_FILE"
 
 # Start HTTP key management API (sidecar) if token is configured

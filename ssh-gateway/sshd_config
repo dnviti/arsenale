@@ -1,7 +1,12 @@
 # Arsenale SSH Gateway — port-forwarding-only configuration
 # No shell access, no root login, public key auth only
+# Runs as non-root (tunnel user) for Podman rootless compatibility
 
 Port 2222
+PidFile /tmp/sshd.pid
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKey /etc/ssh/ssh_host_rsa_key
 
 PermitRootLogin no
 PasswordAuthentication no
