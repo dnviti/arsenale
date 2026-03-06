@@ -11,7 +11,10 @@ RUN npm run build
 FROM alpine:3.21
 
 RUN apk add --no-cache nginx \
-    && mkdir -p /etc/nginx/conf.d /usr/share/nginx/html
+    && mkdir -p /etc/nginx/conf.d /usr/share/nginx/html \
+    && mkdir -p /var/cache/nginx /var/lib/nginx /var/log/nginx \
+    && chown -R nginx:nginx /var/cache/nginx /var/lib/nginx /var/log/nginx \
+    && chown -R nginx:nginx /usr/share/nginx/html
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY client/nginx.main.conf /etc/nginx/nginx.conf
