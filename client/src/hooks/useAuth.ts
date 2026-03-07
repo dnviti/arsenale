@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { refreshApi } from '../api/auth.api';
@@ -6,6 +6,7 @@ import { refreshApi } from '../api/auth.api';
 export function useAuth() {
   const navigate = useNavigate();
   const { isAuthenticated, accessToken, setAccessToken, logout } = useAuthStore();
+  const [loading, setLoading] = useState(isAuthenticated && !accessToken);
 
   useEffect(() => {
     if (isAuthenticated && !accessToken) {
@@ -18,9 +19,12 @@ export function useAuth() {
         .catch(() => {
           logout();
           navigate('/login');
+        })
+        .finally(() => {
+          setLoading(false);
         });
     }
   }, []);
 
-  return { isAuthenticated };
+  return { isAuthenticated, loading };
 }

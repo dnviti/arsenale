@@ -89,42 +89,6 @@
     MODIFICARE: client/src/components/Layout/MainLayout.tsx
 
 
-------------------------------------------------------------------------------
-[ ] USER-097 — Persistenza sessione utente member al reload pagina
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Gli utenti con ruolo MEMBER vengono disconnessi al reload della pagina.
-  Il problema e' causato dal hook useAuth() definito ma mai invocato.
-  L'accessToken non viene persistito in localStorage (corretto by design),
-  ma il refresh proattivo non viene mai eseguito. ProtectedRoute esegue
-  immediatamente chiamate API (vault checkStatus) senza access token,
-  generando un 401 che attiva il refresh reattivo nell'interceptor Axios.
-  Se il refresh reattivo fallisce per timing o race condition, l'utente
-  viene disconnesso.
-
-  DETTAGLI TECNICI:
-  Fix — Attivare useAuth() in ProtectedRoute/AuthRoute:
-
-    client/src/hooks/useAuth.ts:
-    - Aggiungere stato loading per indicare refresh in corso
-    - useState iniziale: isAuthenticated && !accessToken
-    - Ritornare { isAuthenticated, loading }
-
-    client/src/App.tsx — ProtectedRoute:
-    - Invocare useAuth() per attivare refresh proattivo
-    - Aggiungere accessToken alle dipendenze dell'useEffect vault polling
-    - Gate rendering: if (loading) return null
-
-    client/src/App.tsx — AuthRoute:
-    - Invocare useAuth() analogamente
-    - Gate rendering con loading
-
-  File coinvolti:
-    MODIFICARE: client/src/hooks/useAuth.ts
-    MODIFICARE: client/src/App.tsx
 
 
 ================================================================================

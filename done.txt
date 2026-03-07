@@ -293,6 +293,13 @@
   Dipendenze: EMAIL-030
   COMPLETATO: Implemented reusable identity verification system gating sensitive operations (email change, password change, admin user management) behind identity proof. Created centralized identityVerification.service.ts with in-memory session store supporting 5 methods (email OTP, TOTP, SMS, WebAuthn, password) in priority order. Added dual-OTP email change flow, pre-verification password change, admin email/password change with vault reset and recovery key. Built reusable IdentityVerification React component. Added rate limiting on initiate endpoints.
 
+------------------------------------------------------------------------------
+[x] USER-097 — Persistenza sessione utente member al reload pagina
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Activated the existing useAuth() hook in ProtectedRoute and AuthRoute (App.tsx) to perform proactive token refresh on page reload. Added loading state to useAuth.ts so routes gate rendering until refresh completes. Vault polling now waits for accessToken before firing, eliminating the race condition that caused MEMBER users to be logged out.
+
 ================================================================================
   SEZIONE B — TASK AGGIUNTIVI SUGGERITI
 ================================================================================

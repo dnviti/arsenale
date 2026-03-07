@@ -10,29 +10,33 @@ import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import VaultSetupPage from './pages/VaultSetupPage';
 import PublicSharePage from './pages/PublicSharePage';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
+import { useAuth } from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
 import { useVaultStore } from './store/vaultStore';
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const { isAuthenticated, loading } = useAuth();
   const user = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const checkStatus = useVaultStore((s) => s.checkStatus);
   const startPolling = useVaultStore((s) => s.startPolling);
   const stopPolling = useVaultStore((s) => s.stopPolling);
 
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !accessToken) return;
     checkStatus();
     startPolling();
     return () => stopPolling();
-  }, [isAuthenticated, checkStatus, startPolling, stopPolling]);
+  }, [isAuthenticated, accessToken, checkStatus, startPolling, stopPolling]);
 
+  if (loading) return null;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (user?.vaultSetupComplete === false) return <Navigate to="/oauth/vault-setup" replace />;
 
