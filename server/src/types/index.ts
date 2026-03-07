@@ -127,3 +127,9 @@ export interface ResolvedCredentials {
   privateKey?: string;
   passphrase?: string;
 }
+
+export interface DomainProfile {
+  domainName: string | null;
+  domainUsername: string | null;
+  hasDomainPassword: boolean;
+}

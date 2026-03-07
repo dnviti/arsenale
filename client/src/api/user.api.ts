@@ -130,3 +130,30 @@ export async function searchUsers(
   const res = await api.get('/user/search', { params });
   return res.data;
 }
+
+// Domain profile
+
+export interface DomainProfile {
+  domainName: string | null;
+  domainUsername: string | null;
+  hasDomainPassword: boolean;
+}
+
+export async function getDomainProfile(): Promise<DomainProfile> {
+  const res = await api.get('/user/domain-profile');
+  return res.data;
+}
+
+export async function updateDomainProfile(data: {
+  domainName?: string;
+  domainUsername?: string;
+  domainPassword?: string | null;
+}): Promise<DomainProfile> {
+  const res = await api.put('/user/domain-profile', data);
+  return res.data;
+}
+
+export async function clearDomainProfile(): Promise<{ success: boolean }> {
+  const res = await api.delete('/user/domain-profile');
+  return res.data;
+}

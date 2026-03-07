@@ -15,6 +15,9 @@ router.put('/password', userController.changePassword);
 router.put('/ssh-defaults', userController.updateSshDefaults);
 router.put('/rdp-defaults', userController.updateRdpDefaults);
 router.post('/avatar', userController.uploadAvatar);
+router.get('/domain-profile', userController.getDomainProfile);
+router.put('/domain-profile', userController.updateDomainProfile);
+router.delete('/domain-profile', userController.clearDomainProfile);
 
 // Identity verification & sensitive operations
 router.post('/email-change/initiate', identityVerificationLimiter, userController.initiateEmailChange);

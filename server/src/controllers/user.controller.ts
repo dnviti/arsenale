@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../types';
 import * as userService from '../services/user.service';
+import * as domainService from '../services/domain.service';
 import * as identityVerification from '../services/identityVerification.service';
 import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
@@ -238,6 +239,52 @@ export async function search(req: AuthRequest, res: Response, next: NextFunction
     res.json(results);
   } catch (err) {
     if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+// --- Domain Profile ---
+
+const updateDomainProfileSchema = z.object({
+  domainName: z.string().max(100).optional(),
+  domainUsername: z.string().max(100).optional(),
+  domainPassword: z.string().max(500).nullable().optional(),
+});
+
+export async function getDomainProfile(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const result = await domainService.getDomainProfile(req.user!.userId);
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function updateDomainProfile(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const data = updateDomainProfileSchema.parse(req.body);
+    const result = await domainService.updateDomainProfile(req.user!.userId, data);
+    auditService.log({
+      userId: req.user!.userId, action: 'DOMAIN_PROFILE_UPDATE',
+      details: { fields: Object.keys(data) },
+      ipAddress: req.ip,
+    });
+    res.json(result);
+  } catch (err) {
+    if (err instanceof z.ZodError) return next(new AppError(err.issues[0].message, 400));
+    next(err);
+  }
+}
+
+export async function clearDomainProfile(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    await domainService.clearDomainProfile(req.user!.userId);
+    auditService.log({
+      userId: req.user!.userId, action: 'DOMAIN_PROFILE_CLEAR',
+      ipAddress: req.ip,
+    });
+    res.json({ success: true });
+  } catch (err) {
     next(err);
   }
 }

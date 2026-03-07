@@ -9,6 +9,7 @@ import {
   encryptMasterKey,
   storeVaultSession,
 } from './crypto.service';
+import { inferDomainFromSaml } from './domain.service';
 
 interface FindOrCreateResult {
   user: {
@@ -63,6 +64,12 @@ export async function findOrCreateOAuthUser(
     });
 
     const { enabled: _e1, ...oauthUser } = existingOAuth.user;
+
+    // Auto-infer domain identity from SAML attributes (best-effort)
+    if (samlAttributes) {
+      inferDomainFromSaml(oauthUser.id, samlAttributes as Record<string, unknown>).catch(() => {});
+    }
+
     return { user: oauthUser, isNewUser: false };
   }
 
@@ -94,6 +101,12 @@ export async function findOrCreateOAuthUser(
     });
 
     const { enabled: _e2, ...linkUser } = existingUser;
+
+    // Auto-infer domain identity from SAML attributes (best-effort)
+    if (samlAttributes) {
+      inferDomainFromSaml(linkUser.id, samlAttributes as Record<string, unknown>).catch(() => {});
+    }
+
     return { user: linkUser, isNewUser: false };
   }
 
@@ -137,6 +150,11 @@ export async function findOrCreateOAuthUser(
 
     return user;
   });
+
+  // Auto-infer domain identity from SAML attributes (best-effort)
+  if (samlAttributes) {
+    inferDomainFromSaml(newUser.id, samlAttributes as Record<string, unknown>).catch(() => {});
+  }
 
   return { user: newUser, isNewUser: true };
 }

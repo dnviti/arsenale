@@ -2531,3 +2531,37 @@
     MODIFICATO: client/src/api/oauth.api.ts (SAML types and functions)
     MODIFICATO: client/src/components/OAuthButtons.tsx (SAML button)
     MODIFICATO: client/src/components/Settings/LinkedAccountsSection.tsx (SAML support)
+
+------------------------------------------------------------------------------
+[x] SSO-075 — User domain credential profile (domain identity)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: SSO-073
+  COMPLETATO: Added domain identity profile to User model (domainName, domainUsername,
+    encrypted domain password via AES-256-GCM). Created domain.service.ts with CRUD,
+    vault-encrypted password storage, resolveDomainCredentials for SSO-076, and SAML
+    auto-inference (UPN/domain claim parsing). Added GET/PUT/DELETE /user/domain-profile
+    endpoints. Integrated SAML auto-inference in oauth.service.ts (fire-and-forget on
+    login). Added domain password cleanup to passwordReset.service.ts. Created
+    DomainProfileSection.tsx in Settings Security tab with edit/clear/vault awareness.
+
+  DESCRIZIONE:
+  Permettere agli utenti di configurare una "identita' di dominio" sul loro
+  profilo: nome dominio AD, username di dominio, e opzionalmente una password
+  di dominio salvata cifrata nel vault. Questo profilo serve come source of
+  truth per le credenziali domain quando si usa la modalita' "domain
+  passthrough" (SSO-076). Auto-inferenza: quando un utente SAML/OIDC fa login
+  con un UPN (es. john@contoso.com), il sistema suggerisce automaticamente
+  domain=CONTOSO, username=john.
+
+  File coinvolti:
+    MODIFICATO: server/prisma/schema.prisma (User domain fields, AuditAction enum)
+    CREATO:     server/src/services/domain.service.ts
+    MODIFICATO: server/src/controllers/user.controller.ts (domain profile handlers)
+    MODIFICATO: server/src/routes/user.routes.ts (domain profile routes)
+    MODIFICATO: server/src/services/oauth.service.ts (SAML auto-inference)
+    MODIFICATO: server/src/services/passwordReset.service.ts (domain password cleanup)
+    MODIFICATO: server/src/types/index.ts (DomainProfile interface)
+    CREATO:     client/src/components/Settings/DomainProfileSection.tsx
+    MODIFICATO: client/src/api/user.api.ts (DomainProfile API)
+    MODIFICATO: client/src/components/Dialogs/SettingsDialog.tsx (Security tab integration)

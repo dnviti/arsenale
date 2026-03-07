@@ -280,6 +280,10 @@ export async function completePasswordReset(params: {
           encryptedTotpSecret: null,
           totpSecretIV: null,
           totpSecretTag: null,
+          // Clear encrypted domain password (master key changed)
+          encryptedDomainPassword: null,
+          domainPasswordIV: null,
+          domainPasswordTag: null,
         },
       });
 

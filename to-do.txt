@@ -753,86 +753,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] SSO-075 — User domain credential profile (domain identity)
-------------------------------------------------------------------------------
-  Priorita: MEDIA
-  Dipendenze: SSO-073
-
-  DESCRIZIONE:
-  Permettere agli utenti di configurare una "identita' di dominio" sul loro
-  profilo: nome dominio AD, username di dominio, e opzionalmente una password
-  di dominio salvata cifrata nel vault. Questo profilo serve come source of
-  truth per le credenziali domain quando si usa la modalita' "domain
-  passthrough" (SSO-076). Auto-inferenza: quando un utente SAML/OIDC fa login
-  con un UPN (es. john@contoso.com), il sistema suggerisce automaticamente
-  domain=CONTOSO, username=john. Gli utenti possono anche configurare
-  manualmente la loro identita' di dominio nelle Settings. La password domain,
-  se salvata, e' cifrata con la master key del vault e segue lo stesso
-  lifecycle lock/unlock.
-
-  DETTAGLI TECNICI:
-  Prisma schema (server/prisma/schema.prisma):
-    - Aggiungere al modello User:
-        domainName               String?   // es. "CONTOSO" o "contoso.com"
-        domainUsername           String?   // es. "john.doe"
-        encryptedDomainPassword  String?
-        domainPasswordIV         String?
-        domainPasswordTag        String?
-        domainAutoInferred       Boolean   @default(false)
-    - Aggiungere a AuditAction enum:
-        DOMAIN_PROFILE_UPDATE, DOMAIN_PROFILE_CLEAR
-
-  Server service (server/src/services/domain.service.ts) — NUOVO:
-    - resolveDomainCredentials(userId): restituisce { domain, username,
-      password }. Decifra password da User con vault master key. Lancia
-      errore se vault e' locked.
-    - inferDomainIdentity(email, samlAttributes?): euristica per derivare
-      NETBIOS domain + username:
-        1. SAML claim windowsdomainname -> domain (priorita' massima)
-        2. SAML claim UPN -> split a @ -> domain dal suffisso, username
-           dal prefisso
-        3. Email -> split a @ -> domain = uppercase primo segmento
-           (es. CONTOSO da contoso.com), username = local part
-
-  Server controller (server/src/controllers/user.controller.ts):
-    - GET  /api/user/domain-profile -> getDomainProfile
-    - PUT  /api/user/domain-profile -> updateDomainProfile
-    - DELETE /api/user/domain-profile -> clearDomainProfile
-    - POST /api/user/domain-profile/infer -> inferDomainIdentity
-    - Zod schemas per validazione
-
-  Server routes (server/src/routes/user.routes.ts):
-    - Aggiungere 4 route sotto authenticate middleware
-
-  OAuth service (server/src/services/oauth.service.ts):
-    - findOrCreateOAuthUser: dopo login SAML, se utente non ha domain
-      profile e SAML attributes contengono UPN/domain, auto-impostare
-      domainName + domainUsername con domainAutoInferred=true (solo al
-      primo login, non sovrascrivere config manuale)
-
-  Frontend:
-    - client/src/components/Settings/DomainProfileSection.tsx — NUOVO:
-      - Mostra identita' domain corrente (domain\username) o "Not configured"
-      - Bottone "Auto-detect" -> chiama endpoint infer, mostra suggerimento
-      - Campi: Domain, Username, Password (opzionale, salvata nel vault)
-      - Bottoni Save / Clear
-    - client/src/pages/SettingsPage.tsx: aggiungere DomainProfileSection
-    - client/src/api/user.api.ts: getDomainProfile(), updateDomainProfile(),
-      clearDomainProfile(), inferDomainProfile()
-
-  File coinvolti:
-    MODIFICARE: server/prisma/schema.prisma (User domain fields, AuditAction)
-    CREARE:     server/src/services/domain.service.ts
-    MODIFICARE: server/src/services/user.service.ts (domain profile CRUD)
-    MODIFICARE: server/src/controllers/user.controller.ts (domain endpoints)
-    MODIFICARE: server/src/routes/user.routes.ts (domain routes)
-    MODIFICARE: server/src/services/oauth.service.ts (auto-infer su SAML login)
-    MODIFICARE: server/src/types/index.ts (DomainProfile interface)
-    CREARE:     client/src/components/Settings/DomainProfileSection.tsx
-    MODIFICARE: client/src/api/user.api.ts (domain profile API)
-    MODIFICARE: client/src/pages/SettingsPage.tsx (domain profile section)
-
 
 ------------------------------------------------------------------------------
 [ ] SSO-076 — Credential passthrough: domain profile to RDP/SSH connections
@@ -1012,7 +932,7 @@
   Fase 11 — SSO & Domain Credential Passthrough:
    66. SSO-073  RDP domain field: schema, dialogs, Guacamole token  [COMPLETATO]
    67. SSO-074  SAML 2.0 SSO authentication via Passport.js  [COMPLETATO]
-   68. SSO-075  User domain credential profile (domain identity)
+   68. SSO-075  User domain credential profile (domain identity)  [COMPLETATO]
    69. SSO-076  Credential passthrough: domain profile to connections
 
 ================================================================================

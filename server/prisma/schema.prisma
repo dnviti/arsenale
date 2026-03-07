@@ -99,6 +99,11 @@ model User {
   smsOtpExpiresAt    DateTime?
   webauthnEnabled    Boolean     @default(false)
   vaultAutoLockMinutes Int?
+  domainName               String?
+  domainUsername           String?
+  encryptedDomainPassword  String?
+  domainPasswordIV         String?
+  domainPasswordTag        String?
   enabled            Boolean     @default(true)
   emailVerified              Boolean     @default(false)
   emailVerifyToken           String?     @unique
@@ -539,6 +544,8 @@ enum AuditAction {
   PROFILE_EMAIL_CHANGE
   ADMIN_EMAIL_CHANGE
   ADMIN_PASSWORD_CHANGE
+  DOMAIN_PROFILE_UPDATE
+  DOMAIN_PROFILE_CLEAR
 }
 
 model AuditLog {
