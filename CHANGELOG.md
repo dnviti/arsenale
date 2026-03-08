@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-03-08
+
+### Added
+- Multi-tenant membership with organization picker on login (TENANT-096)
+
 ## [1.1.0] - 2026-03-07
 
 ### Added
@@ -99,6 +104,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/dnviti/arsenale/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dnviti/arsenale/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dnviti/arsenale/releases/tag/v1.0.0
