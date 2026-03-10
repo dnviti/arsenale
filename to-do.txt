@@ -151,6 +151,44 @@
     MODIFICARE: server/src/services/tenant.service.ts
 
 
+------------------------------------------------------------------------------
+[ ] PAM-176 — Policy org-wide per enforcing impostazioni connessioni
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Implementare un meccanismo PAM per definire policy a livello di tenant che
+  forzino specifiche impostazioni per tutte le connessioni (es. disabilitare 
+  clipboard, limitare forwarding SSH, forzare risoluzioni RDP). Se la policy di
+  enforcing e' attiva, gli org admins possono imporre questi settaggi globalmente.
+  I singoli utenti vedranno queste opzioni in sola lettura e non potranno 
+  bypassarle, garantendo standard di sicurezza uniformi per l'organizzazione.
+
+  DETTAGLI TECNICI:
+  Implementazione della logica di enforcing delle policy di connessione:
+    - Modifiche al schema Prisma
+      Aggiungere `enforcedConnectionSettings Json?` al modello `Tenant`.
+    - Servizi, controller, route backend
+      Aggiornare `tenant.service.ts` e `tenant.controller.ts` per la gestione.
+      Modificare `connection.service.ts` per effettuare il merge/override delle
+      impostazioni della singola connessione con le policy attive del tenant in
+      fase di connessione e validazione.
+    - Componenti, store, chiamate API frontend
+      Aggiungere una tab "Connection Policies" in `SettingsDialog.tsx` per gli 
+      admin. Aggiornare `ConnectionDialog.tsx` per applicare lo stato `disabled`
+      ai campi forzati dalla policy.
+
+  File coinvolti:
+    CREARE:     client/src/components/Settings/TenantConnectionPolicySection.tsx
+    MODIFICARE: server/prisma/schema.prisma
+    MODIFICARE: server/src/services/tenant.service.ts
+    MODIFICARE: server/src/controllers/tenant.controller.ts
+    MODIFICARE: server/src/services/connection.service.ts
+    MODIFICARE: client/src/components/Dialogs/ConnectionDialog.tsx
+    MODIFICARE: client/src/components/Dialogs/SettingsDialog.tsx
+
+
 
 
 ================================================================================

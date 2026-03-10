@@ -8,6 +8,8 @@ import { registerGatewayCommands } from './commands/gateway.commands';
 import { registerSessionCommands } from './commands/session.commands';
 import { registerConfigCommands } from './commands/config.commands';
 import { registerDemoCommands } from './commands/demo.commands';
+import { registerSecretCommands } from './commands/secret.commands';
+import { registerConnectionCommands } from './commands/connection.commands';
 
 export function registerCommands(program: Command): void {
   registerHealthCommands(program);
@@ -19,4 +21,6 @@ export function registerCommands(program: Command): void {
   registerSessionCommands(program);
   registerConfigCommands(program);
   registerDemoCommands(program);
+  registerSecretCommands(program);
+  registerConnectionCommands(program);
 }

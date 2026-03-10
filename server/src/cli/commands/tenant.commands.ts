@@ -3,9 +3,11 @@ import { Command } from 'commander';
 import prisma from '../../lib/prisma';
 import * as tenantService from '../../services/tenant.service';
 import * as auditService from '../../services/audit.service';
+import * as secretService from '../../services/secret.service';
 import { AuditAction } from '../../generated/prisma/client';
 import { resolveUser, resolveTenant } from '../helpers/resolve';
 import { requireConfirm } from '../helpers/confirm';
+import { unlockUserVault } from '../helpers/vault';
 import { printJson, printTable, printError, printSuccess } from '../helpers/output';
 
 export function registerTenantCommands(program: Command): void {
@@ -243,6 +245,43 @@ export function registerTenantCommands(program: Command): void {
         printJson({ removed: true, email: u.email, tenant: t.name });
       } else {
         printSuccess(`Removed ${u.email} from ${t.name}`);
+      }
+    });
+
+  tenant
+    .command('init-vault')
+    .description('Initialize a tenant vault (org keychain)')
+    .argument('<identifier>', 'Tenant UUID or slug')
+    .requiredOption('--user-email <email>', 'User email to execute action as (must be member)')
+    .requiredOption('--password <password>', 'User password to unlock vault')
+    .option('--format <format>', 'Output format (json|table)', 'table')
+    .action(async (identifier: string, opts: { userEmail: string; password: string; format: string }) => {
+      const t = await resolveTenant(identifier);
+      if (!t) { printError(`Tenant not found: ${identifier}`); process.exitCode = 1; return; }
+
+      const user = await unlockUserVault(opts.userEmail, opts.password);
+      if (!user) { process.exitCode = 1; return; }
+
+      try {
+        await secretService.initTenantVault(t.id, user.id);
+        
+        auditService.log({
+          userId: user.id,
+          action: AuditAction.TENANT_VAULT_INIT,
+          targetType: 'TENANT',
+          targetId: t.id,
+          ipAddress: 'cli',
+          details: { tenantId: t.id, source: 'cli' },
+        });
+
+        if (opts.format === 'json') {
+          printJson({ success: true, tenantId: t.id, tenantName: t.name });
+        } else {
+          printSuccess(`Initialized vault for tenant: ${t.name}`);
+        }
+      } catch (err) {
+        printError(`Failed to initialize vault: ${err instanceof Error ? err.message : err}`);
+        process.exitCode = 1;
       }
     });
 }

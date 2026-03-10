@@ -1,8 +1,9 @@
- 
 import { Command } from 'commander';
 import * as gatewayService from '../../services/gateway.service';
-import { resolveTenant } from '../helpers/resolve';
-import { printJson, printTable, printError } from '../helpers/output';
+import * as auditService from '../../services/audit.service';
+import { resolveTenant, resolveUser } from '../helpers/resolve';
+import { printJson, printTable, printError, printSuccess } from '../helpers/output';
+import { AuditAction, GatewayType } from '../../generated/prisma/client';
 
 export function registerGatewayCommands(program: Command): void {
   const gateway = program
@@ -112,5 +113,57 @@ export function registerGatewayCommands(program: Command): void {
       }
 
       if (!result.reachable) process.exitCode = 1;
+    });
+
+  gateway
+    .command('create')
+    .description('Create a new non-managed gateway')
+    .requiredOption('--tenant-id <id>', 'Tenant ID or slug')
+    .requiredOption('--user-email <email>', 'User email performing the action')
+    .requiredOption('--name <name>', 'Name of the gateway')
+    .requiredOption('--type <type>', 'Type of gateway (GUACD|SSH_BASTION)')
+    .requiredOption('--host <host>', 'Gateway hostname or IP')
+    .requiredOption('--port <port>', 'Gateway port')
+    .option('--description <desc>', 'Gateway description')
+    .option('--is-default', 'Set as default gateway')
+    .option('--format <format>', 'Output format (json|table)', 'table')
+    .action(async (opts: { tenantId: string; userEmail: string; name: string; type: string; host: string; port: string; description?: string; isDefault?: boolean; format: string }) => {
+      const tenant = await resolveTenant(opts.tenantId);
+      if (!tenant) { printError(`Tenant not found: ${opts.tenantId}`); process.exitCode = 1; return; }
+
+      const user = await resolveUser(opts.userEmail);
+      if (!user) { printError(`User not found: ${opts.userEmail}`); process.exitCode = 1; return; }
+
+      const portNum = parseInt(opts.port, 10);
+      if (isNaN(portNum)) { printError(`Invalid port: ${opts.port}`); process.exitCode = 1; return; }
+
+      try {
+        const result = await gatewayService.createGateway(user.id, tenant.id, {
+          name: opts.name,
+          type: opts.type as GatewayType,
+          host: opts.host,
+          port: portNum,
+          description: opts.description,
+          isDefault: opts.isDefault,
+        });
+
+        auditService.log({
+          userId: user.id,
+          action: AuditAction.GATEWAY_CREATE,
+          targetType: 'GATEWAY',
+          targetId: result.id,
+          ipAddress: 'cli',
+          details: { name: opts.name, type: opts.type, host: opts.host, port: portNum, tenantId: tenant.id, source: 'cli' },
+        });
+
+        if (opts.format === 'json') {
+          printJson(result);
+        } else {
+          printSuccess(`Gateway created: ${result.name} (${result.id})`);
+        }
+      } catch (err) {
+        printError(`Failed to create gateway: ${err instanceof Error ? err.message : err}`);
+        process.exitCode = 1;
+      }
     });
 }
