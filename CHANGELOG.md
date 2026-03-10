@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-03-11
+
+### Added
+- GeoIP popup dialog and audit geo map (GEO-177, GEO-107)
+- IP geolocation enrichment with MaxMind GeoLite2 (GEO-106)
+
+### Fixed
+- Align VNC token encryption with guacamole-lite server (AES-256-GCM + scrypt key)
+- Correct task tracking files
+
 ## [1.3.0] - 2026-03-10
 
 ### Added
@@ -122,7 +132,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.3.1...HEAD
+[1.3.1]: https://github.com/dnviti/arsenale/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/dnviti/arsenale/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dnviti/arsenale/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dnviti/arsenale/compare/v1.0.0...v1.1.0
