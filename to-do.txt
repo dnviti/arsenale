@@ -302,7 +302,7 @@
    37c. FOLD-048  Context menu cartelle: Share Folder e Open All Connections     [COMPLETATO]
 
   Fase 8c — SSH Gateway gestito (container managed):
-   38. SSHGW-049  Container image SSH Gateway (Alpine + OpenSSH, CI/CD)       [IN CORSO]
+   38. SSHGW-049  Container image SSH Gateway (Alpine + OpenSSH, CI/CD)       [COMPLETATO]
    39. SSHGW-050  Generazione e gestione chiavi SSH server-side
    40. SSHGW-051  Integrazione gateway managed nel backend (MANAGED_SSH + key auth)
    41. SSHGW-052  Frontend gateway SSH gestito: UI, status e configurazione  [COMPLETATO]
@@ -338,7 +338,7 @@
    62. ZT-042   Rotazione refresh token                                   [COMPLETATO]
    63. ZT-043   Fix validazione certificato RDP (default ignoreCert)
    64. ZT-044   Cifratura TOTP secret a riposo                       [COMPLETATO]
-   65. ZT-045   Vista audit log per admin tenant                     [IN CORSO]
+   65. ZT-045   Vista audit log per admin tenant                     [COMPLETATO]
 
   Fase 11 — SSO & Domain Credential Passthrough:
    66. SSO-073  RDP domain field: schema, dialogs, Guacamole token  [COMPLETATO]
