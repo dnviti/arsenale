@@ -568,6 +568,9 @@ model AuditLog {
   details    Json?
   ipAddress  String?
   gatewayId  String?
+  geoCountry String?
+  geoCity    String?
+  geoCoords  Float[]     @default([])
   createdAt  DateTime    @default(now())
 
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -577,6 +580,7 @@ model AuditLog {
   @@index([createdAt])
   @@index([gatewayId])
   @@index([targetId, createdAt])
+  @@index([geoCountry])
 }
 
 enum NotificationType {

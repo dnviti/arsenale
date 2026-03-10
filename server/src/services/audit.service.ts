@@ -1,5 +1,6 @@
 import prisma, { AuditAction, Prisma } from '../lib/prisma';
 import { logger } from '../utils/logger';
+import * as geoipService from './geoip.service';
 
 export { AuditAction };
 
@@ -15,8 +16,12 @@ export interface AuditLogInput {
 
 /**
  * Fire-and-forget audit logger. Never throws — errors are logged internally.
+ * Enriches entries with geolocation data when MaxMind GeoLite2 database is available.
  */
 export function log(input: AuditLogInput): void {
+  const ip = (Array.isArray(input.ipAddress) ? input.ipAddress[0] : input.ipAddress) ?? null;
+  const geo = geoipService.lookup(ip);
+
   prisma.auditLog
     .create({
       data: {
@@ -25,8 +30,11 @@ export function log(input: AuditLogInput): void {
         targetType: input.targetType ?? null,
         targetId: input.targetId ?? null,
         details: (input.details as Prisma.InputJsonValue) ?? undefined,
-        ipAddress: (Array.isArray(input.ipAddress) ? input.ipAddress[0] : input.ipAddress) ?? null,
+        ipAddress: ip,
         gatewayId: input.gatewayId ?? null,
+        geoCountry: geo?.country ?? null,
+        geoCity: geo?.city || null,
+        geoCoords: geo ? [geo.lat, geo.lng] : [],
       },
     })
     .catch((err) => {
@@ -46,6 +54,7 @@ export interface TenantAuditLogQuery {
   targetType?: string;
   ipAddress?: string;
   gatewayId?: string;
+  geoCountry?: string;
   sortBy?: 'createdAt' | 'action';
   sortOrder?: 'asc' | 'desc';
 }
@@ -75,6 +84,7 @@ export interface AuditLogQuery {
   targetType?: string;
   ipAddress?: string;
   gatewayId?: string;
+  geoCountry?: string;
   sortBy?: 'createdAt' | 'action';
   sortOrder?: 'asc' | 'desc';
 }
@@ -87,6 +97,9 @@ export interface AuditLogEntry {
   details: unknown;
   ipAddress: string | null;
   gatewayId: string | null;
+  geoCountry: string | null;
+  geoCity: string | null;
+  geoCoords: number[];
   createdAt: Date;
 }
 
@@ -108,36 +121,10 @@ export async function getAuditLogs(query: AuditLogQuery): Promise<PaginatedAudit
   const limit = Math.min(query.limit ?? 50, 100);
   const skip = (page - 1) * limit;
 
-  const where: Prisma.AuditLogWhereInput = { userId: query.userId };
-  if (query.action) where.action = query.action;
-  if (query.startDate || query.endDate) {
-    where.createdAt = {
-      ...(query.startDate && { gte: query.startDate }),
-      ...(query.endDate && { lte: query.endDate }),
-    };
-  }
-  if (query.targetType) {
-    where.targetType = query.targetType;
-  }
-  if (query.ipAddress) {
-    where.ipAddress = { contains: query.ipAddress, mode: 'insensitive' };
-  }
-  if (query.gatewayId) {
-    where.gatewayId = query.gatewayId;
-  }
-  if (query.search) {
-    const term = query.search;
-    where.AND = [
-      {
-        OR: [
-          { targetType: { contains: term, mode: 'insensitive' } },
-          { targetId: { contains: term, mode: 'insensitive' } },
-          { ipAddress: { contains: term, mode: 'insensitive' } },
-          { details: { string_contains: term } },
-        ],
-      },
-    ];
-  }
+  const where: Prisma.AuditLogWhereInput = {
+    userId: query.userId,
+    ...buildCommonWhereClause(query),
+  };
 
   const sortBy = query.sortBy ?? 'createdAt';
   const sortOrder = query.sortOrder ?? 'desc';
@@ -157,6 +144,9 @@ export async function getAuditLogs(query: AuditLogQuery): Promise<PaginatedAudit
         details: true,
         ipAddress: true,
         gatewayId: true,
+        geoCountry: true,
+        geoCity: true,
+        geoCoords: true,
         createdAt: true,
       },
     }),
@@ -201,6 +191,7 @@ export function buildCommonWhereClause(opts: {
   targetType?: string;
   ipAddress?: string;
   gatewayId?: string;
+  geoCountry?: string;
   search?: string;
 }): Prisma.AuditLogWhereInput {
   const where: Prisma.AuditLogWhereInput = {};
@@ -214,6 +205,7 @@ export function buildCommonWhereClause(opts: {
   if (opts.targetType) where.targetType = opts.targetType;
   if (opts.ipAddress) where.ipAddress = { contains: opts.ipAddress, mode: 'insensitive' };
   if (opts.gatewayId) where.gatewayId = opts.gatewayId;
+  if (opts.geoCountry) where.geoCountry = opts.geoCountry;
   if (opts.search) {
     const term = opts.search;
     where.AND = [
@@ -260,6 +252,9 @@ export async function getTenantAuditLogs(query: TenantAuditLogQuery): Promise<Pa
         details: true,
         ipAddress: true,
         gatewayId: true,
+        geoCountry: true,
+        geoCity: true,
+        geoCoords: true,
         createdAt: true,
         user: { select: { username: true, email: true } },
       },
@@ -275,6 +270,9 @@ export async function getTenantAuditLogs(query: TenantAuditLogQuery): Promise<Pa
     details: r.details,
     ipAddress: r.ipAddress,
     gatewayId: r.gatewayId,
+    geoCountry: r.geoCountry,
+    geoCity: r.geoCity,
+    geoCoords: r.geoCoords,
     createdAt: r.createdAt,
     userId: r.userId,
     userName: r.user?.username ?? null,
@@ -296,6 +294,7 @@ export interface ConnectionAuditLogQuery {
   search?: string;
   ipAddress?: string;
   gatewayId?: string;
+  geoCountry?: string;
   sortBy?: 'createdAt' | 'action';
   sortOrder?: 'asc' | 'desc';
 }
@@ -330,6 +329,9 @@ export async function getConnectionAuditLogs(query: ConnectionAuditLogQuery): Pr
         details: true,
         ipAddress: true,
         gatewayId: true,
+        geoCountry: true,
+        geoCity: true,
+        geoCoords: true,
         createdAt: true,
         user: { select: { username: true, email: true } },
       },
@@ -345,6 +347,9 @@ export async function getConnectionAuditLogs(query: ConnectionAuditLogQuery): Pr
     details: r.details,
     ipAddress: r.ipAddress,
     gatewayId: r.gatewayId,
+    geoCountry: r.geoCountry,
+    geoCity: r.geoCity,
+    geoCoords: r.geoCoords,
     createdAt: r.createdAt,
     userId: r.userId,
     userName: r.user?.username ?? null,
@@ -405,4 +410,37 @@ export async function getTenantAuditGateways(tenantId: string): Promise<AuditGat
     id,
     name: nameMap.get(id) ?? `Deleted (${id.slice(0, 8)}…)`,
   }));
+}
+
+/**
+ * Get distinct countries found in a user's audit logs.
+ */
+export async function getAuditCountries(userId: string): Promise<string[]> {
+  const rows = await prisma.auditLog.findMany({
+    where: { userId, geoCountry: { not: null } },
+    select: { geoCountry: true },
+    distinct: ['geoCountry'],
+    orderBy: { geoCountry: 'asc' },
+  });
+  return rows.map((r) => r.geoCountry!);
+}
+
+/**
+ * Get distinct countries found in a tenant's audit logs.
+ */
+export async function getTenantAuditCountries(tenantId: string): Promise<string[]> {
+  const members = await prisma.tenantMember.findMany({
+    where: { tenantId },
+    select: { userId: true },
+  });
+  const ids = members.map((m) => m.userId);
+  if (ids.length === 0) return [];
+
+  const rows = await prisma.auditLog.findMany({
+    where: { userId: { in: ids }, geoCountry: { not: null } },
+    select: { geoCountry: true },
+    distinct: ['geoCountry'],
+    orderBy: { geoCountry: 'asc' },
+  });
+  return rows.map((r) => r.geoCountry!);
 }

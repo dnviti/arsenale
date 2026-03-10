@@ -42,6 +42,7 @@
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
     "mailgun.js": "^12.7.1",
+    "maxmind": "^5.0.5",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.2",

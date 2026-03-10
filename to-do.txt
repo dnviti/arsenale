@@ -31,6 +31,76 @@
 ================================================================================
 
 
+------------------------------------------------------------------------------
+[ ] CLI-173 — Comandi CLI di amministrazione globale cross-tenant
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: CLI-114 (completato), TENANT-096 (completato)
+
+  DESCRIZIONE:
+  Estendere il tool CLI server con funzionalita' di amministrazione globale
+  che permettano all'operatore di gestire tutti i tenant e tutti gli utenti
+  dell'istanza come superadmin. Attualmente il CLI richiede --tenant-id per
+  ogni operazione utente e non offre visione d'insieme cross-tenant. Un
+  amministratore di sistema deve poter: elencare tutti gli utenti
+  dell'istanza indipendentemente dal tenant, spostare utenti tra tenant,
+  promuovere/declassare ruoli cross-tenant, forzare il cambio email,
+  visualizzare statistiche globali, e gestire la configurazione applicativa.
+  Il CLI opera gia' con accesso diretto al database (bypass JWT), quindi
+  il modello di fiducia e' gia' stabilito — questo task aggiunge solo i
+  comandi mancanti per operazioni globali.
+
+  DETTAGLI TECNICI:
+  1) Comando `user list` senza --tenant-id obbligatorio:
+     - Se --tenant-id omesso: lista TUTTI gli utenti dell'istanza con
+       colonna tenant(s) (nome/slug dei tenant di appartenenza)
+     - Se --tenant-id fornito: comportamento attuale (utenti del tenant)
+     - Nuove opzioni: --enabled/--disabled (filtro stato), --no-tenant
+       (utenti orfani senza membership), --search <query> (email/username)
+     - Query Prisma: prisma.user.findMany con include tenantMemberships
+
+  2) Comando `user move-tenant`:
+     - Sposta un utente da un tenant a un altro (rimuove da sorgente,
+       aggiunge a destinazione con ruolo specificato)
+     - Opzioni: --from <tenant> --to <tenant> --role <MEMBER|ADMIN>
+     - Richiede --confirm (operazione distruttiva: connessioni private
+       restano nel tenant sorgente orfane)
+     - Audit: TENANT_REMOVE_USER + TENANT_INVITE_USER con source: 'cli'
+
+  3) Comando `user set-role`:
+     - Modifica il ruolo di un utente in un tenant specifico
+     - arsenale user set-role <user> --tenant-id <tenant> --role <ROLE>
+     - Protezione: non puo' declassare l'ultimo OWNER di un tenant
+     - Audit: TENANT_UPDATE_USER_ROLE con source: 'cli'
+
+  4) Comando `user set-email`:
+     - Cambia email di un utente (bypass verifica identita')
+     - arsenale user set-email <user> --new-email <email> --confirm
+     - Marca emailVerified=true automaticamente
+     - Audit: ADMIN_EMAIL_CHANGE con source: 'cli'
+
+  5) Comando `tenant update`:
+     - arsenale tenant update <identifier> --name <name>
+       --mfa-required/--no-mfa-required --session-timeout <seconds>
+     - Permette configurazione tenant da CLI senza accesso alla WebUI
+     - Audit: TENANT_UPDATE con source: 'cli'
+
+  6) Comando `stats` (nuovo gruppo top-level):
+     - arsenale stats: mostra riepilogo globale (utenti totali, tenant,
+       connessioni, sessioni attive, gateway, spazio disco recording)
+     - Query aggregate su Prisma: count su User, Tenant, Connection,
+       ActiveSession, Gateway, SessionRecording
+
+  7) Comando `user list-tenants` (evoluzione di `user get`):
+     - Mostra tutti i tenant membership di un utente con ruolo e stato
+     - arsenale user list-tenants <identifier>
+
+  File coinvolti:
+    MODIFICARE: server/src/cli/commands/user.commands.ts
+    MODIFICARE: server/src/cli/commands/tenant.commands.ts
+    CREARE:     server/src/cli/commands/stats.commands.ts
+    MODIFICARE: server/src/cli/index.ts
+    MODIFICARE: server/src/services/tenant.service.ts
 
 
 
@@ -38,6 +108,34 @@
 ================================================================================
   SEZIONE D — MULTI-BACKEND / MULTI-GATEWAY
 ================================================================================
+
+
+------------------------------------------------------------------------------
+[ ] REC-172 — Pipeline GitHub Actions per build container guacenc
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: REC-171
+
+  DESCRIZIONE:
+  Creare un workflow GitHub Actions standalone dedicato per la build e il push
+  del container `guacenc`. Il workflow deve allinearsi agli standard degli altri
+  container, includendo la build multi-architettura (linux/amd64, linux/arm64)
+  tramite QEMU e Buildx, il versionamento semantico (tag generati
+  automaticamente) e il push dell'immagine su ghcr.io.
+
+  DETTAGLI TECNICI:
+  - Creare un nuovo workflow dedicato `.github/workflows/guacenc-build.yml`.
+  - Configurare i trigger su push/tag, in modo simile a `ssh-gateway-build.yml`.
+  - Aggiungere il job `build-and-push` per la compilazione multi-architettura con
+    `docker/build-push-action`, usando il contesto `docker/guacenc` e il
+    relativo `Dockerfile`.
+  - Includere la corretta logica per l'estrazione metadata (tag major/minor/patch).
+  - Implementare il job `scan` che esegue `trivy` sull'immagine locale e carica i
+    risultati SARIF nella Security tab di GitHub Actions.
+
+  File coinvolti:
+    CREARE:     .github/workflows/guacenc-build.yml
+
 
 ================================================================================
   SEZIONE E — ZERO TRUST HARDENING
@@ -683,39 +781,6 @@
   SEZIONE G — IP ADDRESS INTELLIGENCE (Scouted 2026-03-07)
 ================================================================================
 
-------------------------------------------------------------------------------
-[ ] GEO-106 — IP geolocation enrichment with MaxMind GeoLite2
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Enrich every audit log entry with country, city, and coordinates at write
-  time using the MaxMind GeoLite2 local database (.mmdb file). No external
-  API calls, sub-millisecond lookups, zero privacy leakage. Display country
-  flags and location text alongside IPs in all audit UIs. Add country filter.
-
-  DETTAGLI TECNICI:
-  1) npm dependency: maxmind (pure JS reader, no native bindings)
-  2) GeoLite2-City DB (~70MB) downloaded separately (free MaxMind license key),
-     path configured via GEOIP_DB_PATH env var (optional, geo disabled if missing)
-  3) New service: server/src/services/geoip.service.ts — singleton, opens .mmdb
-     at startup, exposes lookup(ip): { country, countryCode, city, lat, lng } | null
-  4) Prisma schema: add geoCountry String?, geoCity String?, geoCoords Float[]
-     to AuditLog model + @@index([geoCountry])
-  5) Modify audit.service.ts log(): call geoip.lookup(ip) synchronously and
-     populate geo fields in prisma.auditLog.create() data
-  6) Extend API response types (server + client) with geoCountry, geoCity, geoCoords
-  7) UI: all 3 audit tables (AuditLogDialog, TenantAuditLogSection,
-     ConnectionAuditLogDialog) — show flag emoji + city next to IP address
-  8) New country filter dropdown populated from GET /audit/countries endpoint
-  9) CSV export: add Country and City columns
-  10) Helper script scripts/update-geodb.sh for downloading/updating the DB file
-
-  NOTE:
-  - Foundational feature — GEO-107, SEC-108 depend on this
-  - Graceful degradation: if .mmdb file not found, geo fields are null, UI unchanged
-  - Private/unresolvable IPs return null (no error)
 
 ------------------------------------------------------------------------------
 [ ] GEO-107 — Audit log geolocation map visualization

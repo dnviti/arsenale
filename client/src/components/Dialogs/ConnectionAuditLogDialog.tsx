@@ -15,12 +15,13 @@ import {
   Download as DownloadIcon,
 } from '@mui/icons-material';
 import {
-  getConnectionAuditLogs, getConnectionAuditUsers, getAuditGateways,
+  getConnectionAuditLogs, getConnectionAuditUsers, getAuditGateways, getAuditCountries,
   TenantAuditLogEntry, AuditAction, ConnectionAuditLogParams, AuditGateway, ConnectionAuditUser,
 } from '../../api/audit.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useAuthStore } from '../../store/authStore';
 import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS } from '../Audit/auditConstants';
+import IpGeoCell from '../Audit/IpGeoCell';
 
 const SlideUp = forwardRef(function SlideUp(
   props: TransitionProps & { children: React.ReactElement },
@@ -30,15 +31,17 @@ const SlideUp = forwardRef(function SlideUp(
 });
 
 function exportCsv(logs: TenantAuditLogEntry[], connectionName: string) {
-  const header = 'Date,User,Email,Action,IP Address,Details';
+  const header = 'Date,User,Email,Action,IP Address,Country,City,Details';
   const rows = logs.map((log) => {
     const date = new Date(log.createdAt).toISOString();
     const user = (log.userName ?? '').replace(/"/g, '""');
     const email = (log.userEmail ?? '').replace(/"/g, '""');
     const action = ACTION_LABELS[log.action] || log.action;
     const ip = log.ipAddress ?? '';
+    const country = log.geoCountry ?? '';
+    const city = log.geoCity ?? '';
     const details = formatDetails(log.details as Record<string, unknown> | null).replace(/"/g, '""');
-    return `"${date}","${user}","${email}","${action}","${ip}","${details}"`;
+    return `"${date}","${user}","${email}","${action}","${ip}","${country}","${city}","${details}"`;
   });
   const csv = [header, ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -82,6 +85,8 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
   const [searchInput, setSearchInput] = useState(connAuditLogSearch);
   const [gateways, setGateways] = useState<AuditGateway[]>([]);
   const [auditUsers, setAuditUsers] = useState<ConnectionAuditUser[]>([]);
+  const [countries, setCountries] = useState<string[]>([]);
+  const [geoCountry, setGeoCountry] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -107,6 +112,7 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
       if (connAuditLogGatewayId) params.gatewayId = connAuditLogGatewayId;
       if (connAuditLogUserId) params.userId = connAuditLogUserId;
       if (ipAddress) params.ipAddress = ipAddress;
+      if (geoCountry) params.geoCountry = geoCountry;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
 
@@ -118,12 +124,13 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
     } finally {
       setLoading(false);
     }
-  }, [connectionId, page, rowsPerPage, connAuditLogAction, connAuditLogSearch, connAuditLogGatewayId, connAuditLogUserId, ipAddress, startDate, endDate, connAuditLogSortBy, connAuditLogSortOrder]);
+  }, [connectionId, page, rowsPerPage, connAuditLogAction, connAuditLogSearch, connAuditLogGatewayId, connAuditLogUserId, ipAddress, geoCountry, startDate, endDate, connAuditLogSortBy, connAuditLogSortOrder]);
 
   useEffect(() => {
     if (open && connectionId) {
       fetchLogs();
       getAuditGateways().then(setGateways).catch(() => {});
+      getAuditCountries().then(setCountries).catch(() => {});
       if (isAdmin) {
         getConnectionAuditUsers(connectionId).then(setAuditUsers).catch(() => {});
       }
@@ -142,7 +149,7 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
 
   const selectedUser = auditUsers.find((u) => u.id === connAuditLogUserId) ?? null;
   const colSpan = isAdmin ? 7 : 6;
-  const hasActiveFilters = connAuditLogAction || connAuditLogSearch || connAuditLogGatewayId || connAuditLogUserId || ipAddress || startDate || endDate;
+  const hasActiveFilters = connAuditLogAction || connAuditLogSearch || connAuditLogGatewayId || connAuditLogUserId || ipAddress || geoCountry || startDate || endDate;
 
   return (
     <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
@@ -245,6 +252,24 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
                 onChange={(e) => { setIpAddress(e.target.value); setPage(0); }}
                 sx={{ width: 160 }}
               />
+              {countries.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel>Country</InputLabel>
+                  <Select
+                    value={geoCountry}
+                    label="Country"
+                    onChange={(e) => {
+                      setGeoCountry(e.target.value);
+                      setPage(0);
+                    }}
+                  >
+                    <MenuItem value="">All Countries</MenuItem>
+                    {countries.map((c) => (
+                      <MenuItem key={c} value={c}>{c}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
               <TextField
                 size="small"
                 type="date"
@@ -339,7 +364,9 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
                               size="small"
                             />
                           </TableCell>
-                          <TableCell>{log.ipAddress || '\u2014'}</TableCell>
+                          <TableCell>
+                            <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} />
+                          </TableCell>
                           <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {formatDetails(log.details as Record<string, unknown> | null)}
                           </TableCell>

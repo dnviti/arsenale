@@ -46,6 +46,9 @@ export interface AuditLogEntry {
   details: Record<string, unknown> | null;
   ipAddress: string | null;
   gatewayId: string | null;
+  geoCountry: string | null;
+  geoCity: string | null;
+  geoCoords: number[];
   createdAt: string;
 }
 
@@ -72,6 +75,7 @@ export interface AuditLogParams {
   targetType?: string;
   ipAddress?: string;
   gatewayId?: string;
+  geoCountry?: string;
   sortBy?: 'createdAt' | 'action';
   sortOrder?: 'asc' | 'desc';
 }
@@ -83,6 +87,11 @@ export async function getAuditLogs(params: AuditLogParams = {}): Promise<AuditLo
 
 export async function getAuditGateways(): Promise<AuditGateway[]> {
   const res = await api.get('/audit/gateways');
+  return res.data;
+}
+
+export async function getAuditCountries(): Promise<string[]> {
+  const res = await api.get('/audit/countries');
   return res.data;
 }
 
@@ -111,6 +120,11 @@ export async function getTenantAuditLogs(params: TenantAuditLogParams = {}): Pro
 
 export async function getTenantAuditGateways(): Promise<AuditGateway[]> {
   const res = await api.get('/audit/tenant/gateways');
+  return res.data;
+}
+
+export async function getTenantAuditCountries(): Promise<string[]> {
+  const res = await api.get('/audit/tenant/countries');
   return res.data;
 }
 

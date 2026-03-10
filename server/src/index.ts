@@ -19,6 +19,7 @@ import { detectOrchestrator, OrchestratorType } from './orchestrator';
 import * as managedGatewayService from './services/managedGateway.service';
 import * as autoscalerService from './services/autoscaler.service';
 import { completeGuacRecording, cleanupExpiredRecordings } from './services/recording.service';
+import { initGeoIp } from './services/geoip.service';
 
 function freePort(port: number): void {
   try {
@@ -83,6 +84,7 @@ async function main() {
     logger.info(`Recovered ${recovered} orphaned session(s) from previous server instance`);
   }
 
+  await initGeoIp();
   await initializePassport();
 
   const server = http.createServer(app);

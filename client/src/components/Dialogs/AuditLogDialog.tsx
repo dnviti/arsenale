@@ -12,9 +12,10 @@ import {
   KeyboardArrowDown as ExpandIcon,
   KeyboardArrowUp as CollapseIcon,
 } from '@mui/icons-material';
-import { getAuditLogs, getAuditGateways, AuditLogEntry, AuditAction, AuditLogParams, AuditGateway } from '../../api/audit.api';
+import { getAuditLogs, getAuditGateways, getAuditCountries, AuditLogEntry, AuditAction, AuditLogParams, AuditGateway } from '../../api/audit.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS, TARGET_TYPES } from '../Audit/auditConstants';
+import IpGeoCell from '../Audit/IpGeoCell';
 
 const SlideUp = forwardRef(function SlideUp(
   props: TransitionProps & { children: React.ReactElement },
@@ -49,6 +50,8 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(auditLogSearch);
   const [gateways, setGateways] = useState<AuditGateway[]>([]);
+  const [countries, setCountries] = useState<string[]>([]);
+  const [geoCountry, setGeoCountry] = useState('');
 
   // Debounce search input → store
   useEffect(() => {
@@ -74,6 +77,7 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
       if (auditLogTargetType) params.targetType = auditLogTargetType;
       if (auditLogGatewayId) params.gatewayId = auditLogGatewayId;
       if (ipAddress) params.ipAddress = ipAddress;
+      if (geoCountry) params.geoCountry = geoCountry;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
 
@@ -85,12 +89,13 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, auditLogAction, auditLogSearch, auditLogTargetType, auditLogGatewayId, ipAddress, startDate, endDate, auditLogSortBy, auditLogSortOrder]);
+  }, [page, rowsPerPage, auditLogAction, auditLogSearch, auditLogTargetType, auditLogGatewayId, ipAddress, geoCountry, startDate, endDate, auditLogSortBy, auditLogSortOrder]);
 
   useEffect(() => {
     if (open) {
       fetchLogs();
       getAuditGateways().then(setGateways).catch(() => {});
+      getAuditCountries().then(setCountries).catch(() => {});
     }
   }, [open, fetchLogs]);
 
@@ -113,7 +118,7 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
     setPage(0);
   };
 
-  const hasActiveFilters = auditLogAction || auditLogSearch || auditLogTargetType || auditLogGatewayId || ipAddress || startDate || endDate;
+  const hasActiveFilters = auditLogAction || auditLogSearch || auditLogTargetType || auditLogGatewayId || ipAddress || geoCountry || startDate || endDate;
 
   return (
     <Dialog
@@ -198,6 +203,24 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
                     <MenuItem value="">All Gateways</MenuItem>
                     {gateways.map((gw) => (
                       <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              )}
+              {countries.length > 0 && (
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel>Country</InputLabel>
+                  <Select
+                    value={geoCountry}
+                    label="Country"
+                    onChange={(e) => {
+                      setGeoCountry(e.target.value);
+                      setPage(0);
+                    }}
+                  >
+                    <MenuItem value="">All Countries</MenuItem>
+                    {countries.map((c) => (
+                      <MenuItem key={c} value={c}>{c}</MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -303,7 +326,9 @@ export default function AuditLogDialog({ open, onClose }: AuditLogDialogProps) {
                               ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ''}`
                               : '\u2014'}
                           </TableCell>
-                          <TableCell>{log.ipAddress || '\u2014'}</TableCell>
+                          <TableCell>
+                            <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} />
+                          </TableCell>
                           <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {formatDetails(log.details)}
                           </TableCell>

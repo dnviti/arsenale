@@ -13,15 +13,16 @@ import {
   Download as DownloadIcon,
 } from '@mui/icons-material';
 import {
-  getTenantAuditLogs, getTenantAuditGateways,
+  getTenantAuditLogs, getTenantAuditGateways, getTenantAuditCountries,
   TenantAuditLogEntry, AuditAction, TenantAuditLogParams, AuditGateway,
 } from '../../api/audit.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useTenantStore } from '../../store/tenantStore';
 import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS, TARGET_TYPES } from '../Audit/auditConstants';
+import IpGeoCell from '../Audit/IpGeoCell';
 
 function exportCsv(logs: TenantAuditLogEntry[]) {
-  const header = 'Date,User,Email,Action,Target Type,Target ID,IP Address,Details';
+  const header = 'Date,User,Email,Action,Target Type,Target ID,IP Address,Country,City,Details';
   const rows = logs.map((log) => {
     const date = new Date(log.createdAt).toISOString();
     const user = (log.userName ?? '').replace(/"/g, '""');
@@ -30,8 +31,10 @@ function exportCsv(logs: TenantAuditLogEntry[]) {
     const targetType = log.targetType ?? '';
     const targetId = log.targetId ?? '';
     const ip = log.ipAddress ?? '';
+    const country = log.geoCountry ?? '';
+    const city = log.geoCity ?? '';
     const details = formatDetails(log.details as Record<string, unknown> | null).replace(/"/g, '""');
-    return `"${date}","${user}","${email}","${action}","${targetType}","${targetId}","${ip}","${details}"`;
+    return `"${date}","${user}","${email}","${action}","${targetType}","${targetId}","${ip}","${country}","${city}","${details}"`;
   });
   const csv = [header, ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -72,6 +75,8 @@ export default function TenantAuditLogSection({ onViewUserProfile }: TenantAudit
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(tenantAuditLogSearch);
   const [gateways, setGateways] = useState<AuditGateway[]>([]);
+  const [countries, setCountries] = useState<string[]>([]);
+  const [geoCountry, setGeoCountry] = useState('');
 
   useEffect(() => {
     if (users.length === 0) fetchUsers();
@@ -101,6 +106,7 @@ export default function TenantAuditLogSection({ onViewUserProfile }: TenantAudit
       if (tenantAuditLogGatewayId) params.gatewayId = tenantAuditLogGatewayId;
       if (tenantAuditLogUserId) params.userId = tenantAuditLogUserId;
       if (ipAddress) params.ipAddress = ipAddress;
+      if (geoCountry) params.geoCountry = geoCountry;
       if (startDate) params.startDate = startDate;
       if (endDate) params.endDate = endDate;
 
@@ -112,11 +118,12 @@ export default function TenantAuditLogSection({ onViewUserProfile }: TenantAudit
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, tenantAuditLogAction, tenantAuditLogSearch, tenantAuditLogTargetType, tenantAuditLogGatewayId, tenantAuditLogUserId, ipAddress, startDate, endDate, tenantAuditLogSortBy, tenantAuditLogSortOrder]);
+  }, [page, rowsPerPage, tenantAuditLogAction, tenantAuditLogSearch, tenantAuditLogTargetType, tenantAuditLogGatewayId, tenantAuditLogUserId, ipAddress, geoCountry, startDate, endDate, tenantAuditLogSortBy, tenantAuditLogSortOrder]);
 
   useEffect(() => {
     fetchLogs();
     getTenantAuditGateways().then(setGateways).catch(() => {});
+    getTenantAuditCountries().then(setCountries).catch(() => {});
   }, [fetchLogs]);
 
   const handleSort = (field: 'createdAt' | 'action') => {
@@ -131,7 +138,7 @@ export default function TenantAuditLogSection({ onViewUserProfile }: TenantAudit
 
   const selectedUser = users.find((u) => u.id === tenantAuditLogUserId) ?? null;
 
-  const hasActiveFilters = tenantAuditLogAction || tenantAuditLogSearch || tenantAuditLogTargetType || tenantAuditLogGatewayId || tenantAuditLogUserId || ipAddress || startDate || endDate;
+  const hasActiveFilters = tenantAuditLogAction || tenantAuditLogSearch || tenantAuditLogTargetType || tenantAuditLogGatewayId || tenantAuditLogUserId || ipAddress || geoCountry || startDate || endDate;
 
   return (
     <Card>
@@ -237,6 +244,24 @@ export default function TenantAuditLogSection({ onViewUserProfile }: TenantAudit
             onChange={(e) => { setIpAddress(e.target.value); setPage(0); }}
             sx={{ width: 160 }}
           />
+          {countries.length > 0 && (
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel>Country</InputLabel>
+              <Select
+                value={geoCountry}
+                label="Country"
+                onChange={(e) => {
+                  setGeoCountry(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <MenuItem value="">All Countries</MenuItem>
+                {countries.map((c) => (
+                  <MenuItem key={c} value={c}>{c}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
           <TextField
             size="small"
             type="date"
@@ -338,7 +363,9 @@ export default function TenantAuditLogSection({ onViewUserProfile }: TenantAudit
                             ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ''}`
                             : '\u2014'}
                         </TableCell>
-                        <TableCell>{log.ipAddress || '\u2014'}</TableCell>
+                        <TableCell>
+                          <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} />
+                        </TableCell>
                         <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {formatDetails(log.details as Record<string, unknown> | null)}
                         </TableCell>

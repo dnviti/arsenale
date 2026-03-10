@@ -17,6 +17,59 @@
 
 
 ================================================================================
+  SEZIONE G — IP ADDRESS INTELLIGENCE
+================================================================================
+
+------------------------------------------------------------------------------
+[~] GEO-106 — IP geolocation enrichment with MaxMind GeoLite2
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Enrich every audit log entry with country, city, and coordinates at write
+  time using the MaxMind GeoLite2 local database (.mmdb file). No external
+  API calls, sub-millisecond lookups, zero privacy leakage. Display country
+  flags and location text alongside IPs in all audit UIs. Add country filter.
+
+  DETTAGLI TECNICI:
+  1) npm dependency: maxmind (pure JS reader, no native bindings)
+  2) GeoLite2-City DB (~70MB) downloaded separately (free MaxMind license key),
+     path configured via GEOIP_DB_PATH env var (optional, geo disabled if missing)
+  3) New service: server/src/services/geoip.service.ts — singleton, opens .mmdb
+     at startup, exposes lookup(ip): { country, countryCode, city, lat, lng } | null
+  4) Prisma schema: add geoCountry String?, geoCity String?, geoCoords Float[]
+     to AuditLog model + @@index([geoCountry])
+  5) Modify audit.service.ts log(): call geoip.lookup(ip) synchronously and
+     populate geo fields in prisma.auditLog.create() data
+  6) Extend API response types (server + client) with geoCountry, geoCity, geoCoords
+  7) UI: all 3 audit tables (AuditLogDialog, TenantAuditLogSection,
+     ConnectionAuditLogDialog) — show flag emoji + city next to IP address
+  8) New country filter dropdown populated from GET /audit/countries endpoint
+  9) CSV export: add Country and City columns
+  10) Helper script scripts/update-geodb.sh for downloading/updating the DB file
+
+  NOTE:
+  - Foundational feature — GEO-107, SEC-108 depend on this
+  - Graceful degradation: if .mmdb file not found, geo fields are null, UI unchanged
+  - Private/unresolvable IPs return null (no error)
+
+  File coinvolti:
+    CREARE:     server/src/services/geoip.service.ts
+    CREARE:     scripts/update-geodb.sh
+    MODIFICARE: server/prisma/schema.prisma
+    MODIFICARE: server/src/config.ts
+    MODIFICARE: server/src/services/audit.service.ts
+    MODIFICARE: server/src/controllers/audit.controller.ts
+    MODIFICARE: server/src/routes/audit.routes.ts
+    MODIFICARE: client/src/api/audit.api.ts
+    MODIFICARE: client/src/components/Dialogs/AuditLogDialog.tsx
+    MODIFICARE: client/src/components/Settings/TenantAuditLogSection.tsx
+    MODIFICARE: client/src/components/Dialogs/ConnectionAuditLogDialog.tsx
+    MODIFICARE: .env.example
+
+
+================================================================================
   SEZIONE H — SCOUTED FEATURES
 ================================================================================
 

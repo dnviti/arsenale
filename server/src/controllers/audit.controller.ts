@@ -20,6 +20,7 @@ const querySchema = z.object({
   targetType: z.string().max(100).optional(),
   ipAddress: z.string().max(45).optional(),
   gatewayId: z.string().uuid().optional(),
+  geoCountry: z.string().max(100).optional(),
   sortBy: z.enum(VALID_SORT_FIELDS).default('createdAt'),
   sortOrder: z.enum(VALID_SORT_ORDERS).default('desc'),
 });
@@ -131,6 +132,24 @@ export async function listTenantGateways(req: AuthRequest, res: Response, next: 
   try {
     const gateways = await auditService.getTenantAuditGateways(req.user!.tenantId!);
     res.json(gateways);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listCountries(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const countries = await auditService.getAuditCountries(req.user!.userId);
+    res.json(countries);
+  } catch (err) {
+    next(err);
+  }
+}
+
+export async function listTenantCountries(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    const countries = await auditService.getTenantAuditCountries(req.user!.tenantId!);
+    res.json(countries);
   } catch (err) {
     next(err);
   }

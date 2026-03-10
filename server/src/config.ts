@@ -181,6 +181,8 @@ export const config = {
   guacencServiceUrl: process.env.GUACENC_SERVICE_URL || 'http://guacenc:3003',
   guacencTimeoutMs: parseInt(process.env.GUACENC_TIMEOUT_MS || '120000', 10),
   guacencRecordingPath: process.env.GUACENC_RECORDING_PATH || '/recordings',
+  // IP Geolocation (MaxMind GeoLite2)
+  geoipDbPath: process.env.GEOIP_DB_PATH ? path.resolve(process.env.GEOIP_DB_PATH) : '',
   webauthn: {
     rpId: process.env.WEBAUTHN_RP_ID || 'localhost',
     rpOrigin: process.env.WEBAUTHN_RP_ORIGIN || 'http://localhost:3000',
