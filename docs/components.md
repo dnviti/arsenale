@@ -1,677 +1,372 @@
 # Components
 
-> Auto-generated on 2026-03-07 by `/docs update components`.
+> Auto-generated on 2026-03-11 by `/docs create components`.
 > Source of truth is the codebase. Run `/docs update components` after code changes.
 
 ## Overview
 
-**Client tech stack**: React 19, Vite, Material-UI (MUI) v6, Zustand, Axios, XTerm.js, guacamole-common-js
+The client is built with:
 
-Source: `client/src/`
+- **React 19** with TypeScript
+- **Vite** — build tool and dev server
+- **Material-UI (MUI) v6** — component library and theming
+- **Zustand** — state management (14 stores with localStorage persistence for UI preferences)
+- **Axios** — HTTP client with JWT auto-refresh
+- **Socket.IO Client** — real-time SSH terminals, notifications, gateway monitoring
+- **XTerm.js** — SSH terminal emulation
+- **guacamole-common-js** — RDP/VNC remote desktop rendering
+
+**Total**: 10 pages, 73 components, 14 stores, 4 hooks, 25 API modules.
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Pages
 
-### LoginPage
-
-- **Route**: `/login`
-- **Purpose**: Multi-step login flow with email/password and MFA support
-- **Features**: Standard login form → MFA method selection (TOTP, SMS, WebAuthn) → code entry or passkey ceremony → optional mandatory MFA setup
-- **Stores**: `authStore`, `notificationStore`
-
-### RegisterPage
-
-- **Route**: `/register`
-- **Purpose**: User registration with email verification
-- **Features**: Registration form, email verification, recovery key display
-- **Stores**: `authStore`, `notificationStore`
-
-### OAuthCallbackPage
-
-- **Route**: `/oauth/callback`
-- **Purpose**: Handle OAuth provider callback redirects
-- **Features**: Parses tokens from URL, auto-redirects to dashboard or vault setup
-- **Stores**: `authStore`
-
-### VaultSetupPage
-
-- **Route**: `/oauth/vault-setup`
-- **Purpose**: Initial vault password setup for OAuth-only users
-- **Features**: Password entry form, redirects to dashboard on completion
-- **Stores**: `authStore`, `notificationStore`
-
-### ForgotPasswordPage
-
-- **Route**: `/forgot-password`
-- **Purpose**: Password reset request
-- **Features**: Email input form, sends reset link
-
-### ResetPasswordPage
-
-- **Route**: `/reset-password`
-- **Purpose**: Password reset completion
-- **Features**: New password form, SMS verification (if MFA enabled), recovery key support
-
-### DashboardPage
-
-- **Route**: `/` (authenticated, catch-all)
-- **Purpose**: Main application entry point
-- **Features**: Initializes vault status polling, fetches connections and folders, restores persisted tabs
-- **Stores**: `connectionsStore`, `vaultStore`, `tabsStore`
-
-### ConnectionViewerPage
-
-- **Route**: `/connection/:id`
-- **Purpose**: Popup window mode for SSH/RDP viewer
-- **Features**: Full-screen SshTerminal or RdpViewer, independent token refresh for popup windows
-- **Stores**: `authStore`, `tabsStore`
-
-### PublicSharePage
-
-- **Route**: `/share/:token`
-- **Purpose**: Public external secret share viewer
-- **Features**: PIN entry if protected, displays secret data, access count tracking
+| Page | Route | Purpose | Key Stores |
+|------|-------|---------|------------|
+| `LoginPage` | `/login` | Multi-step login: email/password, MFA challenge (TOTP/SMS/WebAuthn), forced MFA setup, tenant selection | authStore, vaultStore |
+| `RegisterPage` | `/register` | User registration with email verification and recovery key display | authStore |
+| `DashboardPage` | `/` | Main app shell — fetches connections, restores tabs, renders MainLayout | connectionsStore, tabsStore |
+| `ConnectionViewerPage` | `/viewer/:id` | Standalone popup window for a single connection (SSH/RDP/VNC) with auth bootstrap | tabsStore, authStore |
+| `RecordingPlayerPage` | `/recordings/:id` | Standalone popup player for session recordings (asciicast or .guac) | authStore |
+| `PublicSharePage` | `/share/:token` | Unauthenticated page for externally shared secrets (optional PIN) | — |
+| `OAuthCallbackPage` | `/oauth/callback` | Handles OAuth redirects, extracts tokens, redirects to dashboard or vault setup | authStore |
+| `VaultSetupPage` | `/vault-setup` | Post-OAuth vault password setup for OAuth-only users | authStore |
+| `ForgotPasswordPage` | `/forgot-password` | Password reset email request form | — |
+| `ResetPasswordPage` | `/reset-password` | Multi-step password reset (token validation, optional SMS, new password) | — |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Components
 
-### Layout
-
-#### MainLayout
-
-- **File**: `client/src/components/Layout/MainLayout.tsx`
-- **Purpose**: Root layout wrapping the authenticated dashboard
-- **Features**: AppBar with notification bell, sidebar with connection tree, tab bar, main content area, full-screen dialog overlays (Settings, AuditLog, Keychain), vault locked overlay
-- **Children**: ConnectionTree (sidebar), TabBar, TabPanel, SettingsDialog, AuditLogDialog, KeychainDialog
-
-#### NotificationBell
-
-- **File**: `client/src/components/Layout/NotificationBell.tsx`
-- **Purpose**: Notification indicator in the header
-- **Features**: Badge with unread count, dropdown list of notifications, mark as read, delete
-- **Stores**: `notificationListStore`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Sidebar
-
-#### ConnectionTree
-
-- **File**: `client/src/components/Sidebar/ConnectionTree.tsx`
-- **Purpose**: Hierarchical tree view of connections and folders
-- **Features**: Favorites section, recent connections, personal folders, shared connections, team sections (collapsible), drag-to-reorder, context menu (edit, delete, share), search/filter
-- **Stores**: `connectionsStore`, `tabsStore`, `uiPreferencesStore`
-
-#### TeamConnectionSection
-
-- **File**: `client/src/components/Sidebar/TeamConnectionSection.tsx`
-- **Purpose**: Expandable section for a team's connections in the sidebar
-- **Features**: Collapse state persisted via `uiPreferencesStore`, shows team folders and connections, role-based visibility
-- **Stores**: `uiPreferencesStore`
-
-#### treeHelpers
-
-- **File**: `client/src/components/Sidebar/treeHelpers.tsx`
-- **Purpose**: Utility functions for building connection tree structure
-- **Features**: Recursive tree building, pruning, matching, error handling
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Tabs
-
-#### TabBar
-
-- **File**: `client/src/components/Tabs/TabBar.tsx`
-- **Purpose**: Horizontal tab bar for open connections
-- **Features**: Active tab highlighting, close button, connection type icon (SSH/RDP)
-- **Stores**: `tabsStore`
-
-#### TabPanel
-
-- **File**: `client/src/components/Tabs/TabPanel.tsx`
-- **Purpose**: Content container for each tab
-- **Features**: Renders SshTerminal or RdpViewer based on connection type, lazy rendering
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Terminal / SSH
-
-#### SshTerminal
-
-- **File**: `client/src/components/Terminal/SshTerminal.tsx`
-- **Purpose**: SSH terminal emulator
-- **Features**: XTerm.js terminal, Socket.IO connection, resize handling, configurable theme/font/cursor, SFTP browser toggle, Guacamole WebSocket support
-- **Stores**: `terminalSettingsStore`, `uiPreferencesStore`
-
-#### SftpBrowser
-
-- **File**: `client/src/components/SSH/SftpBrowser.tsx`
-- **Purpose**: SFTP file browser panel alongside SSH terminal
-- **Features**: Directory listing, navigate, create directory, delete files/dirs, rename, upload/download files
-- **Stores**: `uiPreferencesStore`
-
-#### SftpTransferQueue
-
-- **File**: `client/src/components/SSH/SftpTransferQueue.tsx`
-- **Purpose**: Upload/download progress queue
-- **Features**: Progress bars per transfer, cancel button, clear completed
-- **Stores**: `uiPreferencesStore`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### RDP
-
-#### RdpViewer
-
-- **File**: `client/src/components/RDP/RdpViewer.tsx`
-- **Purpose**: RDP remote desktop viewer
-- **Features**: Guacamole client rendering, keyboard/mouse input, clipboard sync, connection status, shared drive file browser
-- **Stores**: `uiPreferencesStore`
-
-#### FileBrowser
-
-- **File**: `client/src/components/RDP/FileBrowser.tsx`
-- **Purpose**: RDP drive redirection file browser
-- **Features**: Browse, upload, download files shared via RDP drive redirection
-- **Stores**: `uiPreferencesStore`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Dialogs
-
-#### ConnectionDialog
-
-- **File**: `client/src/components/Dialogs/ConnectionDialog.tsx`
-- **Purpose**: Create/edit connection form
-- **Features**: Name, host, port, type (RDP/SSH), credentials or secret picker, domain field (RDP), folder selection, team assignment, drive enable, gateway selection, SSH terminal config, RDP settings
-- **Stores**: `connectionsStore`, `notificationStore`
-
-#### FolderDialog
-
-- **File**: `client/src/components/Dialogs/FolderDialog.tsx`
-- **Purpose**: Create/rename folder
-- **Stores**: `connectionsStore`, `notificationStore`
-
-#### ShareDialog
-
-- **File**: `client/src/components/Dialogs/ShareDialog.tsx`
-- **Purpose**: Share a connection with another user
-- **Features**: User search (by email), permission selection (READ_ONLY/FULL_ACCESS), list existing shares, update/revoke
-- **Stores**: `notificationStore`
-
-#### ShareFolderDialog
-
-- **File**: `client/src/components/Dialogs/ShareFolderDialog.tsx`
-- **Purpose**: Share a folder (batch-share all connections within)
-- **Stores**: `notificationStore`
-
-#### ConnectAsDialog
-
-- **File**: `client/src/components/Dialogs/ConnectAsDialog.tsx`
-- **Purpose**: Override credentials when opening a connection
-- **Features**: Username/password/domain input for one-time credential override
-- **Stores**: `tabsStore`
-
-#### SettingsDialog
-
-- **File**: `client/src/components/Dialogs/SettingsDialog.tsx`
-- **Purpose**: Full-screen settings modal with tabbed sections
-- **Features**: Profile, Security (password, 2FA, SMS, WebAuthn), Connections (SSH/RDP defaults), Team, Gateway, Orchestration, Admin sections
-- **Pattern**: Full-screen MUI Dialog with SlideUp transition (preserves active sessions)
-
-#### AuditLogDialog
-
-- **File**: `client/src/components/Dialogs/AuditLogDialog.tsx`
-- **Purpose**: Full-screen audit log viewer
-- **Features**: Filterable by action type, date range, IP, gateway; paginated results; tenant-wide logs for admins
-- **Pattern**: Full-screen MUI Dialog with SlideUp transition
-
-#### KeychainDialog
-
-- **File**: `client/src/components/Dialogs/KeychainDialog.tsx`
-- **Purpose**: Full-screen secret management
-- **Features**: Secret list, create/edit/delete, version history, sharing, external sharing
-- **Pattern**: Full-screen MUI Dialog with SlideUp transition
-- **Stores**: `secretStore`
-
-#### TeamDialog
-
-- **File**: `client/src/components/Dialogs/TeamDialog.tsx`
-- **Purpose**: Create/edit team
-- **Stores**: `teamStore`, `notificationStore`
-
-#### CreateUserDialog
-
-- **File**: `client/src/components/Dialogs/CreateUserDialog.tsx`
-- **Purpose**: Admin user creation within tenant
-- **Features**: Email, username, password, role, welcome email toggle
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Settings
-
-#### ProfileSection
-
-- **File**: `client/src/components/Settings/ProfileSection.tsx`
-- **Purpose**: Username editing and avatar upload
-
-#### ChangePasswordSection
-
-- **File**: `client/src/components/Settings/ChangePasswordSection.tsx`
-- **Purpose**: Password change with optional identity verification
-
-#### TerminalSettingsSection
-
-- **File**: `client/src/components/Settings/TerminalSettingsSection.tsx`
-- **Purpose**: SSH terminal defaults configuration
-- **Features**: Font family, size, line height, letter spacing, cursor style/blink, theme, custom colors, scrollback, bell style
-- **Stores**: `terminalSettingsStore`
-
-#### RdpSettingsSection
-
-- **File**: `client/src/components/Settings/RdpSettingsSection.tsx`
-- **Purpose**: RDP connection defaults
-- **Features**: Color depth, resolution, DPI, resize method, quality preset, wallpaper/theming/font smoothing toggles, audio settings, security mode, keyboard layout
-- **Stores**: `rdpSettingsStore`
-
-#### ConnectionDefaultsSection
-
-- **File**: `client/src/components/Settings/ConnectionDefaultsSection.tsx`
-- **Purpose**: Global SSH/RDP default settings for new connections
-
-#### TwoFactorSection
-
-- **File**: `client/src/components/Settings/TwoFactorSection.tsx`
-- **Purpose**: TOTP authenticator setup/disable
-- **Features**: QR code display, 6-digit code verification, enable/disable toggle
-
-#### SmsMfaSection
-
-- **File**: `client/src/components/Settings/SmsMfaSection.tsx`
-- **Purpose**: SMS MFA phone setup and management
-- **Features**: Phone number input (E.164), verification code entry, enable/disable toggle
-
-#### WebAuthnSection
-
-- **File**: `client/src/components/Settings/WebAuthnSection.tsx`
-- **Purpose**: WebAuthn credential registration and management
-- **Features**: Register passkeys/security keys, rename, remove, list credentials
-
-#### LinkedAccountsSection
-
-- **File**: `client/src/components/Settings/LinkedAccountsSection.tsx`
-- **Purpose**: Manage linked OAuth accounts
-- **Features**: List linked providers, link/unlink Google/Microsoft/GitHub/OIDC accounts
-
-#### VaultAutoLockSection
-
-- **File**: `client/src/components/Settings/VaultAutoLockSection.tsx`
-- **Purpose**: Vault auto-lock timeout configuration
-- **Features**: Slider/input for auto-lock minutes, tenant maximum enforcement display
-
-#### TenantSection
-
-- **File**: `client/src/components/Settings/TenantSection.tsx`
-- **Purpose**: Tenant settings (admin only)
-- **Features**: Tenant name, MFA requirement toggle, default session timeout, vault auto-lock maximum
-
-#### TeamSection
-
-- **File**: `client/src/components/Settings/TeamSection.tsx`
-- **Purpose**: Team creation and member management within settings
-
-#### GatewaySection
-
-- **File**: `client/src/components/Settings/GatewaySection.tsx`
-- **Purpose**: Gateway CRUD, SSH key management, scaling controls
-- **Features**: Create/edit/delete gateways, generate/rotate SSH keys, test connectivity, managed gateway deployment
-
-#### EmailProviderSection
-
-- **File**: `client/src/components/Settings/EmailProviderSection.tsx`
-- **Purpose**: Email provider status and testing (admin)
-- **Features**: Shows active provider, configuration status, send test email
-
-#### SelfSignupSection
-
-- **File**: `client/src/components/Settings/SelfSignupSection.tsx`
-- **Purpose**: Toggle public registration (admin)
-- **Features**: Enable/disable self-signup, environment lock indicator
-
-#### TenantAuditLogSection
-
-- **File**: `client/src/components/Settings/TenantAuditLogSection.tsx`
-- **Purpose**: Tenant-wide audit log within settings (admin)
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Keychain / Secrets
-
-#### SecretListPanel
-
-- **File**: `client/src/components/Keychain/SecretListPanel.tsx`
-- **Purpose**: Secret list with filtering and search
-- **Features**: Type filter, search, favorites, tags, bulk actions
-
-#### SecretDetailView
-
-- **File**: `client/src/components/Keychain/SecretDetailView.tsx`
-- **Purpose**: Secret detail display with type-specific field rendering
-
-#### SecretDialog
-
-- **File**: `client/src/components/Keychain/SecretDialog.tsx`
-- **Purpose**: Create/edit secret form
-- **Features**: Type selection (LOGIN, SSH_KEY, CERTIFICATE, API_KEY, SECURE_NOTE), scope, folder, tags, expiry
-
-#### SecretPicker
-
-- **File**: `client/src/components/Keychain/SecretPicker.tsx`
-- **Purpose**: Dropdown to select a vault secret for connection credentials
-- **Features**: Searchable picker used in ConnectionDialog
-
-#### ShareSecretDialog
-
-- **File**: `client/src/components/Keychain/ShareSecretDialog.tsx`
-- **Purpose**: Share a secret with a user
-- **Features**: User search, permission selection
-
-#### ExternalShareDialog
-
-- **File**: `client/src/components/Keychain/ExternalShareDialog.tsx`
-- **Purpose**: Create external public share link
-- **Features**: Expiry, max access count, optional PIN protection
-
-#### SecretVersionHistory
-
-- **File**: `client/src/components/Keychain/SecretVersionHistory.tsx`
-- **Purpose**: View and restore secret versions
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Gateway
-
-#### GatewayDialog
-
-- **File**: `client/src/components/gateway/GatewayDialog.tsx`
-- **Purpose**: Create/edit gateway form
-- **Features**: Type selection, host/port, credentials, health testing, SSH key management
-
-#### GatewayTemplateSection
-
-- **File**: `client/src/components/gateway/GatewayTemplateSection.tsx`
-- **Purpose**: Gateway template list with create/edit/delete
-
-#### GatewayTemplateDialog
-
-- **File**: `client/src/components/gateway/GatewayTemplateDialog.tsx`
-- **Purpose**: Create/edit gateway template form
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Orchestration
-
-#### OrchestrationSection
-
-- **File**: `client/src/components/orchestration/OrchestrationSection.tsx`
-- **Purpose**: Orchestration dashboard tab selector (sessions, scaling, instances)
-
-#### SessionDashboard
-
-- **File**: `client/src/components/orchestration/SessionDashboard.tsx`
-- **Purpose**: Active session list with protocol/gateway filters and terminate action
-
-#### SessionTimeoutConfig
-
-- **File**: `client/src/components/orchestration/SessionTimeoutConfig.tsx`
-- **Purpose**: Session timeout configuration UI
-
-#### ScalingControls
-
-- **File**: `client/src/components/orchestration/ScalingControls.tsx`
-- **Purpose**: Gateway auto-scaling configuration (min/max replicas, sessions per instance, cooldown)
-
-#### GatewayInstanceList
-
-- **File**: `client/src/components/orchestration/GatewayInstanceList.tsx`
-- **Purpose**: Managed gateway instance list with health status, restart, and logs
-
-#### ContainerLogDialog
-
-- **File**: `client/src/components/orchestration/ContainerLogDialog.tsx`
-- **Purpose**: Container log viewer for troubleshooting managed instances
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Common
-
-#### IdentityVerification
-
-- **File**: `client/src/components/common/IdentityVerification.tsx`
-- **Purpose**: Reusable identity verification flow
-- **Features**: Supports email, TOTP, SMS, WebAuthn, and password methods. Used for email change, password change, and admin actions.
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Overlays
-
-#### VaultLockedOverlay
-
-- **File**: `client/src/components/Overlays/VaultLockedOverlay.tsx`
-- **Purpose**: Full-screen overlay when vault is locked
-- **Features**: Password unlock form, MFA unlock methods (TOTP, SMS, WebAuthn)
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Shared / Utility
-
-#### FloatingToolbar
-
-- **File**: `client/src/components/shared/FloatingToolbar.tsx`
-- **Purpose**: Floating action toolbar for RDP/SSH sessions
-- **Features**: Extensible action list (clipboard, screenshot, disconnect, fullscreen, settings)
-
-#### OAuthButtons
-
-- **File**: `client/src/components/OAuthButtons.tsx`
-- **Purpose**: OAuth provider login/link buttons
-- **Features**: Google, Microsoft, GitHub, custom OIDC provider buttons with icons
-
-#### UserPicker
-
-- **File**: `client/src/components/UserPicker.tsx`
-- **Purpose**: User search and selection autocomplete
-- **Features**: Search by query, display user email/username, select user
+### Layout (`client/src/components/Layout/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `MainLayout` | Top-level layout: sidebar, tab bar, connection viewers, and all full-screen dialog mount points. Manages open/close state for all dialogs. |
+| `TenantSwitcher` | Sidebar dropdown for switching between tenant organizations |
+| `NotificationBell` | AppBar bell icon with unread badge and notification dropdown list |
+
+### Sidebar (`client/src/components/Sidebar/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `ConnectionTree` | Main sidebar — connection tree with folders, favorites section, recents, shared connections, search, drag-and-drop, and context menus |
+| `TeamConnectionSection` | Sidebar section showing team connections grouped by team with folder support |
+| `treeHelpers` | Helper functions for building tree node structures from flat connection/folder data |
+
+### Tabs (`client/src/components/Tabs/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `TabBar` | Horizontal tab bar with close buttons, active indicator, pop-out action, and context menu |
+| `TabPanel` | Content panel that renders the appropriate viewer (SSH terminal, RDP, VNC) for the active tab |
+
+### Terminal / SSH (`client/src/components/Terminal/`, `client/src/components/SSH/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `SshTerminal` | XTerm.js-based SSH terminal with Socket.IO connection, resize handling, search addon, and SFTP browser integration |
+| `SftpBrowser` | In-session SFTP file browser panel (navigate, upload, download, delete, rename, mkdir) |
+| `SftpTransferQueue` | SFTP transfer progress queue showing active/completed/failed file transfers |
+
+### RDP (`client/src/components/RDP/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `RdpViewer` | Guacamole-based RDP viewer with clipboard sync, dynamic scaling, toolbar, and drive redirection |
+| `FileBrowser` | In-session RDP file browser for the virtual drive (upload, download, delete, create folder) |
+
+### VNC (`client/src/components/VNC/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `VncViewer` | Guacamole-based VNC viewer with clipboard sync, scaling, and toolbar |
+
+### Dialogs (`client/src/components/Dialogs/`)
+
+All full-screen dialogs use the MUI `Dialog` component with `fullScreen` prop and `Slide` transition, rendered from `MainLayout` to preserve active sessions.
+
+| Component | Purpose |
+|-----------|---------|
+| `SettingsDialog` | Full-screen settings with tabbed sections (profile, security, terminal, RDP, VNC, gateway, tenant, teams, audit) |
+| `AuditLogDialog` | Full-screen personal audit log with filtering, pagination, and geo-location |
+| `ConnectionAuditLogDialog` | Full-screen audit log scoped to a specific connection |
+| `KeychainDialog` | Full-screen secrets/keychain manager (list, create, edit, share, external share) |
+| `ConnectionDialog` | Create/edit connection dialog (SSH, RDP, VNC) with host, port, credentials, gateway selection, and per-connection settings |
+| `FolderDialog` | Create/rename folder dialog |
+| `ShareDialog` | Manage connection sharing (add/remove users, change permissions) |
+| `ShareFolderDialog` | Batch-share all connections in a folder |
+| `ImportDialog` | Import connections from CSV/JSON/mRemoteNG/RDP files |
+| `ExportDialog` | Export connections to CSV or JSON (with optional credentials) |
+| `ConnectAsDialog` | Choose credential mode (saved, domain, manual) before opening a connection |
+| `CreateUserDialog` | Tenant admin: create a new user with email, password, and role |
+| `UserProfileDialog` | View tenant user's profile, teams, and admin actions (change email/password, MFA status) |
+| `InviteDialog` | Tenant admin: invite a user by email with a role |
+| `TeamDialog` | Create or edit a team (name, description, members, roles) |
+
+### Keychain (`client/src/components/Keychain/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `SecretListPanel` | Left panel — filterable, sortable list of secrets with scope/type badges |
+| `SecretDetailView` | Right panel — full secret data, metadata, tags, shares, and external shares |
+| `SecretDialog` | Create/edit secret (Login, SSH Key, Certificate, API Key, Secure Note) |
+| `SecretVersionHistory` | Version history with diff viewing and restore capability |
+| `SecretPicker` | Autocomplete picker to select a keychain secret (used in ConnectionDialog) |
+| `ShareSecretDialog` | Share a secret with another user (internal sharing with permissions) |
+| `ExternalShareDialog` | Create external share link (expiry, max accesses, optional PIN) |
+
+### Settings (`client/src/components/Settings/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `ProfileSection` | Username, email, avatar upload |
+| `ChangePasswordSection` | Password change with identity verification |
+| `TwoFactorSection` | TOTP 2FA setup/disable with QR code |
+| `SmsMfaSection` | SMS MFA setup — phone, verification, enable/disable |
+| `WebAuthnSection` | WebAuthn/passkey management — register, rename, remove |
+| `LinkedAccountsSection` | OAuth linked accounts — link/unlink providers |
+| `TerminalSettingsSection` | SSH terminal defaults (theme, font, cursor) |
+| `RdpSettingsSection` | RDP defaults (color depth, resize, clipboard, audio, etc.) |
+| `VncSettingsSection` | VNC defaults (color depth, cursor, resize, clipboard) |
+| `ConnectionDefaultsSection` | Default credential mode setting |
+| `VaultAutoLockSection` | Vault auto-lock timer (with tenant maximum enforcement) |
+| `DomainProfileSection` | Windows/AD domain profile (domain, username, password) |
+| `TenantSection` | Tenant management — name, MFA policy, session timeout, user management |
+| `TenantAuditLogSection` | Tenant-wide audit log with user filter, geo map, table/timeline views |
+| `TeamSection` | Team management — CRUD teams, manage members and roles |
+| `GatewaySection` | Gateway management — CRUD, SSH keys, health tests, orchestration tabs |
+| `EmailProviderSection` | Email provider status and test-send (admin) |
+| `SelfSignupSection` | Toggle self-signup on/off (admin, respects env-lock) |
+
+### Gateway / Orchestration (`client/src/components/gateway/`, `client/src/components/orchestration/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `GatewayDialog` | Create/edit gateway (GUACD, SSH Bastion, Managed SSH) with connection test |
+| `GatewayTemplateDialog` | Create/edit gateway template with auto-scaling and LB defaults |
+| `GatewayTemplateSection` | Gateway templates list with create/edit/delete/deploy actions |
+| `OrchestrationSection` | Settings section wrapper for orchestration dashboard |
+| `SessionDashboard` | Active sessions with filtering, counts per gateway, terminate actions |
+| `GatewayInstanceList` | Managed container instances with status, health, restart, log viewing |
+| `ScalingControls` | Auto-scaling configuration (enable/disable, min/max, sessions-per-instance) |
+| `ContainerLogDialog` | Container logs for a managed gateway instance |
+| `SessionTimeoutConfig` | Gateway inactivity session timeout configuration |
+
+### Recording (`client/src/components/Recording/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `RecordingsDialog` | Full-screen dialog listing session recordings with filter, delete, and playback |
+| `RecordingPlayerDialog` | Opens recording player in a popup window |
+| `GuacPlayer` | Guacamole session recording player (RDP/VNC replay with playback controls) |
+| `SshPlayer` | SSH terminal recording player (asciinema-style with speed/seek) |
+
+### Audit (`client/src/components/Audit/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `IpGeoCell` | Table cell with IP address, country flag, and geo info tooltip |
+| `GeoIpDialog` | Detailed geo-IP location dialog for an audit entry |
+| `AuditGeoMap` | Interactive map visualization of audit log geo-locations |
+
+### Overlays (`client/src/components/Overlays/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `VaultLockedOverlay` | Overlay when vault is locked — password unlock, MFA unlock options (TOTP, SMS, WebAuthn) |
+
+### Shared (`client/src/components/shared/`, `client/src/components/common/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `FloatingToolbar` | Floating action toolbar over active RDP/VNC sessions (fullscreen, clipboard, screenshot) |
+| `IdentityVerification` | Reusable identity verification flow (email OTP, TOTP, SMS, WebAuthn, password) for sensitive operations |
+
+### Root-Level Components
+
+| Component | Purpose |
+|-----------|---------|
+| `OAuthButtons` | Row of OAuth login/link buttons based on server-provided provider config |
+| `UserPicker` | Autocomplete user search for share/invite dialogs |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## State Management
 
-### authStore
+### `authStore` (`client/src/store/authStore.ts`)
 
-- **File**: `client/src/store/authStore.ts`
-- **Persistence**: localStorage (`arsenale-auth`)
-- **State**: `accessToken`, `csrfToken`, `user`, `isAuthenticated`
-- **Actions**: `setAuth(accessToken, csrfToken, user)`, `setAccessToken(token)`, `setCsrfToken(token)`, `updateUser(user)`, `logout()`
+| Field | Type | Description |
+|-------|------|-------------|
+| `accessToken` | string \| null | JWT access token |
+| `csrfToken` | string \| null | CSRF token for auth endpoints |
+| `user` | object \| null | User identity (id, email, username, avatarData, tenantId, tenantRole, domainName) |
+| `isAuthenticated` | boolean | Authentication status |
 
-### connectionsStore
+**Actions**: `setAuth`, `setAccessToken`, `setCsrfToken`, `updateUser`, `fetchDomainProfile`, `logout`
 
-- **File**: `client/src/store/connectionsStore.ts`
-- **Persistence**: None (session only)
-- **State**: `ownConnections`, `sharedConnections`, `teamConnections`, `folders`, `teamFolders`, `loading`
-- **Actions**: `fetchConnections()`, `fetchFolders()`, `toggleFavorite(id)`, `moveConnection(id, folderId)`
+### `connectionsStore` (`client/src/store/connectionsStore.ts`)
 
-### vaultStore
+| Field | Type | Description |
+|-------|------|-------------|
+| `ownConnections` | Connection[] | User's own connections |
+| `sharedConnections` | Connection[] | Connections shared with user |
+| `teamConnections` | Connection[] | Team connections |
+| `folders` | Folder[] | User's folders |
+| `teamFolders` | Folder[] | Team folders |
+| `loading` | boolean | Loading state |
 
-- **File**: `client/src/store/vaultStore.ts`
-- **Persistence**: None
-- **State**: `unlocked`, `initialized`
-- **Actions**: `checkStatus()`, `setUnlocked(bool)`, `startPolling()`, `stopPolling()`
-- **Notes**: Polls vault status every 60 seconds
+**Actions**: `fetchConnections`, `fetchFolders`, `toggleFavorite`, `moveConnection`, `reset`
 
-### tabsStore
+### `tabsStore` (`client/src/store/tabsStore.ts`)
 
-- **File**: `client/src/store/tabsStore.ts`
-- **Persistence**: Debounced server sync (1-second debounce via PUT /api/tabs)
-- **State**: `tabs` (array with connection data and optional credential overrides), `activeTabId`, `recentTick`
-- **Actions**: `openTab(connection, credentials?)`, `closeTab(id)`, `setActiveTab(id)`, `restoreTabs()`
-- **Notes**: Automatic server-side persistence and restoration on page reload
+| Field | Type | Description |
+|-------|------|-------------|
+| `tabs` | Tab[] | Open tabs (id, connection, active, credentials) |
+| `activeTabId` | string \| null | Currently active tab |
+| `recentTick` | number | Change counter for re-render triggers |
 
-### secretStore
+**Actions**: `openTab`, `closeTab`, `setActiveTab`, `restoreTabs`, `clearAll`. Auto-syncs to server with debounce.
 
-- **File**: `client/src/store/secretStore.ts`
-- **Persistence**: None
-- **State**: `secrets`, `filters`, `loading`, `tenantVaultStatus`, `expiringCount`
-- **Actions**: `fetchSecrets(filters?)`, `createSecret(data)`, `updateSecret(id, data)`, `deleteSecret(id)`, `fetchTenantVaultStatus()`
+### `vaultStore` (`client/src/store/vaultStore.ts`)
 
-### teamStore
+| Field | Type | Description |
+|-------|------|-------------|
+| `unlocked` | boolean | Vault unlock status |
+| `initialized` | boolean | Whether initial status check completed |
+| `mfaUnlockAvailable` | boolean | Whether MFA re-unlock is possible |
+| `mfaUnlockMethods` | string[] | Available MFA methods for re-unlock |
 
-- **File**: `client/src/store/teamStore.ts`
-- **Persistence**: None
-- **State**: `teams`, `loading`, `selectedTeam`, `members`, `membersLoading`
-- **Actions**: `fetchTeams()`, `createTeam(name, description?)`, `updateTeam(id, data)`, `deleteTeam(id)`, `selectTeam(team)`, `fetchMembers(teamId)`, `addMember(teamId, userId, role)`, `updateMemberRole(teamId, userId, role)`, `removeMember(teamId, userId)`, `reset()`
+**Actions**: `checkStatus`, `setUnlocked`, `startPolling`, `stopPolling`
 
-### tenantStore
+### `uiPreferencesStore` (`client/src/store/uiPreferencesStore.ts`)
 
-- **File**: `client/src/store/tenantStore.ts`
-- **Persistence**: None
-- **State**: `tenant`, `users`, `loading`, `usersLoading`
-- **Actions**: `fetchTenant()`, `createTenant(name)`, `updateTenant(id, data)`, `deleteTenant(id)`, `fetchUsers()`, `inviteUser(email, role)`, `updateUserRole(userId, role)`, `removeUser(userId)`, `reset()`
+Persisted to localStorage via Zustand `persist` middleware (key: `arsenale-ui-preferences`). Namespaced by userId.
 
-### gatewayStore
+Key preferences: `rdpFileBrowserOpen`, `sshSftpBrowserOpen`, `sshSftpTransferQueueOpen`, `sidebarFavoritesOpen`, `sidebarRecentsOpen`, `sidebarSharedOpen`, `sidebarCompact`, `sidebarTeamSections`, `settingsActiveTab`, `keychainScopeFilter`, `keychainTypeFilter`, `keychainSortBy`, `orchestrationDashboardTab`, `orchestrationAutoRefresh`, `auditLog*`, `tenantAuditLog*`, `connAuditLog*`, `lastActiveTenantId`.
 
-- **File**: `client/src/store/gatewayStore.ts`
-- **Persistence**: None
-- **State**: `gateways`, `sshKeyPair`, `loading`, `sessions`, `scalingConfig`, `templates`
-- **Actions**: Gateway CRUD, SSH key operations, session monitoring, scaling config, template management
+**Actions**: `set`, `toggle`, `toggleTeamSection`
 
-### uiPreferencesStore
+### `tenantStore` (`client/src/store/tenantStore.ts`)
 
-- **File**: `client/src/store/uiPreferencesStore.ts`
-- **Persistence**: localStorage (`arsenale-ui-preferences`)
-- **State**: `rdpFileBrowserOpen`, `sshSftpBrowserOpen`, `sshSftpTransferQueueOpen`, `sidebarFavoritesOpen`, `sidebarRecentsOpen`, `sidebarSharedOpen`, `sidebarCompact`, `sidebarTeamSections`, and more
-- **Actions**: `set(key, value)`, `toggle(key)`, `toggleTeamSection(teamId)`
+| Field | Type | Description |
+|-------|------|-------------|
+| `tenant` | Tenant \| null | Current tenant details |
+| `users` | User[] | Tenant user list |
+| `memberships` | Membership[] | User's tenant memberships |
+| `loading`, `usersLoading` | boolean | Loading states |
 
-### terminalSettingsStore
+**Actions**: `fetchTenant`, `fetchMemberships`, `switchTenant`, `createTenant`, `updateTenant`, `deleteTenant`, `fetchUsers`, `inviteUser`, `updateUserRole`, `removeUser`, `createUser`, `toggleUserEnabled`, `reset`
 
-- **File**: `client/src/store/terminalSettingsStore.ts`
-- **Persistence**: None (fetched from server)
-- **State**: `userDefaults`, `loaded`, `loading`
-- **Actions**: `fetchDefaults()`, `updateDefaults(config)`
+### `gatewayStore` (`client/src/store/gatewayStore.ts`)
 
-### rdpSettingsStore
+| Field | Type | Description |
+|-------|------|-------------|
+| `gateways` | Gateway[] | Tenant gateways |
+| `sshKeyPair` | KeyPair \| null | Tenant SSH key pair |
+| `activeSessions` | Session[] | Active sessions |
+| `sessionCount` | number | Total session count |
+| `sessionCountByGateway` | object[] | Sessions per gateway |
+| `scalingStatus` | object | Scaling status per gateway |
+| `instances` | object | Instances per gateway |
+| `templates` | Template[] | Gateway templates |
 
-- **File**: `client/src/store/rdpSettingsStore.ts`
-- **Persistence**: None (fetched from server)
-- **State**: `userDefaults`, `loaded`, `loading`
-- **Actions**: `fetchDefaults()`, `updateDefaults(config)`
+**Actions**: CRUD for gateways, SSH key pair management, session monitoring, orchestration (deploy, undeploy, scale, instances, scaling config, restart), templates, real-time updates (health, instances, scaling, gateway)
 
-### notificationStore
+### `teamStore` (`client/src/store/teamStore.ts`)
 
-- **File**: `client/src/store/notificationStore.ts`
-- **Persistence**: None
-- **State**: `notification` (message + severity)
-- **Actions**: `notify(message, severity)`, `clear()`
-- **Notes**: Transient toast/snackbar notifications
+**State**: `teams`, `selectedTeam`, `members`, loading flags.
+**Actions**: CRUD for teams, member management, `reset`.
 
-### notificationListStore
+### `secretStore` (`client/src/store/secretStore.ts`)
 
-- **File**: `client/src/store/notificationListStore.ts`
-- **Persistence**: None
-- **State**: `notifications`, `unreadCount`, `total`, `loading`
-- **Actions**: `fetchNotifications(limit, offset)`, `markAsRead(id)`, `markAllAsRead()`, `removeNotification(id)`, `addNotification(notif)`, `reset()`
-- **Notes**: Server-persisted notifications (sharing events, secret expiry)
+**State**: `secrets`, `selectedSecret`, `filters`, `tenantVaultStatus`, `expiringCount`, loading/error.
+**Actions**: CRUD for secrets, favorites, filters, tenant vault initialization, expiring count.
 
-### themeStore
+### `themeStore` (`client/src/store/themeStore.ts`)
 
-- **File**: `client/src/store/themeStore.ts`
-- **Persistence**: localStorage (`arsenale-theme`)
-- **State**: `mode` (`'light'` | `'dark'`)
-- **Actions**: `toggle()`
+**State**: `mode` ('light' | 'dark'). **Actions**: `toggle`.
+
+### `rdpSettingsStore` / `terminalSettingsStore`
+
+**State**: `userDefaults`, `loaded`, `loading`. **Actions**: `fetchDefaults`, `updateDefaults`.
+
+### `notificationStore` (`client/src/store/notificationStore.ts`)
+
+Ephemeral toast notifications. **State**: `notification` ({message, severity}). **Actions**: `notify`, `clear`.
+
+### `notificationListStore` (`client/src/store/notificationListStore.ts`)
+
+Server-persisted notifications. **State**: `notifications`, `unreadCount`, `total`, `loading`. **Actions**: `fetchNotifications`, `markAsRead`, `markAllAsRead`, `removeNotification`, `addNotification`, `reset`.
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Hooks
 
-### useAuth
+### `useAuth` (`client/src/hooks/useAuth.ts`)
 
-- **File**: `client/src/hooks/useAuth.ts`
-- **Purpose**: Bootstrap authentication from persisted state
-- **Behavior**: On mount, if not authenticated, attempts to refresh access token via cookie. Used in popup windows for independent auth.
-- **Returns**: `{ isAuthenticated: boolean }`
+Bootstraps authentication on mount. Refreshes access token from cookie if authenticated but token is missing. Redirects to login on failure.
 
-### useSocket
+**Returns**: `{ isAuthenticated: boolean, loading: boolean }`
 
-- **File**: `client/src/hooks/useSocket.ts`
-- **Purpose**: Manage Socket.IO connection with JWT authentication
-- **Parameters**: `namespace: string` (e.g., `"/ssh"`)
-- **Behavior**: Creates Socket.IO connection with `accessToken` in auth, uses `websocket` transport only
-- **Returns**: `socketRef` (React ref to Socket instance)
+### `useSocket` (`client/src/hooks/useSocket.ts`)
 
-### useSftpTransfers
+Creates and manages a Socket.IO connection to a given namespace with JWT auth.
 
-- **File**: `client/src/hooks/useSftpTransfers.ts`
-- **Purpose**: SFTP file upload/download management
-- **Parameters**: `socket` (Socket.IO instance)
-- **Behavior**: Handles chunked uploads (64KB), assembles downloaded chunks, tracks progress
-- **Returns**: `{ transfers, uploadFile, downloadFile, cancelTransfer, clearCompleted }`
+**Parameters**: `namespace: string`, `options?: object`
+**Returns**: `MutableRefObject<Socket | null>`
 
-### useGatewayMonitor
+### `useSftpTransfers` (`client/src/hooks/useSftpTransfers.ts`)
 
-- **File**: `client/src/hooks/useGatewayMonitor.ts`
-- **Purpose**: Gateway monitoring via Socket.IO `/gateway-monitor` namespace
-- **Behavior**: Subscribes to health updates, instance changes, and scaling events in real-time
-- **Returns**: Gateway health and instance status data
+Manages SFTP file transfer state — tracks uploads/downloads, progress events, chunked upload/download, cancel, clear.
+
+**Returns**: `{ transfers: TransferItem[], uploadFile, downloadFile, cancelTransfer, clearCompleted }`
+
+### `useGatewayMonitor` (`client/src/hooks/useGatewayMonitor.ts`)
+
+Connects to `/gateway-monitor` Socket.IO namespace and applies real-time health, instance, scaling, and gateway update events to the gateway store.
+
+**Returns**: void (side-effect hook)
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## API Layer
 
-All API modules use the centralized Axios client from `client/src/api/client.ts`.
+25 API modules in `client/src/api/` provide typed Axios wrappers:
 
-| Module | File | Key Functions |
-|--------|------|---------------|
-| auth | `auth.api.ts` | `loginApi`, `registerApi`, `verifyTotpApi`, `verifySmsApi`, `requestWebAuthnOptions`, `verifyWebAuthn`, `forgotPassword`, `resetPassword`, `refreshApi`, `logoutApi`, `getPublicAuthConfig` |
-| user | `user.api.ts` | `getProfile`, `updateProfile`, `changePassword`, `updateSshDefaults`, `updateRdpDefaults`, `uploadAvatar`, `searchUsers`, `initiateEmailChange`, `confirmEmailChange`, `initiateIdentity`, `confirmIdentity` |
-| connections | `connections.api.ts` | CRUD operations, `toggleFavorite` |
-| folders | `folders.api.ts` | `createFolder`, `getFolders`, `updateFolder`, `deleteFolder` |
-| vault | `vault.api.ts` | `unlockVault`, `lockVault`, `getVaultStatus`, `revealPassword`, MFA unlock methods, `getAutoLock`, `setAutoLock` |
-| sharing | `sharing.api.ts` | `shareConnection`, `unshareConnection`, `updateSharePermission`, `listShares`, `batchShare` |
-| sessions | `sessions.api.ts` | `createRdpSession`, `rdpHeartbeat`, `rdpEnd`, `validateSshAccess`, `listActiveSessions`, `getSessionCount`, `terminateSession` |
-| secrets | `secrets.api.ts` | Secret CRUD, versions, sharing, external shares, tenant vault operations |
-| twofa | `twofa.api.ts` | `setup2FA`, `verify2FA`, `disable2FA`, `get2FAStatus` |
-| smsMfa | `smsMfa.api.ts` | `setupSmsPhone`, `verifySmsPhone`, `enableSmsMfa`, `disableSmsMfa`, `getSmsMfaStatus` |
-| webauthn | `webauthn.api.ts` | `getRegistrationOptions`, `registerCredential`, `getCredentials`, `removeCredential`, `renameCredential`, `getStatus` |
-| oauth | `oauth.api.ts` | `getOAuthProviders`, `getLinkedAccounts`, `unlinkOAuthAccount`, `setupVaultPassword` |
-| passwordReset | `passwordReset.api.ts` | `forgotPassword`, `validateResetToken`, `requestResetSmsCode`, `completePasswordReset` |
-| audit | `audit.api.ts` | `getAuditLogs`, `getTenantAuditLogs` (with filtering and pagination) |
-| notifications | `notifications.api.ts` | `getNotifications`, `markAsRead`, `markAllAsRead`, `deleteNotification` |
-| tenant | `tenant.api.ts` | Tenant CRUD, member management, user create/toggle/email-change/password-change, MFA stats |
-| team | `team.api.ts` | Team CRUD, member management with role selection |
-| gateway | `gateway.api.ts` | Gateway CRUD, SSH key management, managed instances, scaling, templates |
-| email | `email.api.ts` | `resendVerificationEmail` |
-| files | `files.api.ts` | Upload (multipart), download, delete user drive files |
-| admin | `admin.api.ts` | `getEmailStatus`, `sendTestEmail`, `getAppConfig`, `setSelfSignup` |
-| tabs | `tabs.api.ts` | `getTabs`, `syncTabs`, `clearTabs` |
+| Module | Description |
+|--------|-------------|
+| `client.ts` | Axios instance with JWT interceptor and auto-refresh |
+| `auth.api.ts` | Login, register, MFA flows, refresh, logout, public config |
+| `connections.api.ts` | Connection CRUD, favorites |
+| `folders.api.ts` | Folder CRUD |
+| `sharing.api.ts` | Connection sharing + RDP/SSH session creation |
+| `vault.api.ts` | Vault lock/unlock, MFA unlock, auto-lock, password reveal |
+| `user.api.ts` | Profile, settings, identity verification, domain profile |
+| `audit.api.ts` | Personal, tenant, and connection audit logs, geo data |
+| `gateway.api.ts` | Gateway CRUD, SSH keys, orchestration, templates, sessions |
+| `tenant.api.ts` | Tenant CRUD, user management, MFA stats |
+| `team.api.ts` | Team CRUD, member management |
+| `secrets.api.ts` | Keychain CRUD, versioning, sharing, external shares, tenant vault |
+| `recordings.api.ts` | Session recording listing, streaming, video export |
+| `sessions.api.ts` | Session monitoring (active, count, terminate) |
+| `oauth.api.ts` | OAuth providers, linked accounts, vault setup |
+| `importExport.api.ts` | Connection import/export |
+| `twofa.api.ts` | TOTP 2FA setup/verify/disable |
+| `smsMfa.api.ts` | SMS MFA setup/verify/enable/disable |
+| `webauthn.api.ts` | WebAuthn credential management |
+| `passwordReset.api.ts` | Password reset flow |
+| `admin.api.ts` | Admin config (email status, self-signup) |
+| `tabs.api.ts` | Tab state persistence |
+| `files.api.ts` | RDP drive file management |
+| `email.api.ts` | Email verification resend |
+| `notifications.api.ts` | Notification listing and management |
 
 <!-- manual-start -->
 <!-- manual-end -->

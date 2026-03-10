@@ -11,7 +11,7 @@ services:
       OLLAMA_BASE_URL: http://ollama-web:11434
       OLLAMA_MODEL: qwen3.5:0.8b
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -26,7 +26,7 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:11434/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -89,7 +89,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:3003/health')\" || exit 1",
+          'python3 -c "import urllib.request; urllib.request.urlopen(''http://127.0.0.1:3003/health'')" || exit 1',
         ]
       interval: 10s
       timeout: 5s
@@ -107,7 +107,7 @@ services:
       - label:disable
     healthcheck:
       test:
-        ["CMD-SHELL", "wget -qO- http://localhost:3001/api/health || exit 1"]
+        ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -135,6 +135,8 @@ services:
     user: "0:0"
     security_opt:
       - label:disable
+    healthcheck:
+      disable: true
     depends_on:
       server:
         condition: service_healthy
@@ -156,7 +158,7 @@ services:
     ports:
       - 8081:8080
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -180,7 +182,7 @@ services:
     security_opt:
       - label:disable
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost ${SSH_PORT:-2222} || exit 1"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 ${SSH_PORT:-2222} || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -200,7 +202,7 @@ services:
     volumes:
       - ollama_models:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/ || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:11434/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

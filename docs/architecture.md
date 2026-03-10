@@ -1,154 +1,173 @@
 # Architecture
 
-> Auto-generated on 2026-03-07 by `/docs update architecture`.
+> Auto-generated on 2026-03-11 by `/docs create architecture`.
 > Source of truth is the codebase. Run `/docs update architecture` after code changes.
 
 ## System Overview
 
-Arsenale is a **monorepo** using npm workspaces with two packages:
+Arsenale is a **monorepo** managed by npm workspaces with two packages:
 
 ```
 arsenale/
-├── server/          # Express + TypeScript backend
-├── client/          # React 19 + Vite frontend
-├── ssh-gateway/     # Optional SSH bastion container
-├── package.json     # Root workspace config
-├── compose.yml      # Production stack
-└── compose.dev.yml  # Dev containers (postgres)
+├── server/          # Express + TypeScript backend (workspace: "server")
+├── client/          # React 19 + Vite frontend (workspace: "client")
+├── ssh-gateway/     # Optional SSH gateway container
+├── docker/          # Docker build contexts (guacenc sidecar)
+├── compose.yml      # Production Docker Compose
+├── compose.dev.yml  # Development Docker Compose (PostgreSQL + guacenc)
+├── package.json     # Root workspace config + shared scripts
+└── .env             # Environment variables (root level, shared by all)
 ```
+
+The root `package.json` defines both workspaces and orchestration scripts (`dev`, `build`, `verify`, `docker:dev`, etc.). All environment variables are loaded from the root `.env` file; the server's `prisma.config.ts` resolves the path to `../.env` explicitly.
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Server Architecture
 
-**Entry point**: `server/src/index.ts`
+### Entry Point
 
-The server follows a **layered architecture**:
+`server/src/index.ts` is the main entry point. On startup it:
+
+1. Kills stale processes on ports 3001 and 3002 (dev hot-reload safety)
+2. Runs `prisma migrate deploy` to apply pending database migrations
+3. Runs startup data migrations (email verification backfill, vault setup backfill)
+4. Recovers orphaned sessions from a previous server instance
+5. Initializes GeoIP database (MaxMind GeoLite2, optional)
+6. Initializes Passport.js strategies (OAuth, SAML)
+7. Creates the HTTP server and attaches Socket.IO (SSH, notifications, gateway monitor)
+8. Starts scheduled background jobs:
+   - SSH key rotation (cron-based)
+   - Gateway health monitoring
+   - Managed gateway health check (30s) and reconciliation (5m)
+   - Auto-scaling evaluation (30s)
+   - Expired external share cleanup (hourly)
+   - Expired refresh token cleanup (hourly)
+   - Secret expiry check (every 6 hours)
+   - Idle session marking (every minute)
+   - Inactive session closure (every minute)
+   - Old closed session cleanup (daily)
+   - Expired recording cleanup (daily)
+9. Starts the Guacamole WebSocket server (guacamole-lite) on port 3002 for RDP/VNC
+10. Listens on port 3001
+
+### Layered Pattern
 
 ```
-Routes → Controllers → Services → Prisma ORM → PostgreSQL
+Routes → Controllers → Services → Prisma ORM
 ```
 
-### Startup Sequence
+| Layer | Location | Responsibility |
+|-------|----------|---------------|
+| **Routes** | `server/src/routes/*.routes.ts` | URL path definitions, middleware chaining, rate limiters |
+| **Controllers** | `server/src/controllers/*.controller.ts` | Request parsing, Zod validation, response formatting |
+| **Services** | `server/src/services/*.service.ts` | Business logic, database queries, encryption, external integrations |
+| **ORM** | `server/src/lib/prisma.ts` + `server/prisma/schema.prisma` | Prisma Client for PostgreSQL |
+| **Middleware** | `server/src/middleware/*.middleware.ts` | JWT auth, tenant/team RBAC, CSRF, rate limiting, error handling |
 
-1. Kill stale processes on ports 3001 and 3002
-2. Run Prisma database migrations (`prisma migrate deploy`)
-3. Run startup data migrations (mark legacy users as email-verified and vault-setup-complete)
-4. Recover orphaned sessions from previous server instance
-5. Initialize Passport (OAuth strategies)
-6. Create HTTP server from Express app
-7. Attach Socket.IO (SSH terminal, notifications, gateway monitoring)
-8. Initialize session cleanup with Socket.IO reference
-9. Start scheduled jobs (SSH key rotation, gateway monitors, cleanup tasks, auto-scaling)
-10. Detect container orchestrator (Docker, Podman, Kubernetes, or none)
-11. Start Guacamole WebSocket server (`guacamole-lite`) on port 3002
-12. Listen on configured port (default 3001)
+### Middleware Pipeline
 
-### Scheduled Jobs
+The Express app (`server/src/app.ts`) applies middleware in this order:
 
-| Job | Interval | Description |
-|-----|----------|-------------|
-| SSH key rotation | Cron (default `0 2 * * *`) | Rotates gateway SSH key pairs |
-| Gateway health monitors | Continuous | Monitors gateway connectivity |
-| Managed gateway health check | 30s | Checks managed container instances |
-| Managed gateway reconciliation | 5m | Reconciles desired vs actual state |
-| Auto-scaling evaluation | 30s | Evaluates scaling rules for managed gateways |
-| Expired external share cleanup | 1h | Removes expired public share links |
-| Expired refresh token cleanup | 1h | Purges expired refresh tokens from DB |
-| Expiring secrets check | 6h | Sends notifications for secrets nearing expiry |
-| Idle session marking | 1m | Marks sessions as idle after threshold |
-| Inactive session closure | 1m | Closes sessions exceeding inactivity timeout |
-| Closed session cleanup | 24h | Purges old closed session records |
+1. **Helmet** — security headers (CSP, HSTS, frame-guard, referrer-policy)
+2. **Trust Proxy** — configurable via `TRUST_PROXY` env var
+3. **CORS** — restricted to `CLIENT_URL` origin with credentials
+4. **JSON body parser** — 500KB limit
+5. **Cookie parser** — for refresh token cookies
+6. **Passport** — initialized for OAuth/SAML strategies
+7. **Request logger** — optional HTTP request logging
+8. **Route handlers** — 28 route groups mounted under `/api/*`
+9. **Error handler** — centralized error response formatting
 
-### Express App (`server/src/app.ts`)
+### Socket.IO Namespaces
 
-**Middleware pipeline**:
-1. Helmet (CSP, HSTS, frameguard, referrer-policy)
-2. Trust proxy (production only)
-3. CORS (origin: `CLIENT_URL`, credentials enabled)
-4. JSON body parser (500kb limit)
-5. Cookie parser
-6. Passport initialization (OAuth strategies)
-7. Request logger (optional, via `LOG_HTTP_REQUESTS`)
-8. Route mounting
-9. Error handler
+| Namespace | Handler File | Purpose |
+|-----------|-------------|---------|
+| `/ssh` | `server/src/socket/ssh.handler.ts` | SSH terminal sessions + SFTP file operations |
+| `/notifications` | `server/src/socket/notification.handler.ts` | Real-time notification delivery |
+| `/gateway-monitor` | `server/src/socket/gatewayMonitor.handler.ts` | Real-time gateway health + instance updates |
 
-**Route mounting**:
-
-| Base Path | Module | Description |
-|-----------|--------|-------------|
-| `/api/auth` | `oauth.routes` | OAuth login/callback/link |
-| `/api/auth` | `auth.routes` | Local auth (register, login, MFA) |
-| `/api/vault` | `vault.routes` | Vault unlock/lock/status |
-| `/api/connections` | `connections.routes` | CRUD connections |
-| `/api/folders` | `folders.routes` | CRUD folders |
-| `/api/connections` | `sharing.routes` | Share/unshare connections |
-| `/api/sessions` | `session.routes` | RDP/SSH session tokens, monitoring |
-| `/api/user` | `user.routes` | Profile, settings, avatar, identity verification |
-| `/api/user/2fa` | `twofa.routes` | TOTP setup/verify |
-| `/api/user/2fa/sms` | `smsMfa.routes` | SMS MFA setup/verify |
-| `/api/user/2fa/webauthn` | `webauthn.routes` | WebAuthn credential management |
-| `/api/files` | `files.routes` | User drive file management |
-| `/api/audit` | `audit.routes` | Audit log queries |
-| `/api/notifications` | `notification.routes` | Notification management |
-| `/api/tenants` | `tenant.routes` | Multi-tenant organization |
-| `/api/teams` | `team.routes` | Team management |
-| `/api/admin` | `admin.routes` | Admin config, email, self-signup |
-| `/api/gateways` | `gateway.routes` | Gateway CRUD, SSH keys, managed instances |
-| `/api/tabs` | `tabs.routes` | Tab state persistence |
-| `/api/secrets` | `secret.routes` | Vault secret management |
-| `/api/share` | `publicShare.routes` | Public external share links |
-| `/api` | `health.routes` | Health and readiness probes |
+All Socket.IO namespaces authenticate via JWT middleware using the `auth.token` handshake parameter.
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Client Architecture
 
-**Tech stack**: React 19, Vite, Material-UI (MUI) v6, Zustand, Axios
+### Tech Stack
 
-### Component Structure
+- **React 19** with TypeScript
+- **Vite** — dev server (port 3000) with proxy to backend
+- **Material-UI (MUI) v6** — component library
+- **Zustand** — state management (14 stores)
+- **Axios** — HTTP client with automatic JWT refresh
+- **Socket.IO Client** — real-time SSH terminals, notifications, gateway monitoring
+- **XTerm.js** — SSH terminal rendering
+- **guacamole-common-js** — RDP/VNC rendering via Guacamole protocol
+
+### Component Tree
 
 ```
-client/src/
-├── pages/           # Route-level components (9 pages)
-├── components/      # UI components grouped by feature
-│   ├── Layout/      # MainLayout, NotificationBell
-│   ├── Sidebar/     # ConnectionTree, TeamConnectionSection, treeHelpers
-│   ├── Tabs/        # TabBar, TabPanel
-│   ├── Dialogs/     # ConnectionDialog, ShareDialog, SettingsDialog, AuditLogDialog, etc.
-│   ├── Terminal/    # SshTerminal (XTerm.js)
-│   ├── RDP/         # RdpViewer (Guacamole), FileBrowser
-│   ├── SSH/         # SftpBrowser, SftpTransferQueue
-│   ├── Settings/    # Profile, Password, Terminal, RDP, 2FA, SMS, WebAuthn, OAuth, Vault, Gateway, etc.
-│   ├── Keychain/    # SecretListPanel, SecretDetailView, SecretDialog, ShareSecretDialog, etc.
-│   ├── Overlays/    # VaultLockedOverlay
-│   ├── gateway/     # GatewayDialog, GatewayTemplateSection, GatewayTemplateDialog
-│   ├── orchestration/ # SessionDashboard, ScalingControls, GatewayInstanceList, etc.
-│   ├── common/      # IdentityVerification
-│   └── shared/      # FloatingToolbar
-├── store/           # 14 Zustand stores
-├── hooks/           # useAuth, useSocket, useSftpTransfers, useGatewayMonitor
-└── api/             # 23 Axios API modules
+App
+├── LoginPage / RegisterPage / ForgotPasswordPage / ResetPasswordPage
+├── OAuthCallbackPage / VaultSetupPage
+├── PublicSharePage
+├── DashboardPage
+│   └── MainLayout
+│       ├── Sidebar
+│       │   ├── ConnectionTree (folders, favorites, recents, shared)
+│       │   ├── TeamConnectionSection
+│       │   └── TenantSwitcher
+│       ├── TabBar
+│       ├── TabPanel
+│       │   ├── SshTerminal + SftpBrowser + SftpTransferQueue
+│       │   ├── RdpViewer + FileBrowser
+│       │   └── VncViewer
+│       ├── FloatingToolbar (over active RDP/VNC)
+│       ├── VaultLockedOverlay
+│       ├── NotificationBell
+│       └── Full-Screen Dialogs (rendered at root)
+│           ├── SettingsDialog (16 settings sections)
+│           ├── AuditLogDialog
+│           ├── KeychainDialog (secrets manager)
+│           ├── RecordingsDialog
+│           ├── ConnectionDialog / FolderDialog
+│           ├── ShareDialog / ShareFolderDialog
+│           ├── ImportDialog / ExportDialog
+│           └── ConnectAsDialog / UserProfileDialog
+├── ConnectionViewerPage (standalone popup)
+└── RecordingPlayerPage (standalone popup)
 ```
 
 ### State Management
 
-Zustand stores with selective localStorage persistence:
-- `authStore` — tokens and user identity (`arsenale-auth`)
-- `uiPreferencesStore` — panel states, sidebar, view modes (`arsenale-ui-preferences`)
-- `themeStore` — dark/light mode (`arsenale-theme`)
-- `terminalSettingsStore` — SSH terminal defaults
-- `rdpSettingsStore` — RDP display defaults
-- Other stores (connections, vault, tabs, secrets, teams, tenants, gateways, notifications) are session-only
+14 Zustand stores handle all client-side state:
+
+| Store | Purpose |
+|-------|---------|
+| `authStore` | JWT tokens, CSRF, user identity, tenant context |
+| `connectionsStore` | Connections, folders (own, shared, team) |
+| `tabsStore` | Open tabs with server-side persistence |
+| `vaultStore` | Vault lock status, MFA unlock availability |
+| `uiPreferencesStore` | Persistent UI layout preferences (localStorage) |
+| `tenantStore` | Tenant details, user management, memberships |
+| `gatewayStore` | Gateways, SSH keys, sessions, orchestration |
+| `teamStore` | Teams, members, roles |
+| `secretStore` | Vault secrets, sharing, tenant vault |
+| `themeStore` | Light/dark mode toggle |
+| `rdpSettingsStore` | User's default RDP settings |
+| `terminalSettingsStore` | User's default SSH terminal settings |
+| `notificationStore` | Toast notifications (ephemeral) |
+| `notificationListStore` | Persistent notifications from server |
 
 ### API Layer
 
-Centralized Axios client (`client/src/api/client.ts`):
-- Base URL: `/api`
-- Request interceptor: attaches JWT `Authorization: Bearer` header and CSRF token
-- Response interceptor: automatic token refresh on 401, then retry
+25 API modules in `client/src/api/` provide typed Axios wrappers for every server endpoint. The central `client.ts` configures:
+
+- Automatic `Authorization: Bearer <jwt>` header injection
+- CSRF token injection for auth-sensitive endpoints (refresh, logout, tenant-switch)
+- Automatic 401 retry with token refresh (single-flight pattern to prevent stampede)
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -158,49 +177,57 @@ Centralized Axios client (`client/src/api/client.ts`):
 ### SSH Flow
 
 ```
-┌──────────┐    Socket.IO /ssh     ┌──────────┐      SSH2       ┌──────────┐
-│  Client   │◄────────────────────►│  Server   │◄──────────────►│  Remote  │
-│ (XTerm.js)│   session:start      │ (Node.js) │                │  Host    │
-│           │   data (bidir)       │           │                │          │
-│           │   resize             │           │                │          │
-│           │   sftp:* events      │           │                │          │
-└──────────┘                       └──────────┘                 └──────────┘
+Client                    Server                     Target Host
+  │                         │                            │
+  ├─ Tab open ──────────────►                            │
+  │                         │                            │
+  ├─ Socket.IO /ssh ────────►                            │
+  │  (JWT in handshake)     │                            │
+  │                         ├─ session:start ────────────►
+  │                         │  (SSH2 connection,         │
+  │                         │   optional bastion hop)    │
+  │                         │                            │
+  │  ◄── session:ready ─────┤                            │
+  │                         │                            │
+  │  ── data (keystrokes) ──►  ── stream.write ──────────►
+  │  ◄── data (output) ─────  ◄── stream.on('data') ────┤
+  │                         │                            │
+  │  ── resize ─────────────►  ── pty resize ────────────►
+  │                         │                            │
+  │  ── sftp:* events ──────►  ── SFTP subsystem ────────►
+  │                         │                            │
+  │  ── disconnect ─────────►  ── client.end() ──────────►
 ```
 
-1. Client opens SSH tab → connects to Socket.IO `/ssh` namespace with JWT
-2. Emits `session:start` with `connectionId` (and optional credential overrides)
-3. Server authenticates via JWT middleware, retrieves connection from DB
-4. Server decrypts credentials from vault, creates SSH2 connection (direct or via gateway)
-5. Bidirectional data flows: `data` events (terminal I/O), `resize` events
-6. SFTP operations via `sftp:*` events (list, mkdir, delete, rename, upload, download)
+- Terminal rendered with **XTerm.js** (configurable theme, font, cursor style)
+- SFTP file browser uses the same SSH connection's SFTP subsystem
+- Session heartbeats sent every 30s (implicit on keystroke, explicit from client)
+- Optional **asciicast recording** when `RECORDING_ENABLED=true`
+- Bastion/gateway routing: SSH_BASTION (user credentials) or MANAGED_SSH (server-managed keys)
+- Load balancing across managed gateway instances (round-robin or least-connections)
 
-### RDP Flow
+### RDP/VNC Flow
 
 ```
-┌──────────┐    HTTP POST          ┌──────────┐                 ┌──────────┐
-│  Client   │───────────────────►  │  Server   │                │  guacd   │
-│(Guacamole │  /api/sessions/rdp   │ (Node.js) │                │ (4822)   │
-│  Common)  │◄── { token }         │           │                │          │
-│           │                      │           │                │          │
-│           │    WebSocket :3002   │guacamole- │   Guacamole    │          │
-│           │◄────────────────────►│  lite     │◄──────────────►│          │──► Remote
-└──────────┘                       └──────────┘                 └──────────┘    Host
+Client                    Server :3001              guacamole-lite :3002     guacd :4822
+  │                         │                            │                      │
+  ├─ POST /sessions/rdp ───►                             │                      │
+  │  (connectionId)         │                            │                      │
+  │                         ├─ encrypt token ────────────►                      │
+  │  ◄── { token, wsUrl } ──┤  (AES-256-GCM)            │                      │
+  │                         │                            │                      │
+  ├─ WebSocket /guacamole ──────────────────────────────►│                      │
+  │  (encrypted token)      │                            ├─ Guacamole proto ───►│
+  │                         │                            │  (connect to target) │
+  │  ◄── Guacamole frames ──────────────────────────────┤◄─────────────────────┤
+  │  ── Guacamole input ────────────────────────────────►├──────────────────────►
 ```
 
-1. Client requests RDP session via `POST /api/sessions/rdp` with `connectionId`
-2. Server decrypts credentials, merges RDP settings (user defaults + connection overrides)
-3. Server generates encrypted Guacamole token (AES-256-CBC with `GUACAMOLE_SECRET`)
-4. Client connects to Guacamole WebSocket on port 3002 with the token
-5. `guacamole-lite` decrypts token, connects to `guacd` daemon
-6. `guacd` establishes RDP connection to remote host
-
-### Socket.IO Namespaces
-
-| Namespace | Handler | Purpose |
-|-----------|---------|---------|
-| `/ssh` | `ssh.handler` | SSH terminal sessions, SFTP operations |
-| `/notifications` | `notification.handler` | Real-time notification delivery |
-| `/gateway-monitor` | `gatewayMonitor.handler` | Gateway health, instance updates, scaling events |
+- Rendered with **guacamole-common-js** (canvas-based)
+- Clipboard sync, drive redirection, audio, and display settings configurable per connection
+- Guacamole token encrypted with AES-256-GCM using `GUACAMOLE_SECRET`
+- Optional `.guac` format recording when `RECORDING_ENABLED=true`
+- Same gateway routing and load balancing as SSH (for managed guacd instances)
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -209,46 +236,37 @@ Centralized Axios client (`client/src/api/client.ts`):
 
 ### Development
 
-```
-Browser ──► :3000 (Vite dev server)
-              ├── /api/* ──────────► :3001 (Express server)
-              ├── /socket.io/* ────► :3001 (Socket.IO)
-              └── /guacamole/* ────► :3002 (guacamole-lite)
+| Service | Port | Protocol |
+|---------|------|----------|
+| Vite dev server | 3000 | HTTP (proxies `/api` → 3001, `/socket.io` → 3001, `/guacamole` → 3002) |
+| Express server | 3001 | HTTP + WebSocket (Socket.IO) |
+| guacamole-lite | 3002 | WebSocket (Guacamole protocol) |
+| PostgreSQL | 5432 | TCP (Docker, bound to 127.0.0.1) |
+| guacd | 4822 | TCP (Guacamole daemon, local or Docker) |
+| guacenc sidecar | 3003 | HTTP (video conversion service, Docker) |
 
-Docker (compose.dev.yml):
-  postgres ──► :5432
-```
-
-Vite proxies `/api`, `/socket.io`, and `/guacamole` to the server in development. The `guacd` container is commented out in `compose.dev.yml` by default — uncomment it for RDP development.
+In development, the Vite dev server handles all proxying. The server and client run as separate Node.js processes outside Docker, while PostgreSQL and guacenc run inside Docker via `compose.dev.yml`.
 
 ### Production
 
-```
-Browser ──► :3000 (nginx on client container, internal :8080)
-              ├── /api/* ──────────► server:3001 (Express)
-              ├── /socket.io/* ────► server:3001 (Socket.IO)
-              ├── /guacamole/* ────► server:3002 (guacamole-lite)
-              ├── /health ──────────► nginx 200 (direct response)
-              └── /* ──────────────► static files (SPA fallback)
+| Service | Port | Protocol |
+|---------|------|----------|
+| Nginx (client container) | 8080 (mapped to host 3000) | HTTP |
+| Express (server container) | 3001 | HTTP + WebSocket (internal) |
+| guacamole-lite | 3002 | WebSocket (internal) |
+| PostgreSQL | 5432 | TCP (internal) |
+| guacd | 4822 | TCP (internal) |
+| guacenc | 3003 | HTTP (internal) |
 
-Docker internal network (arsenale_net):
-  postgres (no exposed port)
-  guacd (no exposed port)
-  server :3001, :3002
-  client (nginx) :8080 → mapped to host :3000
-  ssh-gateway (optional) :2222
-```
+In production, all services communicate over the `arsenale_net` Docker network. Only the Nginx client container exposes port 8080 to the host. Nginx reverse-proxies:
 
-### Ports
-
-| Port | Service | Description |
-|------|---------|-------------|
-| 3000 | Client | Vite dev server / nginx (production, mapped from :8080) |
-| 3001 | Server | Express HTTP + Socket.IO |
-| 3002 | Server | Guacamole WebSocket (`guacamole-lite`) |
-| 4822 | guacd | Guacamole daemon (RDP protocol) |
-| 5432 | PostgreSQL | Database |
-| 2222 | ssh-gateway | SSH bastion (optional) |
+| Path | Upstream |
+|------|----------|
+| `/api/*` | `http://server:3001` |
+| `/socket.io/*` | `http://server:3001` (WebSocket upgrade) |
+| `/guacamole/*` | `http://server:3002` (WebSocket upgrade, 24h timeout) |
+| `/health` | Local 200 response |
+| `/*` | SPA fallback to `index.html` |
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -256,17 +274,17 @@ Docker internal network (arsenale_net):
 ## Development vs Production
 
 | Aspect | Development | Production |
-|--------|-------------|------------|
-| **Containers** | postgres only (guacd optional) | postgres + guacd + server + client + ssh-gateway |
-| **Server** | `tsx watch` (hot reload) on host | Node.js in Docker container |
-| **Client** | Vite dev server on host | nginx serving static build on :8080 |
-| **Proxy** | Vite proxy config | nginx reverse proxy |
-| **Database** | Exposed on :5432, default credentials | Internal network, env-based credentials |
-| **guacd** | Commented out (or exposed on :4822) | Internal network only |
-| **Volumes** | `pgdata_dev` named volume | Named volumes (`pgdata`, `arsenale_drive`) |
-| **Migrations** | `npm run db:push` (schema sync) | `prisma migrate deploy` on container start |
-| **Env file** | `.env` | `.env.prod` |
-| **Compose file** | `compose.dev.yml` | `compose.yml` |
+|--------|------------|------------|
+| **Server** | `tsx watch` (hot reload) | Compiled JS via `tsc`, runs `node dist/index.js` |
+| **Client** | Vite dev server with HMR | Static build served by Nginx |
+| **Database** | PostgreSQL in Docker (`compose.dev.yml`) | PostgreSQL in Docker (`compose.yml`) |
+| **guacd** | Local install or Docker | Docker container in compose stack |
+| **Proxy** | Vite dev server proxy | Nginx reverse proxy |
+| **Auth secrets** | Dev defaults auto-generated | Required via environment variables |
+| **SERVER_ENCRYPTION_KEY** | Auto-generated (not persisted) | Required (64 hex chars) |
+| **Containers** | Only PostgreSQL + guacenc | Full stack (5+ containers) |
+| **Container runtime** | Docker or Podman | Docker or Podman (rootless supported) |
+| **Network** | Host networking + port mapping | Internal Docker network (`arsenale_net`) |
 
 <!-- manual-start -->
 <!-- manual-end -->

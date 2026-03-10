@@ -1,1559 +1,981 @@
 # API Reference
 
-> Auto-generated on 2026-03-07 by `/docs update api`.
+> Auto-generated on 2026-03-11 by `/docs create api`.
 > Source of truth is the codebase. Run `/docs update api` after code changes.
 
 ## Overview
 
-All REST endpoints are served under `/api` on port 3001. Authentication uses JWT Bearer tokens unless noted otherwise.
+All REST endpoints are mounted under `/api`. The server runs on port 3001 (configurable via `PORT`).
 
-| Route Group | Base Path | Auth Required |
-|-------------|-----------|---------------|
-| Auth | `/api/auth` | Mostly public |
-| OAuth | `/api/auth` | Mixed |
-| Vault | `/api/vault` | Yes |
-| Connections | `/api/connections` | Yes |
-| Folders | `/api/folders` | Yes |
-| Sharing | `/api/connections` | Yes |
-| Sessions | `/api/sessions` | Yes |
-| User | `/api/user` | Yes |
-| 2FA (TOTP) | `/api/user/2fa` | Yes |
-| SMS MFA | `/api/user/2fa/sms` | Yes |
-| WebAuthn | `/api/user/2fa/webauthn` | Yes |
-| Files | `/api/files` | Yes |
-| Audit | `/api/audit` | Yes |
-| Notifications | `/api/notifications` | Yes |
-| Tenants | `/api/tenants` | Yes |
-| Teams | `/api/teams` | Yes |
-| Admin | `/api/admin` | Yes (Admin) |
-| Gateways | `/api/gateways` | Yes |
-| Tabs | `/api/tabs` | Yes |
-| Secrets | `/api/secrets` | Yes |
-| Public Share | `/api/share` | No |
-| Health | `/api` | No |
+| Route Group | Base Path | Auth Required | Description |
+|-------------|-----------|---------------|-------------|
+| Health | `/api/health`, `/api/ready` | No | Health and readiness probes |
+| Auth | `/api/auth` | Mixed | Registration, login, MFA, token refresh |
+| OAuth | `/api/auth/oauth` | Mixed | OAuth provider flows (Google, Microsoft, GitHub, OIDC) |
+| SAML | `/api/auth/saml` | Mixed | SAML 2.0 SSO |
+| Vault | `/api/vault` | Yes | Vault lock/unlock, MFA unlock, auto-lock |
+| Connections | `/api/connections` | Yes | Connection CRUD, favorites |
+| Folders | `/api/folders` | Yes | Folder CRUD |
+| Sharing | `/api/connections` | Yes | Connection sharing management |
+| Import/Export | `/api/connections` | Yes | Connection import/export |
+| Sessions | `/api/sessions` | Yes | RDP/VNC/SSH session lifecycle, admin monitoring |
+| User | `/api/user` | Yes | Profile, settings, identity verification |
+| 2FA (TOTP) | `/api/user/2fa` | Yes | TOTP setup/verify/disable |
+| 2FA (SMS) | `/api/user/2fa/sms` | Yes | SMS MFA setup/verify/disable |
+| 2FA (WebAuthn) | `/api/user/2fa/webauthn` | Yes | Passkey registration/management |
+| Files | `/api/files` | Yes | RDP drive file management |
+| Audit | `/api/audit` | Yes | Audit log queries |
+| Notifications | `/api/notifications` | Yes | In-app notification management |
+| Tenants | `/api/tenants` | Yes | Tenant CRUD, user management |
+| Teams | `/api/teams` | Yes | Team CRUD, member management |
+| Admin | `/api/admin` | Yes (Admin) | Email config, app settings |
+| Gateways | `/api/gateways` | Yes (Tenant) | Gateway CRUD, SSH keys, orchestration |
+| Tabs | `/api/tabs` | Yes | Tab state persistence |
+| Secrets | `/api/secrets` | Yes | Vault secrets CRUD, versioning, sharing |
+| Public Share | `/api/share` | No | External secret access (public) |
+| Recordings | `/api/recordings` | Yes | Session recording management |
+| GeoIP | `/api/geoip` | Yes | IP geolocation lookup |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Authentication
 
-Protected endpoints require the `Authorization` header:
+Most endpoints require a JWT Bearer token in the `Authorization` header:
 
 ```
-Authorization: Bearer <access-token>
+Authorization: Bearer <access_token>
 ```
 
-If the token is expired, the client automatically refreshes via `POST /api/auth/refresh` (cookie-based). State-changing operations (POST, PUT, DELETE) require a CSRF token in the `x-csrf-token` header.
+Public endpoints (no auth required): `/api/health`, `/api/ready`, `/api/auth/config`, `/api/auth/register`, `/api/auth/login`, `/api/auth/verify-email`, `/api/auth/resend-verification`, `/api/auth/forgot-password`, `/api/auth/reset-password/*`, `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/verify-totp`, `/api/auth/verify-sms`, `/api/auth/request-sms-code`, `/api/auth/verify-webauthn`, `/api/auth/request-webauthn-options`, `/api/auth/mfa-setup/*`, `/api/auth/oauth/*`, `/api/auth/saml/*`, `/api/share/:token/*`.
+
+CSRF-protected endpoints (require `X-CSRF-Token` header): `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/switch-tenant`.
+
+Tenant-scoped endpoints require the user to have an active tenant membership (set via JWT claims after login or tenant switch). Admin-only endpoints additionally require `ADMIN` or `OWNER` tenant role.
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Auth (`/api/auth`)
+## Health & Readiness
+
+### `GET /api/health`
+
+Health check. Always returns 200.
+
+**Auth**: No | **Response**: `{ "status": "ok" }`
+
+### `GET /api/ready`
+
+Readiness probe. Checks database and guacd connectivity.
+
+**Auth**: No | **Response**: `{ "status": "ready"|"not_ready", "checks": { "database": {...}, "guacd": {...} } }`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Auth
 
 ### `GET /api/auth/config`
 
-Public authentication configuration (enabled OAuth providers, MFA options).
+Returns public authentication configuration (enabled OAuth providers, self-signup status, email verification requirement).
 
-- **Auth**: No
-- **Response**: `200` `{ providers, emailVerifyRequired, selfSignupEnabled }`
+**Auth**: No
 
 ### `POST /api/auth/register`
 
-Register a new user account.
+Register a new user account. Rate limited: 5 per hour per IP.
 
-- **Auth**: No
-- **Rate limit**: 5 per hour
-- **Body**: `{ email: string, password: string }` (password min 8 chars)
-- **Response**: `201` `{ message, emailVerifyRequired, recoveryKey }`
-- **Errors**: `409` email already exists, `400` validation error
+**Auth**: No | **Body**: `{ email, password }` | **Response**: `{ message, recoveryKey?, requiresVerification? }`
 
-### `GET /api/auth/verify-email`
+### `GET /api/auth/verify-email?token=<token>`
 
-Verify email address via token link.
+Verify email address using the token sent by email.
 
-- **Auth**: No
-- **Query**: `token`
-- **Response**: `200` success or error
+**Auth**: No
 
 ### `POST /api/auth/resend-verification`
 
-Resend email verification.
+Resend email verification link.
 
-- **Auth**: No
-- **Response**: `200` `{ message }`
+**Auth**: No | **Body**: `{ email }`
 
 ### `POST /api/auth/login`
 
-Authenticate with email and password.
+Login with email/password. Rate limited per IP. Returns tokens or MFA challenge.
 
-- **Auth**: No
-- **Body**: `{ email: string, password: string }`
-- **Response**: `200` `{ accessToken, csrfToken, user }` or `{ requiresMFA, methods, tempToken }` if MFA enabled
-- **Errors**: `401` invalid credentials, `403` email not verified, `423` account locked
+**Auth**: No | **Body**: `{ email, password }` | **Response**: `{ accessToken, user, csrfToken }` or `{ requiresMfa, mfaMethods[], pendingToken }`
 
 ### `POST /api/auth/verify-totp`
 
-Verify TOTP code during MFA login.
+Verify TOTP code during MFA challenge.
 
-- **Auth**: No
-- **Body**: `{ tempToken: string, code: string }` (code: exactly 6 digits)
-- **Response**: `200` `{ accessToken, csrfToken, user }`
-- **Errors**: `401` invalid code or token
+**Auth**: No | **Body**: `{ pendingToken, code }` | **Response**: `{ accessToken, user, csrfToken }`
 
 ### `POST /api/auth/request-sms-code`
 
-Request SMS verification code during MFA login.
+Request SMS OTP during MFA challenge. Rate limited.
 
-- **Auth**: No
-- **Body**: `{ tempToken: string }`
-- **Response**: `200` `{ message: "SMS code sent" }`
-- **Errors**: `401` invalid token, `429` rate limited
+**Auth**: No | **Body**: `{ pendingToken }`
 
 ### `POST /api/auth/verify-sms`
 
-Verify SMS code during MFA login.
+Verify SMS OTP during MFA challenge.
 
-- **Auth**: No
-- **Body**: `{ tempToken: string, code: string }` (code: exactly 6 digits)
-- **Response**: `200` `{ accessToken, csrfToken, user }`
-- **Errors**: `401` invalid code or token
+**Auth**: No | **Body**: `{ pendingToken, code }` | **Response**: `{ accessToken, user, csrfToken }`
 
 ### `POST /api/auth/request-webauthn-options`
 
-Request WebAuthn authentication options during MFA login.
+Get WebAuthn authentication options during MFA challenge.
 
-- **Auth**: No
-- **Response**: `200` WebAuthn authentication options
+**Auth**: No | **Body**: `{ pendingToken }` | **Response**: `{ options }`
 
 ### `POST /api/auth/verify-webauthn`
 
-Verify WebAuthn credential during MFA login.
+Verify WebAuthn assertion during MFA challenge.
 
-- **Auth**: No
-- **Body**: `{ credential }` (WebAuthn assertion response)
-- **Response**: `200` `{ accessToken, csrfToken, user }`
-- **Errors**: `401` invalid credential
+**Auth**: No | **Body**: `{ pendingToken, credential }` | **Response**: `{ accessToken, user, csrfToken }`
 
 ### `POST /api/auth/mfa-setup/init`
 
-Initialize mandatory MFA setup (during first login when tenant requires MFA).
+Initialize mandatory MFA setup during first login.
 
-- **Auth**: No (temp token)
-- **Response**: `200` MFA setup options (TOTP secret, QR URI)
+**Auth**: No | **Body**: `{ pendingToken, method }` | **Response**: Method-specific setup data
 
 ### `POST /api/auth/mfa-setup/verify`
 
-Complete mandatory MFA setup with verification code.
+Complete mandatory MFA setup verification.
 
-- **Auth**: No (temp token)
-- **Body**: `{ code: string }`
-- **Response**: `200` `{ accessToken, csrfToken, user }`
+**Auth**: No | **Body**: `{ pendingToken, method, code|credential }` | **Response**: `{ accessToken, user, csrfToken }`
 
 ### `POST /api/auth/forgot-password`
 
-Request a password reset email.
+Request password reset email. Rate limited.
 
-- **Auth**: No
-- **Body**: `{ email: string }`
-- **Response**: `200` `{ message }`
+**Auth**: No | **Body**: `{ email }`
 
 ### `POST /api/auth/reset-password/validate`
 
 Validate a password reset token.
 
-- **Auth**: No
-- **Body**: `{ token: string }`
-- **Response**: `200` `{ valid, requiresSmsVerification }`
+**Auth**: No | **Body**: `{ token }` | **Response**: `{ valid, requiresSms? }`
 
 ### `POST /api/auth/reset-password/request-sms`
 
-Request SMS code for password reset verification.
+Request SMS verification during password reset.
 
-- **Auth**: No
-- **Body**: `{ token: string }`
-- **Response**: `200` `{ message }`
+**Auth**: No | **Body**: `{ token }`
 
 ### `POST /api/auth/reset-password/complete`
 
 Complete password reset with new password.
 
-- **Auth**: No
-- **Body**: `{ token, password, smsCode?, recoveryKey? }`
-- **Response**: `200` `{ message, recoveryKey }`
+**Auth**: No | **Body**: `{ token, newPassword, smsCode?, recoveryKey? }` | **Response**: `{ message, recoveryKey? }`
 
 ### `POST /api/auth/refresh`
 
-Refresh an expired access token using HTTP-only cookie.
+Refresh access token using httpOnly cookie. CSRF-protected.
 
-- **Auth**: No (cookie-based)
-- **Response**: `200` `{ accessToken, csrfToken, user }`
-- **Errors**: `401` invalid or expired refresh token
+**Auth**: Cookie | **Response**: `{ accessToken, csrfToken, user }`
 
 ### `POST /api/auth/logout`
 
-Log out and revoke refresh token.
+Logout and revoke refresh token. CSRF-protected.
 
-- **Auth**: No (cookie-based)
-- **Response**: `200` `{ message }`
+**Auth**: Cookie
+
+### `POST /api/auth/switch-tenant`
+
+Switch active tenant context. CSRF-protected.
+
+**Auth**: Yes | **Body**: `{ tenantId }` | **Response**: `{ accessToken, csrfToken, user }`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## OAuth (`/api/auth`)
+## OAuth
 
 ### `GET /api/auth/oauth/providers`
 
 List available OAuth providers.
 
-- **Auth**: No
-- **Response**: `200` `[{ name, enabled }]`
+**Auth**: No | **Response**: `{ providers: [{ provider, name, enabled }] }`
 
-### `GET /api/auth/:provider`
+### `GET /api/auth/oauth/:provider`
 
-Initiate OAuth flow (redirect to provider).
+Initiate OAuth flow (redirect to provider). Providers: `google`, `microsoft`, `github`, `oidc`.
 
-- **Auth**: No
-- **Providers**: `google`, `microsoft`, `github`, `oidc`
+**Auth**: No
 
-### `GET /api/auth/:provider/callback`
+### `GET /api/auth/oauth/:provider/callback`
 
-OAuth callback handler (redirects client with tokens).
+OAuth callback handler. Redirects to client with tokens.
 
-- **Auth**: No
+**Auth**: No
 
 ### `GET /api/auth/oauth/link/:provider`
 
-Initiate OAuth account linking.
+Initiate OAuth account linking (uses JWT from query param).
 
-- **Auth**: Yes (via query JWT)
+**Auth**: JWT in query | **Query**: `?token=<jwt>`
 
 ### `GET /api/auth/oauth/accounts`
 
 List linked OAuth accounts.
 
-- **Auth**: Yes
-- **Response**: `200` `[{ provider, providerEmail, createdAt }]`
+**Auth**: Yes | **Response**: `[{ provider, providerEmail, createdAt }]`
 
 ### `DELETE /api/auth/oauth/link/:provider`
 
 Unlink an OAuth account.
 
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
+**Auth**: Yes
 
 ### `POST /api/auth/oauth/vault-setup`
 
-Set up vault password for OAuth-only users.
+Set vault password for OAuth-only users.
 
-- **Auth**: Yes
-- **Body**: `{ password: string }`
-- **Response**: `200` `{ recoveryKey }`
+**Auth**: Yes | **Body**: `{ password }`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Vault (`/api/vault`)
+## SAML
+
+### `GET /api/auth/saml/metadata`
+
+SAML Service Provider metadata XML.
+
+**Auth**: No
+
+### `GET /api/auth/saml`
+
+Initiate SAML login (redirect to IdP).
+
+**Auth**: No
+
+### `GET /api/auth/saml/link`
+
+Initiate SAML account linking (JWT from query param).
+
+**Auth**: JWT in query
+
+### `POST /api/auth/saml/callback`
+
+SAML ACS callback (POST with URL-encoded body from IdP).
+
+**Auth**: No
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Vault
+
+All endpoints require authentication.
 
 ### `POST /api/vault/unlock`
 
 Unlock vault with password.
 
-- **Auth**: Yes
-- **Body**: `{ password: string }`
-- **Response**: `200` `{ locked: false, sessionExpiry }`
+**Body**: `{ password }` | **Response**: `{ unlocked: true }`
 
 ### `POST /api/vault/lock`
 
-Lock vault (clear session).
-
-- **Auth**: Yes
-- **Response**: `200` `{ locked: true }`
+Lock vault (soft lock — preserves MFA recovery).
 
 ### `GET /api/vault/status`
 
-Check vault lock status.
+Get vault lock status and available MFA unlock methods.
 
-- **Auth**: Yes
-- **Response**: `200` `{ locked, sessionExpiry?, availableMethods? }`
+**Response**: `{ unlocked, mfaUnlockAvailable, mfaUnlockMethods[] }`
 
 ### `POST /api/vault/reveal-password`
 
-Decrypt and reveal a connection password.
+Reveal a connection's decrypted password.
 
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ connectionId: string, password?: string }`
-- **Response**: `200` `{ username, password, domain? }`
+**Body**: `{ connectionId }` | **Response**: `{ password }`
 
 ### `POST /api/vault/unlock-mfa/totp`
 
-Unlock vault using TOTP code (via recovery key).
+Unlock vault using TOTP code (requires prior password unlock in session).
 
-- **Auth**: Yes
-- **Body**: `{ code: string }` (6 digits)
-- **Response**: `200` `{ locked: false, sessionExpiry }`
+**Body**: `{ code }`
 
 ### `POST /api/vault/unlock-mfa/webauthn-options`
 
-Get WebAuthn authentication options for vault unlock.
-
-- **Auth**: Yes
-- **Response**: `200` WebAuthn options
+Get WebAuthn options for vault MFA unlock.
 
 ### `POST /api/vault/unlock-mfa/webauthn`
 
-Unlock vault using WebAuthn credential.
+Unlock vault with WebAuthn credential.
 
-- **Auth**: Yes
-- **Body**: `{ credential }` (WebAuthn assertion)
-- **Response**: `200` `{ locked: false, sessionExpiry }`
+**Body**: `{ credential }`
 
 ### `POST /api/vault/unlock-mfa/request-sms`
 
-Request SMS code for vault unlock.
-
-- **Auth**: Yes
-- **Response**: `200` `{ sent: true }`
+Request SMS code for vault MFA unlock.
 
 ### `POST /api/vault/unlock-mfa/sms`
 
-Unlock vault using SMS code.
+Unlock vault with SMS code.
 
-- **Auth**: Yes
-- **Body**: `{ code: string }` (6 digits)
-- **Response**: `200` `{ locked: false, sessionExpiry }`
+**Body**: `{ code }`
 
 ### `GET /api/vault/auto-lock`
 
 Get vault auto-lock preference.
 
-- **Auth**: Yes
-- **Response**: `200` `{ autoLockMinutes, effectiveAutoLockMinutes, tenantMaxMinutes? }`
+**Response**: `{ autoLockMinutes, tenantMaxMinutes? }`
 
 ### `PUT /api/vault/auto-lock`
 
-Set vault auto-lock timeout.
+Set vault auto-lock preference.
 
-- **Auth**: Yes
-- **Body**: `{ autoLockMinutes: number | null }`
-- **Response**: `200` updated preference
+**Body**: `{ minutes }` (0 = never, null = server default)
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Connections (`/api/connections`)
+## Connections
+
+All endpoints require authentication.
 
 ### `GET /api/connections`
 
 List all connections (own + shared + team).
 
-- **Auth**: Yes
-- **Response**: `200` `{ own: [...], shared: [...], team: [...] }`
+**Response**: `{ own: [...], shared: [...], team: [...] }`
 
 ### `POST /api/connections`
 
 Create a new connection.
 
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ name, type (RDP|SSH), host, port (1-65535), username?, password?, domain?, credentialSecretId?, description?, folderId?, teamId?, enableDrive?, gatewayId?, sshTerminalConfig?, rdpSettings? }`
-- **Response**: `201` created connection
-- **Notes**: Must provide either `credentialSecretId` OR `username`+`password`
+**Body**: `{ name, type, host, port, username?, password?, domain?, folderId?, teamId?, description?, sshTerminalConfig?, rdpSettings?, vncSettings?, gatewayId?, enableDrive?, defaultCredentialMode?, credentialSecretId? }`
 
 ### `GET /api/connections/:id`
 
-Get connection details.
-
-- **Auth**: Yes
-- **Response**: `200` connection object
+Get a single connection.
 
 ### `PUT /api/connections/:id`
 
 Update a connection.
 
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: Same fields as create (all optional)
-- **Response**: `200` updated connection
-
 ### `DELETE /api/connections/:id`
 
 Delete a connection.
-
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
 
 ### `PATCH /api/connections/:id/favorite`
 
 Toggle favorite status.
 
-- **Auth**: Yes
-- **Response**: `200` `{ isFavorite }`
-
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Sharing (`/api/connections`)
+## Connection Sharing
 
-### `POST /api/connections/batch-share`
-
-Share multiple connections at once.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ connectionIds: string[] (max 50), target: { email? | userId? }, permission (READ_ONLY|FULL_ACCESS), folderName? }`
-- **Response**: `200` `{ shared: [...], failed: [...] }`
+All endpoints require authentication.
 
 ### `POST /api/connections/:id/share`
 
 Share a connection with a user.
 
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ email? | userId?, permission (READ_ONLY|FULL_ACCESS) }`
-- **Response**: `201` share details
+**Body**: `{ userId, permission }`
+
+### `POST /api/connections/batch-share`
+
+Share multiple connections at once.
+
+**Body**: `{ connectionIds, userId, permission }`
 
 ### `DELETE /api/connections/:id/share/:userId`
 
-Revoke a share.
-
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
+Revoke sharing from a user.
 
 ### `PUT /api/connections/:id/share/:userId`
 
 Update share permission.
 
-- **Auth**: Yes
-- **Body**: `{ permission (READ_ONLY|FULL_ACCESS) }`
-- **Response**: `200` updated share
+**Body**: `{ permission }`
 
 ### `GET /api/connections/:id/shares`
 
 List all shares for a connection.
 
-- **Auth**: Yes
-- **Response**: `200` `[{ user, permission, createdAt }]`
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Import/Export
+
+All endpoints require authentication. Mounted under `/api/connections`.
+
+### `POST /api/connections/export`
+
+Export connections to CSV or JSON.
+
+**Body**: `{ connectionIds, format, includeCredentials? }`
+
+### `POST /api/connections/import`
+
+Import connections from CSV, JSON, mRemoteNG, or RDP file format.
+
+**Body**: `{ data, format?, folderId? }`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Folders (`/api/folders`)
+## Folders
+
+All endpoints require authentication.
 
 ### `GET /api/folders`
 
-List all folders.
-
-- **Auth**: Yes
-- **Response**: `200` folder tree
+List all folders (tree structure).
 
 ### `POST /api/folders`
 
 Create a folder.
 
-- **Auth**: Yes
-- **Body**: `{ name, parentId?, teamId? }`
-- **Response**: `201` created folder
+**Body**: `{ name, parentId?, teamId? }`
 
 ### `PUT /api/folders/:id`
 
 Update a folder.
 
-- **Auth**: Yes
-- **Body**: `{ name?, parentId? }`
-- **Response**: `200` updated folder
+**Body**: `{ name?, parentId?, sortOrder? }`
 
 ### `DELETE /api/folders/:id`
 
-Delete a folder.
-
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
+Delete a folder (connections moved to root).
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Sessions (`/api/sessions`)
+## Sessions
+
+All endpoints require authentication.
 
 ### `POST /api/sessions/rdp`
 
-Create an RDP session token for Guacamole.
+Create an RDP session. Returns encrypted Guacamole token.
 
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ connectionId, username?, password?, domain? }`
-- **Response**: `200` `{ token, sessionId }`
+**Body**: `{ connectionId, credentialMode?, username?, password? }` | **Response**: `{ token, wsUrl, sessionId }`
 
-### `POST /api/sessions/rdp/:sessionId/heartbeat`
+### `POST /api/sessions/vnc`
 
-Send RDP session heartbeat.
+Create a VNC session. Same pattern as RDP.
 
-- **Auth**: Yes
-- **Response**: `200` heartbeat acknowledged
-
-### `POST /api/sessions/rdp/:sessionId/end`
-
-End an RDP session.
-
-- **Auth**: Yes
-- **Response**: `200` session ended
+**Body**: `{ connectionId, credentialMode?, username?, password? }` | **Response**: `{ token, wsUrl, sessionId }`
 
 ### `POST /api/sessions/ssh`
 
-Validate SSH access and create session record.
+Validate SSH access (does not create a session — SSH sessions are created via Socket.IO).
 
-- **Auth**: Yes
-- **Body**: `{ connectionId }`
-- **Response**: `200` validation result
+**Body**: `{ connectionId }`
+
+### `POST /api/sessions/rdp/:sessionId/heartbeat`
+
+Send heartbeat for an RDP/VNC session.
+
+### `POST /api/sessions/rdp/:sessionId/end`
+
+End an RDP/VNC session.
+
+### `POST /api/sessions/vnc/:sessionId/heartbeat`
+
+Send heartbeat for a VNC session.
+
+### `POST /api/sessions/vnc/:sessionId/end`
+
+End a VNC session.
 
 ### `GET /api/sessions/active`
 
-List active sessions (tenant admin only).
+List active sessions (admin, tenant-scoped).
 
-- **Auth**: Yes (Tenant ADMIN+)
-- **Query**: `protocol?, gatewayId?`
-- **Response**: `200` active sessions array
+**Auth**: Admin | **Response**: `[{ id, userId, connectionId, protocol, status, ... }]`
 
 ### `GET /api/sessions/count`
 
-Get total active session count.
+Get active session count (admin, tenant-scoped).
 
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ count }`
+**Auth**: Admin
 
 ### `GET /api/sessions/count/gateway`
 
-Get active session counts grouped by gateway.
+Get session count grouped by gateway (admin, tenant-scoped).
 
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `[{ gatewayId, count }]`
+**Auth**: Admin
 
 ### `POST /api/sessions/:sessionId/terminate`
 
-Forcefully terminate a session.
+Terminate an active session (admin).
 
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` termination result
+**Auth**: Admin
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## User (`/api/user`)
+## User
+
+All endpoints require authentication.
 
 ### `GET /api/user/profile`
 
-Get current user profile.
-
-- **Auth**: Yes
-- **Response**: `200` `{ id, email, username, avatarData?, tenantId?, tenantRole?, totpEnabled, smsMfaEnabled, webauthnEnabled, vaultSetupComplete }`
+Get current user's profile.
 
 ### `PUT /api/user/profile`
 
-Update profile.
-
-- **Auth**: Yes
-- **Body**: `{ username?: string }`
-- **Response**: `200` updated profile
-
-### `GET /api/user/search`
-
-Search users within tenant.
-
-- **Auth**: Yes (requires tenant)
-- **Query**: `q` (search term), `scope?`, `teamId?`
-- **Response**: `200` `[{ id, email, username }]`
+Update profile (username, avatar).
 
 ### `PUT /api/user/password`
 
 Change password.
 
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ oldPassword?: string, newPassword: string (min 8), verificationId?: string }`
-- **Response**: `200` `{ message, recoveryKey }`
+**Body**: `{ currentPassword, newPassword }`
 
 ### `PUT /api/user/ssh-defaults`
 
 Update default SSH terminal settings.
 
-- **Auth**: Yes
-- **Body**: SSH terminal config fields (font, theme, cursor, scrollback, etc.)
-- **Response**: `200` updated defaults
+**Body**: `{ theme?, fontFamily?, fontSize?, cursorStyle? }`
 
 ### `PUT /api/user/rdp-defaults`
 
 Update default RDP settings.
 
-- **Auth**: Yes
-- **Body**: RDP settings fields (colorDepth, resolution, etc.)
-- **Response**: `200` updated defaults
+**Body**: Partial RDP settings object.
 
 ### `POST /api/user/avatar`
 
-Upload user avatar.
+Upload avatar image.
 
-- **Auth**: Yes
-- **Body**: `{ avatarData: string }` (base64, max ~200KB)
-- **Response**: `200` `{ avatarData }`
+**Body**: Base64 image data.
+
+### `GET /api/user/search`
+
+Search users by email/username (tenant-scoped).
+
+**Auth**: Tenant member | **Query**: `?q=<search>`
+
+### `GET /api/user/domain-profile`
+
+Get Windows/AD domain profile.
+
+### `PUT /api/user/domain-profile`
+
+Update domain profile.
+
+**Body**: `{ domainName, domainUsername, password? }`
+
+### `DELETE /api/user/domain-profile`
+
+Clear domain profile.
 
 ### `POST /api/user/email-change/initiate`
 
-Start email change flow (sends verification codes).
+Initiate email change (sends OTP to old and new address). Rate limited.
 
-- **Auth**: Yes (rate limited)
-- **Body**: `{ newEmail: string }`
-- **Response**: `200` `{ method, verificationId? }`
+**Body**: `{ newEmail, password }`
 
 ### `POST /api/user/email-change/confirm`
 
-Confirm email change with verification codes.
+Confirm email change with both OTP codes.
 
-- **Auth**: Yes
-- **Body**: `{ codeOld?, codeNew?, verificationId? }`
-- **Response**: `200` `{ message }`
+**Body**: `{ oldCode, newCode }`
 
 ### `POST /api/user/password-change/initiate`
 
-Start identity-verified password change flow.
+Initiate password change with identity verification. Rate limited.
 
-- **Auth**: Yes (rate limited)
-- **Response**: `200` identity verification challenge
+**Body**: `{ currentPassword, newPassword }`
 
 ### `POST /api/user/identity/initiate`
 
-Initiate identity verification for sensitive operations.
+Initiate identity verification for sensitive operations. Rate limited.
 
-- **Auth**: Yes (rate limited)
-- **Body**: `{ purpose: string }`
-- **Response**: `200` `{ verificationId, methods, challengeData? }`
+**Body**: `{ password }`
 
 ### `POST /api/user/identity/confirm`
 
 Confirm identity verification.
 
-- **Auth**: Yes
-- **Body**: `{ verificationId, code?, credential?, password? }`
-- **Response**: `200` `{ verified, verificationId }`
+**Body**: `{ code }`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## 2FA — TOTP (`/api/user/2fa`)
+## Two-Factor Authentication
 
-### `POST /api/user/2fa/setup`
+### TOTP (`/api/user/2fa`)
 
-Generate TOTP secret and QR code URI.
+All endpoints require authentication.
 
-- **Auth**: Yes
-- **Response**: `200` `{ secret, otpauthUri }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/user/2fa/setup` | Generate TOTP secret and QR code |
+| `POST` | `/api/user/2fa/verify` | Verify TOTP code and enable 2FA |
+| `POST` | `/api/user/2fa/disable` | Disable TOTP 2FA |
+| `GET` | `/api/user/2fa/status` | Get TOTP enabled status |
 
-### `POST /api/user/2fa/verify`
+### SMS MFA (`/api/user/2fa/sms`)
 
-Enable TOTP with a verification code.
+All endpoints require authentication.
 
-- **Auth**: Yes
-- **Body**: `{ code: string }` (6 digits)
-- **Response**: `200` `{ enabled: true }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/user/2fa/sms/setup-phone` | Set phone number and send verification code. Rate limited. |
+| `POST` | `/api/user/2fa/sms/verify-phone` | Verify phone number with code |
+| `POST` | `/api/user/2fa/sms/enable` | Enable SMS MFA |
+| `POST` | `/api/user/2fa/sms/send-disable-code` | Send disable confirmation code. Rate limited. |
+| `POST` | `/api/user/2fa/sms/disable` | Disable SMS MFA with code |
+| `GET` | `/api/user/2fa/sms/status` | Get SMS MFA status |
 
-### `POST /api/user/2fa/disable`
+### WebAuthn / Passkeys (`/api/user/2fa/webauthn`)
 
-Disable TOTP with a verification code.
+All endpoints require authentication.
 
-- **Auth**: Yes
-- **Body**: `{ code: string }` (6 digits)
-- **Response**: `200` `{ enabled: false }`
-
-### `GET /api/user/2fa/status`
-
-Check TOTP status.
-
-- **Auth**: Yes
-- **Response**: `200` `{ enabled: boolean }`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-## 2FA — SMS MFA (`/api/user/2fa/sms`)
-
-### `POST /api/user/2fa/sms/setup-phone`
-
-Set up phone number (sends verification SMS).
-
-- **Auth**: Yes
-- **Body**: `{ phoneNumber: string }` (E.164 format)
-- **Response**: `200` `{ message }`
-
-### `POST /api/user/2fa/sms/verify-phone`
-
-Verify phone number with SMS code.
-
-- **Auth**: Yes
-- **Body**: `{ code: string }` (6 digits)
-- **Response**: `200` `{ verified: true }`
-
-### `POST /api/user/2fa/sms/enable`
-
-Enable SMS MFA (phone must be verified first).
-
-- **Auth**: Yes
-- **Response**: `200` `{ enabled: true }`
-
-### `POST /api/user/2fa/sms/send-disable-code`
-
-Request SMS code to disable SMS MFA.
-
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
-
-### `POST /api/user/2fa/sms/disable`
-
-Disable SMS MFA with verification code.
-
-- **Auth**: Yes
-- **Body**: `{ code: string }` (6 digits)
-- **Response**: `200` `{ enabled: false }`
-
-### `GET /api/user/2fa/sms/status`
-
-Check SMS MFA status.
-
-- **Auth**: Yes
-- **Response**: `200` `{ enabled, phoneVerified, phoneNumber? }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/user/2fa/webauthn/registration-options` | Get registration options for a new credential |
+| `POST` | `/api/user/2fa/webauthn/register` | Register a new WebAuthn credential |
+| `GET` | `/api/user/2fa/webauthn/credentials` | List registered credentials |
+| `DELETE` | `/api/user/2fa/webauthn/credentials/:id` | Remove a credential |
+| `PATCH` | `/api/user/2fa/webauthn/credentials/:id` | Rename a credential |
+| `GET` | `/api/user/2fa/webauthn/status` | Get WebAuthn enabled status |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## 2FA — WebAuthn (`/api/user/2fa/webauthn`)
+## Files
 
-### `POST /api/user/2fa/webauthn/registration-options`
+All endpoints require authentication. Used for RDP drive redirection file management.
 
-Get WebAuthn registration options.
-
-- **Auth**: Yes
-- **Response**: `200` registration options (PublicKeyCredentialCreationOptions)
-
-### `POST /api/user/2fa/webauthn/register`
-
-Register a WebAuthn credential.
-
-- **Auth**: Yes
-- **Body**: `{ credential, friendlyName?: string }`
-- **Response**: `201` registered credential info
-
-### `GET /api/user/2fa/webauthn/credentials`
-
-List registered WebAuthn credentials.
-
-- **Auth**: Yes
-- **Response**: `200` `[{ id, friendlyName, deviceType, backedUp, lastUsedAt, createdAt }]`
-
-### `DELETE /api/user/2fa/webauthn/credentials/:id`
-
-Remove a WebAuthn credential.
-
-- **Auth**: Yes
-- **Response**: `200` `{ removed: true }`
-
-### `PATCH /api/user/2fa/webauthn/credentials/:id`
-
-Rename a WebAuthn credential.
-
-- **Auth**: Yes
-- **Body**: `{ friendlyName: string }`
-- **Response**: `200` `{ renamed: true }`
-
-### `GET /api/user/2fa/webauthn/status`
-
-Check WebAuthn status.
-
-- **Auth**: Yes
-- **Response**: `200` `{ enabled, credentialCount }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/files` | List files in user's drive |
+| `GET` | `/api/files/:name` | Download a file |
+| `POST` | `/api/files` | Upload a file (multipart, quota checked) |
+| `DELETE` | `/api/files/:name` | Delete a file |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Files (`/api/files`)
+## Audit
 
-### `GET /api/files`
+All endpoints require authentication.
 
-List files in user's drive.
-
-- **Auth**: Yes
-- **Response**: `200` `[{ name, size, modifiedAt }]`
-
-### `POST /api/files`
-
-Upload a file.
-
-- **Auth**: Yes
-- **Body**: Multipart form with `file` field
-- **Response**: `200` `{ files: [...] }`
-- **Errors**: `413` quota exceeded
-
-### `GET /api/files/:name`
-
-Download a file.
-
-- **Auth**: Yes
-- **Response**: File download (binary)
-
-### `DELETE /api/files/:name`
-
-Delete a file.
-
-- **Auth**: Yes
-- **Response**: `200` `{ deleted: true }`
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/audit` | User | List personal audit logs (paginated, filterable) |
+| `GET` | `/api/audit/countries` | User | List distinct countries in user's logs |
+| `GET` | `/api/audit/gateways` | User | List distinct gateways in user's logs |
+| `GET` | `/api/audit/tenant` | Admin | List tenant-wide audit logs |
+| `GET` | `/api/audit/tenant/countries` | Admin | List distinct countries in tenant logs |
+| `GET` | `/api/audit/tenant/gateways` | Admin | List distinct gateways in tenant logs |
+| `GET` | `/api/audit/tenant/geo-summary` | Admin | Geographic summary with coordinates |
+| `GET` | `/api/audit/connection/:connectionId` | User | Connection-scoped audit logs |
+| `GET` | `/api/audit/connection/:connectionId/users` | User | Distinct users in connection logs |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Secrets (`/api/secrets`)
+## Notifications
 
-### `GET /api/secrets`
+All endpoints require authentication.
 
-List vault secrets.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Query**: `scope?`, `type?`, `teamId?`, `folderId?`, `search?`, `tags?`, `isFavorite?`
-- **Response**: `200` secrets array
-
-### `POST /api/secrets`
-
-Create a vault secret.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ name, description?, type (LOGIN|SSH_KEY|CERTIFICATE|API_KEY|SECURE_NOTE), scope (PERSONAL|TEAM|TENANT), teamId?, folderId?, data, metadata?, tags?, expiresAt? }`
-- **Response**: `201` created secret
-
-### `GET /api/secrets/:id`
-
-Get secret details (encrypted data).
-
-- **Auth**: Yes (vault must be unlocked)
-- **Response**: `200` secret object
-
-### `PUT /api/secrets/:id`
-
-Update a secret.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ name?, description?, data?, metadata?, tags?, folderId?, isFavorite?, expiresAt?, changeNote? }`
-- **Response**: `200` updated secret
-
-### `DELETE /api/secrets/:id`
-
-Delete a secret.
-
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
-
-### `GET /api/secrets/:id/versions`
-
-List version history.
-
-- **Auth**: Yes
-- **Response**: `200` `[{ version, changedBy, changeNote, createdAt }]`
-
-### `GET /api/secrets/:id/versions/:version/data`
-
-Get specific version data.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Response**: `200` version data
-
-### `POST /api/secrets/:id/versions/:version/restore`
-
-Restore a previous version.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Response**: `200` restoration result
-
-### `POST /api/secrets/:id/share`
-
-Share a secret with a user.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ email? | userId?, permission (READ_ONLY|FULL_ACCESS) }`
-- **Response**: `201` share details
-
-### `DELETE /api/secrets/:id/share/:userId`
-
-Revoke a secret share.
-
-- **Auth**: Yes
-- **Response**: `200` `{ message }`
-
-### `PUT /api/secrets/:id/share/:userId`
-
-Update secret share permission.
-
-- **Auth**: Yes
-- **Body**: `{ permission }`
-- **Response**: `200` updated share
-
-### `GET /api/secrets/:id/shares`
-
-List shares for a secret.
-
-- **Auth**: Yes
-- **Response**: `200` shares array
-
-### `POST /api/secrets/:id/external-shares`
-
-Create a public external share link.
-
-- **Auth**: Yes (vault must be unlocked)
-- **Body**: `{ expiresInMinutes (5-43200), maxAccessCount?, pin? }`
-- **Response**: `201` `{ shareUrl, token, expiresAt }`
-
-### `GET /api/secrets/:id/external-shares`
-
-List external shares for a secret.
-
-- **Auth**: Yes
-- **Response**: `200` external shares array
-
-### `DELETE /api/secrets/external-shares/:shareId`
-
-Revoke an external share.
-
-- **Auth**: Yes
-- **Response**: `200` `{ revoked: true }`
-
-### `POST /api/secrets/tenant-vault/init`
-
-Initialize tenant vault key.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` initialization result
-
-### `POST /api/secrets/tenant-vault/distribute`
-
-Distribute tenant vault key to members.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` distribution result
-
-### `GET /api/secrets/tenant-vault/status`
-
-Check tenant vault status.
-
-- **Auth**: Yes
-- **Response**: `200` `{ initialized, memberHasKey }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/notifications` | List notifications (paginated) |
+| `PUT` | `/api/notifications/read-all` | Mark all as read |
+| `PUT` | `/api/notifications/:id/read` | Mark one as read |
+| `DELETE` | `/api/notifications/:id` | Delete a notification |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Notifications (`/api/notifications`)
+## Tenants
 
-### `GET /api/notifications`
+All endpoints require authentication.
 
-List notifications.
-
-- **Auth**: Yes
-- **Query**: `limit? (1-100)`, `offset?`
-- **Response**: `200` `{ notifications: [...], total }`
-
-### `PUT /api/notifications/:id/read`
-
-Mark notification as read.
-
-- **Auth**: Yes
-- **Response**: `200` success
-
-### `PUT /api/notifications/read-all`
-
-Mark all notifications as read.
-
-- **Auth**: Yes
-- **Response**: `200` success
-
-### `DELETE /api/notifications/:id`
-
-Delete a notification.
-
-- **Auth**: Yes
-- **Response**: `200` success
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/tenants` | User | Create a new tenant |
+| `GET` | `/api/tenants/mine/all` | User | List all tenant memberships |
+| `GET` | `/api/tenants/mine` | Tenant | Get current tenant details |
+| `PUT` | `/api/tenants/:id` | Admin | Update tenant (name, MFA policy, session timeout) |
+| `DELETE` | `/api/tenants/:id` | Owner | Delete tenant |
+| `GET` | `/api/tenants/:id/mfa-stats` | Admin | Get MFA compliance stats |
+| `GET` | `/api/tenants/:id/users` | Tenant | List tenant users |
+| `GET` | `/api/tenants/:id/users/:userId/profile` | Tenant | Get user profile details |
+| `POST` | `/api/tenants/:id/invite` | Admin | Invite user by email |
+| `POST` | `/api/tenants/:id/users` | Admin | Create a new user in tenant |
+| `PUT` | `/api/tenants/:id/users/:userId` | Admin | Update user role |
+| `DELETE` | `/api/tenants/:id/users/:userId` | Admin | Remove user from tenant |
+| `PATCH` | `/api/tenants/:id/users/:userId/enabled` | Admin | Enable/disable user account |
+| `PUT` | `/api/tenants/:id/users/:userId/email` | Admin | Admin change user email |
+| `PUT` | `/api/tenants/:id/users/:userId/password` | Admin | Admin change user password |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Audit (`/api/audit`)
+## Teams
 
-### `GET /api/audit`
+All endpoints require authentication and tenant membership.
 
-Query user's audit log.
-
-- **Auth**: Yes
-- **Query**: `page`, `limit (1-100)`, `action?`, `startDate?`, `endDate?`, `search?`, `targetType?`, `ipAddress?`, `gatewayId?`, `sortBy (createdAt|action)?`, `sortOrder (asc|desc)?`
-- **Response**: `200` `{ logs: [...], total, page, limit }`
-
-### `GET /api/audit/gateways`
-
-List gateways for audit log filtering.
-
-- **Auth**: Yes
-- **Response**: `200` gateways array
-
-### `GET /api/audit/tenant`
-
-Query tenant-wide audit log.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Query**: Same as `/audit` plus `userId?`
-- **Response**: `200` `{ logs: [...], total, page, limit }`
-
-### `GET /api/audit/tenant/gateways`
-
-List tenant gateways for audit log filtering.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` gateways array
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `POST` | `/api/teams` | Tenant | Create a team |
+| `GET` | `/api/teams` | Tenant | List teams |
+| `GET` | `/api/teams/:id` | Team Member | Get team details |
+| `PUT` | `/api/teams/:id` | Team Admin | Update team |
+| `DELETE` | `/api/teams/:id` | Team Admin | Delete team |
+| `GET` | `/api/teams/:id/members` | Team Member | List members |
+| `POST` | `/api/teams/:id/members` | Team Admin | Add member |
+| `PUT` | `/api/teams/:id/members/:userId` | Team Admin | Update member role |
+| `DELETE` | `/api/teams/:id/members/:userId` | Team Admin | Remove member |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Tenants (`/api/tenants`)
+## Admin
 
-### `POST /api/tenants`
+All endpoints require authentication with Admin tenant role.
 
-Create a new tenant (user becomes OWNER).
-
-- **Auth**: Yes
-- **Body**: `{ name: string }`
-- **Response**: `201` `{ tenant, accessToken, csrfToken }`
-
-### `GET /api/tenants/mine`
-
-Get current user's tenant.
-
-- **Auth**: Yes (requires tenant)
-- **Response**: `200` tenant object
-
-### `PUT /api/tenants/:id`
-
-Update tenant settings.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ name?, defaultSessionTimeoutSeconds?, mfaRequired?, vaultAutoLockMaxMinutes? }`
-- **Response**: `200` updated tenant
-
-### `DELETE /api/tenants/:id`
-
-Delete a tenant.
-
-- **Auth**: Yes (own tenant, OWNER only)
-- **Response**: `200` `{ message }`
-
-### `GET /api/tenants/:id/mfa-stats`
-
-Get MFA adoption statistics.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Response**: `200` `{ totalUsers, mfaEnabled, breakdown }`
-
-### `GET /api/tenants/:id/users`
-
-List tenant users.
-
-- **Auth**: Yes (own tenant)
-- **Response**: `200` users array
-
-### `POST /api/tenants/:id/invite`
-
-Invite an existing user to tenant.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ email, role (ADMIN|MEMBER) }`
-- **Response**: `200` invitation result
-
-### `POST /api/tenants/:id/users`
-
-Create a new user within tenant.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ email, username?, password (min 8), role, sendWelcomeEmail? }`
-- **Response**: `201` created user
-
-### `PUT /api/tenants/:id/users/:userId`
-
-Update user role within tenant.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ role (OWNER|ADMIN|MEMBER) }`
-- **Response**: `200` updated role
-
-### `DELETE /api/tenants/:id/users/:userId`
-
-Remove user from tenant.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Response**: `200` `{ message }`
-
-### `PATCH /api/tenants/:id/users/:userId/enabled`
-
-Enable/disable a user account.
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ enabled: boolean }`
-- **Response**: `200` toggle result
-
-### `PUT /api/tenants/:id/users/:userId/email`
-
-Admin change user email (requires identity verification).
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ newEmail, verificationId }`
-- **Response**: `200` result
-
-### `PUT /api/tenants/:id/users/:userId/password`
-
-Admin change user password (requires identity verification).
-
-- **Auth**: Yes (own tenant, ADMIN+)
-- **Body**: `{ newPassword (min 8), verificationId }`
-- **Response**: `200` result
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/email/status` | Get email provider configuration status |
+| `POST` | `/api/admin/email/test` | Send test email |
+| `GET` | `/api/admin/app-config` | Get app configuration (self-signup, etc.) |
+| `PUT` | `/api/admin/app-config/self-signup` | Toggle self-signup |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Teams (`/api/teams`)
+## Gateways
 
-### `POST /api/teams`
+All endpoints require authentication and tenant membership. Most require Admin role.
 
-Create a team.
+### Gateway CRUD
 
-- **Auth**: Yes (requires tenant)
-- **Body**: `{ name, description? }`
-- **Response**: `201` created team
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/gateways` | Tenant | List gateways |
+| `POST` | `/api/gateways` | Admin | Create gateway |
+| `PUT` | `/api/gateways/:id` | Admin | Update gateway |
+| `DELETE` | `/api/gateways/:id` | Admin | Delete gateway |
+| `POST` | `/api/gateways/:id/test` | Tenant | Test gateway connectivity |
 
-### `GET /api/teams`
+### SSH Key Pair Management
 
-List teams.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/gateways/ssh-keypair` | Generate SSH key pair |
+| `GET` | `/api/gateways/ssh-keypair` | Get public key |
+| `GET` | `/api/gateways/ssh-keypair/private` | Download private key |
+| `POST` | `/api/gateways/ssh-keypair/rotate` | Rotate key pair |
+| `PATCH` | `/api/gateways/ssh-keypair/rotation` | Update rotation policy |
+| `GET` | `/api/gateways/ssh-keypair/rotation` | Get rotation status |
+| `POST` | `/api/gateways/:id/push-key` | Push public key to gateway |
 
-- **Auth**: Yes (requires tenant)
-- **Response**: `200` teams array
+### Gateway Templates
 
-### `GET /api/teams/:id`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/gateways/templates` | List templates |
+| `POST` | `/api/gateways/templates` | Create template |
+| `PUT` | `/api/gateways/templates/:templateId` | Update template |
+| `DELETE` | `/api/gateways/templates/:templateId` | Delete template |
+| `POST` | `/api/gateways/templates/:templateId/deploy` | Deploy gateway from template |
 
-Get team details.
+### Managed Gateway Lifecycle
 
-- **Auth**: Yes (team member)
-- **Response**: `200` team object
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/gateways/:id/deploy` | Deploy managed gateway containers |
+| `DELETE` | `/api/gateways/:id/deploy` | Undeploy managed gateway |
+| `POST` | `/api/gateways/:id/scale` | Scale gateway replicas |
+| `GET` | `/api/gateways/:id/instances` | List container instances |
+| `POST` | `/api/gateways/:id/instances/:instanceId/restart` | Restart an instance |
+| `GET` | `/api/gateways/:id/instances/:instanceId/logs` | Get instance logs |
 
-### `PUT /api/teams/:id`
+### Auto-Scaling
 
-Update team.
-
-- **Auth**: Yes (TEAM_ADMIN)
-- **Body**: `{ name?, description? }`
-- **Response**: `200` updated team
-
-### `DELETE /api/teams/:id`
-
-Delete team.
-
-- **Auth**: Yes (TEAM_ADMIN)
-- **Response**: `200` `{ message }`
-
-### `GET /api/teams/:id/members`
-
-List team members.
-
-- **Auth**: Yes (team member)
-- **Response**: `200` members array
-
-### `POST /api/teams/:id/members`
-
-Add team member.
-
-- **Auth**: Yes (TEAM_ADMIN)
-- **Body**: `{ userId, role (TEAM_ADMIN|TEAM_EDITOR|TEAM_VIEWER) }`
-- **Response**: `201` added member
-
-### `PUT /api/teams/:id/members/:userId`
-
-Update member role.
-
-- **Auth**: Yes (TEAM_ADMIN)
-- **Body**: `{ role }`
-- **Response**: `200` updated role
-
-### `DELETE /api/teams/:id/members/:userId`
-
-Remove team member.
-
-- **Auth**: Yes (TEAM_ADMIN)
-- **Response**: `200` `{ message }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/gateways/:id/scaling` | Get scaling status |
+| `PUT` | `/api/gateways/:id/scaling` | Update scaling config |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Admin (`/api/admin`)
+## Tabs
 
-### `GET /api/admin/email/status`
+All endpoints require authentication.
 
-Check email provider configuration status.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ provider, configured, testable }`
-
-### `POST /api/admin/email/test`
-
-Send a test email.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: `{ to: string }` (email address)
-- **Response**: `200` `{ success, message }`
-
-### `GET /api/admin/app-config`
-
-Get application configuration.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ selfSignupEnabled, selfSignupEnvLocked }`
-
-### `PUT /api/admin/app-config/self-signup`
-
-Toggle self-signup.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: `{ enabled: boolean }`
-- **Response**: `200` `{ selfSignupEnabled }`
-- **Errors**: `403` if locked by environment variable
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tabs` | Get persisted tabs |
+| `PUT` | `/api/tabs` | Sync tab state to server |
+| `DELETE` | `/api/tabs` | Clear all persisted tabs |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Gateways (`/api/gateways`)
-
-### `GET /api/gateways`
-
-List gateways.
-
-- **Auth**: Yes (requires tenant)
-- **Response**: `200` gateways array
-
-### `POST /api/gateways`
-
-Create a gateway.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: `{ name, type (GUACD|SSH_BASTION|MANAGED_SSH), host, port, description?, isDefault?, username?, password?, sshPrivateKey?, apiPort?, publishPorts?, lbStrategy?, monitoringEnabled?, monitorIntervalMs?, inactivityTimeoutSeconds? }`
-- **Response**: `201` created gateway
-
-### `PUT /api/gateways/:id`
-
-Update a gateway.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: Same as create (all optional)
-- **Response**: `200` updated gateway
-
-### `DELETE /api/gateways/:id`
-
-Delete a gateway.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ message }`
-
-### `POST /api/gateways/:id/test`
-
-Test gateway connectivity.
-
-- **Auth**: Yes (requires tenant)
-- **Response**: `200` `{ reachable, latencyMs?, error? }`
-
-### `POST /api/gateways/:id/push-key`
-
-Push SSH public key to gateway.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` push result
-
-### `POST /api/gateways/ssh-keypair`
-
-Generate SSH key pair for tenant.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `201` generated key pair info
-
-### `GET /api/gateways/ssh-keypair`
-
-Get SSH public key.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ publicKey, fingerprint, algorithm, expiresAt?, autoRotateEnabled }`
-
-### `GET /api/gateways/ssh-keypair/private`
-
-Download SSH private key.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: Private key file download
-
-### `POST /api/gateways/ssh-keypair/rotate`
-
-Rotate SSH key pair.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` rotation result
-
-### `PATCH /api/gateways/ssh-keypair/rotation`
-
-Update key rotation policy.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: `{ autoRotateEnabled?, rotationIntervalDays?, expiresAt? }`
-- **Response**: `200` updated policy
-
-### `GET /api/gateways/ssh-keypair/rotation`
-
-Get key rotation status.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` rotation status
-
-### `GET /api/gateways/templates`
-
-List gateway templates.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` templates array
-
-### `POST /api/gateways/templates`
-
-Create a gateway template.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: Gateway configuration fields
-- **Response**: `201` created template
-
-### `PUT /api/gateways/templates/:templateId`
-
-Update a gateway template.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: Template fields
-- **Response**: `200` updated template
-
-### `DELETE /api/gateways/templates/:templateId`
-
-Delete a gateway template.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ message }`
-
-### `POST /api/gateways/templates/:templateId/deploy`
-
-Deploy a gateway from template.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `201` deployed gateway
-
-### `POST /api/gateways/:id/deploy`
-
-Deploy managed gateway instances.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` deployment result
-
-### `DELETE /api/gateways/:id/deploy`
-
-Undeploy managed gateway instances.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` undeployment result
-
-### `POST /api/gateways/:id/scale`
-
-Scale managed gateway.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: `{ replicas: number (0-20) }`
-- **Response**: `200` scaling result
-
-### `GET /api/gateways/:id/instances`
-
-List managed gateway instances.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` instances array
-
-### `POST /api/gateways/:id/instances/:instanceId/restart`
-
-Restart a managed instance.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` restart result
-
-### `GET /api/gateways/:id/instances/:instanceId/logs`
-
-Get managed instance logs.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` `{ logs }`
-
-### `GET /api/gateways/:id/scaling`
-
-Get auto-scaling status.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Response**: `200` scaling status
-
-### `PUT /api/gateways/:id/scaling`
-
-Update auto-scaling configuration.
-
-- **Auth**: Yes (Tenant ADMIN+)
-- **Body**: `{ autoScale?, minReplicas?, maxReplicas?, sessionsPerInstance?, scaleDownCooldownSeconds? }`
-- **Response**: `200` updated configuration
+## Secrets (Keychain)
+
+All endpoints require authentication.
+
+### CRUD
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/secrets` | List secrets (filterable by scope, type, tags) |
+| `POST` | `/api/secrets` | Create secret |
+| `GET` | `/api/secrets/:id` | Get secret details |
+| `PUT` | `/api/secrets/:id` | Update secret |
+| `DELETE` | `/api/secrets/:id` | Delete secret |
+
+### Versioning
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/secrets/:id/versions` | List versions |
+| `GET` | `/api/secrets/:id/versions/:version/data` | Get version data |
+| `POST` | `/api/secrets/:id/versions/:version/restore` | Restore a version |
+
+### Sharing
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/secrets/:id/share` | Share secret with a user |
+| `DELETE` | `/api/secrets/:id/share/:userId` | Revoke sharing |
+| `PUT` | `/api/secrets/:id/share/:userId` | Update share permission |
+| `GET` | `/api/secrets/:id/shares` | List shares |
+
+### External Sharing
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/secrets/:id/external-shares` | Create external share link |
+| `GET` | `/api/secrets/:id/external-shares` | List external shares |
+| `DELETE` | `/api/secrets/external-shares/:shareId` | Revoke external share |
+
+### Tenant Vault
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/secrets/tenant-vault/init` | Initialize tenant vault |
+| `POST` | `/api/secrets/tenant-vault/distribute` | Distribute tenant vault key to members |
+| `GET` | `/api/secrets/tenant-vault/status` | Get tenant vault status |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Tabs (`/api/tabs`)
+## Public Share
 
-### `GET /api/tabs`
+Public endpoints for accessing externally shared secrets. No authentication required.
 
-Get persisted open tabs.
-
-- **Auth**: Yes
-- **Response**: `200` `[{ connectionId, sortOrder, isActive }]`
-
-### `PUT /api/tabs`
-
-Sync open tabs to server.
-
-- **Auth**: Yes
-- **Body**: `{ tabs: [{ connectionId, sortOrder, isActive }] }` (max 50)
-- **Response**: `200` synced tabs
-
-### `DELETE /api/tabs`
-
-Clear all saved tabs.
-
-- **Auth**: Yes
-- **Response**: `200` `{ cleared: true }`
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/share/:token/info` | Get share info (name, type, expiry) |
+| `POST` | `/api/share/:token` | Access shared secret (with optional PIN). Rate limited: 10/min. |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Public Share (`/api/share`)
+## Recordings
 
-### `GET /api/share/:token/info`
+All endpoints require authentication.
 
-Get public share metadata (no decrypted data).
-
-- **Auth**: No
-- **Rate limit**: 10 per minute
-- **Response**: `200` `{ secretName, secretType, expiresAt, hasPin, remainingAccesses? }`
-
-### `POST /api/share/:token`
-
-Access public share (decrypt data).
-
-- **Auth**: No
-- **Rate limit**: 10 per minute
-- **Body**: `{ pin?: string }` (if PIN-protected)
-- **Response**: `200` decrypted secret data
-- **Errors**: `401` invalid PIN, `404` expired/revoked, `429` max accesses reached
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/recordings` | List session recordings |
+| `GET` | `/api/recordings/:id` | Get recording metadata |
+| `GET` | `/api/recordings/:id/stream` | Stream recording file |
+| `GET` | `/api/recordings/:id/analyze` | Analyze .guac recording (command extraction) |
+| `GET` | `/api/recordings/:id/video` | Export recording as video (via guacenc sidecar) |
+| `DELETE` | `/api/recordings/:id` | Delete a recording |
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-## Health (`/api`)
+## GeoIP
 
-### `GET /api/health`
+All endpoints require authentication.
 
-Basic health check.
+### `GET /api/geoip/:ip`
 
-- **Auth**: No
-- **Response**: `200` `{ status: "ok" }`
+Lookup IP geolocation. Uses MaxMind GeoLite2 database if configured, falls back to ip-api.com with caching.
 
-### `GET /api/ready`
-
-Readiness check with dependency status.
-
-- **Auth**: No
-- **Response**: `200` `{ status, checks: { database, guacd } }`
+**Response**: `{ country, city, lat, lon, ... }`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## WebSocket Endpoints
 
-### SSH Terminal — Socket.IO `/ssh`
+### Socket.IO — SSH Terminal (`/ssh`)
 
-Real-time SSH terminal sessions via Socket.IO on port 3001.
+Connected via Socket.IO at `/ssh` namespace. Authentication via `auth.token` in handshake.
 
-**Authentication**: JWT token in connection `auth` payload.
+**Client -> Server Events:**
 
-**Client → Server events**:
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `session:start` | `{ connectionId, username?, password? }` | Start SSH session |
-| `data` | `string` | Terminal input |
+| Event | Data | Description |
+|-------|------|-------------|
+| `session:start` | `{ connectionId, username?, password?, credentialMode? }` | Start SSH session |
+| `data` | `string` | Terminal input (keystrokes) |
 | `resize` | `{ cols, rows }` | Terminal resize |
-| `sftp:list` | `{ path }` | List directory |
+| `session:heartbeat` | — | Explicit heartbeat |
+| `sftp:list` | `{ path }` | List directory contents |
 | `sftp:mkdir` | `{ path }` | Create directory |
 | `sftp:delete` | `{ path }` | Delete file |
 | `sftp:rmdir` | `{ path }` | Remove directory |
-| `sftp:rename` | `{ oldPath, newPath }` | Rename file |
-| `sftp:upload` | `{ path, chunk, offset, totalSize }` | Upload file chunk |
-| `sftp:download` | `{ path }` | Start file download |
+| `sftp:rename` | `{ oldPath, newPath }` | Rename file/directory |
+| `sftp:upload:start` | `{ remotePath, fileSize, filename }` | Begin file upload |
+| `sftp:upload:chunk` | `{ transferId, chunk }` | Upload data chunk |
+| `sftp:upload:end` | `{ transferId }` | Complete upload |
+| `sftp:download:start` | `{ remotePath, filename }` | Begin file download |
+| `sftp:download:cancel` | `{ transferId }` | Cancel download |
 
-**Server → Client events**:
-| Event | Payload | Description |
-|-------|---------|-------------|
+**Server -> Client Events:**
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `session:ready` | — | SSH connection established |
+| `session:error` | `{ message }` | Connection error |
+| `session:closed` | — | Session ended |
 | `data` | `string` | Terminal output |
-| `error` | `{ message }` | Error message |
-| `session:end` | `{ reason? }` | Session ended |
-| `sftp:list:result` | `[{ filename, attrs }]` | Directory listing |
-| `sftp:upload:progress` | `{ percent }` | Upload progress |
-| `sftp:download:chunk` | `{ chunk, offset, totalSize }` | Download data chunk |
+| `sftp:progress` | `{ transferId, bytesTransferred, totalBytes, filename }` | Transfer progress |
+| `sftp:transfer:complete` | `{ transferId }` | Transfer complete |
+| `sftp:transfer:error` | `{ transferId, message }` | Transfer error |
+| `sftp:download:chunk` | `{ transferId, chunk }` | Download data chunk |
+| `sftp:download:complete` | `{ transferId }` | Download complete |
 
-### Notifications — Socket.IO `/notifications`
+### Socket.IO — Notifications (`/notifications`)
 
-Real-time notification delivery.
+Real-time notification delivery. Authentication via `auth.token` in handshake.
 
-**Authentication**: JWT token in connection `auth` payload.
+**Server -> Client Events:**
 
-**Server → Client events**:
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `notification` | notification object | New notification |
+| Event | Data | Description |
+|-------|------|-------------|
+| `notification` | `{ id, type, message, relatedId }` | New notification |
 
-### Gateway Monitor — Socket.IO `/gateway-monitor`
+### Socket.IO — Gateway Monitor (`/gateway-monitor`)
 
-Real-time gateway health and instance status updates.
+Real-time gateway health and instance updates. Authentication via `auth.token` in handshake.
 
-**Authentication**: JWT token in connection `auth` payload.
+**Server -> Client Events:**
 
-**Server → Client events**:
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `health-update` | `{ gatewayId, status, latencyMs }` | Health check result |
-| `instance-update` | `{ gatewayId, instances }` | Instance status change |
-| `scaling-event` | `{ gatewayId, action, details }` | Auto-scaling event |
+| Event | Data | Description |
+|-------|------|-------------|
+| `health:update` | `{ gatewayId, status, latencyMs, ... }` | Gateway health change |
+| `instances:update` | `{ gatewayId, instances[] }` | Instance status change |
+| `scaling:update` | `{ gatewayId, scalingStatus }` | Scaling event |
+| `gateway:update` | `{ gateway }` | Gateway config change |
 
-### RDP — Guacamole WebSocket (port 3002)
+### Guacamole WebSocket (port 3002)
 
-WebSocket tunnel for RDP sessions via `guacamole-lite`.
-
-- **Connection**: `ws://server:3002/?token=<encrypted-token>`
-- **Token**: AES-256-CBC encrypted connection parameters
-- **Protocol**: Guacamole protocol (handled by `guacamole-common-js` client library)
-- **Timeout**: 86400s (24 hours)
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-## Common Middleware
-
-| Middleware | Purpose |
-|-----------|---------|
-| `authenticate` | Validates JWT token, populates `req.user` |
-| `requireTenant` | Ensures user has tenant membership |
-| `requireTenantRole(role)` | Restricts to specific tenant roles |
-| `requireOwnTenant` | Ensures user modifies only own tenant |
-| `requireTeamMember` | Ensures user is team member |
-| `requireTeamRole(role)` | Restricts to team roles |
-| `validateCsrf` | CSRF token validation for state-changing operations |
-| `identityRateLimit` | Rate limits identity verification (3 attempts per 15 minutes) |
+Direct WebSocket connection at `/guacamole` (proxied via Nginx). Used for RDP and VNC sessions. Communicates using the Guacamole protocol with encrypted connection tokens.
 
 <!-- manual-start -->
 <!-- manual-end -->

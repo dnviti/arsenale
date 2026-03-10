@@ -1,90 +1,119 @@
 # Database
 
-> Auto-generated on 2026-03-07 by `/docs update database`.
+> Auto-generated on 2026-03-11 by `/docs create database`.
 > Source of truth is the codebase. Run `/docs update database` after code changes.
 
 ## Overview
 
 - **Provider**: PostgreSQL 16
-- **ORM**: Prisma (`server/prisma/schema.prisma`)
-- **Generated client**: `server/src/generated/prisma`
+- **ORM**: Prisma (with `prisma-client` generator)
+- **Schema location**: `server/prisma/schema.prisma`
 - **Connection**: Configured via `DATABASE_URL` environment variable
+- **Migrations**: Automatically applied on server start via `prisma migrate deploy`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Entity-Relationship Summary
 
-```
-Tenant ──1:N──► User ──1:N──► Connection ──1:N──► SharedConnection
-  │                │                │
-  │                │                ├──N:1──► Folder
-  │                │                ├──N:1──► Gateway?
-  │                │                ├──N:1──► VaultSecret? (credential)
-  │                │                └──1:N──► ActiveSession
-  │                │
-  │                ├──1:N──► Folder (tree via parentId)
-  │                ├──1:N──► RefreshToken
-  │                ├──1:N──► OAuthAccount
-  │                ├──1:N──► AuditLog
-  │                ├──1:N──► Notification
-  │                ├──1:N──► TeamMember
-  │                ├──1:N──► VaultSecret (owned)
-  │                ├──1:N──► VaultFolder
-  │                ├──1:N──► OpenTab
-  │                ├──1:N──► ActiveSession
-  │                ├──1:N──► WebAuthnCredential
-  │                └──1:N──► ExternalSecretShare
-  │
-  ├──1:N──► Team ──1:N──► TeamMember
-  │           ├──1:N──► Connection
-  │           ├──1:N──► Folder
-  │           ├──1:N──► VaultSecret
-  │           └──1:N──► VaultFolder
-  │
-  ├──1:N──► Gateway ──1:N──► ManagedGatewayInstance
-  │           ├──1:N──► Connection
-  │           └──1:N──► ActiveSession
-  │
-  ├──1:1──► SshKeyPair
-  ├──1:N──► GatewayTemplate
-  ├──1:N──► VaultSecret
-  └──1:N──► TenantVaultMember
+The database models a multi-tenant remote access management system:
 
-VaultSecret ──1:N──► VaultSecretVersion
-           ──1:N──► SharedSecret
-           ──1:N──► ExternalSecretShare
-```
-
-- A **User** belongs to an optional **Tenant** (organization)
-- A **Tenant** has many **Teams**; each **Team** has many **TeamMembers**
-- **Connections** can be personal (userId) or team-owned (teamId), optionally linked to a **Gateway** and a **VaultSecret** for credentials
-- **Connections** are organized in a hierarchical **Folder** tree
-- **SharedConnection** links a connection to a user with a permission level
-- **VaultSecrets** support versioning, sharing, and external (public) sharing
-- **Gateways** can be managed (container-based) with auto-scaling via **ManagedGatewayInstance**
-- **ActiveSession** tracks live SSH/RDP sessions across users, connections, and gateways
+- **Users** own **Connections** (SSH/RDP/VNC), organize them in **Folders**, and can **share** them with other users via **SharedConnection**.
+- **Tenants** represent organizations. Users join tenants through **TenantMember** with roles (Owner/Admin/Member).
+- **Teams** exist within tenants. Users join teams through **TeamMember** with roles (Admin/Editor/Viewer).
+- Connections can be routed through **Gateways** (GUACD, SSH Bastion, or Managed SSH). Managed gateways have **ManagedGatewayInstances** (containers).
+- **GatewayTemplates** provide reusable gateway configurations for quick deployment.
+- Each tenant has an optional **SshKeyPair** for managed SSH gateways with auto-rotation.
+- **VaultSecrets** store encrypted credentials (Login, SSH Key, Certificate, API Key, Secure Note) with versioning (**VaultSecretVersion**) and sharing (**SharedSecret**, **ExternalSecretShare**).
+- Secrets can be organized in **VaultFolders** scoped to personal, team, or tenant level.
+- **TenantVaultMember** tracks tenant-level vault key distribution.
+- **ActiveSession** tracks live SSH/RDP/VNC sessions with heartbeats and idle detection.
+- **SessionRecording** stores metadata for recorded sessions (asciicast for SSH, .guac for RDP/VNC).
+- **AuditLog** records 100+ distinct action types with optional geo-location enrichment.
+- **Notification** delivers in-app notifications for sharing and secret events.
+- **RefreshToken** manages JWT refresh token families with rotation and reuse detection.
+- **OAuthAccount** links external identity providers (Google, Microsoft, GitHub, OIDC, SAML).
+- **WebAuthnCredential** stores FIDO2/passkey credentials for passwordless MFA.
+- **OpenTab** persists the user's open connection tabs server-side.
+- **AppConfig** stores key-value application settings (e.g., self-signup toggle).
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Models
 
+### User
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| email | String | Unique | User email address |
+| username | String? | Optional | Display name |
+| avatarData | String? | Optional | Base64-encoded avatar image |
+| passwordHash | String? | Optional | Argon2 hashed password (null for OAuth-only users) |
+| vaultSalt | String? | Optional | Salt for vault key derivation |
+| encryptedVaultKey | String? | Optional | AES-256-GCM encrypted master key |
+| vaultKeyIV | String? | Optional | Vault key initialization vector |
+| vaultKeyTag | String? | Optional | Vault key auth tag |
+| vaultSetupComplete | Boolean | Default: true | Whether vault encryption is configured |
+| sshDefaults | Json? | Optional | Default SSH terminal settings |
+| rdpDefaults | Json? | Optional | Default RDP connection settings |
+| totpSecret | String? | Optional | Legacy TOTP secret (deprecated) |
+| encryptedTotpSecret | String? | Optional | Encrypted TOTP secret |
+| totpSecretIV | String? | Optional | TOTP secret IV |
+| totpSecretTag | String? | Optional | TOTP secret auth tag |
+| totpEnabled | Boolean | Default: false | TOTP 2FA enabled |
+| phoneNumber | String? | Optional | Phone number for SMS MFA |
+| phoneVerified | Boolean | Default: false | Phone number verified |
+| smsMfaEnabled | Boolean | Default: false | SMS MFA enabled |
+| smsOtpHash | String? | Optional | Current SMS OTP hash |
+| smsOtpExpiresAt | DateTime? | Optional | SMS OTP expiry |
+| webauthnEnabled | Boolean | Default: false | WebAuthn/passkey MFA enabled |
+| vaultAutoLockMinutes | Int? | Optional | User's vault auto-lock preference |
+| domainName | String? | Optional | Windows/AD domain name |
+| domainUsername | String? | Optional | Domain username |
+| encryptedDomainPassword | String? | Optional | Encrypted domain password |
+| domainPasswordIV | String? | Optional | Domain password IV |
+| domainPasswordTag | String? | Optional | Domain password auth tag |
+| enabled | Boolean | Default: true | Account enabled/disabled |
+| emailVerified | Boolean | Default: false | Email verification status |
+| emailVerifyToken | String? | Unique | Email verification token |
+| emailVerifyExpiry | DateTime? | Optional | Verification token expiry |
+| pendingEmail | String? | Optional | Pending email change address |
+| emailChangeCodeOldHash | String? | Optional | Email change OTP for old address |
+| emailChangeCodeNewHash | String? | Optional | Email change OTP for new address |
+| emailChangeExpiry | DateTime? | Optional | Email change expiry |
+| passwordResetTokenHash | String? | Unique | Password reset token hash |
+| passwordResetExpiry | DateTime? | Optional | Reset token expiry |
+| encryptedVaultRecoveryKey | String? | Optional | Encrypted vault recovery key |
+| vaultRecoveryKeyIV | String? | Optional | Recovery key IV |
+| vaultRecoveryKeyTag | String? | Optional | Recovery key auth tag |
+| vaultRecoveryKeySalt | String? | Optional | Recovery key derivation salt |
+| failedLoginAttempts | Int | Default: 0 | Failed login counter for lockout |
+| lockedUntil | DateTime? | Optional | Account lockout expiry |
+| createdAt | DateTime | Auto | Creation timestamp |
+| updatedAt | DateTime | Auto | Last update timestamp |
+
+**Relations**: tenantMemberships (TenantMember[]), connections (Connection[]), folders (Folder[]), sharedWithMe (SharedConnection[]), sharedByMe (SharedConnection[]), refreshTokens (RefreshToken[]), oauthAccounts (OAuthAccount[]), auditLogs (AuditLog[]), notifications (Notification[]), teamMembers (TeamMember[]), gatewaysCreated (Gateway[]), openTabs (OpenTab[]), vaultSecrets (VaultSecret[]), webauthnCredentials (WebAuthnCredential[]), activeSessions (ActiveSession[]), sessionRecordings (SessionRecording[])
+
+<!-- manual-start -->
+<!-- manual-end -->
+
 ### Tenant
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Organization name |
-| slug | String | `@unique` | URL-friendly identifier |
-| hasTenantVaultKey | Boolean | `@default(false)` | Whether tenant vault key is initialized |
-| mfaRequired | Boolean | `@default(false)` | Enforce MFA for all members |
-| vaultAutoLockMaxMinutes | Int? | | Max vault auto-lock timeout (overrides user setting) |
-| defaultSessionTimeoutSeconds | Int | `@default(3600)` | Default session inactivity timeout |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Organization name |
+| slug | String | Unique | URL-safe identifier |
+| hasTenantVaultKey | Boolean | Default: false | Whether tenant vault is initialized |
+| mfaRequired | Boolean | Default: false | Mandatory MFA policy |
+| vaultAutoLockMaxMinutes | Int? | Optional | Maximum vault auto-lock for members |
+| defaultSessionTimeoutSeconds | Int | Default: 3600 | Default session inactivity timeout |
+| createdAt | DateTime | Auto | Creation timestamp |
+| updatedAt | DateTime | Auto | Last update timestamp |
 
-**Relations**: `users` (User[]), `teams` (Team[]), `gateways` (Gateway[]), `gatewayTemplates` (GatewayTemplate[]), `sshKeyPair` (SshKeyPair?), `vaultSecrets` (VaultSecret[]), `tenantVaultMembers` (TenantVaultMember[])
+**Relations**: members (TenantMember[]), teams (Team[]), gateways (Gateway[]), gatewayTemplates (GatewayTemplate[]), sshKeyPair (SshKeyPair?), vaultSecrets (VaultSecret[]), tenantVaultMembers (TenantVaultMember[])
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -93,16 +122,16 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Team name |
-| description | String? | | Optional description |
-| tenantId | String | FK → Tenant | Parent organization |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Team name |
+| description | String? | Optional | Team description |
+| tenantId | String | FK -> Tenant | Parent tenant |
+| createdAt | DateTime | Auto | Creation timestamp |
+| updatedAt | DateTime | Auto | Last update timestamp |
 
-**Relations**: `tenant` (Tenant), `members` (TeamMember[]), `connections` (Connection[]), `folders` (Folder[]), `vaultSecrets` (VaultSecret[]), `vaultFolders` (VaultFolder[])
+**Unique constraint**: `[tenantId, name]`
 
-**Unique constraints**: `@@unique([tenantId, name])` — team names are unique within a tenant
+**Relations**: tenant (Tenant), members (TeamMember[]), connections (Connection[]), folders (Folder[]), vaultSecrets (VaultSecret[]), vaultFolders (VaultFolder[])
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -111,114 +140,16 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| teamId | String | FK → Team (cascade delete) | Team reference |
-| userId | String | FK → User (cascade delete) | User reference |
-| role | TeamRole | | Member's role in team |
-| encryptedTeamVaultKey | String? | | Team vault key encrypted with user's master key |
-| teamVaultKeyIV | String? | | IV for team vault key encryption |
-| teamVaultKeyTag | String? | | Auth tag for team vault key encryption |
-| joinedAt | DateTime | `@default(now())` | Join timestamp |
+| id | String | PK, UUID | Unique identifier |
+| teamId | String | FK -> Team (cascade delete) | Parent team |
+| userId | String | FK -> User (cascade delete) | Member user |
+| role | TeamRole | Enum | Member's role in team |
+| encryptedTeamVaultKey | String? | Optional | Encrypted team vault key for this member |
+| teamVaultKeyIV | String? | Optional | Team vault key IV |
+| teamVaultKeyTag | String? | Optional | Team vault key auth tag |
+| joinedAt | DateTime | Auto | Join timestamp |
 
-**Relations**: `team` (Team), `user` (User)
-
-**Unique constraints**: `@@unique([teamId, userId])` — one membership per user per team
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### User
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| email | String | `@unique` | Login email |
-| username | String? | | Display name |
-| avatarData | String? | | Base64-encoded avatar image |
-| passwordHash | String? | | Bcrypt hash (null for OAuth-only users) |
-| vaultSalt | String? | | Argon2 salt for key derivation (hex) |
-| encryptedVaultKey | String? | | AES-256-GCM encrypted master key |
-| vaultKeyIV | String? | | IV for vault key encryption |
-| vaultKeyTag | String? | | Auth tag for vault key encryption |
-| vaultSetupComplete | Boolean | `@default(true)` | Whether vault has been initialized |
-| sshDefaults | Json? | | Default SSH terminal configuration |
-| rdpDefaults | Json? | | Default RDP connection settings |
-| totpSecret | String? | | TOTP secret (legacy, plain) |
-| encryptedTotpSecret | String? | | TOTP secret encrypted with server key |
-| totpSecretIV | String? | | IV for TOTP secret encryption |
-| totpSecretTag | String? | | Auth tag for TOTP secret encryption |
-| totpEnabled | Boolean | `@default(false)` | TOTP 2FA enabled flag |
-| phoneNumber | String? | | Phone number for SMS MFA (E.164) |
-| phoneVerified | Boolean | `@default(false)` | Phone verification status |
-| smsMfaEnabled | Boolean | `@default(false)` | SMS MFA enabled flag |
-| smsOtpHash | String? | | Hashed SMS OTP code |
-| smsOtpExpiresAt | DateTime? | | SMS OTP expiration |
-| webauthnEnabled | Boolean | `@default(false)` | WebAuthn passkey enabled flag |
-| vaultAutoLockMinutes | Int? | | User-configured vault auto-lock timeout |
-| enabled | Boolean | `@default(true)` | Account enabled/disabled by admin |
-| emailVerified | Boolean | `@default(false)` | Email verification status |
-| emailVerifyToken | String? | `@unique` | Email verification token (64-char hex) |
-| emailVerifyExpiry | DateTime? | | Token expiration (24h) |
-| pendingEmail | String? | | New email pending change confirmation |
-| emailChangeCodeOldHash | String? | | Hashed OTP sent to old email |
-| emailChangeCodeNewHash | String? | | Hashed OTP sent to new email |
-| emailChangeExpiry | DateTime? | | Email change OTP expiration |
-| passwordResetTokenHash | String? | `@unique` | Hashed password reset token |
-| passwordResetExpiry | DateTime? | | Password reset expiration |
-| encryptedVaultRecoveryKey | String? | | Server-encrypted vault recovery key for MFA unlock |
-| vaultRecoveryKeyIV | String? | | IV for recovery key encryption |
-| vaultRecoveryKeyTag | String? | | Auth tag for recovery key encryption |
-| vaultRecoveryKeySalt | String? | | Argon2 salt for recovery key derivation |
-| failedLoginAttempts | Int | `@default(0)` | Failed login counter for lockout |
-| lockedUntil | DateTime? | | Account lockout expiration |
-| tenantId | String? | FK → Tenant | Organization membership |
-| tenantRole | TenantRole? | | Role within organization |
-| createdAt | DateTime | `@default(now())` | Registration timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `tenant` (Tenant?), `connections` (Connection[]), `folders` (Folder[]), `sharedWithMe` (SharedConnection[]), `sharedByMe` (SharedConnection[]), `refreshTokens` (RefreshToken[]), `oauthAccounts` (OAuthAccount[]), `auditLogs` (AuditLog[]), `notifications` (Notification[]), `teamMembers` (TeamMember[]), `gatewaysCreated` (Gateway[]), `gatewayTemplatesCreated` (GatewayTemplate[]), `openTabs` (OpenTab[]), `vaultSecrets` (VaultSecret[]), `secretVersionChanges` (VaultSecretVersion[]), `vaultFolders` (VaultFolder[]), `tenantVaultMemberships` (TenantVaultMember[]), `secretsSharedWithMe` (SharedSecret[]), `secretsSharedByMe` (SharedSecret[]), `externalSecretShares` (ExternalSecretShare[]), `activeSessions` (ActiveSession[]), `webauthnCredentials` (WebAuthnCredential[])
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### OAuthAccount
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| userId | String | FK → User (cascade delete) | Account owner |
-| provider | AuthProvider | | OAuth provider |
-| providerUserId | String | | User ID from provider |
-| providerEmail | String? | | Email from provider |
-| accessToken | String? | | OAuth access token |
-| refreshToken | String? | | OAuth refresh token |
-| samlAttributes | Json? | | SAML assertion attributes |
-| createdAt | DateTime | `@default(now())` | Link timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `user` (User)
-
-**Unique constraints**: `@@unique([provider, providerUserId])`
-
-**Indexes**: `@@index([userId])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Folder
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Folder name |
-| parentId | String? | FK → Folder (self-ref) | Parent folder for nesting |
-| userId | String | FK → User | Owner |
-| teamId | String? | FK → Team | Team ownership (null = personal) |
-| sortOrder | Int | `@default(0)` | Display order |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `parent` (Folder?), `children` (Folder[]), `user` (User), `team` (Team?), `connections` (Connection[])
+**Unique constraint**: `[teamId, userId]`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -227,142 +158,36 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Display name |
-| type | ConnectionType | | RDP or SSH |
-| host | String | | Hostname or IP |
-| port | Int | | Port number |
-| folderId | String? | FK → Folder (SetNull on delete) | Parent folder |
-| teamId | String? | FK → Team | Team ownership |
-| encryptedUsername | String? | | AES-256-GCM encrypted username |
-| usernameIV | String? | | IV for username encryption |
-| usernameTag | String? | | Auth tag for username |
-| encryptedPassword | String? | | AES-256-GCM encrypted password |
-| passwordIV | String? | | IV for password encryption |
-| passwordTag | String? | | Auth tag for password |
-| encryptedDomain | String? | | AES-256-GCM encrypted domain (RDP) |
-| domainIV | String? | | IV for domain encryption |
-| domainTag | String? | | Auth tag for domain |
-| credentialSecretId | String? | FK → VaultSecret (SetNull) | Linked vault secret for credentials |
-| description | String? | | Optional description |
-| isFavorite | Boolean | `@default(false)` | Favorite flag |
-| enableDrive | Boolean | `@default(false)` | RDP drive redirection |
-| sshTerminalConfig | Json? | | Per-connection SSH terminal settings |
-| rdpSettings | Json? | | Per-connection RDP settings |
-| userId | String | FK → User | Owner |
-| gatewayId | String? | FK → Gateway (SetNull) | Associated gateway |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Display name |
+| type | ConnectionType | Enum | SSH, RDP, or VNC |
+| host | String | Required | Target hostname/IP |
+| port | Int | Required | Target port |
+| folderId | String? | FK -> Folder (set null) | Parent folder |
+| teamId | String? | FK -> Team | Owning team |
+| encryptedUsername | String? | Optional | AES-256-GCM encrypted username |
+| usernameIV | String? | Optional | Username IV |
+| usernameTag | String? | Optional | Username auth tag |
+| encryptedPassword | String? | Optional | Encrypted password |
+| passwordIV | String? | Optional | Password IV |
+| passwordTag | String? | Optional | Password auth tag |
+| encryptedDomain | String? | Optional | Encrypted Windows domain |
+| domainIV | String? | Optional | Domain IV |
+| domainTag | String? | Optional | Domain auth tag |
+| credentialSecretId | String? | FK -> VaultSecret (set null) | Linked keychain secret |
+| description | String? | Optional | Connection notes |
+| isFavorite | Boolean | Default: false | Favorited by owner |
+| enableDrive | Boolean | Default: false | Enable RDP drive redirection |
+| sshTerminalConfig | Json? | Optional | Per-connection SSH terminal settings |
+| rdpSettings | Json? | Optional | Per-connection RDP settings |
+| vncSettings | Json? | Optional | Per-connection VNC settings |
+| defaultCredentialMode | String? | Optional | Default credential mode (saved/domain/manual) |
+| userId | String | FK -> User | Owner |
+| gatewayId | String? | FK -> Gateway (set null) | Assigned gateway |
+| createdAt | DateTime | Auto | Creation timestamp |
+| updatedAt | DateTime | Auto | Last update timestamp |
 
-**Relations**: `folder` (Folder?), `team` (Team?), `user` (User), `gateway` (Gateway?), `credentialSecret` (VaultSecret?), `shares` (SharedConnection[]), `openTabs` (OpenTab[]), `activeSessions` (ActiveSession[])
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### Gateway
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Gateway display name |
-| type | GatewayType | | GUACD, SSH_BASTION, or MANAGED_SSH |
-| host | String | | Gateway hostname |
-| port | Int | | Gateway port |
-| description | String? | | Optional description |
-| isDefault | Boolean | `@default(false)` | Default gateway for tenant |
-| tenantId | String | FK → Tenant | Parent organization |
-| createdById | String | FK → User | Creator |
-| encryptedUsername | String? | | Encrypted gateway username |
-| usernameIV | String? | | IV for username |
-| usernameTag | String? | | Auth tag for username |
-| encryptedPassword | String? | | Encrypted gateway password |
-| passwordIV | String? | | IV for password |
-| passwordTag | String? | | Auth tag for password |
-| encryptedSshKey | String? | | Encrypted SSH private key |
-| sshKeyIV | String? | | IV for SSH key |
-| sshKeyTag | String? | | Auth tag for SSH key |
-| apiPort | Int? | | API port for managed gateways |
-| templateId | String? | FK → GatewayTemplate (SetNull) | Template used for creation |
-| isManaged | Boolean | `@default(false)` | Whether instances are container-managed |
-| publishPorts | Boolean | `@default(false)` | Expose container ports to host |
-| lbStrategy | LoadBalancingStrategy | `@default(ROUND_ROBIN)` | Load balancing strategy |
-| desiredReplicas | Int | `@default(1)` | Target number of instances |
-| autoScale | Boolean | `@default(false)` | Enable auto-scaling |
-| minReplicas | Int | `@default(1)` | Minimum instances |
-| maxReplicas | Int | `@default(5)` | Maximum instances |
-| sessionsPerInstance | Int | `@default(10)` | Sessions per instance before scaling |
-| scaleDownCooldownSeconds | Int | `@default(300)` | Cooldown before scale-down |
-| lastScaleAction | DateTime? | | Last scaling event timestamp |
-| inactivityTimeoutSeconds | Int | `@default(3600)` | Session inactivity timeout |
-| monitoringEnabled | Boolean | `@default(true)` | Health monitoring flag |
-| monitorIntervalMs | Int | `@default(5000)` | Health check interval |
-| lastHealthStatus | GatewayHealthStatus | `@default(UNKNOWN)` | Latest health status |
-| lastCheckedAt | DateTime? | | Last health check timestamp |
-| lastLatencyMs | Int? | | Last measured latency |
-| lastError | String? | | Last error message |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `tenant` (Tenant), `createdBy` (User), `template` (GatewayTemplate?), `connections` (Connection[]), `activeSessions` (ActiveSession[]), `managedInstances` (ManagedGatewayInstance[])
-
-**Indexes**: `@@index([tenantId])`, `@@index([tenantId, type, isDefault])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### GatewayTemplate
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Template name |
-| type | GatewayType | | Gateway type |
-| host | String | | Default host |
-| port | Int | | Default port |
-| description | String? | | Optional description |
-| apiPort | Int? | | Default API port |
-| autoScale | Boolean | `@default(false)` | Default auto-scale setting |
-| minReplicas | Int | `@default(1)` | Default min replicas |
-| maxReplicas | Int | `@default(5)` | Default max replicas |
-| sessionsPerInstance | Int | `@default(10)` | Default sessions per instance |
-| scaleDownCooldownSeconds | Int | `@default(300)` | Default cooldown |
-| monitoringEnabled | Boolean | `@default(true)` | Default monitoring |
-| monitorIntervalMs | Int | `@default(5000)` | Default monitor interval |
-| inactivityTimeoutSeconds | Int | `@default(3600)` | Default inactivity timeout |
-| publishPorts | Boolean | `@default(false)` | Default port publishing |
-| lbStrategy | LoadBalancingStrategy | `@default(ROUND_ROBIN)` | Default LB strategy |
-| tenantId | String | FK → Tenant | Parent organization |
-| createdById | String | FK → User | Creator |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `tenant` (Tenant), `createdBy` (User), `gateways` (Gateway[])
-
-**Indexes**: `@@index([tenantId])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### SshKeyPair
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| tenantId | String | `@unique` FK → Tenant (cascade delete) | One key pair per tenant |
-| encryptedPrivateKey | String | | Server-encrypted private key |
-| privateKeyIV | String | | IV for private key encryption |
-| privateKeyTag | String | | Auth tag for private key |
-| publicKey | String | | Public key (plain text) |
-| fingerprint | String | | Key fingerprint |
-| algorithm | String | `@default("ed25519")` | Key algorithm |
-| expiresAt | DateTime? | | Key expiration date |
-| autoRotateEnabled | Boolean | `@default(false)` | Enable automatic rotation |
-| rotationIntervalDays | Int | `@default(90)` | Days between rotations |
-| lastAutoRotatedAt | DateTime? | | Last auto-rotation timestamp |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `tenant` (Tenant)
+**Relations**: folder (Folder?), team (Team?), user (User), gateway (Gateway?), credentialSecret (VaultSecret?), shares (SharedConnection[]), openTabs (OpenTab[]), activeSessions (ActiveSession[]), sessionRecordings (SessionRecording[])
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -371,25 +196,135 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| connectionId | String | FK → Connection (cascade delete) | Shared connection |
-| sharedWithUserId | String | FK → User | Recipient |
-| sharedByUserId | String | FK → User | Sharer |
-| permission | Permission | | Access level |
-| encryptedUsername | String? | | Re-encrypted username for recipient |
-| usernameIV | String? | | IV for re-encrypted username |
-| usernameTag | String? | | Auth tag for re-encrypted username |
-| encryptedPassword | String? | | Re-encrypted password for recipient |
-| passwordIV | String? | | IV for re-encrypted password |
-| passwordTag | String? | | Auth tag for re-encrypted password |
-| encryptedDomain | String? | | Re-encrypted domain for recipient |
-| domainIV | String? | | IV for re-encrypted domain |
-| domainTag | String? | | Auth tag for re-encrypted domain |
-| createdAt | DateTime | `@default(now())` | Share timestamp |
+| id | String | PK, UUID | Unique identifier |
+| connectionId | String | FK -> Connection (cascade) | Shared connection |
+| sharedWithUserId | String | FK -> User | Recipient |
+| sharedByUserId | String | FK -> User | Sharer |
+| permission | Permission | Enum | READ_ONLY or FULL_ACCESS |
+| encryptedUsername | String? | Optional | Re-encrypted credentials for recipient |
+| usernameIV, usernameTag | String? | Optional | |
+| encryptedPassword | String? | Optional | |
+| passwordIV, passwordTag | String? | Optional | |
+| encryptedDomain | String? | Optional | |
+| domainIV, domainTag | String? | Optional | |
+| createdAt | DateTime | Auto | Share timestamp |
 
-**Relations**: `connection` (Connection), `sharedWith` (User), `sharedBy` (User)
+**Unique constraint**: `[connectionId, sharedWithUserId]`
 
-**Unique constraints**: `@@unique([connectionId, sharedWithUserId])` — one share per user per connection
+<!-- manual-start -->
+<!-- manual-end -->
+
+### Folder
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Folder name |
+| parentId | String? | FK -> Folder (self-relation) | Parent folder for nesting |
+| userId | String | FK -> User | Owner |
+| teamId | String? | FK -> Team | Owning team |
+| sortOrder | Int | Default: 0 | Display order |
+| createdAt | DateTime | Auto | Creation timestamp |
+| updatedAt | DateTime | Auto | Last update timestamp |
+
+**Relations**: parent (Folder?), children (Folder[]), user (User), team (Team?), connections (Connection[])
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+### Gateway
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Display name |
+| type | GatewayType | Enum | GUACD, SSH_BASTION, or MANAGED_SSH |
+| host | String | Required | Gateway hostname |
+| port | Int | Required | Gateway port |
+| description | String? | Optional | Notes |
+| isDefault | Boolean | Default: false | Default gateway for its type |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| createdById | String | FK -> User | Creator |
+| encryptedUsername | String? | Optional | Encrypted gateway credentials |
+| usernameIV, usernameTag | String? | Optional | |
+| encryptedPassword | String? | Optional | |
+| passwordIV, passwordTag | String? | Optional | |
+| encryptedSshKey | String? | Optional | |
+| sshKeyIV, sshKeyTag | String? | Optional | |
+| apiPort | Int? | Optional | Gateway API sidecar port |
+| templateId | String? | FK -> GatewayTemplate (set null) | Source template |
+| isManaged | Boolean | Default: false | Whether orchestrator manages containers |
+| publishPorts | Boolean | Default: false | Expose container ports to host |
+| lbStrategy | LoadBalancingStrategy | Default: ROUND_ROBIN | Load balancing strategy |
+| desiredReplicas | Int | Default: 1 | Desired container count |
+| autoScale | Boolean | Default: false | Auto-scaling enabled |
+| minReplicas | Int | Default: 1 | Minimum replicas |
+| maxReplicas | Int | Default: 5 | Maximum replicas |
+| sessionsPerInstance | Int | Default: 10 | Scale threshold |
+| scaleDownCooldownSeconds | Int | Default: 300 | Cooldown after scale-down |
+| lastScaleAction | DateTime? | Optional | Last scaling event |
+| inactivityTimeoutSeconds | Int | Default: 3600 | Session inactivity timeout |
+| monitoringEnabled | Boolean | Default: true | Health monitoring active |
+| monitorIntervalMs | Int | Default: 5000 | Health check interval |
+| lastHealthStatus | GatewayHealthStatus | Default: UNKNOWN | Current health |
+| lastCheckedAt | DateTime? | Optional | Last health check |
+| lastLatencyMs | Int? | Optional | Last check latency |
+| lastError | String? | Optional | Last error message |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Indexes**: `[tenantId]`, `[tenantId, type, isDefault]`
+
+**Relations**: tenant (Tenant), createdBy (User), template (GatewayTemplate?), connections (Connection[]), activeSessions (ActiveSession[]), managedInstances (ManagedGatewayInstance[])
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+### GatewayTemplate
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Template name |
+| type | GatewayType | Enum | Gateway type |
+| host | String | Required | Default host |
+| port | Int | Required | Default port |
+| description | String? | Optional | Notes |
+| apiPort | Int? | Optional | API sidecar port |
+| autoScale, minReplicas, maxReplicas, sessionsPerInstance, scaleDownCooldownSeconds | Various | | Auto-scaling defaults |
+| monitoringEnabled, monitorIntervalMs, inactivityTimeoutSeconds | Various | | Monitoring defaults |
+| publishPorts | Boolean | Default: false | Port publishing default |
+| lbStrategy | LoadBalancingStrategy | Default: ROUND_ROBIN | LB strategy default |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| createdById | String | FK -> User | Creator |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Index**: `[tenantId]`
+
+**Relations**: tenant (Tenant), createdBy (User), gateways (Gateway[])
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+### SshKeyPair
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| tenantId | String | Unique, FK -> Tenant (cascade) | One per tenant |
+| encryptedPrivateKey | String | Required | Server-encrypted private key |
+| privateKeyIV | String | Required | |
+| privateKeyTag | String | Required | |
+| publicKey | String | Required | Public key (plaintext) |
+| fingerprint | String | Required | Key fingerprint |
+| algorithm | String | Default: "ed25519" | Key algorithm |
+| expiresAt | DateTime? | Optional | Key expiry date |
+| autoRotateEnabled | Boolean | Default: false | Auto-rotation enabled |
+| rotationIntervalDays | Int | Default: 90 | Days between rotations |
+| lastAutoRotatedAt | DateTime? | Optional | Last auto-rotation |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -398,29 +333,29 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Secret display name |
-| description | String? | | Optional description |
-| type | SecretType | | LOGIN, SSH_KEY, CERTIFICATE, API_KEY, SECURE_NOTE |
-| scope | SecretScope | | PERSONAL, TEAM, or TENANT |
-| userId | String | FK → User | Owner |
-| teamId | String? | FK → Team | Team scope (if applicable) |
-| tenantId | String? | FK → Tenant | Tenant scope (if applicable) |
-| folderId | String? | FK → VaultFolder (SetNull) | Parent vault folder |
-| encryptedData | String | | AES-256-GCM encrypted secret data |
-| dataIV | String | | IV for data encryption |
-| dataTag | String | | Auth tag for data encryption |
-| metadata | Json? | | Non-sensitive metadata |
-| tags | String[] | `@default([])` | Searchable tags |
-| isFavorite | Boolean | `@default(false)` | Favorite flag |
-| expiresAt | DateTime? | | Secret expiration date |
-| currentVersion | Int | `@default(1)` | Current version number |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
+| id | String | PK, UUID | Unique identifier |
+| name | String | Required | Secret name |
+| description | String? | Optional | Description |
+| type | SecretType | Enum | LOGIN, SSH_KEY, CERTIFICATE, API_KEY, SECURE_NOTE |
+| scope | SecretScope | Enum | PERSONAL, TEAM, TENANT |
+| userId | String | FK -> User | Owner |
+| teamId | String? | FK -> Team | Team scope |
+| tenantId | String? | FK -> Tenant | Tenant scope |
+| folderId | String? | FK -> VaultFolder (set null) | Parent folder |
+| encryptedData | String | Required | AES-256-GCM encrypted payload |
+| dataIV | String | Required | |
+| dataTag | String | Required | |
+| metadata | Json? | Optional | Additional metadata |
+| tags | String[] | Default: [] | Searchable tags |
+| isFavorite | Boolean | Default: false | Favorited |
+| expiresAt | DateTime? | Optional | Secret expiry date |
+| currentVersion | Int | Default: 1 | Current version number |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
 
-**Relations**: `user` (User), `team` (Team?), `tenant` (Tenant?), `folder` (VaultFolder?), `versions` (VaultSecretVersion[]), `shares` (SharedSecret[]), `externalShares` (ExternalSecretShare[]), `connections` (Connection[])
+**Indexes**: `[userId, scope]`, `[teamId]`, `[tenantId, scope]`, `[expiresAt]`
 
-**Indexes**: `@@index([userId, scope])`, `@@index([teamId])`, `@@index([tenantId, scope])`, `@@index([expiresAt])`
+**Relations**: user (User), team (Team?), tenant (Tenant?), folder (VaultFolder?), versions (VaultSecretVersion[]), shares (SharedSecret[]), externalShares (ExternalSecretShare[]), connections (Connection[])
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -429,21 +364,17 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| secretId | String | FK → VaultSecret (cascade delete) | Parent secret |
-| version | Int | | Version number |
-| encryptedData | String | | Encrypted version data |
-| dataIV | String | | IV for data encryption |
-| dataTag | String | | Auth tag for data encryption |
-| changedBy | String | FK → User | User who created this version |
-| changeNote | String? | | Optional change description |
-| createdAt | DateTime | `@default(now())` | Version timestamp |
+| id | String | PK, UUID | |
+| secretId | String | FK -> VaultSecret (cascade) | Parent secret |
+| version | Int | Required | Version number |
+| encryptedData | String | Required | Encrypted payload snapshot |
+| dataIV | String | Required | |
+| dataTag | String | Required | |
+| changedBy | String | FK -> User | User who made the change |
+| changeNote | String? | Optional | Version note |
+| createdAt | DateTime | Auto | |
 
-**Relations**: `secret` (VaultSecret), `changer` (User)
-
-**Unique constraints**: `@@unique([secretId, version])`
-
-**Indexes**: `@@index([secretId])`
+**Unique constraint**: `[secretId, version]` | **Index**: `[secretId]`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -452,60 +383,17 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| secretId | String | FK → VaultSecret (cascade delete) | Shared secret |
-| sharedWithUserId | String | FK → User | Recipient |
-| sharedByUserId | String | FK → User | Sharer |
-| permission | Permission | | Access level |
-| encryptedData | String | | Re-encrypted data for recipient |
-| dataIV | String | | IV for re-encrypted data |
-| dataTag | String | | Auth tag for re-encrypted data |
-| createdAt | DateTime | `@default(now())` | Share timestamp |
+| id | String | PK, UUID | |
+| secretId | String | FK -> VaultSecret (cascade) | Shared secret |
+| sharedWithUserId | String | FK -> User | Recipient |
+| sharedByUserId | String | FK -> User | Sharer |
+| permission | Permission | Enum | READ_ONLY or FULL_ACCESS |
+| encryptedData | String | Required | Re-encrypted for recipient's key |
+| dataIV | String | Required | |
+| dataTag | String | Required | |
+| createdAt | DateTime | Auto | |
 
-**Relations**: `secret` (VaultSecret), `sharedWith` (User), `sharedBy` (User)
-
-**Unique constraints**: `@@unique([secretId, sharedWithUserId])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### VaultFolder
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| name | String | | Folder name |
-| parentId | String? | FK → VaultFolder (self-ref) | Parent folder for nesting |
-| userId | String | FK → User | Owner |
-| scope | SecretScope | | PERSONAL, TEAM, or TENANT |
-| teamId | String? | FK → Team | Team ownership |
-| tenantId | String? | | Tenant ownership |
-| sortOrder | Int | `@default(0)` | Display order |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
-
-**Relations**: `parent` (VaultFolder?), `children` (VaultFolder[]), `user` (User), `team` (Team?), `secrets` (VaultSecret[])
-
-**Indexes**: `@@index([userId, scope])`, `@@index([teamId])`, `@@index([tenantId])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### TenantVaultMember
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| tenantId | String | FK → Tenant (cascade delete) | Tenant |
-| userId | String | FK → User (cascade delete) | Member |
-| encryptedTenantVaultKey | String | | Tenant vault key encrypted with user's master key |
-| tenantVaultKeyIV | String | | IV for encryption |
-| tenantVaultKeyTag | String | | Auth tag for encryption |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-
-**Relations**: `tenant` (Tenant), `user` (User)
-
-**Unique constraints**: `@@unique([tenantId, userId])`
+**Unique constraint**: `[secretId, sharedWithUserId]`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -514,66 +402,24 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| secretId | String | FK → VaultSecret (cascade delete) | Shared secret |
-| createdByUserId | String | FK → User | Creator |
-| tokenHash | String | `@unique` | Hashed access token |
-| encryptedData | String | | Independently encrypted data |
-| dataIV | String | | IV for data encryption |
-| dataTag | String | | Auth tag for data encryption |
-| hasPin | Boolean | `@default(false)` | Whether PIN protection is enabled |
-| pinSalt | String? | | Salt for PIN-based key derivation |
-| tokenSalt | String? | | Salt for token-based key derivation |
-| expiresAt | DateTime | | Link expiration |
-| maxAccessCount | Int? | | Maximum number of accesses |
-| accessCount | Int | `@default(0)` | Current access count |
-| secretType | SecretType | | Type of the shared secret |
-| secretName | String | | Name snapshot at time of sharing |
-| isRevoked | Boolean | `@default(false)` | Manual revocation flag |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
+| id | String | PK, UUID | |
+| secretId | String | FK -> VaultSecret (cascade) | Source secret |
+| createdByUserId | String | FK -> User | Creator |
+| tokenHash | String | Unique | SHA-256 hash of access token |
+| encryptedData | String | Required | Token-derived key encrypted payload |
+| dataIV, dataTag | String | Required | |
+| hasPin | Boolean | Default: false | PIN protection enabled |
+| pinSalt | String? | Optional | Salt for PIN derivation |
+| tokenSalt | String? | Optional | Salt for HKDF token derivation |
+| expiresAt | DateTime | Required | Share expiry |
+| maxAccessCount | Int? | Optional | Maximum access limit |
+| accessCount | Int | Default: 0 | Current access count |
+| secretType | SecretType | Enum | Type of shared secret |
+| secretName | String | Required | Name snapshot |
+| isRevoked | Boolean | Default: false | Manually revoked |
+| createdAt | DateTime | Auto | |
 
-**Relations**: `secret` (VaultSecret), `createdBy` (User)
-
-**Indexes**: `@@index([tokenHash])`, `@@index([expiresAt])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### RefreshToken
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| token | String | `@unique` | Token value (UUID) |
-| userId | String | FK → User (cascade delete) | Token owner |
-| tokenFamily | String | | Token family for reuse detection |
-| revokedAt | DateTime? | | Revocation timestamp (null = active) |
-| expiresAt | DateTime | | Expiration timestamp |
-| createdAt | DateTime | `@default(now())` | Issue timestamp |
-
-**Relations**: `user` (User)
-
-**Indexes**: `@@index([tokenFamily])`, `@@index([userId])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### OpenTab
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| userId | String | FK → User (cascade delete) | Tab owner |
-| connectionId | String | FK → Connection (cascade delete) | Open connection |
-| sortOrder | Int | `@default(0)` | Tab order |
-| isActive | Boolean | `@default(false)` | Currently selected tab |
-| createdAt | DateTime | `@default(now())` | Open timestamp |
-
-**Relations**: `user` (User), `connection` (Connection)
-
-**Unique constraints**: `@@unique([userId, connectionId])`
-
-**Indexes**: `@@index([userId])`
+**Indexes**: `[tokenHash]`, `[expiresAt]`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -582,333 +428,157 @@ VaultSecret ──1:N──► VaultSecretVersion
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| userId | String | FK → User (cascade delete) | Session user |
-| connectionId | String | FK → Connection (cascade delete) | Target connection |
-| gatewayId | String? | FK → Gateway (SetNull) | Gateway used |
-| instanceId | String? | FK → ManagedGatewayInstance (SetNull) | Managed instance used |
-| protocol | SessionProtocol | | SSH or RDP |
-| status | SessionStatus | `@default(ACTIVE)` | ACTIVE, IDLE, or CLOSED |
-| socketId | String? | | Socket.IO socket ID (SSH) |
-| guacTokenHash | String? | | Hashed Guacamole token (RDP) |
-| startedAt | DateTime | `@default(now())` | Session start |
-| lastActivityAt | DateTime | `@default(now())` | Last activity timestamp |
-| endedAt | DateTime? | | Session end timestamp |
-| metadata | Json? | | Additional session metadata |
+| id | String | PK, UUID | |
+| userId | String | FK -> User (cascade) | Session owner |
+| connectionId | String | FK -> Connection (cascade) | Target connection |
+| gatewayId | String? | FK -> Gateway (set null) | Routing gateway |
+| instanceId | String? | FK -> ManagedGatewayInstance (set null) | Specific container instance |
+| protocol | SessionProtocol | Enum | SSH, RDP, or VNC |
+| status | SessionStatus | Default: ACTIVE | ACTIVE, IDLE, or CLOSED |
+| socketId | String? | Optional | Socket.IO socket ID (SSH) |
+| guacTokenHash | String? | Optional | Guacamole token hash (RDP/VNC) |
+| ipAddress | String? | Optional | Client IP address |
+| startedAt | DateTime | Auto | Session start |
+| lastActivityAt | DateTime | Auto | Last activity |
+| endedAt | DateTime? | Optional | Session end |
+| metadata | Json? | Optional | Host, port, credential source, routing info |
 
-**Relations**: `user` (User), `connection` (Connection), `gateway` (Gateway?), `instance` (ManagedGatewayInstance?)
-
-**Indexes**: `@@index([userId, status])`, `@@index([status])`, `@@index([gatewayId, status])`, `@@index([protocol, status])`, `@@index([lastActivityAt])`, `@@index([socketId])`, `@@index([guacTokenHash])`, `@@index([instanceId, status])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### AuditLog
-
-| Field | Type | Constraints | Description |
-|-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| userId | String? | FK → User (cascade delete) | Acting user |
-| action | AuditAction | | Action type |
-| targetType | String? | | Type of target entity |
-| targetId | String? | | ID of target entity |
-| details | Json? | | Additional context |
-| ipAddress | String? | | Client IP address |
-| gatewayId | String? | | Associated gateway ID |
-| createdAt | DateTime | `@default(now())` | Timestamp |
-
-**Relations**: `user` (User?)
-
-**Indexes**: `@@index([userId])`, `@@index([action])`, `@@index([createdAt])`, `@@index([gatewayId])`
+**Indexes**: `[userId, status]`, `[status]`, `[gatewayId, status]`, `[protocol, status]`, `[lastActivityAt]`, `[socketId]`, `[guacTokenHash]`, `[instanceId, status]`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
-### Notification
+### Other Models
+
+#### RefreshToken
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| userId | String | FK → User (cascade delete) | Recipient |
-| type | NotificationType | | Notification category |
-| message | String | | Display message |
-| read | Boolean | `@default(false)` | Read status |
-| relatedId | String? | | Related entity ID |
-| createdAt | DateTime | `@default(now())` | Timestamp |
+| id | String | PK, UUID | |
+| token | String | Unique | Refresh token value |
+| userId | String | FK -> User (cascade) | Token owner |
+| tokenFamily | String | Indexed | Rotation family ID |
+| revokedAt | DateTime? | Optional | Revocation timestamp |
+| expiresAt | DateTime | Required | Token expiry |
+| createdAt | DateTime | Auto | |
 
-**Relations**: `user` (User)
-
-**Indexes**: `@@index([userId, read])`, `@@index([userId, createdAt])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### WebAuthnCredential
+#### OAuthAccount
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| userId | String | FK → User (cascade delete) | Credential owner |
-| credentialId | String | `@unique` | WebAuthn credential ID |
-| publicKey | String | | Credential public key |
-| counter | BigInt | `@default(0)` | Signature counter |
-| transports | String[] | `@default([])` | Supported transports |
-| deviceType | String? | | Device type identifier |
-| backedUp | Boolean | `@default(false)` | Whether credential is backed up |
-| friendlyName | String | `@default("Security Key")` | User-assigned name |
-| aaguid | String? | | Authenticator Attestation GUID |
-| lastUsedAt | DateTime? | | Last authentication timestamp |
-| createdAt | DateTime | `@default(now())` | Registration timestamp |
+| id | String | PK, UUID | |
+| userId | String | FK -> User (cascade), Indexed | |
+| provider | AuthProvider | Enum | LOCAL, GOOGLE, MICROSOFT, GITHUB, OIDC, SAML |
+| providerUserId | String | Required | External user ID |
+| providerEmail | String? | Optional | External email |
+| accessToken, refreshToken | String? | Optional | Stored OAuth tokens |
+| samlAttributes | Json? | Optional | SAML assertion attributes |
 
-**Relations**: `user` (User)
+**Unique constraint**: `[provider, providerUserId]`
 
-**Indexes**: `@@index([userId])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### ManagedGatewayInstance
+#### WebAuthnCredential
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| id | String | `@id @default(uuid())` | Primary key |
-| gatewayId | String | FK → Gateway (cascade delete) | Parent gateway |
-| containerId | String | `@unique` | Container runtime ID |
-| containerName | String | | Container name |
-| host | String | | Instance hostname |
-| port | Int | | Instance port |
-| apiPort | Int? | | Instance API port |
-| status | ManagedInstanceStatus | `@default(PROVISIONING)` | PROVISIONING, RUNNING, STOPPED, ERROR, REMOVING |
-| orchestratorType | String | | Container runtime type |
-| healthStatus | String? | | Last health check result |
-| lastHealthCheck | DateTime? | | Last health check timestamp |
-| errorMessage | String? | | Last error message |
-| consecutiveFailures | Int | `@default(0)` | Consecutive health check failures |
-| createdAt | DateTime | `@default(now())` | Creation timestamp |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
+| id | String | PK, UUID | |
+| userId | String | FK -> User (cascade), Indexed | |
+| credentialId | String | Unique | WebAuthn credential ID |
+| publicKey | String | Required | COSE public key |
+| counter | BigInt | Default: 0 | Signature counter |
+| transports | String[] | Default: [] | Supported transports |
+| deviceType | String? | Optional | Device type |
+| backedUp | Boolean | Default: false | Backup eligible |
+| friendlyName | String | Default: "Security Key" | Display name |
+| aaguid | String? | Optional | Authenticator AAGUID |
+| lastUsedAt | DateTime? | Optional | Last authentication |
+| createdAt | DateTime | Auto | |
 
-**Relations**: `gateway` (Gateway), `sessions` (ActiveSession[])
-
-**Indexes**: `@@index([gatewayId])`, `@@index([status])`
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-### AppConfig
+#### ManagedGatewayInstance
 
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
-| key | String | `@id` | Configuration key |
-| value | String | | Configuration value |
-| updatedAt | DateTime | `@updatedAt` | Last update timestamp |
+| id | String | PK, UUID | |
+| gatewayId | String | FK -> Gateway (cascade) | Parent gateway |
+| containerId | String | Unique | Container/pod ID |
+| containerName | String | Required | Container name |
+| host | String | Required | Container hostname |
+| port | Int | Required | SSH port |
+| apiPort | Int? | Optional | API sidecar port |
+| status | ManagedInstanceStatus | Default: PROVISIONING | PROVISIONING, RUNNING, STOPPED, ERROR, REMOVING |
+| orchestratorType | String | Required | docker, podman, or kubernetes |
+| healthStatus | String? | Optional | Last health check result |
+| lastHealthCheck | DateTime? | Optional | |
+| errorMessage | String? | Optional | |
+| consecutiveFailures | Int | Default: 0 | |
+| createdAt, updatedAt | DateTime | Auto | |
 
-A key-value store for runtime application settings (e.g., `selfSignupEnabled`).
+**Indexes**: `[gatewayId]`, `[status]`
+
+#### SessionRecording
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | |
+| sessionId | String? | Optional | Linked active session |
+| userId | String | FK -> User (cascade) | |
+| connectionId | String | FK -> Connection (cascade) | |
+| protocol | SessionProtocol | Enum | SSH, RDP, or VNC |
+| filePath | String | Required | Recording file path |
+| fileSize | Int? | Optional | File size in bytes |
+| duration | Int? | Optional | Duration in seconds |
+| width, height | Int? | Optional | Terminal/display dimensions |
+| format | String | Default: "asciicast" | asciicast or guac |
+| status | RecordingStatus | Default: RECORDING | RECORDING, COMPLETE, ERROR |
+| createdAt | DateTime | Auto | |
+| completedAt | DateTime? | Optional | |
+
+**Indexes**: `[userId, createdAt]`, `[sessionId]`, `[connectionId]`
+
+#### Notification
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | |
+| userId | String | FK -> User (cascade) | |
+| type | NotificationType | Enum | Event type |
+| message | String | Required | Notification text |
+| read | Boolean | Default: false | Read status |
+| relatedId | String? | Optional | Related entity ID |
+| createdAt | DateTime | Auto | |
+
+**Indexes**: `[userId, read]`, `[userId, createdAt]`
+
+#### OpenTab, TenantMember, TenantVaultMember, VaultFolder, AppConfig
+
+- **OpenTab**: userId + connectionId (unique), sortOrder, isActive. Index: `[userId]`
+- **TenantMember**: tenantId + userId (unique), role (TenantRole), isActive. Index: `[userId, isActive]`
+- **TenantVaultMember**: tenantId + userId (unique), encryptedTenantVaultKey + IV + tag
+- **VaultFolder**: self-referential tree, scoped to personal/team/tenant. Indexes: `[userId, scope]`, `[teamId]`, `[tenantId]`
+- **AppConfig**: key (PK string), value, updatedAt
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Enums
 
-### TenantRole
-
-| Value | Description |
-|-------|-------------|
-| `OWNER` | Full control, can delete tenant |
-| `ADMIN` | Can manage members and settings |
-| `MEMBER` | Basic access |
-
-### TeamRole
-
-| Value | Description |
-|-------|-------------|
-| `TEAM_ADMIN` | Full team management |
-| `TEAM_EDITOR` | Can edit team connections |
-| `TEAM_VIEWER` | Read-only access |
-
-### ConnectionType
-
-| Value | Description |
-|-------|-------------|
-| `RDP` | Remote Desktop Protocol |
-| `SSH` | Secure Shell |
-
-### GatewayType
-
-| Value | Description |
-|-------|-------------|
-| `GUACD` | Guacamole daemon proxy |
-| `SSH_BASTION` | SSH jump host |
-| `MANAGED_SSH` | Container-managed SSH gateway |
-
-### GatewayHealthStatus
-
-| Value | Description |
-|-------|-------------|
-| `UNKNOWN` | Not yet checked |
-| `REACHABLE` | Health check passed |
-| `UNREACHABLE` | Health check failed |
-
-### SessionProtocol
-
-| Value | Description |
-|-------|-------------|
-| `SSH` | SSH session |
-| `RDP` | RDP session |
-
-### SessionStatus
-
-| Value | Description |
-|-------|-------------|
-| `ACTIVE` | Session in use |
-| `IDLE` | Session idle (no recent activity) |
-| `CLOSED` | Session ended |
-
-### ManagedInstanceStatus
-
-| Value | Description |
-|-------|-------------|
-| `PROVISIONING` | Container starting up |
-| `RUNNING` | Container healthy and active |
-| `STOPPED` | Container stopped |
-| `ERROR` | Container in error state |
-| `REMOVING` | Container being removed |
-
-### LoadBalancingStrategy
-
-| Value | Description |
-|-------|-------------|
-| `ROUND_ROBIN` | Distribute evenly across instances |
-| `LEAST_CONNECTIONS` | Route to instance with fewest sessions |
-
-### Permission
-
-| Value | Description |
-|-------|-------------|
-| `READ_ONLY` | View connection details only |
-| `FULL_ACCESS` | View and use credentials |
-
-### SecretType
-
-| Value | Description |
-|-------|-------------|
-| `LOGIN` | Username/password credentials |
-| `SSH_KEY` | SSH private/public key pair |
-| `CERTIFICATE` | TLS/SSL certificate |
-| `API_KEY` | API key or token |
-| `SECURE_NOTE` | Free-form encrypted note |
-
-### SecretScope
-
-| Value | Description |
-|-------|-------------|
-| `PERSONAL` | Owned by individual user |
-| `TEAM` | Shared within a team |
-| `TENANT` | Organization-wide |
-
-### AuthProvider
-
-| Value | Description |
-|-------|-------------|
-| `LOCAL` | Email/password registration |
-| `GOOGLE` | Google OAuth |
-| `MICROSOFT` | Microsoft OAuth |
-| `GITHUB` | GitHub OAuth |
-| `OIDC` | Generic OpenID Connect |
-| `SAML` | SAML 2.0 |
-
-### NotificationType
-
-| Value | Description |
-|-------|-------------|
-| `CONNECTION_SHARED` | A connection was shared with you |
-| `SHARE_PERMISSION_UPDATED` | Share permission was changed |
-| `SHARE_REVOKED` | A share was revoked |
-| `SECRET_SHARED` | A secret was shared with you |
-| `SECRET_SHARE_REVOKED` | Secret share was revoked |
-| `SECRET_EXPIRING` | A secret is nearing expiry |
-| `SECRET_EXPIRED` | A secret has expired |
-
-### AuditAction
-
-106 action types organized by category:
-
-| Category | Actions |
-|----------|---------|
-| Authentication | `LOGIN`, `LOGIN_OAUTH`, `LOGIN_TOTP`, `LOGIN_SMS`, `LOGIN_WEBAUTHN`, `LOGIN_FAILURE`, `LOGOUT`, `REGISTER` |
-| Password Reset | `PASSWORD_RESET_REQUEST`, `PASSWORD_RESET_COMPLETE`, `PASSWORD_RESET_FAILURE` |
-| Vault | `VAULT_UNLOCK`, `VAULT_LOCK`, `VAULT_SETUP`, `VAULT_AUTO_LOCK`, `VAULT_RECOVERY_KEY_GENERATED`, `VAULT_RESET` |
-| Connections | `CREATE_CONNECTION`, `UPDATE_CONNECTION`, `DELETE_CONNECTION`, `CONNECTION_FAVORITE` |
-| Sharing | `SHARE_CONNECTION`, `UNSHARE_CONNECTION`, `UPDATE_SHARE_PERMISSION`, `BATCH_SHARE` |
-| Folders | `CREATE_FOLDER`, `UPDATE_FOLDER`, `DELETE_FOLDER` |
-| User | `PASSWORD_CHANGE`, `PROFILE_UPDATE`, `PASSWORD_REVEAL`, `PROFILE_EMAIL_CHANGE` |
-| MFA | `TOTP_ENABLE`, `TOTP_DISABLE`, `SMS_MFA_ENABLE`, `SMS_MFA_DISABLE`, `SMS_PHONE_VERIFY`, `WEBAUTHN_REGISTER`, `WEBAUTHN_REMOVE` |
-| OAuth | `OAUTH_LINK`, `OAUTH_UNLINK` |
-| Tenants | `TENANT_CREATE`, `TENANT_UPDATE`, `TENANT_DELETE`, `TENANT_INVITE_USER`, `TENANT_REMOVE_USER`, `TENANT_UPDATE_USER_ROLE`, `TENANT_CREATE_USER`, `TENANT_TOGGLE_USER`, `TENANT_VAULT_INIT`, `TENANT_VAULT_KEY_DISTRIBUTE`, `TENANT_MFA_POLICY_UPDATE` |
-| Teams | `TEAM_CREATE`, `TEAM_UPDATE`, `TEAM_DELETE`, `TEAM_ADD_MEMBER`, `TEAM_REMOVE_MEMBER`, `TEAM_UPDATE_MEMBER_ROLE` |
-| Admin | `EMAIL_TEST_SEND`, `APP_CONFIG_UPDATE`, `ADMIN_EMAIL_CHANGE`, `ADMIN_PASSWORD_CHANGE` |
-| Gateways | `GATEWAY_CREATE`, `GATEWAY_UPDATE`, `GATEWAY_DELETE`, `GATEWAY_DEPLOY`, `GATEWAY_UNDEPLOY`, `GATEWAY_SCALE`, `GATEWAY_SCALE_UP`, `GATEWAY_SCALE_DOWN`, `GATEWAY_RESTART`, `GATEWAY_VIEW_LOGS`, `GATEWAY_HEALTH_CHECK`, `GATEWAY_RECONCILE` |
-| SSH Keys | `SSH_KEY_GENERATE`, `SSH_KEY_ROTATE`, `SSH_KEY_PUSH`, `SSH_KEY_AUTO_ROTATE` |
-| Gateway Templates | `GATEWAY_TEMPLATE_CREATE`, `GATEWAY_TEMPLATE_UPDATE`, `GATEWAY_TEMPLATE_DELETE`, `GATEWAY_TEMPLATE_DEPLOY` |
-| Sessions | `SESSION_START`, `SESSION_END`, `SESSION_TIMEOUT`, `SESSION_ERROR`, `SESSION_TERMINATE` |
-| Secrets | `SECRET_CREATE`, `SECRET_READ`, `SECRET_UPDATE`, `SECRET_DELETE`, `SECRET_SHARE`, `SECRET_UNSHARE`, `SECRET_SHARE_UPDATE`, `SECRET_EXTERNAL_SHARE`, `SECRET_EXTERNAL_ACCESS`, `SECRET_EXTERNAL_REVOKE`, `SECRET_VERSION_RESTORE` |
-| SFTP | `SFTP_UPLOAD`, `SFTP_DOWNLOAD`, `SFTP_DELETE`, `SFTP_MKDIR`, `SFTP_RENAME` |
-| Tokens | `REFRESH_TOKEN_REUSE` |
-
-<!-- manual-start -->
-<!-- manual-end -->
-
-## Indexes and Unique Constraints
-
-| Model | Type | Fields |
-|-------|------|--------|
-| Tenant | Unique | `slug` |
-| Team | Unique | `[tenantId, name]` |
-| TeamMember | Unique | `[teamId, userId]` |
-| User | Unique | `email` |
-| User | Unique | `emailVerifyToken` |
-| User | Unique | `passwordResetTokenHash` |
-| OAuthAccount | Unique | `[provider, providerUserId]` |
-| OAuthAccount | Index | `[userId]` |
-| SharedConnection | Unique | `[connectionId, sharedWithUserId]` |
-| RefreshToken | Unique | `token` |
-| RefreshToken | Index | `[tokenFamily]` |
-| RefreshToken | Index | `[userId]` |
-| OpenTab | Unique | `[userId, connectionId]` |
-| OpenTab | Index | `[userId]` |
-| VaultSecret | Index | `[userId, scope]` |
-| VaultSecret | Index | `[teamId]` |
-| VaultSecret | Index | `[tenantId, scope]` |
-| VaultSecret | Index | `[expiresAt]` |
-| VaultSecretVersion | Unique | `[secretId, version]` |
-| VaultSecretVersion | Index | `[secretId]` |
-| SharedSecret | Unique | `[secretId, sharedWithUserId]` |
-| TenantVaultMember | Unique | `[tenantId, userId]` |
-| ExternalSecretShare | Unique | `tokenHash` |
-| ExternalSecretShare | Index | `[tokenHash]` |
-| ExternalSecretShare | Index | `[expiresAt]` |
-| Gateway | Index | `[tenantId]` |
-| Gateway | Index | `[tenantId, type, isDefault]` |
-| GatewayTemplate | Index | `[tenantId]` |
-| ActiveSession | Index | `[userId, status]` |
-| ActiveSession | Index | `[status]` |
-| ActiveSession | Index | `[gatewayId, status]` |
-| ActiveSession | Index | `[protocol, status]` |
-| ActiveSession | Index | `[lastActivityAt]` |
-| ActiveSession | Index | `[socketId]` |
-| ActiveSession | Index | `[guacTokenHash]` |
-| ActiveSession | Index | `[instanceId, status]` |
-| AuditLog | Index | `[userId]` |
-| AuditLog | Index | `[action]` |
-| AuditLog | Index | `[createdAt]` |
-| AuditLog | Index | `[gatewayId]` |
-| Notification | Index | `[userId, read]` |
-| Notification | Index | `[userId, createdAt]` |
-| WebAuthnCredential | Unique | `credentialId` |
-| WebAuthnCredential | Index | `[userId]` |
-| ManagedGatewayInstance | Unique | `containerId` |
-| ManagedGatewayInstance | Index | `[gatewayId]` |
-| ManagedGatewayInstance | Index | `[status]` |
-| SshKeyPair | Unique | `tenantId` |
+| Enum | Values |
+|------|--------|
+| **ConnectionType** | `RDP`, `SSH`, `VNC` |
+| **GatewayType** | `GUACD`, `SSH_BASTION`, `MANAGED_SSH` |
+| **Permission** | `READ_ONLY`, `FULL_ACCESS` |
+| **TenantRole** | `OWNER`, `ADMIN`, `MEMBER` |
+| **TeamRole** | `TEAM_ADMIN`, `TEAM_EDITOR`, `TEAM_VIEWER` |
+| **SecretType** | `LOGIN`, `SSH_KEY`, `CERTIFICATE`, `API_KEY`, `SECURE_NOTE` |
+| **SecretScope** | `PERSONAL`, `TEAM`, `TENANT` |
+| **SessionProtocol** | `SSH`, `RDP`, `VNC` |
+| **SessionStatus** | `ACTIVE`, `IDLE`, `CLOSED` |
+| **AuthProvider** | `LOCAL`, `GOOGLE`, `MICROSOFT`, `GITHUB`, `OIDC`, `SAML` |
+| **GatewayHealthStatus** | `UNKNOWN`, `REACHABLE`, `UNREACHABLE` |
+| **ManagedInstanceStatus** | `PROVISIONING`, `RUNNING`, `STOPPED`, `ERROR`, `REMOVING` |
+| **LoadBalancingStrategy** | `ROUND_ROBIN`, `LEAST_CONNECTIONS` |
+| **NotificationType** | `CONNECTION_SHARED`, `SHARE_PERMISSION_UPDATED`, `SHARE_REVOKED`, `SECRET_SHARED`, `SECRET_SHARE_REVOKED`, `SECRET_EXPIRING`, `SECRET_EXPIRED` |
+| **RecordingStatus** | `RECORDING`, `COMPLETE`, `ERROR` |
+| **AuditAction** | 100+ values — see `server/prisma/schema.prisma` for the full list |
 
 <!-- manual-start -->
 <!-- manual-end -->
