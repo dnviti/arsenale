@@ -66,6 +66,8 @@ function hashToken(token: string): string {
 
 export async function startSession(params: StartSessionParams): Promise<string> {
   try {
+    const resolvedIp = (Array.isArray(params.ipAddress) ? params.ipAddress[0] : params.ipAddress) ?? null;
+
     const session = await prisma.activeSession.create({
       data: {
         userId: params.userId,
@@ -76,6 +78,7 @@ export async function startSession(params: StartSessionParams): Promise<string> 
         status: 'ACTIVE',
         socketId: params.socketId ?? null,
         guacTokenHash: params.guacToken ? hashToken(params.guacToken) : null,
+        ipAddress: resolvedIp,
         metadata: (params.metadata as Prisma.InputJsonValue) ?? Prisma.JsonNull,
       },
       include: { gateway: params.gatewayId ? { select: { name: true } } : false },
@@ -143,6 +146,7 @@ export async function endSession(
         ...(reason ? { reason } : {}),
         ...(session.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId } : {}),
       },
+      ipAddress: session.ipAddress ?? undefined,
       gatewayId: session.gatewayId,
     });
   } catch (err) {
@@ -212,6 +216,7 @@ export async function closeStaleSessionsForConnection(
             ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId }
             : {}),
         },
+        ipAddress: session.ipAddress ?? undefined,
         gatewayId: session.gatewayId,
       });
     }
@@ -381,6 +386,7 @@ export async function recoverOrphanedSessions(): Promise<number> {
         durationFormatted: formatDuration(now.getTime() - session.startedAt.getTime()),
         ...(session.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId } : {}),
       },
+      ipAddress: session.ipAddress ?? undefined,
       gatewayId: session.gatewayId,
     });
   }

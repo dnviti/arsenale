@@ -785,6 +785,7 @@ model ActiveSession {
   status         SessionStatus   @default(ACTIVE)
   socketId       String?
   guacTokenHash  String?
+  ipAddress      String?
   startedAt      DateTime        @default(now())
   lastActivityAt DateTime        @default(now())
   endedAt        DateTime?

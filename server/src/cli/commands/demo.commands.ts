@@ -147,7 +147,7 @@ export function registerDemoCommands(program: Command): void {
             host: 'ssh-gateway',
             port: 2222,
             description: 'Default demo SSH gateway',
-            isDefault: true,
+            isDefault: false,
           });
           printSuccess('Created default SSH gateway');
         }

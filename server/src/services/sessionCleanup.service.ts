@@ -84,6 +84,7 @@ export async function checkAndCloseInactiveSessions(): Promise<number> {
           effectiveTimeoutSeconds: effectiveTimeout,
           ...(session.gatewayId ? { gatewayName: session.gateway?.name ?? null, instanceId: session.instanceId } : {}),
         },
+        ipAddress: session.ipAddress ?? undefined,
         gatewayId: session.gatewayId,
       });
 
