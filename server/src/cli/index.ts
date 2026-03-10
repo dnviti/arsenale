@@ -7,6 +7,7 @@ import { registerAuditCommands } from './commands/audit.commands';
 import { registerGatewayCommands } from './commands/gateway.commands';
 import { registerSessionCommands } from './commands/session.commands';
 import { registerConfigCommands } from './commands/config.commands';
+import { registerDemoCommands } from './commands/demo.commands';
 
 export function registerCommands(program: Command): void {
   registerHealthCommands(program);
@@ -17,4 +18,5 @@ export function registerCommands(program: Command): void {
   registerGatewayCommands(program);
   registerSessionCommands(program);
   registerConfigCommands(program);
+  registerDemoCommands(program);
 }

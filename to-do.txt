@@ -1415,3 +1415,107 @@
      un soft-lockout all'account utente.
   4) Registrare evento audit ANOMALOUS_LATERAL_MOVEMENT.
 
+================================================================================
+  SEZIONE J — PRIVILEGED ACCESS MANAGEMENT (PAM)
+================================================================================
+
+------------------------------------------------------------------------------
+[ ] PAM-111 — Temporary Credential Check-out / Check-in
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: VAULT-054 (completato)
+
+  DESCRIZIONE:
+  Implementare un workflow di "prestito" (Check-out) per le credenziali
+  privilegiate. Invece di avere accesso persistente, un utente richiede
+  l'accesso temporaneo a un secret o connessione. Una volta approvato, 
+  l'accesso scade automaticamente (Check-in) dopo un periodo configurato.
+  Questo implementa il principio del "Just-in-Time" (JIT) access.
+
+  DETTAGLI TECNICI:
+  1) Nuovo modello Prisma: SecretCheckoutRequest { id, secretId, requesterId, 
+     approverId?, status (PENDING, APPROVED, REJECTED, EXPIRED), durationMinutes, 
+     reason, expiresAt, createdAt }
+  2) Endpoint API per richiedere, approvare e rifiutare i checkout
+  3) Notifiche in-app: l'OWNER/ADMIN (o il proprietario del secret) riceve
+     una notifica per approvare la richiesta
+  4) All'approvazione, creazione automatica di un record in SharedSecret o 
+     SharedConnection con la proprieta' expiresAt calcolata
+  5) Il job scheduler esistente (scheduler.service.ts) verifichera' i secret 
+     scaduti e rimuovera' la condivisione, forzando il Check-in
+  6) Audit logging: SECRET_CHECKOUT_REQUESTED, SECRET_CHECKOUT_APPROVED, 
+     SECRET_CHECKOUT_DENIED, SECRET_CHECKOUT_EXPIRED
+
+------------------------------------------------------------------------------
+[ ] PAM-112 — Rotazione automatica password su sistemi target (Target Rotation)
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: PAM-111
+
+  DESCRIZIONE:
+  Aggiungere un motore di rotazione attiva delle password sui server di
+  destinazione. Il sistema si connette periodicamente (o al "Check-in" di
+  un checkout) al server remoto, genera una password complessa, la cambia
+  tramite shell e aggiorna in modo trasparente il VaultSecret in Arsenale.
+
+  DETTAGLI TECNICI:
+  1) Nuovo servizio server/src/services/passwordRotation.service.ts
+  2) Supporto iniziale per target Linux (via SSH) e Windows (via WinRM/PowerShell)
+  3) Lo script si aggancia al cronjob di sistema per rotazioni schedulate (es.
+     ogni 30 giorni) o triggerato post-checkout (one-time password logic)
+  4) Esecuzione: usa ssh2 per inviare comandi non interattivi (es. `echo 
+     'root:newpass' | chpasswd`)
+  5) Aggiornamento atomico del VaultSecret con la nuova password, creando una
+     nuova VaultSecretVersion (per rollback in caso di disallineamento)
+  6) Modello VaultSecret: aggiungere i campi targetRotationEnabled (Boolean)
+     e lastRotatedAt (DateTime)
+
+------------------------------------------------------------------------------
+[ ] ZT-113 — Attribute-Based Access Control (ABAC) e Segregation of Duties
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: GUARD-100 (completato)
+
+  DESCRIZIONE:
+  Evolvere i permessi da RBAC puro ad ABAC. Le policy non valuteranno solo il 
+  ruolo, ma anche gli attributi del contesto (Orario, IP, Dispositivo). 
+  Inoltre, viene applicata la Segregation of Duties (SoD) per workflow critici, 
+  impedendo a un utente di approvare le proprie richieste.
+
+  DETTAGLI TECNICI:
+  1) Nuovo modello Prisma: AccessPolicy { id, targetType (TENANT, TEAM, FOLDER),
+     targetId, allowedTimeWindows (es. "09:00-18:00"), requireTrustedDevice, 
+     requireMfaStepUp }
+  2) Estendere auth.middleware.ts per incrociare la richiesta di sessione
+     (SSH/RDP) con l'AccessPolicy del folder/team associato
+  3) Trusted Device check: verificare se l'utente ha utilizzato una WebAuthnCredential
+     conosciuta durante il login corrente
+  4) Segregation of Duties: a livello API, forzare logicamente che `approverId !== 
+     requesterId` nel flusso di PAM-111 (SecretCheckoutRequest)
+  5) Audit log per negazioni ABAC: SESSION_DENIED_ABAC con dettagli su quale 
+     regola e' fallita (es. outside_working_hours)
+
+------------------------------------------------------------------------------
+[ ] SEC-175 — Real-time SSH Keystroke Inspection & Alerting
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: REC-070 (completato)
+
+  DESCRIZIONE:
+  Implementare una Deep Packet Inspection sul PTY delle sessioni SSH. Se 
+  l'utente digita comandi pericolosi (pattern regex configurabili), la sessione 
+  viene terminata immediatamente e un alert critico viene inviato agli admin.
+
+  DETTAGLI TECNICI:
+  1) Aggiungere un transform stream in server/src/socket/ssh.handler.ts, 
+     esattamente prima di scrivere i buffer `data` nel PTY del server target
+  2) Modello Prisma: KeystrokePolicy { id, tenantId, action (BLOCK_AND_TERMINATE, 
+     ALERT_ONLY), regexPatterns (String[]) }
+  3) Parser real-time: analizza i chunk in arrivo, gestendo backspace e control 
+     caratteri per ricostruire la stringa logica immessa
+  4) Se intercetta pattern (es. `rm -rf /`, `DROP TABLE`), droppa il pacchetto 
+     (evitando l'esecuzione remota), chiude la sessione (`session.end()`)
+  5) Trigger Audit log: SESSION_TERMINATED_POLICY_VIOLATION
+  6) Notifica immediata via notification.service e (se configurato) webhook 
+     esterno (es. Slack/Teams)
+
