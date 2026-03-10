@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-10
+
+### Added
+- Import/export connections (CSV, JSON, mRemoteNG, RDP) (IO-071)
+- Guacamole recordings conversion to video with guacenc (REC-171)
+- SSH and RDP session recording and playback (REC-070)
+- Add VNC protocol support and server admin CLI
+- Add user profile dialog with clickable usernames
+- Create new makefile
+
+### Fixed
+- Fix shared volume path for Guacamole recordings (REC-115)
+- Fix RDP recording black screen on Windows (disable-gfx not applied) (REC-119)
+- Fix SSH recording player layout and RDP playback (REC-118)
+- Remove SSRF validation for gateways (allow localhost) (GATE-117)
+- Fix: OAuth catch-all route intercepts verify-email (OAUTH-116)
+- Allow guacenc container to write converted videos
+
 ## [1.2.0] - 2026-03-08
 
 ### Added
@@ -104,7 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/dnviti/arsenale/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/dnviti/arsenale/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/dnviti/arsenale/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/dnviti/arsenale/releases/tag/v1.0.0
