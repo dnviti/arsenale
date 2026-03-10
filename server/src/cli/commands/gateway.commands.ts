@@ -1,9 +1,9 @@
- 
 import { Command } from 'commander';
 import * as gatewayService from '../../services/gateway.service';
+import * as auditService from '../../services/audit.service';
 import { resolveTenant, resolveUser } from '../helpers/resolve';
 import { printJson, printTable, printError, printSuccess } from '../helpers/output';
-import { GatewayType } from '../../generated/prisma/client';
+import { AuditAction, GatewayType } from '../../generated/prisma/client';
 
 export function registerGatewayCommands(program: Command): void {
   const gateway = program
@@ -134,14 +134,26 @@ export function registerGatewayCommands(program: Command): void {
       const user = await resolveUser(opts.userEmail);
       if (!user) { printError(`User not found: ${opts.userEmail}`); process.exitCode = 1; return; }
 
+      const portNum = parseInt(opts.port, 10);
+      if (isNaN(portNum)) { printError(`Invalid port: ${opts.port}`); process.exitCode = 1; return; }
+
       try {
         const result = await gatewayService.createGateway(user.id, tenant.id, {
           name: opts.name,
           type: opts.type as GatewayType,
           host: opts.host,
-          port: parseInt(opts.port, 10),
+          port: portNum,
           description: opts.description,
           isDefault: opts.isDefault,
+        });
+
+        auditService.log({
+          userId: user.id,
+          action: AuditAction.GATEWAY_CREATE,
+          targetType: 'GATEWAY',
+          targetId: result.id,
+          ipAddress: 'cli',
+          details: { name: opts.name, type: opts.type, host: opts.host, port: portNum, tenantId: tenant.id, source: 'cli' },
         });
 
         if (opts.format === 'json') {

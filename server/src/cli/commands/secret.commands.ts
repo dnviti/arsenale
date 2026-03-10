@@ -1,8 +1,10 @@
 import { Command } from 'commander';
 import * as secretService from '../../services/secret.service';
+import * as auditService from '../../services/audit.service';
 import { resolveTenant } from '../helpers/resolve';
 import { printJson, printError, printSuccess } from '../helpers/output';
 import { unlockUserVault } from '../helpers/vault';
+import { AuditAction } from '../../generated/prisma/client';
 
 export function registerSecretCommands(program: Command): void {
   const secret = program
@@ -20,7 +22,7 @@ export function registerSecretCommands(program: Command): void {
     .requiredOption('--login-password <loginPassword>', 'Login password')
     .option('--description <desc>', 'Secret description')
     .option('--format <format>', 'Output format (json|table)', 'table')
-    .action(async (opts: { tenantId: string; userEmail: string; password?: string; name: string; loginUsername: string; loginPassword: string; description?: string; format: string }) => {
+    .action(async (opts: { tenantId: string; userEmail: string; password: string; name: string; loginUsername: string; loginPassword: string; description?: string; format: string }) => {
       const tenant = await resolveTenant(opts.tenantId);
       if (!tenant) { printError(`Tenant not found: ${opts.tenantId}`); process.exitCode = 1; return; }
 
@@ -44,6 +46,15 @@ export function registerSecretCommands(program: Command): void {
           },
           tenant.id
         );
+
+        auditService.log({
+          userId: user.id,
+          action: AuditAction.SECRET_CREATE,
+          targetType: 'SECRET',
+          targetId: result.id,
+          ipAddress: 'cli',
+          details: { name: opts.name, type: 'LOGIN', scope: 'TENANT', tenantId: tenant.id, source: 'cli' },
+        });
 
         if (opts.format === 'json') {
           printJson(result);

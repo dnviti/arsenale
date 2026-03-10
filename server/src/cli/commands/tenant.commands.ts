@@ -255,7 +255,7 @@ export function registerTenantCommands(program: Command): void {
     .requiredOption('--user-email <email>', 'User email to execute action as (must be member)')
     .requiredOption('--password <password>', 'User password to unlock vault')
     .option('--format <format>', 'Output format (json|table)', 'table')
-    .action(async (identifier: string, opts: { userEmail: string; password?: string; format: string }) => {
+    .action(async (identifier: string, opts: { userEmail: string; password: string; format: string }) => {
       const t = await resolveTenant(identifier);
       if (!t) { printError(`Tenant not found: ${identifier}`); process.exitCode = 1; return; }
 
@@ -267,11 +267,11 @@ export function registerTenantCommands(program: Command): void {
         
         auditService.log({
           userId: user.id,
-          action: AuditAction.TENANT_UPDATE,
+          action: AuditAction.TENANT_VAULT_INIT,
           targetType: 'TENANT',
           targetId: t.id,
           ipAddress: 'cli',
-          details: { tenantId: t.id, source: 'cli', message: 'Initialized tenant keychain' },
+          details: { tenantId: t.id, source: 'cli' },
         });
 
         if (opts.format === 'json') {
