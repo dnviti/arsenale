@@ -60,7 +60,11 @@ export default function RecordingPlayerDialog({
         paper: {
           sx: {
             width: Math.min(contentWidth + 48, window.innerWidth - 64),
-            maxHeight: '60vh',
+            height: Math.min(contentHeight + 140, window.innerHeight - 64),
+            maxWidth: '100vw',
+            maxHeight: '100vh',
+            resize: 'both',
+            overflow: 'hidden',
           },
         },
       }}
@@ -94,7 +98,7 @@ export default function RecordingPlayerDialog({
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            minHeight: fullScreen ? 0 : Math.min(contentHeight + 48, window.innerHeight - 200),
+            minHeight: 0,
           }}
         >
           {isSsh ? (

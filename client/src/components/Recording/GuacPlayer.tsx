@@ -53,6 +53,10 @@ export default function GuacPlayer({ recordingId, onError }: GuacPlayerProps) {
       }
     };
 
+    // Important: Scale display whenever Guacamole reports a new resolution
+    // This fixes the black screen issue by recalculating the scale when the video actually has dimensions
+    (display as any).onresize = scaleToFit;
+
     recording.onload = () => {
       setDuration(recording.getDuration() / 1000);
       setLoaded(true);
@@ -69,9 +73,17 @@ export default function GuacPlayer({ recordingId, onError }: GuacPlayerProps) {
       onError?.(message || 'Failed to load recording');
     };
 
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(scaleToFit);
+    });
+    if (displayRef.current) {
+      ro.observe(displayRef.current);
+    }
+
     recording.connect();
 
     return () => {
+      ro.disconnect();
       recording.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps

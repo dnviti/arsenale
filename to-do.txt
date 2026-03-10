@@ -1214,3 +1214,55 @@
 
 
 ================================================================================
+
+================================================================================
+  SEZIONE J — SCOUTED FEATURES (2026-03-10)
+================================================================================
+
+------------------------------------------------------------------------------
+[ ] LIVE-001 — Live Session Shadowing e Co-browsing
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Permette a molteplici utenti di visualizzare e interagire con la stessa 
+  sessione RDP/SSH in tempo reale (utile per training o remote support), 
+  sfruttando il supporto nativo di Guacamole per le connessioni condivise 
+  (sharing profiles). Aggiunge indicatori UI per mostrare chi sta guardando.
+
+------------------------------------------------------------------------------
+[ ] MACRO-001 — SSH/RDP Snippets & Macros
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Aggiunge la capacita' di salvare snippet di testo o comandi frequenti e 
+  iniettarli rapidamente nelle sessioni terminale o RDP tramite una floating
+  toolbar o scorciatoie da tastiera. Feature di produttivita' molto richiesta 
+  (presente in Termius, MobaXterm).
+
+------------------------------------------------------------------------------
+[ ] WOL-001 — Integrazione Wake-on-LAN (WoL)
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Consente di inviare automaticamente un magic packet WoL a un MAC address 
+  predefinito prima di avviare una connessione, visualizzando uno spinner di 
+  attesa durante il boot della macchina remota. Molto utile per macchine fisiche 
+  on-premise spente per risparmio energetico.
+
+------------------------------------------------------------------------------
+[ ] UX-073 — Auto-Reconnect & Resiliency UI
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+
+  DESCRIZIONE:
+  Implementa una logica di riconnessione automatica trasparente con overlay 
+  visivo in caso di micro-interruzioni di rete (es. cambio Wi-Fi), intercettando 
+  i codici di errore di disconnessione di Guacamole per migliorare drasticamente 
+  la percezione di stabilita'.
