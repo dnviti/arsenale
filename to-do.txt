@@ -27,36 +27,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] OPT-202 — Add composite Prisma indexes for audit query performance
-------------------------------------------------------------------------------
-  Priorita: ALTA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  The AuditLog table has single-column indexes on userId, action, and createdAt
-  separately, but the main audit query always filters by userId + optional
-  action + createdAt range and orders by createdAt desc. PostgreSQL cannot
-  efficiently merge single-column indexes for this pattern. Missing composite
-  indexes also affect TenantMember and VaultSecret queries.
-
-  DETTAGLI IMPLEMENTAZIONE:
-  1. Add @@index([userId, action, createdAt]) to AuditLog model.
-  2. Add @@index([tenantId, isActive]) to TenantMember model.
-  3. Add @@index([expiresAt, userId]) to VaultSecret model.
-  4. Generate Prisma migration and verify indexes are used.
-
-  FILE COINVOLTI:
-  - server/prisma/schema.prisma (add 3 composite indexes)
-  - One new migration file (auto-generated)
-
-  CRITERI DI ACCETTAZIONE:
-  - Three new composite indexes added to schema
-  - Migration runs cleanly (npm run db:migrate)
-  - npm run db:generate produces updated client
-  - npm run verify passes
-  - No existing indexes removed (additive only)
-
 
 ------------------------------------------------------------------------------
 [ ] CI-174 — Refactoring pipeline CI/CD: Gate Verify e Security obbligatorio

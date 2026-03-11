@@ -581,6 +581,7 @@ model AuditLog {
   @@index([gatewayId])
   @@index([targetId, createdAt])
   @@index([geoCountry])
+  @@index([userId, action, createdAt])
 }
 
 enum NotificationType {
@@ -657,6 +658,7 @@ model VaultSecret {
   @@index([teamId])
   @@index([tenantId, scope])
   @@index([expiresAt])
+  @@index([expiresAt, userId])
 }
 
 model VaultSecretVersion {
@@ -732,6 +734,7 @@ model TenantMember {
 
   @@unique([tenantId, userId])
   @@index([userId, isActive])
+  @@index([tenantId, isActive])
 }
 
 model TenantVaultMember {

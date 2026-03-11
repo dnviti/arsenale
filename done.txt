@@ -2692,6 +2692,14 @@
     MODIFICATO: client/src/components/Dialogs/AuditLogDialog.tsx (30+ new action labels and colors)
 
 
+------------------------------------------------------------------------------
+[x] OPT-202 — Add composite Prisma indexes for audit query performance
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added 3 composite indexes to Prisma schema — @@index([userId, action, createdAt]) on AuditLog, @@index([tenantId, isActive]) on TenantMember, @@index([expiresAt, userId]) on VaultSecret. Migration 20260311171324_opt_202 created and applied.
+
+
 ================================================================================
   SEZIONE H — SCOUTED FEATURES
 ================================================================================
