@@ -10,7 +10,53 @@
   SEZIONE A — TASK RICHIESTI (Core Features)
 ================================================================================
 
+------------------------------------------------------------------------------
+[ ] SHR-211 — Aggiornamento dinamico risorse condivise senza reload pagina
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: NOTIF-015
 
+  DESCRIZIONE:
+  Quando una connessione o un segreto viene condiviso con un utente, la risorsa
+  non appare nella UI del destinatario finche' non ricarica la pagina con F5.
+  L'infrastruttura Socket.IO esiste gia' (namespace /notifications) e gli eventi
+  di condivisione (CONNECTION_SHARED, SHARE_REVOKED, SECRET_SHARED, ecc.) vengono
+  gia' emessi al destinatario. Tuttavia il client si limita a mostrare la notifica
+  nella campanella senza aggiornare le liste di connessioni e segreti. Questo task
+  aggiunge il refresh automatico degli store Zustand quando il client riceve un
+  evento di condivisione, cosi' che la risorsa appaia (o scompaia) immediatamente.
+
+  DETTAGLI TECNICI:
+  Il flusso attuale e':
+    1. Utente A condivide → server emette notification:new al destinatario B
+    2. NotificationBell.tsx riceve l'evento e aggiorna la campanella
+    3. La lista connessioni/segreti di B resta invariata fino al reload
+
+  Soluzione: intercettare gli eventi di tipo sharing nel listener Socket.IO
+  esistente e triggherare il refresh dei dati pertinenti.
+
+  1. Creare un hook useShareSync che:
+     - Si connette al namespace /notifications (riusando useSocket)
+     - Ascolta notification:new e filtra per tipo sharing:
+       CONNECTION_SHARED, SHARE_REVOKED, SHARE_PERMISSION_UPDATED
+       SECRET_SHARED, SECRET_SHARE_REVOKED
+     - Chiama connectionsStore.fetchConnections() per eventi connessione
+     - Chiama il refresh dello store vault/secrets per eventi segreto
+     - Debounce di ~500ms per evitare refresh multipli in caso di batch share
+
+  2. Montare useShareSync in MainLayout.tsx (componente sempre attivo quando
+     l'utente e' autenticato), accanto a NotificationBell.
+
+  3. Alternativa piu' leggera: estendere direttamente NotificationBell.tsx
+     aggiungendo al listener notification:new esistente un controllo sul tipo
+     e chiamando fetchConnections()/fetchSecrets() quando necessario. Questo
+     evita un hook separato e riusa lo stesso socket gia' connesso.
+
+  File coinvolti:
+    CREARE:     client/src/hooks/useShareSync.ts
+    MODIFICARE: client/src/components/Layout/MainLayout.tsx
+    MODIFICARE: client/src/store/connectionsStore.ts
+    MODIFICARE: client/src/components/Layout/NotificationBell.tsx
 
 
 
