@@ -11,31 +11,31 @@ export interface WebAuthnCredentialInfo {
 }
 
 export async function getWebAuthnRegistrationOptions() {
-  const res = await api.post('/user/2fa/webauthn/registration-options');
-  return res.data;
+  const { data } = await api.post('/user/2fa/webauthn/registration-options');
+  return data;
 }
 
 export async function registerWebAuthnCredential(credential: unknown, friendlyName?: string) {
-  const res = await api.post('/user/2fa/webauthn/register', { credential, friendlyName });
-  return res.data as WebAuthnCredentialInfo;
+  const { data } = await api.post('/user/2fa/webauthn/register', { credential, friendlyName });
+  return data as WebAuthnCredentialInfo;
 }
 
 export async function getWebAuthnCredentials() {
-  const res = await api.get('/user/2fa/webauthn/credentials');
-  return res.data as WebAuthnCredentialInfo[];
+  const { data } = await api.get('/user/2fa/webauthn/credentials');
+  return data as WebAuthnCredentialInfo[];
 }
 
 export async function removeWebAuthnCredential(id: string) {
-  const res = await api.delete(`/user/2fa/webauthn/credentials/${id}`);
-  return res.data as { removed: boolean };
+  const { data } = await api.delete(`/user/2fa/webauthn/credentials/${id}`);
+  return data as { removed: boolean };
 }
 
 export async function renameWebAuthnCredential(id: string, friendlyName: string) {
-  const res = await api.patch(`/user/2fa/webauthn/credentials/${id}`, { friendlyName });
-  return res.data as { renamed: boolean };
+  const { data } = await api.patch(`/user/2fa/webauthn/credentials/${id}`, { friendlyName });
+  return data as { renamed: boolean };
 }
 
 export async function getWebAuthnStatus() {
-  const res = await api.get('/user/2fa/webauthn/status');
-  return res.data as { enabled: boolean; credentialCount: number };
+  const { data } = await api.get('/user/2fa/webauthn/status');
+  return data as { enabled: boolean; credentialCount: number };
 }

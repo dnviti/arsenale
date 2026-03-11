@@ -23,8 +23,8 @@ export interface NotificationsResponse {
 export async function getNotifications(
   params: { limit?: number; offset?: number } = {}
 ): Promise<NotificationsResponse> {
-  const res = await api.get('/notifications', { params });
-  return res.data;
+  const { data } = await api.get('/notifications', { params });
+  return data;
 }
 
 export async function markAsRead(id: string): Promise<void> {

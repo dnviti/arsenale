@@ -7,24 +7,24 @@ export interface FileInfo {
 }
 
 export async function listFiles(): Promise<FileInfo[]> {
-  const res = await api.get('/files');
-  return res.data;
+  const { data } = await api.get('/files');
+  return data;
 }
 
 export async function uploadFile(file: File): Promise<FileInfo[]> {
   const formData = new FormData();
   formData.append('file', file);
-  const res = await api.post('/files', formData, {
+  const { data } = await api.post('/files', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return res.data;
+  return data;
 }
 
 export async function downloadFile(name: string): Promise<void> {
-  const res = await api.get(`/files/${encodeURIComponent(name)}`, {
+  const { data } = await api.get(`/files/${encodeURIComponent(name)}`, {
     responseType: 'blob',
   });
-  const url = window.URL.createObjectURL(new Blob([res.data]));
+  const url = window.URL.createObjectURL(new Blob([data]));
   const link = document.createElement('a');
   link.href = url;
   link.setAttribute('download', name);

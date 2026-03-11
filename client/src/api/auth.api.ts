@@ -26,53 +26,53 @@ export type LoginResponse =
   | (AuthSuccessResponse & { requiresTOTP?: false });
 
 export async function loginApi(email: string, password: string): Promise<LoginResponse> {
-  const res = await api.post('/auth/login', { email, password });
-  return res.data;
+  const { data } = await api.post('/auth/login', { email, password });
+  return data;
 }
 
 export async function verifyTotpApi(tempToken: string, code: string) {
-  const res = await api.post('/auth/verify-totp', { tempToken, code });
-  return res.data as AuthSuccessResponse;
+  const { data } = await api.post('/auth/verify-totp', { tempToken, code });
+  return data as AuthSuccessResponse;
 }
 
 export async function requestSmsCodeApi(tempToken: string) {
-  const res = await api.post('/auth/request-sms-code', { tempToken });
-  return res.data as { message: string };
+  const { data } = await api.post('/auth/request-sms-code', { tempToken });
+  return data as { message: string };
 }
 
 export async function verifySmsApi(tempToken: string, code: string) {
-  const res = await api.post('/auth/verify-sms', { tempToken, code });
-  return res.data as AuthSuccessResponse;
+  const { data } = await api.post('/auth/verify-sms', { tempToken, code });
+  return data as AuthSuccessResponse;
 }
 
 export async function mfaSetupInitApi(tempToken: string) {
-  const res = await api.post('/auth/mfa-setup/init', { tempToken });
-  return res.data as { secret: string; otpauthUri: string };
+  const { data } = await api.post('/auth/mfa-setup/init', { tempToken });
+  return data as { secret: string; otpauthUri: string };
 }
 
 export async function mfaSetupVerifyApi(tempToken: string, code: string) {
-  const res = await api.post('/auth/mfa-setup/verify', { tempToken, code });
-  return res.data as AuthSuccessResponse;
+  const { data } = await api.post('/auth/mfa-setup/verify', { tempToken, code });
+  return data as AuthSuccessResponse;
 }
 
 export async function requestWebAuthnOptionsApi(tempToken: string) {
-  const res = await api.post('/auth/request-webauthn-options', { tempToken });
-  return res.data;
+  const { data } = await api.post('/auth/request-webauthn-options', { tempToken });
+  return data;
 }
 
 export async function verifyWebAuthnApi(tempToken: string, credential: unknown) {
-  const res = await api.post('/auth/verify-webauthn', { tempToken, credential });
-  return res.data as AuthSuccessResponse;
+  const { data } = await api.post('/auth/verify-webauthn', { tempToken, credential });
+  return data as AuthSuccessResponse;
 }
 
 export async function registerApi(email: string, password: string) {
-  const res = await api.post('/auth/register', { email, password });
-  return res.data as { message: string; emailVerifyRequired: boolean; recoveryKey?: string };
+  const { data } = await api.post('/auth/register', { email, password });
+  return data as { message: string; emailVerifyRequired: boolean; recoveryKey?: string };
 }
 
 export async function refreshApi() {
-  const res = await api.post('/auth/refresh');
-  return res.data as {
+  const { data } = await api.post('/auth/refresh');
+  return data as {
     accessToken: string;
     csrfToken: string;
     user: { id: string; email: string; username: string | null; avatarData: string | null };
@@ -84,6 +84,6 @@ export async function logoutApi() {
 }
 
 export async function getPublicConfig(): Promise<{ selfSignupEnabled: boolean; selfSignupEnvLocked: boolean }> {
-  const res = await api.get('/auth/config');
-  return res.data;
+  const { data } = await api.get('/auth/config');
+  return data;
 }

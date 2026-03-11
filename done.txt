@@ -3101,6 +3101,17 @@
   File coinvolti:
     CREARE:     .github/workflows/guacenc-build.yml
 
+------------------------------------------------------------------------------
+[x] CLEAN-201 — Rimuovere log di debug e standardizzare pattern risposta API client
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+  COMPLETATO: Removed 2 debug console.log from terminalSettingsStore.ts. Standardized all 22 API client files (~163 functions) to use destructuring pattern: const { data } = await api.method(); return data. Renamed data parameters to payload in 15 functions to avoid shadowing conflicts.
+
+  File coinvolti:
+    MODIFICARE: client/src/store/terminalSettingsStore.ts
+    MODIFICARE: client/src/api/*.api.ts (tutti i 22 file API)
+
 
 ================================================================================
   SEZIONE G — IP ADDRESS INTELLIGENCE

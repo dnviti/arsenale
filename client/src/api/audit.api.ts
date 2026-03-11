@@ -81,18 +81,18 @@ export interface AuditLogParams {
 }
 
 export async function getAuditLogs(params: AuditLogParams = {}): Promise<AuditLogResponse> {
-  const res = await api.get('/audit', { params });
-  return res.data;
+  const { data } = await api.get('/audit', { params });
+  return data;
 }
 
 export async function getAuditGateways(): Promise<AuditGateway[]> {
-  const res = await api.get('/audit/gateways');
-  return res.data;
+  const { data } = await api.get('/audit/gateways');
+  return data;
 }
 
 export async function getAuditCountries(): Promise<string[]> {
-  const res = await api.get('/audit/countries');
-  return res.data;
+  const { data } = await api.get('/audit/countries');
+  return data;
 }
 
 export interface TenantAuditLogEntry extends AuditLogEntry {
@@ -114,18 +114,18 @@ export interface TenantAuditLogParams extends AuditLogParams {
 }
 
 export async function getTenantAuditLogs(params: TenantAuditLogParams = {}): Promise<TenantAuditLogResponse> {
-  const res = await api.get('/audit/tenant', { params });
-  return res.data;
+  const { data } = await api.get('/audit/tenant', { params });
+  return data;
 }
 
 export async function getTenantAuditGateways(): Promise<AuditGateway[]> {
-  const res = await api.get('/audit/tenant/gateways');
-  return res.data;
+  const { data } = await api.get('/audit/tenant/gateways');
+  return data;
 }
 
 export async function getTenantAuditCountries(): Promise<string[]> {
-  const res = await api.get('/audit/tenant/countries');
-  return res.data;
+  const { data } = await api.get('/audit/tenant/countries');
+  return data;
 }
 
 export interface GeoSummaryPoint {
@@ -138,8 +138,8 @@ export interface GeoSummaryPoint {
 }
 
 export async function getTenantGeoSummary(days: number = 30): Promise<GeoSummaryPoint[]> {
-  const res = await api.get('/audit/tenant/geo-summary', { params: { days } });
-  return res.data.points;
+  const { data } = await api.get('/audit/tenant/geo-summary', { params: { days } });
+  return data.points;
 }
 
 export interface ConnectionAuditUser {
@@ -156,11 +156,11 @@ export async function getConnectionAuditLogs(
   connectionId: string,
   params: ConnectionAuditLogParams = {}
 ): Promise<TenantAuditLogResponse> {
-  const res = await api.get(`/audit/connection/${connectionId}`, { params });
-  return res.data;
+  const { data } = await api.get(`/audit/connection/${connectionId}`, { params });
+  return data;
 }
 
 export async function getConnectionAuditUsers(connectionId: string): Promise<ConnectionAuditUser[]> {
-  const res = await api.get(`/audit/connection/${connectionId}/users`);
-  return res.data;
+  const { data } = await api.get(`/audit/connection/${connectionId}/users`);
+  return data;
 }

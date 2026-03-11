@@ -20,11 +20,11 @@ export interface ImportResult {
   errors: Array<{ row?: number; filename: string; error: string }>;
 }
 
-export async function exportConnections(data: ExportRequest): Promise<Blob> {
-  const response = await api.post('/connections/export', data, {
+export async function exportConnections(payload: ExportRequest): Promise<Blob> {
+  const { data } = await api.post('/connections/export', payload, {
     responseType: 'blob',
   });
-  return response.data;
+  return data;
 }
 
 export async function importConnections(
@@ -41,14 +41,14 @@ export async function importConnections(
     formData.append('columnMapping', JSON.stringify(options.columnMapping));
   }
 
-  const response = await api.post('/connections/import', formData, {
+  const { data } = await api.post('/connections/import', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
-  return response.data;
+  return data;
 }
 
-export async function downloadExport(data: ExportRequest, filename: string): Promise<void> {
-  const blob = await exportConnections(data);
+export async function downloadExport(payload: ExportRequest, filename: string): Promise<void> {
+  const blob = await exportConnections(payload);
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

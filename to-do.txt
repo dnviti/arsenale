@@ -27,32 +27,6 @@
 
 
 
-------------------------------------------------------------------------------
-[ ] CLEAN-201 — Rimuovere log di debug e standardizzare pattern risposta API client
-------------------------------------------------------------------------------
-  Priorita: BASSA
-  Dipendenze: Nessuna
-
-  DESCRIZIONE:
-  Pulizia codice: rimuovere console.log di debug rimasti nel codice di
-  produzione (terminalSettingsStore.ts) e standardizzare il pattern di
-  ritorno delle chiamate API client. Attualmente alcuni file usano
-  `const res = await api.get(); return res.data;` e altri usano
-  `const { data } = await api.get<T>(); return data;` — uniformare
-  migliora type safety e leggibilita'.
-
-  DETTAGLI TECNICI:
-  1) Rimuovere console.log da terminalSettingsStore.ts (righe 31, 33)
-  2) Standardizzare tutti i file API client al pattern con destructuring
-     e generic type: `const { data } = await api.get<T>(...); return data;`
-  3) Verificare che i tipi generici siano applicati dove possibile
-
-  File coinvolti:
-    MODIFICARE: client/src/store/terminalSettingsStore.ts
-    MODIFICARE: client/src/api/*.api.ts (tutti i 21 file API)
-
-
-
 
 
 
@@ -106,6 +80,58 @@
     MODIFICARE: .github/workflows/ssh-gateway-build.yml
     MODIFICARE: .github/workflows/guacenc-build.yml
 
+
+------------------------------------------------------------------------------
+[ ] NOTIF-210 — Notifiche desktop/mobile tramite Web Notifications API
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: NOTIF-015
+
+  DESCRIZIONE:
+  Attualmente il sistema di notifiche mostra gli avvisi solo nell'interfaccia
+  web tramite l'icona a campanella (NotificationBell). Questo task estende il
+  sistema per inviare notifiche native al desktop o dispositivo mobile
+  dell'utente utilizzando la Web Notifications API del browser.
+  All'arrivo di una nuova notifica via Socket.IO, se l'utente ha concesso il
+  permesso, viene mostrata una notifica nativa del sistema operativo oltre
+  alla notifica in-app gia' esistente. L'utente puo' gestire il permesso
+  dalle impostazioni dell'applicazione.
+
+  DETTAGLI TECNICI:
+  1. Hook useDesktopNotifications:
+     - Gestisce lo stato del permesso (granted/denied/default) via
+       Notification.permission
+     - Espone requestPermission() che chiama Notification.requestPermission()
+     - Espone sendDesktopNotification(title, options) che crea una new
+       Notification() se il permesso e' granted
+     - Gestisce il click sulla notifica nativa per portare il focus alla
+       finestra dell'app e aprire il popover notifiche
+
+  2. Integrazione in NotificationBell.tsx:
+     - Al ricevimento dell'evento Socket.IO 'notification:new', oltre ad
+       aggiungere la notifica allo store, invocare
+       sendDesktopNotification() con il messaggio della notifica
+     - Mostrare l'icona della notifica nativa in base al tipo (riutilizzare
+       la mappatura notificationIcon esistente per il badge)
+     - Non inviare notifica desktop se il documento e' in focus
+       (document.hasFocus()) per evitare duplicazione
+
+  3. Preferenza utente in uiPreferencesStore:
+     - Aggiungere chiave 'desktopNotificationsEnabled' (default: false)
+     - Toggle nelle impostazioni per abilitare/disabilitare
+     - Al primo enable, richiedere il permesso al browser
+
+  4. UI in SettingsDialog:
+     - Aggiungere sezione "Notifiche" con toggle per notifiche desktop
+     - Mostrare stato attuale del permesso browser
+     - Se permesso negato a livello browser, mostrare messaggio informativo
+       con istruzioni per riabilitare dalle impostazioni del browser
+
+  File coinvolti:
+    CREARE:     client/src/hooks/useDesktopNotifications.ts
+    MODIFICARE: client/src/components/Layout/NotificationBell.tsx
+    MODIFICARE: client/src/store/uiPreferencesStore.ts
+    MODIFICARE: client/src/components/Settings/SettingsDialog.tsx
 
 
 

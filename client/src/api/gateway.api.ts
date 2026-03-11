@@ -97,38 +97,38 @@ export interface SshKeyPairData {
 }
 
 export async function listGateways(): Promise<GatewayData[]> {
-  const res = await api.get('/gateways');
-  return res.data;
+  const { data } = await api.get('/gateways');
+  return data;
 }
 
-export async function createGateway(data: GatewayInput): Promise<GatewayData> {
-  const res = await api.post('/gateways', data);
-  return res.data;
+export async function createGateway(payload: GatewayInput): Promise<GatewayData> {
+  const { data } = await api.post('/gateways', payload);
+  return data;
 }
 
-export async function updateGateway(id: string, data: GatewayUpdate): Promise<GatewayData> {
-  const res = await api.put(`/gateways/${id}`, data);
-  return res.data;
+export async function updateGateway(id: string, payload: GatewayUpdate): Promise<GatewayData> {
+  const { data } = await api.put(`/gateways/${id}`, payload);
+  return data;
 }
 
 export async function deleteGateway(id: string, force?: boolean): Promise<{ deleted: boolean }> {
-  const res = await api.delete(`/gateways/${id}`, { params: force ? { force: 'true' } : undefined });
-  return res.data;
+  const { data } = await api.delete(`/gateways/${id}`, { params: force ? { force: 'true' } : undefined });
+  return data;
 }
 
 export async function testGateway(id: string): Promise<TestResult> {
-  const res = await api.post(`/gateways/${id}/test`);
-  return res.data;
+  const { data } = await api.post(`/gateways/${id}/test`);
+  return data;
 }
 
 export async function getSshKeyPair(): Promise<SshKeyPairData> {
-  const res = await api.get('/gateways/ssh-keypair');
-  return res.data;
+  const { data } = await api.get('/gateways/ssh-keypair');
+  return data;
 }
 
 export async function generateSshKeyPair(): Promise<SshKeyPairData> {
-  const res = await api.post('/gateways/ssh-keypair');
-  return res.data;
+  const { data } = await api.post('/gateways/ssh-keypair');
+  return data;
 }
 
 export interface KeyPushResult {
@@ -143,18 +143,18 @@ export interface RotateKeyPairResponse extends SshKeyPairData {
 }
 
 export async function rotateSshKeyPair(): Promise<RotateKeyPairResponse> {
-  const res = await api.post('/gateways/ssh-keypair/rotate');
-  return res.data;
+  const { data } = await api.post('/gateways/ssh-keypair/rotate');
+  return data;
 }
 
 export async function pushKeyToGateway(id: string): Promise<{ ok: boolean; error?: string }> {
-  const res = await api.post(`/gateways/${id}/push-key`);
-  return res.data;
+  const { data } = await api.post(`/gateways/${id}/push-key`);
+  return data;
 }
 
 export async function downloadSshPrivateKey(): Promise<string> {
-  const res = await api.get('/gateways/ssh-keypair/private', { responseType: 'text' });
-  return res.data;
+  const { data } = await api.get('/gateways/ssh-keypair/private', { responseType: 'text' });
+  return data;
 }
 
 // ---------- Session Monitoring ----------
@@ -184,25 +184,25 @@ export async function listActiveSessions(params?: {
   protocol?: 'SSH' | 'RDP';
   gatewayId?: string;
 }): Promise<ActiveSessionData[]> {
-  const res = await api.get('/sessions/active', { params });
-  return res.data;
+  const { data } = await api.get('/sessions/active', { params });
+  return data;
 }
 
 export async function getSessionCount(): Promise<{ count: number }> {
-  const res = await api.get('/sessions/count');
-  return res.data;
+  const { data } = await api.get('/sessions/count');
+  return data;
 }
 
 export async function getSessionCountByGateway(): Promise<
   Array<{ gatewayId: string; gatewayName: string; count: number }>
 > {
-  const res = await api.get('/sessions/count/gateway');
-  return res.data;
+  const { data } = await api.get('/sessions/count/gateway');
+  return data;
 }
 
 export async function terminateSession(sessionId: string): Promise<{ ok: boolean }> {
-  const res = await api.post(`/sessions/${sessionId}/terminate`);
-  return res.data;
+  const { data } = await api.post(`/sessions/${sessionId}/terminate`);
+  return data;
 }
 
 // ---------- Managed Gateway Lifecycle ----------
@@ -227,33 +227,33 @@ export interface ManagedInstanceData {
 export async function deployGateway(id: string): Promise<{
   instanceId: string; containerId: string; host: string; port: number;
 }> {
-  const res = await api.post(`/gateways/${id}/deploy`);
-  return res.data;
+  const { data } = await api.post(`/gateways/${id}/deploy`);
+  return data;
 }
 
 export async function undeployGateway(id: string): Promise<{ undeployed: boolean }> {
-  const res = await api.delete(`/gateways/${id}/deploy`);
-  return res.data;
+  const { data } = await api.delete(`/gateways/${id}/deploy`);
+  return data;
 }
 
 export async function scaleGateway(id: string, replicas: number): Promise<{
   deployed: number; removed: number;
 }> {
-  const res = await api.post(`/gateways/${id}/scale`, { replicas });
-  return res.data;
+  const { data } = await api.post(`/gateways/${id}/scale`, { replicas });
+  return data;
 }
 
 export async function listGatewayInstances(id: string): Promise<ManagedInstanceData[]> {
-  const res = await api.get(`/gateways/${id}/instances`);
-  return res.data;
+  const { data } = await api.get(`/gateways/${id}/instances`);
+  return data;
 }
 
 export async function restartGatewayInstance(
   gatewayId: string,
   instanceId: string,
 ): Promise<{ restarted: boolean }> {
-  const res = await api.post(`/gateways/${gatewayId}/instances/${instanceId}/restart`);
-  return res.data;
+  const { data } = await api.post(`/gateways/${gatewayId}/instances/${instanceId}/restart`);
+  return data;
 }
 
 export interface ContainerLogsData {
@@ -268,10 +268,10 @@ export async function getInstanceLogs(
   instanceId: string,
   tail?: number,
 ): Promise<ContainerLogsData> {
-  const res = await api.get(`/gateways/${gatewayId}/instances/${instanceId}/logs`, {
+  const { data } = await api.get(`/gateways/${gatewayId}/instances/${instanceId}/logs`, {
     params: tail != null ? { tail } : undefined,
   });
-  return res.data;
+  return data;
 }
 
 // ---------- Auto-Scaling Configuration ----------
@@ -301,16 +301,16 @@ export interface ScalingConfigInput {
 }
 
 export async function getScalingStatus(id: string): Promise<ScalingStatusData> {
-  const res = await api.get(`/gateways/${id}/scaling`);
-  return res.data;
+  const { data } = await api.get(`/gateways/${id}/scaling`);
+  return data;
 }
 
 export async function updateScalingConfig(
   id: string,
   config: ScalingConfigInput,
 ): Promise<ScalingConfigInput & { id: string; lastScaleAction: string | null }> {
-  const res = await api.put(`/gateways/${id}/scaling`, config);
-  return res.data;
+  const { data } = await api.put(`/gateways/${id}/scaling`, config);
+  return data;
 }
 
 // ---------- Gateway Templates ----------
@@ -362,26 +362,26 @@ export interface GatewayTemplateInput {
 export type GatewayTemplateUpdate = Partial<GatewayTemplateInput>;
 
 export async function listGatewayTemplates(): Promise<GatewayTemplateData[]> {
-  const res = await api.get('/gateways/templates');
-  return res.data;
+  const { data } = await api.get('/gateways/templates');
+  return data;
 }
 
-export async function createGatewayTemplate(data: GatewayTemplateInput): Promise<GatewayTemplateData> {
-  const res = await api.post('/gateways/templates', data);
-  return res.data;
+export async function createGatewayTemplate(payload: GatewayTemplateInput): Promise<GatewayTemplateData> {
+  const { data } = await api.post('/gateways/templates', payload);
+  return data;
 }
 
-export async function updateGatewayTemplate(id: string, data: GatewayTemplateUpdate): Promise<GatewayTemplateData> {
-  const res = await api.put(`/gateways/templates/${id}`, data);
-  return res.data;
+export async function updateGatewayTemplate(id: string, payload: GatewayTemplateUpdate): Promise<GatewayTemplateData> {
+  const { data } = await api.put(`/gateways/templates/${id}`, payload);
+  return data;
 }
 
 export async function deleteGatewayTemplate(id: string): Promise<{ deleted: boolean }> {
-  const res = await api.delete(`/gateways/templates/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/gateways/templates/${id}`);
+  return data;
 }
 
 export async function deployFromTemplate(templateId: string): Promise<GatewayData> {
-  const res = await api.post(`/gateways/templates/${templateId}/deploy`);
-  return res.data;
+  const { data } = await api.post(`/gateways/templates/${templateId}/deploy`);
+  return data;
 }

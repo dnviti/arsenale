@@ -59,13 +59,13 @@ export interface ConnectionsResponse {
 }
 
 export async function listConnections(): Promise<ConnectionsResponse> {
-  const res = await api.get('/connections');
-  return res.data;
+  const { data } = await api.get('/connections');
+  return data;
 }
 
-export async function createConnection(data: ConnectionInput): Promise<ConnectionData> {
-  const res = await api.post('/connections', data);
-  return res.data;
+export async function createConnection(payload: ConnectionInput): Promise<ConnectionData> {
+  const { data } = await api.post('/connections', payload);
+  return data;
 }
 
 export interface ConnectionUpdate {
@@ -89,23 +89,23 @@ export interface ConnectionUpdate {
 
 export async function updateConnection(
   id: string,
-  data: ConnectionUpdate
+  payload: ConnectionUpdate
 ): Promise<ConnectionData> {
-  const res = await api.put(`/connections/${id}`, data);
-  return res.data;
+  const { data } = await api.put(`/connections/${id}`, payload);
+  return data;
 }
 
 export async function deleteConnection(id: string) {
-  const res = await api.delete(`/connections/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/connections/${id}`);
+  return data;
 }
 
 export async function getConnection(id: string): Promise<ConnectionData> {
-  const res = await api.get(`/connections/${id}`);
-  return res.data;
+  const { data } = await api.get(`/connections/${id}`);
+  return data;
 }
 
 export async function toggleFavorite(id: string): Promise<{ id: string; isFavorite: boolean }> {
-  const res = await api.patch(`/connections/${id}/favorite`);
-  return res.data;
+  const { data } = await api.patch(`/connections/${id}/favorite`);
+  return data;
 }

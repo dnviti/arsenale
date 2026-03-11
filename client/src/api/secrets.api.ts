@@ -155,43 +155,43 @@ export async function listSecrets(filters?: SecretListFilters): Promise<SecretLi
   if (filters?.search) params.search = filters.search;
   if (filters?.isFavorite !== undefined) params.isFavorite = String(filters.isFavorite);
   if (filters?.tags?.length) params.tags = filters.tags.join(',');
-  const res = await api.get('/secrets', { params });
-  return res.data;
+  const { data } = await api.get('/secrets', { params });
+  return data;
 }
 
 export async function getSecret(id: string): Promise<SecretDetail> {
-  const res = await api.get(`/secrets/${id}`);
-  return res.data;
+  const { data } = await api.get(`/secrets/${id}`);
+  return data;
 }
 
 export async function createSecret(input: CreateSecretInput): Promise<SecretListItem> {
-  const res = await api.post('/secrets', input);
-  return res.data;
+  const { data } = await api.post('/secrets', input);
+  return data;
 }
 
 export async function updateSecret(id: string, input: UpdateSecretInput): Promise<SecretListItem> {
-  const res = await api.put(`/secrets/${id}`, input);
-  return res.data;
+  const { data } = await api.put(`/secrets/${id}`, input);
+  return data;
 }
 
 export async function deleteSecret(id: string): Promise<{ deleted: true }> {
-  const res = await api.delete(`/secrets/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/secrets/${id}`);
+  return data;
 }
 
 export async function listVersions(id: string): Promise<SecretVersion[]> {
-  const res = await api.get(`/secrets/${id}/versions`);
-  return res.data;
+  const { data } = await api.get(`/secrets/${id}/versions`);
+  return data;
 }
 
 export async function getSecretVersionData(id: string, version: number): Promise<SecretPayload> {
-  const res = await api.get(`/secrets/${id}/versions/${version}/data`);
-  return res.data.data;
+  const { data } = await api.get(`/secrets/${id}/versions/${version}/data`);
+  return data.data;
 }
 
 export async function restoreVersion(id: string, version: number): Promise<SecretListItem> {
-  const res = await api.post(`/secrets/${id}/versions/${version}/restore`);
-  return res.data;
+  const { data } = await api.post(`/secrets/${id}/versions/${version}/restore`);
+  return data;
 }
 
 export async function shareSecret(
@@ -199,13 +199,13 @@ export async function shareSecret(
   target: { email?: string; userId?: string },
   permission: 'READ_ONLY' | 'FULL_ACCESS',
 ): Promise<SecretShare> {
-  const res = await api.post(`/secrets/${id}/share`, { ...target, permission });
-  return res.data;
+  const { data } = await api.post(`/secrets/${id}/share`, { ...target, permission });
+  return data;
 }
 
 export async function unshareSecret(id: string, userId: string): Promise<{ deleted: true }> {
-  const res = await api.delete(`/secrets/${id}/share/${userId}`);
-  return res.data;
+  const { data } = await api.delete(`/secrets/${id}/share/${userId}`);
+  return data;
 }
 
 export async function updateSharePermission(
@@ -213,28 +213,28 @@ export async function updateSharePermission(
   userId: string,
   permission: 'READ_ONLY' | 'FULL_ACCESS',
 ): Promise<SecretShare> {
-  const res = await api.put(`/secrets/${id}/share/${userId}`, { permission });
-  return res.data;
+  const { data } = await api.put(`/secrets/${id}/share/${userId}`, { permission });
+  return data;
 }
 
 export async function listShares(id: string): Promise<SecretShare[]> {
-  const res = await api.get(`/secrets/${id}/shares`);
-  return res.data;
+  const { data } = await api.get(`/secrets/${id}/shares`);
+  return data;
 }
 
 export async function initTenantVault(): Promise<{ initialized: true }> {
-  const res = await api.post('/secrets/tenant-vault/init');
-  return res.data;
+  const { data } = await api.post('/secrets/tenant-vault/init');
+  return data;
 }
 
 export async function distributeTenantKey(targetUserId: string): Promise<{ distributed: true }> {
-  const res = await api.post('/secrets/tenant-vault/distribute', { targetUserId });
-  return res.data;
+  const { data } = await api.post('/secrets/tenant-vault/distribute', { targetUserId });
+  return data;
 }
 
 export async function getTenantVaultStatus(): Promise<TenantVaultStatus> {
-  const res = await api.get('/secrets/tenant-vault/status');
-  return res.data;
+  const { data } = await api.get('/secrets/tenant-vault/status');
+  return data;
 }
 
 // --- External share types ---
@@ -288,18 +288,18 @@ export async function createExternalShare(
   secretId: string,
   input: CreateExternalShareInput,
 ): Promise<ExternalShareResult> {
-  const res = await api.post(`/secrets/${secretId}/external-shares`, input);
-  return res.data;
+  const { data } = await api.post(`/secrets/${secretId}/external-shares`, input);
+  return data;
 }
 
 export async function listExternalShares(secretId: string): Promise<ExternalShareListItem[]> {
-  const res = await api.get(`/secrets/${secretId}/external-shares`);
-  return res.data;
+  const { data } = await api.get(`/secrets/${secretId}/external-shares`);
+  return data;
 }
 
 export async function revokeExternalShare(shareId: string): Promise<{ revoked: true }> {
-  const res = await api.delete(`/secrets/external-shares/${shareId}`);
-  return res.data;
+  const { data } = await api.delete(`/secrets/external-shares/${shareId}`);
+  return data;
 }
 
 // --- External share API (public, no auth) ---
@@ -310,14 +310,14 @@ const publicApi = axios.create({
 });
 
 export async function getExternalShareInfo(token: string): Promise<ExternalShareInfo> {
-  const res = await publicApi.get(`/share/${token}/info`);
-  return res.data;
+  const { data } = await publicApi.get(`/share/${token}/info`);
+  return data;
 }
 
 export async function accessExternalShare(
   token: string,
   pin?: string,
 ): Promise<ExternalShareAccessResult> {
-  const res = await publicApi.post(`/share/${token}`, { pin });
-  return res.data;
+  const { data } = await publicApi.post(`/share/${token}`, { pin });
+  return data;
 }

@@ -23,36 +23,36 @@ export async function createTeam(
   name: string,
   description?: string,
 ): Promise<TeamData> {
-  const res = await api.post('/teams', { name, description });
-  return res.data;
+  const { data } = await api.post('/teams', { name, description });
+  return data;
 }
 
 export async function listTeams(): Promise<TeamData[]> {
-  const res = await api.get('/teams');
-  return res.data;
+  const { data } = await api.get('/teams');
+  return data;
 }
 
 export async function getTeam(id: string): Promise<TeamData> {
-  const res = await api.get(`/teams/${id}`);
-  return res.data;
+  const { data } = await api.get(`/teams/${id}`);
+  return data;
 }
 
 export async function updateTeam(
   id: string,
-  data: { name?: string; description?: string | null },
+  payload: { name?: string; description?: string | null },
 ): Promise<TeamData> {
-  const res = await api.put(`/teams/${id}`, data);
-  return res.data;
+  const { data } = await api.put(`/teams/${id}`, payload);
+  return data;
 }
 
 export async function deleteTeam(id: string): Promise<{ deleted: boolean }> {
-  const res = await api.delete(`/teams/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/teams/${id}`);
+  return data;
 }
 
 export async function listTeamMembers(teamId: string): Promise<TeamMember[]> {
-  const res = await api.get(`/teams/${teamId}/members`);
-  return res.data;
+  const { data } = await api.get(`/teams/${teamId}/members`);
+  return data;
 }
 
 export async function addTeamMember(
@@ -60,8 +60,8 @@ export async function addTeamMember(
   userId: string,
   role: 'TEAM_ADMIN' | 'TEAM_EDITOR' | 'TEAM_VIEWER',
 ): Promise<TeamMember> {
-  const res = await api.post(`/teams/${teamId}/members`, { userId, role });
-  return res.data;
+  const { data } = await api.post(`/teams/${teamId}/members`, { userId, role });
+  return data;
 }
 
 export async function updateTeamMemberRole(
@@ -69,14 +69,14 @@ export async function updateTeamMemberRole(
   userId: string,
   role: 'TEAM_ADMIN' | 'TEAM_EDITOR' | 'TEAM_VIEWER',
 ): Promise<{ userId: string; role: string }> {
-  const res = await api.put(`/teams/${teamId}/members/${userId}`, { role });
-  return res.data;
+  const { data } = await api.put(`/teams/${teamId}/members/${userId}`, { role });
+  return data;
 }
 
 export async function removeTeamMember(
   teamId: string,
   userId: string,
 ): Promise<{ removed: boolean }> {
-  const res = await api.delete(`/teams/${teamId}/members/${userId}`);
-  return res.data;
+  const { data } = await api.delete(`/teams/${teamId}/members/${userId}`);
+  return data;
 }
