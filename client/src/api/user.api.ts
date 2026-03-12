@@ -16,13 +16,13 @@ export interface UserProfile {
 }
 
 export async function getProfile(): Promise<UserProfile> {
-  const res = await api.get('/user/profile');
-  return res.data;
+  const { data } = await api.get('/user/profile');
+  return data;
 }
 
-export async function updateProfile(data: { username?: string }): Promise<UserProfile> {
-  const res = await api.put('/user/profile', data);
-  return res.data;
+export async function updateProfile(payload: { username?: string }): Promise<UserProfile> {
+  const { data } = await api.put('/user/profile', payload);
+  return data;
 }
 
 export async function changePassword(
@@ -30,8 +30,8 @@ export async function changePassword(
   newPassword: string,
   verificationId?: string,
 ): Promise<{ success: boolean }> {
-  const res = await api.put('/user/password', { oldPassword, newPassword, verificationId });
-  return res.data;
+  const { data } = await api.put('/user/password', { oldPassword, newPassword, verificationId });
+  return data;
 }
 
 // Identity verification
@@ -47,16 +47,16 @@ export interface IdentityInitiateResponse {
 export async function initiateIdentityVerification(
   purpose: string,
 ): Promise<IdentityInitiateResponse> {
-  const res = await api.post('/user/identity/initiate', { purpose });
-  return res.data;
+  const { data } = await api.post('/user/identity/initiate', { purpose });
+  return data;
 }
 
 export async function confirmIdentityVerification(
   verificationId: string,
   payload: { code?: string; credential?: unknown; password?: string },
 ): Promise<{ confirmed: boolean }> {
-  const res = await api.post('/user/identity/confirm', { verificationId, ...payload });
-  return res.data;
+  const { data } = await api.post('/user/identity/confirm', { verificationId, ...payload });
+  return data;
 }
 
 // Email change
@@ -69,15 +69,15 @@ export interface EmailChangeInitResult {
 }
 
 export async function initiateEmailChange(newEmail: string): Promise<EmailChangeInitResult> {
-  const res = await api.post('/user/email-change/initiate', { newEmail });
-  return res.data;
+  const { data } = await api.post('/user/email-change/initiate', { newEmail });
+  return data;
 }
 
 export async function confirmEmailChange(
-  data: { codeOld?: string; codeNew?: string; verificationId?: string },
+  payload: { codeOld?: string; codeNew?: string; verificationId?: string },
 ): Promise<{ email: string }> {
-  const res = await api.post('/user/email-change/confirm', data);
-  return res.data;
+  const { data } = await api.post('/user/email-change/confirm', payload);
+  return data;
 }
 
 // Password change initiation
@@ -90,27 +90,27 @@ export interface PasswordChangeInitResult {
 }
 
 export async function initiatePasswordChange(): Promise<PasswordChangeInitResult> {
-  const res = await api.post('/user/password-change/initiate');
-  return res.data;
+  const { data } = await api.post('/user/password-change/initiate');
+  return data;
 }
 
 export async function updateSshDefaults(
-  data: Partial<SshTerminalConfig>
+  payload: Partial<SshTerminalConfig>
 ): Promise<{ id: string; sshDefaults: Partial<SshTerminalConfig> }> {
-  const res = await api.put('/user/ssh-defaults', data);
-  return res.data;
+  const { data } = await api.put('/user/ssh-defaults', payload);
+  return data;
 }
 
 export async function updateRdpDefaults(
-  data: Partial<RdpSettings>
+  payload: Partial<RdpSettings>
 ): Promise<{ id: string; rdpDefaults: Partial<RdpSettings> }> {
-  const res = await api.put('/user/rdp-defaults', data);
-  return res.data;
+  const { data } = await api.put('/user/rdp-defaults', payload);
+  return data;
 }
 
 export async function uploadAvatar(avatarData: string): Promise<{ id: string; avatarData: string }> {
-  const res = await api.post('/user/avatar', { avatarData });
-  return res.data;
+  const { data } = await api.post('/user/avatar', { avatarData });
+  return data;
 }
 
 export interface UserSearchResult {
@@ -127,8 +127,8 @@ export async function searchUsers(
 ): Promise<UserSearchResult[]> {
   const params: Record<string, string> = { q: query, scope };
   if (teamId) params.teamId = teamId;
-  const res = await api.get('/user/search', { params });
-  return res.data;
+  const { data } = await api.get('/user/search', { params });
+  return data;
 }
 
 // Domain profile
@@ -140,20 +140,20 @@ export interface DomainProfile {
 }
 
 export async function getDomainProfile(): Promise<DomainProfile> {
-  const res = await api.get('/user/domain-profile');
-  return res.data;
+  const { data } = await api.get('/user/domain-profile');
+  return data;
 }
 
-export async function updateDomainProfile(data: {
+export async function updateDomainProfile(payload: {
   domainName?: string;
   domainUsername?: string;
   domainPassword?: string | null;
 }): Promise<DomainProfile> {
-  const res = await api.put('/user/domain-profile', data);
-  return res.data;
+  const { data } = await api.put('/user/domain-profile', payload);
+  return data;
 }
 
 export async function clearDomainProfile(): Promise<{ success: boolean }> {
-  const res = await api.delete('/user/domain-profile');
-  return res.data;
+  const { data } = await api.delete('/user/domain-profile');
+  return data;
 }

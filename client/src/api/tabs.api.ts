@@ -7,13 +7,13 @@ export interface PersistedTab {
 }
 
 export async function getPersistedTabs(): Promise<PersistedTab[]> {
-  const res = await api.get('/tabs');
-  return res.data;
+  const { data } = await api.get('/tabs');
+  return data;
 }
 
 export async function syncPersistedTabs(tabs: PersistedTab[]): Promise<PersistedTab[]> {
-  const res = await api.put('/tabs', { tabs });
-  return res.data;
+  const { data } = await api.put('/tabs', { tabs });
+  return data;
 }
 
 export async function clearPersistedTabs(): Promise<void> {

@@ -5,6 +5,7 @@ import { requireTeamMember, requireTeamRole } from '../middleware/team.middlewar
 import { validate, validateUuidParam } from '../middleware/validate.middleware';
 import { createTeamSchema, updateTeamSchema, addMemberSchema, updateMemberRoleSchema } from '../schemas/team.schemas';
 import * as teamController from '../controllers/team.controller';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 const router = Router();
 
@@ -12,16 +13,16 @@ router.use(authenticate);
 router.use(requireTenant);
 
 // Team CRUD
-router.post('/', validate(createTeamSchema), teamController.createTeam);
-router.get('/', teamController.listTeams);
-router.get('/:id', validateUuidParam(), requireTeamMember, teamController.getTeam);
-router.put('/:id', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN'), validate(updateTeamSchema), teamController.updateTeam);
-router.delete('/:id', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN', { allowTenantAdmin: true }), teamController.deleteTeam);
+router.post('/', validate(createTeamSchema), asyncHandler(teamController.createTeam));
+router.get('/', asyncHandler(teamController.listTeams));
+router.get('/:id', validateUuidParam(), requireTeamMember, asyncHandler(teamController.getTeam));
+router.put('/:id', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN'), validate(updateTeamSchema), asyncHandler(teamController.updateTeam));
+router.delete('/:id', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN', { allowTenantAdmin: true }), asyncHandler(teamController.deleteTeam));
 
 // Member management
-router.get('/:id/members', validateUuidParam(), requireTeamMember, teamController.listMembers);
-router.post('/:id/members', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN'), validate(addMemberSchema), teamController.addMember);
-router.put('/:id/members/:userId', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN'), validateUuidParam('userId'), validate(updateMemberRoleSchema), teamController.updateMemberRole);
-router.delete('/:id/members/:userId', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN', { allowTenantAdmin: true }), validateUuidParam('userId'), teamController.removeMember);
+router.get('/:id/members', validateUuidParam(), requireTeamMember, asyncHandler(teamController.listMembers));
+router.post('/:id/members', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN'), validate(addMemberSchema), asyncHandler(teamController.addMember));
+router.put('/:id/members/:userId', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN'), validateUuidParam('userId'), validate(updateMemberRoleSchema), asyncHandler(teamController.updateMemberRole));
+router.delete('/:id/members/:userId', validateUuidParam(), requireTeamMember, requireTeamRole('TEAM_ADMIN', { allowTenantAdmin: true }), validateUuidParam('userId'), asyncHandler(teamController.removeMember));
 
 export default router;

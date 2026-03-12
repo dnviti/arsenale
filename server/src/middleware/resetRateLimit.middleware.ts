@@ -1,25 +1,22 @@
-import rateLimit from 'express-rate-limit';
+import { createRateLimiter } from './rateLimitFactory';
 
-export const forgotPasswordLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+const TEN_MINUTES_MS = 10 * 60 * 1000;
+
+export const forgotPasswordLimiter = createRateLimiter({
+  windowMs: FIFTEEN_MINUTES_MS,
   max: 3,
-  message: { error: 'Too many password reset requests. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: 'Too many password reset requests. Please try again later.',
 });
 
-export const resetPasswordLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+export const resetPasswordLimiter = createRateLimiter({
+  windowMs: FIFTEEN_MINUTES_MS,
   max: 5,
-  message: { error: 'Too many attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: 'Too many attempts. Please try again later.',
 });
 
-export const resetSmsLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
+export const resetSmsLimiter = createRateLimiter({
+  windowMs: TEN_MINUTES_MS,
   max: 3,
-  message: { error: 'Too many SMS requests. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: 'Too many SMS requests. Please try again later.',
 });

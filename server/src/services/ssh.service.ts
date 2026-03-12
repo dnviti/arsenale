@@ -1,5 +1,8 @@
 import { Client, ClientChannel, SFTPWrapper } from 'ssh2';
 
+const SSH_READY_TIMEOUT_MS = 10_000;
+const SSH_KEEPALIVE_INTERVAL_MS = 10_000;
+
 export interface SshConnectionParams {
   host: string;
   port: number;
@@ -63,8 +66,8 @@ export function createSshConnection(
       ...(params.privateKey
         ? { privateKey: params.privateKey, passphrase: params.passphrase }
         : { password: params.password }),
-      readyTimeout: 10000,
-      keepaliveInterval: 10000,
+      readyTimeout: SSH_READY_TIMEOUT_MS,
+      keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
     });
   });
 }
@@ -132,8 +135,8 @@ export function createSshConnectionViaBastion(
       ...(params.bastionPrivateKey
         ? { privateKey: params.bastionPrivateKey }
         : { password: params.bastionPassword }),
-      readyTimeout: 10000,
-      keepaliveInterval: 10000,
+      readyTimeout: SSH_READY_TIMEOUT_MS,
+      keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
     });
   });
 }

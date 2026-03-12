@@ -106,7 +106,7 @@ The following data is gathered automatically for your analysis.
 !`grep -rnE "^(\s{16}|\t{4})" server/src/controllers/*.ts server/src/services/*.ts 2>/dev/null | head -20`
 
 ### Dangerous patterns (eval, innerHTML, dangerouslySetInnerHTML)
-!`grep -rn "eval(\|Function(\|innerHTML\|dangerouslySetInnerHTML\|\$queryRaw\`\|\$executeRaw\`" server/src/ client/src/ --include="*.ts" --include="*.tsx" 2>/dev/null || echo "NO_MATCHES: No dangerous patterns found"`
+!`grep -rn "eval(\|Function(\|innerHTML\|dangerouslySetInnerHTML\|\$queryRaw\|\$executeRaw" server/src/ client/src/ --include="*.ts" --include="*.tsx" 2>/dev/null || echo "NO_MATCHES: No dangerous patterns found"`
 
 ### Hardcoded secrets candidates
 !`grep -rnE "(password|secret|key|token)\s*[:=]\s*['\"][^'\"]{8,}" server/src/ --include="*.ts" 2>/dev/null | grep -vE "\.env|config\.|process\.env|type |interface |import|req\.|param|schema" | head -20`

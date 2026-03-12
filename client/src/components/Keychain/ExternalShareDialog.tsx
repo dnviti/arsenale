@@ -14,7 +14,8 @@ import {
   createExternalShare, listExternalShares, revokeExternalShare,
 } from '../../api/secrets.api';
 import type { ExternalShareResult, ExternalShareListItem } from '../../api/secrets.api';
-import { extractApiError } from '../../utils/apiError';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 interface ExternalShareDialogProps {
   open: boolean;
@@ -40,10 +41,9 @@ export default function ExternalShareDialog({
   const [maxAccessCount, setMaxAccessCount] = useState('');
   const [usePin, setUsePin] = useState(false);
   const [pin, setPin] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { loading, error, setError, run } = useAsyncAction();
   const [result, setResult] = useState<ExternalShareResult | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy: copyToClipboard } = useCopyToClipboard();
   const [shares, setShares] = useState<ExternalShareListItem[]>([]);
 
   useEffect(() => {
@@ -55,7 +55,6 @@ export default function ExternalShareDialog({
       setUsePin(false);
       setMaxAccessCount('');
       setExpiresInMinutes(1440);
-      setCopied(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, secretId]);
@@ -70,43 +69,34 @@ export default function ExternalShareDialog({
   };
 
   const handleCreate = async () => {
-    setError('');
     if (usePin && !/^\d{4,8}$/.test(pin)) {
       setError('PIN must be 4-8 digits');
       return;
     }
-    setLoading(true);
-    try {
-      const input: { expiresInMinutes: number; maxAccessCount?: number; pin?: string } = {
-        expiresInMinutes,
-      };
-      if (maxAccessCount) {
-        const count = parseInt(maxAccessCount, 10);
-        if (isNaN(count) || count < 1) {
-          setError('Max access count must be a positive number');
-          setLoading(false);
-          return;
-        }
-        input.maxAccessCount = count;
+    const input: { expiresInMinutes: number; maxAccessCount?: number; pin?: string } = {
+      expiresInMinutes,
+    };
+    if (maxAccessCount) {
+      const count = parseInt(maxAccessCount, 10);
+      if (isNaN(count) || count < 1) {
+        setError('Max access count must be a positive number');
+        return;
       }
-      if (usePin && pin) {
-        input.pin = pin;
-      }
+      input.maxAccessCount = count;
+    }
+    if (usePin && pin) {
+      input.pin = pin;
+    }
+    await run(async () => {
       const res = await createExternalShare(secretId, input);
       setResult(res);
       await loadShares();
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to create external share'));
-    } finally {
-      setLoading(false);
-    }
+    }, 'Failed to create external share');
   };
 
-  const handleCopy = async () => {
+  const handleCopy = () => {
     if (result?.shareUrl) {
-      await navigator.clipboard.writeText(result.shareUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      copyToClipboard(result.shareUrl);
     }
   };
 

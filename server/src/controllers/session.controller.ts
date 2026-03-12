@@ -20,6 +20,9 @@ import { logger } from '../utils/logger';
 import { getClientIp } from '../utils/ip';
 import type { SessionInput } from '../schemas/session.schemas';
 
+const DEFAULT_RDP_WIDTH = 1024;
+const DEFAULT_RDP_HEIGHT = 768;
+
 // ---- RDP session creation (migrated from rdp.handler.ts) ----
 
 export async function createRdpSession(req: AuthRequest, res: Response, next: NextFunction) {
@@ -133,8 +136,8 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       // recording without initial graphical content (only mouse cursor visible)
       mergedRdp.resizeMethod = 'reconnect';
       if (!mergedRdp.width) {
-        mergedRdp.width = 1024;
-        mergedRdp.height = 768;
+        mergedRdp.width = DEFAULT_RDP_WIDTH;
+        mergedRdp.height = DEFAULT_RDP_HEIGHT;
       }
       try {
         const recGatewayDir = selectedContainerName || 'default';
@@ -389,147 +392,119 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
 
 // ---- SSH access validation (unchanged from rdp.handler.ts) ----
 
-export async function validateSshAccess(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const { connectionId } = req.body as SessionInput;
-    const conn = await getConnection(req.user.userId, connectionId, req.user.tenantId);
+export async function validateSshAccess(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const { connectionId } = req.body as SessionInput;
+  const conn = await getConnection(req.user.userId, connectionId, req.user.tenantId);
 
-    if (conn.type !== 'SSH') {
-      throw new AppError('Not an SSH connection', 400);
-    }
-
-    // SSH sessions are handled via Socket.io, we just validate access here
-    res.json({ connectionId, type: 'SSH' });
-  } catch (err) {
-    next(err);
+  if (conn.type !== 'SSH') {
+    throw new AppError('Not an SSH connection', 400);
   }
+
+  // SSH sessions are handled via Socket.io, we just validate access here
+  res.json({ connectionId, type: 'SSH' });
 }
 
 // ---- RDP heartbeat ----
 
-export async function rdpHeartbeat(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const sessionId = req.params.sessionId as string;
-    const session = await prisma.activeSession.findUnique({
-      where: { id: sessionId },
-    });
-    if (!session || session.userId !== req.user.userId) {
-      throw new AppError('Session not found', 404);
-    }
-    if (session.status === 'CLOSED') {
-      throw new AppError('Session already closed', 410);
-    }
-    await sessionService.heartbeat(sessionId);
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
+export async function rdpHeartbeat(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const sessionId = req.params.sessionId as string;
+  const session = await prisma.activeSession.findUnique({
+    where: { id: sessionId },
+  });
+  if (!session || session.userId !== req.user.userId) {
+    throw new AppError('Session not found', 404);
   }
+  if (session.status === 'CLOSED') {
+    throw new AppError('Session already closed', 410);
+  }
+  await sessionService.heartbeat(sessionId);
+  res.json({ ok: true });
 }
 
 // ---- RDP session end ----
 
-export async function rdpEnd(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const sessionId = req.params.sessionId as string;
-    const session = await prisma.activeSession.findUnique({
-      where: { id: sessionId },
-    });
-    if (!session || session.userId !== req.user.userId) {
-      throw new AppError('Session not found', 404);
-    }
-    await sessionService.endSession(sessionId, 'client_disconnect');
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
+export async function rdpEnd(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const sessionId = req.params.sessionId as string;
+  const session = await prisma.activeSession.findUnique({
+    where: { id: sessionId },
+  });
+  if (!session || session.userId !== req.user.userId) {
+    throw new AppError('Session not found', 404);
   }
+  await sessionService.endSession(sessionId, 'client_disconnect');
+  res.json({ ok: true });
 }
 
 // ---- Admin: list active sessions ----
 
-export async function listActiveSessions(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const protocol = req.query.protocol as string | undefined;
-    const gatewayId = req.query.gatewayId as string | undefined;
+export async function listActiveSessions(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const protocol = req.query.protocol as string | undefined;
+  const gatewayId = req.query.gatewayId as string | undefined;
 
-    const sessions = await sessionService.getActiveSessions({
-      tenantId: req.user.tenantId,
-      protocol: protocol === 'SSH' ? 'SSH' : protocol === 'RDP' ? 'RDP' : protocol === 'VNC' ? 'VNC' : undefined,
-      gatewayId,
-    });
-    res.json(sessions);
-  } catch (err) {
-    next(err);
-  }
+  const sessions = await sessionService.getActiveSessions({
+    tenantId: req.user.tenantId,
+    protocol: protocol === 'SSH' ? 'SSH' : protocol === 'RDP' ? 'RDP' : protocol === 'VNC' ? 'VNC' : undefined,
+    gatewayId,
+  });
+  res.json(sessions);
 }
 
 // ---- Admin: session count ----
 
-export async function getSessionCount(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const count = await sessionService.getActiveSessionCount({
-      tenantId: req.user.tenantId,
-    });
-    res.json({ count });
-  } catch (err) {
-    next(err);
-  }
+export async function getSessionCount(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const count = await sessionService.getActiveSessionCount({
+    tenantId: req.user.tenantId,
+  });
+  res.json({ count });
 }
 
 // ---- Admin: session count by gateway ----
 
-export async function getSessionCountByGateway(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertTenantAuthenticated(req);
-    const counts = await sessionService.getActiveSessionCountByGateway(req.user.tenantId);
-    res.json(counts);
-  } catch (err) {
-    next(err);
-  }
+export async function getSessionCountByGateway(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const counts = await sessionService.getActiveSessionCountByGateway(req.user.tenantId);
+  res.json(counts);
 }
 
 // ---- Admin: terminate session ----
 
-export async function terminateSession(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const sessionId = req.params.sessionId as string;
-    const session = await prisma.activeSession.findUnique({
-      where: { id: sessionId },
-      include: { user: { select: { tenantMemberships: { where: { isActive: true }, take: 1, select: { tenantId: true } } } } },
-    });
-    if (!session || session.user?.tenantMemberships[0]?.tenantId !== req.user.tenantId) {
-      throw new AppError('Session not found', 404);
-    }
-    await sessionService.endSession(sessionId, 'admin_terminated');
-
-    // Force-disconnect the live transport (SSH socket / RDP browser notification)
-    forceDisconnectSession({
-      id: sessionId,
-      protocol: session.protocol,
-      socketId: session.socketId,
-      userId: session.userId,
-    });
-
-    auditService.log({
-      userId: req.user.userId,
-      action: 'SESSION_TERMINATE',
-      targetType: 'Session',
-      targetId: sessionId,
-      details: {
-        terminatedUserId: session.userId,
-        protocol: session.protocol,
-        connectionId: session.connectionId,
-      },
-      ipAddress: getClientIp(req),
-    });
-
-    res.json({ ok: true });
-  } catch (err) {
-    next(err);
+export async function terminateSession(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const sessionId = req.params.sessionId as string;
+  const session = await prisma.activeSession.findUnique({
+    where: { id: sessionId },
+    include: { user: { select: { tenantMemberships: { where: { isActive: true }, take: 1, select: { tenantId: true } } } } },
+  });
+  if (!session || session.user?.tenantMemberships[0]?.tenantId !== req.user.tenantId) {
+    throw new AppError('Session not found', 404);
   }
+  await sessionService.endSession(sessionId, 'admin_terminated');
+
+  // Force-disconnect the live transport (SSH socket / RDP browser notification)
+  forceDisconnectSession({
+    id: sessionId,
+    protocol: session.protocol,
+    socketId: session.socketId,
+    userId: session.userId,
+  });
+
+  auditService.log({
+    userId: req.user.userId,
+    action: 'SESSION_TERMINATE',
+    targetType: 'Session',
+    targetId: sessionId,
+    details: {
+      terminatedUserId: session.userId,
+      protocol: session.protocol,
+      connectionId: session.connectionId,
+    },
+    ipAddress: getClientIp(req),
+  });
+
+  res.json({ ok: true });
 }

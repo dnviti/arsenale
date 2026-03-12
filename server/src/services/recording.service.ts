@@ -7,6 +7,8 @@ import { config } from '../config';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/error.middleware';
 import type { SessionProtocol, RecordingStatus } from '../lib/prisma';
+import { createNotificationAsync } from './notification.service';
+import { emitNotification } from '../socket/notification.handler';
 
 // ── Video conversion concurrency lock ────────────────────────────────
 const activeConversions = new Map<string, Promise<{ videoPath: string; fileSize: number }>>();
@@ -99,7 +101,7 @@ export async function completeRecording(
   fileSize: number,
   duration: number,
 ): Promise<void> {
-  await prisma.sessionRecording.update({
+  const recording = await prisma.sessionRecording.update({
     where: { id: recordingId },
     data: {
       status: 'COMPLETE',
@@ -107,8 +109,33 @@ export async function completeRecording(
       duration,
       completedAt: new Date(),
     },
+    select: {
+      id: true,
+      userId: true,
+      protocol: true,
+      connection: { select: { name: true } },
+    },
   });
   logger.info(`[recording] Completed recording ${recordingId} (${fileSize} bytes, ${duration}s)`);
+
+  const label = recording.connection?.name ?? recording.protocol;
+  const msg = `Your ${label} session recording is ready`;
+
+  createNotificationAsync({
+    userId: recording.userId,
+    type: 'RECORDING_READY',
+    message: msg,
+    relatedId: recordingId,
+  });
+
+  emitNotification(recording.userId, {
+    id: recording.id,
+    type: 'RECORDING_READY',
+    message: msg,
+    read: false,
+    relatedId: recordingId,
+    createdAt: new Date(),
+  });
 }
 
 export async function failRecording(recordingId: string): Promise<void> {
@@ -182,7 +209,7 @@ export async function listRecordings(params: {
         user: { select: { id: true, email: true, username: true } },
       },
       orderBy: { createdAt: 'desc' },
-      take: params.limit ?? 50,
+      take: params.limit ?? DEFAULT_RECORDINGS_LIMIT,
       skip: params.offset ?? 0,
     }),
     prisma.sessionRecording.count({ where }),
@@ -229,7 +256,12 @@ export function streamRecordingFile(filePath: string): Readable | null {
 
 // ── Video conversion ─────────────────────────────────────────────────
 
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 2_000;
+const DEFAULT_VIDEO_WIDTH = 1024;
+const DEFAULT_VIDEO_HEIGHT = 768;
+const DEFAULT_RECORDINGS_LIMIT = 50;
+const GUACENC_SUBMIT_TIMEOUT_MS = 10_000;
+const GUACENC_STATUS_TIMEOUT_MS = 5_000;
 
 /** Translate a host-local recording path to the guacenc container mount path. */
 function toContainerPath(hostPath: string): string {
@@ -281,8 +313,8 @@ export async function convertToVideo(
   if (existing) return existing;
 
   const conversionPromise = (async () => {
-    const width = recording.width || 1024;
-    const height = recording.height || 768;
+    const width = recording.width || DEFAULT_VIDEO_WIDTH;
+    const height = recording.height || DEFAULT_VIDEO_HEIGHT;
     const deadline = Date.now() + config.guacencTimeoutMs;
 
     // Step 1: Submit async conversion job
@@ -292,7 +324,7 @@ export async function convertToVideo(
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ filePath: toContainerPath(recording.filePath), width, height }),
-        signal: AbortSignal.timeout(10_000),
+        signal: AbortSignal.timeout(GUACENC_SUBMIT_TIMEOUT_MS),
       });
 
       if (!res.ok) {
@@ -316,7 +348,7 @@ export async function convertToVideo(
 
       try {
         const res = await fetch(`${config.guacencServiceUrl}/status/${jobId}`, {
-          signal: AbortSignal.timeout(5_000),
+          signal: AbortSignal.timeout(GUACENC_STATUS_TIMEOUT_MS),
         });
 
         if (!res.ok) {
@@ -387,7 +419,7 @@ export async function cleanupExpiredRecordings(): Promise<number> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ maxAgeDays: config.recordingRetentionDays }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(GUACENC_SUBMIT_TIMEOUT_MS),
     });
   } catch (err) {
     // Ignore errors — sidecar might be down or not configured

@@ -10,13 +10,8 @@ import type { TestEmailInput, SelfSignupInput } from '../schemas/admin.schemas';
 export async function emailStatus(
   _req: AuthRequest,
   res: Response,
-  next: NextFunction,
 ) {
-  try {
-    res.json(getEmailStatus());
-  } catch (err) {
-    next(err);
-  }
+  res.json(getEmailStatus());
 }
 
 export async function sendTestEmail(
@@ -62,36 +57,26 @@ export async function sendTestEmail(
 export async function getAppConfig(
   _req: AuthRequest,
   res: Response,
-  next: NextFunction,
 ) {
-  try {
-    const selfSignupEnabled = await appConfigService.getSelfSignupEnabled();
-    const selfSignupEnvLocked = appConfigService.isSelfSignupEnvLocked();
-    res.json({ selfSignupEnabled, selfSignupEnvLocked });
-  } catch (err) {
-    next(err);
-  }
+  const selfSignupEnabled = await appConfigService.getSelfSignupEnabled();
+  const selfSignupEnvLocked = appConfigService.isSelfSignupEnvLocked();
+  res.json({ selfSignupEnabled, selfSignupEnvLocked });
 }
 
 export async function setSelfSignup(
   req: AuthRequest,
   res: Response,
-  next: NextFunction,
 ) {
-  try {
-    assertAuthenticated(req);
-    const { enabled } = req.body as SelfSignupInput;
-    await appConfigService.setSelfSignupEnabled(enabled);
+  assertAuthenticated(req);
+  const { enabled } = req.body as SelfSignupInput;
+  await appConfigService.setSelfSignupEnabled(enabled);
 
-    auditService.log({
-      userId: req.user.userId,
-      action: 'APP_CONFIG_UPDATE',
-      details: { key: 'selfSignupEnabled', value: enabled },
-      ipAddress: getClientIp(req),
-    });
+  auditService.log({
+    userId: req.user.userId,
+    action: 'APP_CONFIG_UPDATE',
+    details: { key: 'selfSignupEnabled', value: enabled },
+    ipAddress: getClientIp(req),
+  });
 
-    res.json({ selfSignupEnabled: enabled });
-  } catch (err) {
-    next(err);
-  }
+  res.json({ selfSignupEnabled: enabled });
 }

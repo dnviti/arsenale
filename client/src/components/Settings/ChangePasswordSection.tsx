@@ -8,7 +8,7 @@ import {
   type VerificationMethod,
 } from '../../api/user.api';
 import IdentityVerification from '../common/IdentityVerification';
-import { extractApiError } from '../../utils/apiError';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 interface ChangePasswordSectionProps {
   hasPassword: boolean;
@@ -23,8 +23,7 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const { loading, error, setError, run } = useAsyncAction();
   const [success, setSuccess] = useState('');
 
   // Identity verification state
@@ -37,10 +36,8 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
   if (!hasPassword) return null;
 
   const handleStartPasswordChange = async () => {
-    setError('');
     setSuccess('');
-    setLoading(true);
-    try {
+    await run(async () => {
       const result = await initiatePasswordChange();
       if (result.skipVerification) {
         setSkipVerification(true);
@@ -52,11 +49,7 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
         setVerificationMetadata(result.metadata);
         setPhase('verifying-identity');
       }
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to initiate password change'));
-    } finally {
-      setLoading(false);
-    }
+    }, 'Failed to initiate password change');
   };
 
   const handleIdentityVerified = (vId: string) => {
@@ -66,7 +59,6 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setSuccess('');
 
     if (newPassword !== confirmPassword) {
@@ -74,21 +66,18 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
       return;
     }
 
-    setLoading(true);
-    try {
+    const ok = await run(async () => {
       await changePassword(
         skipVerification ? oldPassword : '',
         newPassword,
         completedVerificationId,
       );
+    }, 'Failed to change password');
+    if (ok) {
       setSuccess('Password changed. You will be signed out...');
       setTimeout(() => {
         authLogout();
       }, 2000);
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to change password'));
-    } finally {
-      setLoading(false);
     }
   };
 

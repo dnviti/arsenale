@@ -19,13 +19,13 @@ export interface LinkedAccount {
 }
 
 export async function getOAuthProviders(): Promise<OAuthProviders> {
-  const res = await api.get('/auth/oauth/providers');
-  return res.data;
+  const { data } = await api.get('/auth/oauth/providers');
+  return data;
 }
 
 export async function getLinkedAccounts(): Promise<LinkedAccount[]> {
-  const res = await api.get('/auth/oauth/accounts');
-  return res.data;
+  const { data } = await api.get('/auth/oauth/accounts');
+  return data;
 }
 
 export async function unlinkOAuthAccount(provider: string): Promise<void> {

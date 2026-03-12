@@ -342,6 +342,20 @@
   Dipendenze: AUDIT-013 (completato), ZT-045 (completato)
   COMPLETATO: Added per-connection audit log accessible via right-click context menu "Activity Log". Backend: composite index @@index([targetId, createdAt]) on AuditLog, getConnectionAuditLogs and getConnectionAuditUsers service functions, controller handlers with permissionService.canViewConnection access checks, routes GET /audit/connection/:connectionId and /users. Frontend: ConnectionAuditLogDialog full-screen dialog with filters, expandable rows, colored action chips, pagination, admin-only user filter Autocomplete and CSV export. Context menu item propagated through treeHelpers, ConnectionTree, TeamConnectionSection to MainLayout.
 
+------------------------------------------------------------------------------
+[x] REFAC-205 — Migrare i dialog rimanenti al hook useAsyncAction
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: REFAC-202 (completato)
+  COMPLETATO: Migrated 9 dialog components (FolderDialog, TeamDialog, ExportDialog, ShareDialog, ShareFolderDialog, CreateUserDialog, UserProfileDialog, ConnectionDialog, ImportDialog) from manual useState loading/error + try-catch boilerplate to the useAsyncAction hook. Removed extractApiError imports (handled internally by the hook). Skipped ConnectAsDialog (no async operations). Each dialog now uses run() for async actions with automatic error handling and loading state management.
+
+------------------------------------------------------------------------------
+[x] SHR-211 — Aggiornamento dinamico risorse condivise senza reload pagina
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: NOTIF-015
+  COMPLETATO: Built reusable notification action framework with central registry (notificationActions.tsx) mapping each NotificationType to icon, onReceive store refresh, and onNavigate deep-link action. Created useShareSync hook that subscribes to Zustand notification store with 500ms debounced refresh for connections and secrets. Updated NotificationBell to use registry for icons and navigate on click (open connection tab, keychain dialog, recordings dialog, or settings). Added two new server-side notification types: TENANT_INVITATION (emitted on user invite) and RECORDING_READY (emitted on recording completion). Framework is extensible — adding future notification types requires only a registry entry.
+
 ================================================================================
   SEZIONE B — TASK AGGIUNTIVI SUGGERITI
 ================================================================================
@@ -1277,6 +1291,14 @@
   File coinvolti:
     MODIFICATO: client/src/components/Dialogs/AuditLogDialog.tsx
     MODIFICATO: client/src/store/uiPreferencesStore.ts
+
+
+------------------------------------------------------------------------------
+[x] REFAC-206 — Estendere middleware Zod validate per query params e path params
+------------------------------------------------------------------------------
+  Priorita: MEDIA
+  Dipendenze: REFAC-201 (completato)
+  COMPLETATO: Extended validate() middleware with combined ValidateSchemaMap overload (validate({ body, query, params })). Added validatedQuery<T>() and validatedParams<T>() typed accessor helpers. Replaced 8 unsafe 'as unknown as' casts across audit, secret, notification, and recording controllers. Converted one audit route to use the combined validate API as demonstration.
 
 
 ================================================================================
@@ -3086,6 +3108,17 @@
   File coinvolti:
     CREARE:     .github/workflows/guacenc-build.yml
 
+------------------------------------------------------------------------------
+[x] CLEAN-201 — Rimuovere log di debug e standardizzare pattern risposta API client
+------------------------------------------------------------------------------
+  Priorita: BASSA
+  Dipendenze: Nessuna
+  COMPLETATO: Removed 2 debug console.log from terminalSettingsStore.ts. Standardized all 22 API client files (~163 functions) to use destructuring pattern: const { data } = await api.method(); return data. Renamed data parameters to payload in 15 functions to avoid shadowing conflicts.
+
+  File coinvolti:
+    MODIFICARE: client/src/store/terminalSettingsStore.ts
+    MODIFICARE: client/src/api/*.api.ts (tutti i 22 file API)
+
 
 ================================================================================
   SEZIONE G — IP ADDRESS INTELLIGENCE
@@ -3229,4 +3262,34 @@
   - server/src/config.ts (modified)
   - server/src/services/secretSharing.service.ts (modified)
   - server/src/services/sharing.service.ts (modified)
+
+------------------------------------------------------------------------------
+[x] REFAC-203 — Async controller wrapper per eliminare boilerplate try-catch-next
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Created asyncHandler() wrapper in server/src/middleware/asyncHandler.ts. Applied route-level wrapping across 25 route files. Removed ~176 boilerplate try-catch-next blocks from 26 controller files. Preserved 16 Category C catch blocks with custom logic (auth error mapping, session audit logging, JSON parse error handling). Reduced catch block count from ~192 to 16.
+
+  FILE COINVOLTI:
+  - server/src/middleware/asyncHandler.ts (new)
+  - All 26 files in server/src/controllers/*.controller.ts (modified)
+  - 25 route files in server/src/routes/*.routes.ts (modified)
+
+------------------------------------------------------------------------------
+[x] REFAC-204 — Estrarre utility condivise nei servizi (tenant boundary, re-encryption, vault key)
+------------------------------------------------------------------------------
+  Priorita: ALTA
+  Dipendenze: Nessuna
+  COMPLETATO: Added requireMasterKey() and reEncryptField() to crypto.service.ts, assertShareableTenantBoundary() to tenantScope.ts. Removed 3 duplicate local requireMasterKey functions (connection, totp, gateway). Replaced 2 identical 16-line tenant boundary blocks with single-line calls (sharing, secretSharing). Replaced ~30 lines of decrypt+encrypt boilerplate with reEncryptField calls. Replaced 9+ inline getMasterKey+throw patterns across team.service.ts and secret.service.ts.
+
+  FILE COINVOLTI:
+  - server/src/services/crypto.service.ts (modified — added requireMasterKey, reEncryptField)
+  - server/src/utils/tenantScope.ts (modified — added assertShareableTenantBoundary)
+  - server/src/services/connection.service.ts (modified)
+  - server/src/services/totp.service.ts (modified)
+  - server/src/services/gateway.service.ts (modified)
+  - server/src/services/sharing.service.ts (modified)
+  - server/src/services/secretSharing.service.ts (modified)
+  - server/src/services/team.service.ts (modified)
+  - server/src/services/secret.service.ts (modified)
 

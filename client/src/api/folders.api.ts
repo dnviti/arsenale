@@ -27,24 +27,24 @@ export interface FoldersResponse {
 }
 
 export async function listFolders(): Promise<FoldersResponse> {
-  const res = await api.get('/folders');
-  return res.data;
+  const { data } = await api.get('/folders');
+  return data;
 }
 
-export async function createFolder(data: FolderInput): Promise<FolderData> {
-  const res = await api.post('/folders', data);
-  return res.data;
+export async function createFolder(payload: FolderInput): Promise<FolderData> {
+  const { data } = await api.post('/folders', payload);
+  return data;
 }
 
 export async function updateFolder(
   id: string,
-  data: FolderUpdate
+  payload: FolderUpdate
 ): Promise<FolderData> {
-  const res = await api.put(`/folders/${id}`, data);
-  return res.data;
+  const { data } = await api.put(`/folders/${id}`, payload);
+  return data;
 }
 
 export async function deleteFolder(id: string): Promise<{ deleted: boolean }> {
-  const res = await api.delete(`/folders/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/folders/${id}`);
+  return data;
 }

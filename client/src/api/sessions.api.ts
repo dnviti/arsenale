@@ -36,18 +36,18 @@ export async function getActiveSessions(filters?: SessionFilters): Promise<Activ
   if (filters?.protocol) params.set('protocol', filters.protocol);
   if (filters?.status) params.set('status', filters.status);
   if (filters?.gatewayId) params.set('gatewayId', filters.gatewayId);
-  const res = await api.get('/sessions/active', { params });
-  return res.data;
+  const { data } = await api.get('/sessions/active', { params });
+  return data;
 }
 
 export async function getSessionCount(): Promise<number> {
-  const res = await api.get('/sessions/count');
-  return res.data.count;
+  const { data } = await api.get('/sessions/count');
+  return data.count;
 }
 
 export async function getSessionCountByGateway(): Promise<GatewaySessionCount[]> {
-  const res = await api.get('/sessions/count/gateway');
-  return res.data;
+  const { data } = await api.get('/sessions/count/gateway');
+  return data;
 }
 
 export async function terminateSession(sessionId: string): Promise<void> {

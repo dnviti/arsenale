@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment } from 'react';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import {
   Box, Button, Alert, CircularProgress, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Dialog, DialogTitle,
@@ -75,7 +76,7 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
   const [keyActionLoading, setKeyActionLoading] = useState(false);
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
   const [rotatePushInfo, setRotatePushInfo] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy: copyToClipboard } = useCopyToClipboard();
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
   const hasTenant = Boolean(user?.tenantId);
@@ -232,9 +233,7 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
 
   const handleCopyPublicKey = async () => {
     if (!sshKeyPair) return;
-    await navigator.clipboard.writeText(sshKeyPair.publicKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    await copyToClipboard(sshKeyPair.publicKey);
   };
 
   const handleDownloadPublicKey = () => {

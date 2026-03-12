@@ -3,7 +3,13 @@ import api from './client';
 export type NotificationType =
   | 'CONNECTION_SHARED'
   | 'SHARE_PERMISSION_UPDATED'
-  | 'SHARE_REVOKED';
+  | 'SHARE_REVOKED'
+  | 'SECRET_SHARED'
+  | 'SECRET_SHARE_REVOKED'
+  | 'SECRET_EXPIRING'
+  | 'SECRET_EXPIRED'
+  | 'TENANT_INVITATION'
+  | 'RECORDING_READY';
 
 export interface NotificationEntry {
   id: string;
@@ -23,8 +29,8 @@ export interface NotificationsResponse {
 export async function getNotifications(
   params: { limit?: number; offset?: number } = {}
 ): Promise<NotificationsResponse> {
-  const res = await api.get('/notifications', { params });
-  return res.data;
+  const { data } = await api.get('/notifications', { params });
+  return data;
 }
 
 export async function markAsRead(id: string): Promise<void> {

@@ -13,13 +13,13 @@ export async function shareConnection(
   target: { email?: string; userId?: string },
   permission: 'READ_ONLY' | 'FULL_ACCESS'
 ) {
-  const res = await api.post(`/connections/${connectionId}/share`, { ...target, permission });
-  return res.data;
+  const { data } = await api.post(`/connections/${connectionId}/share`, { ...target, permission });
+  return data;
 }
 
 export async function unshareConnection(connectionId: string, userId: string) {
-  const res = await api.delete(`/connections/${connectionId}/share/${userId}`);
-  return res.data;
+  const { data } = await api.delete(`/connections/${connectionId}/share/${userId}`);
+  return data;
 }
 
 export async function updateSharePermission(
@@ -27,13 +27,13 @@ export async function updateSharePermission(
   userId: string,
   permission: 'READ_ONLY' | 'FULL_ACCESS'
 ) {
-  const res = await api.put(`/connections/${connectionId}/share/${userId}`, { permission });
-  return res.data;
+  const { data } = await api.put(`/connections/${connectionId}/share/${userId}`, { permission });
+  return data;
 }
 
 export async function listShares(connectionId: string): Promise<ShareData[]> {
-  const res = await api.get(`/connections/${connectionId}/shares`);
-  return res.data;
+  const { data } = await api.get(`/connections/${connectionId}/shares`);
+  return data;
 }
 
 export interface BatchShareResult {
@@ -49,16 +49,16 @@ export async function batchShareConnections(
   permission: 'READ_ONLY' | 'FULL_ACCESS',
   folderName?: string
 ): Promise<BatchShareResult> {
-  const res = await api.post('/connections/batch-share', { connectionIds, target, permission, folderName });
-  return res.data;
+  const { data } = await api.post('/connections/batch-share', { connectionIds, target, permission, folderName });
+  return data;
 }
 
 export async function createSession(connectionId: string) {
-  const res = await api.post('/sessions/rdp', { connectionId });
-  return res.data as { token: string } | { connectionId: string; type: string };
+  const { data } = await api.post('/sessions/rdp', { connectionId });
+  return data as { token: string } | { connectionId: string; type: string };
 }
 
 export async function createSshSession(connectionId: string) {
-  const res = await api.post('/sessions/ssh', { connectionId });
-  return res.data;
+  const { data } = await api.post('/sessions/ssh', { connectionId });
+  return data;
 }

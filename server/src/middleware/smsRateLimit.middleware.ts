@@ -1,22 +1,16 @@
-import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { createRateLimiter } from './rateLimitFactory';
 
-export const smsRateLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000, // 10 minutes
+const SMS_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+
+export const smsRateLimiter = createRateLimiter({
+  windowMs: SMS_WINDOW_MS,
   max: 3,
-  message: { error: 'Too many SMS requests. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  keyGenerator: (req) => {
-    const authReq = req as { user?: { userId: string } };
-    if (authReq.user?.userId) return `sms:${authReq.user.userId}`;
-    return `sms:${ipKeyGenerator(req.ip ?? '127.0.0.1')}`;
-  },
+  message: 'Too many SMS requests. Please try again later.',
+  keyPrefix: 'sms',
 });
 
-export const smsLoginRateLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
+export const smsLoginRateLimiter = createRateLimiter({
+  windowMs: SMS_WINDOW_MS,
   max: 3,
-  message: { error: 'Too many SMS requests. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
+  message: 'Too many SMS requests. Please try again later.',
 });

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
+import { asyncHandler } from '../middleware/asyncHandler';
 import { vaultSetupSchema } from '../schemas/oauth.schemas';
 import * as oauthController from '../controllers/oauth.controller';
 
@@ -13,9 +14,9 @@ router.get('/oauth/providers', oauthController.getAvailableProviders);
 router.get('/oauth/link/:provider', oauthController.initiateLinkOAuth);
 
 // Protected routes
-router.get('/oauth/accounts', authenticate, oauthController.getLinkedAccounts);
-router.delete('/oauth/link/:provider', authenticate, oauthController.unlinkOAuth);
-router.post('/oauth/vault-setup', authenticate, validate(vaultSetupSchema), oauthController.setupVault);
+router.get('/oauth/accounts', authenticate, asyncHandler(oauthController.getLinkedAccounts));
+router.delete('/oauth/link/:provider', authenticate, asyncHandler(oauthController.unlinkOAuth));
+router.post('/oauth/vault-setup', authenticate, validate(vaultSetupSchema), asyncHandler(oauthController.setupVault));
 
 // OAuth initiation + callback (public) — must come after /oauth/* routes
 router.get('/oauth/:provider', oauthController.initiateOAuth);

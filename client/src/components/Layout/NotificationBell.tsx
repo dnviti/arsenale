@@ -3,17 +3,16 @@ import {
   IconButton, Badge, Popover, Box, Typography, List, ListItemButton,
   ListItemText, ListItemIcon, Button, Divider,
 } from '@mui/material';
-import {
-  NotificationsOutlined,
-  Share as ShareIcon,
-  RemoveCircleOutline,
-  Edit as EditIcon,
-  DoneAll,
-} from '@mui/icons-material';
+import { NotificationsOutlined, DoneAll } from '@mui/icons-material';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../../store/authStore';
 import { useNotificationListStore } from '../../store/notificationListStore';
 import type { NotificationEntry } from '../../api/notifications.api';
+import {
+  getNotificationIcon,
+  getOnNavigate,
+  type NavigationActions,
+} from '../../utils/notificationActions';
 
 function timeAgo(dateStr: string): string {
   const now = Date.now();
@@ -28,15 +27,11 @@ function timeAgo(dateStr: string): string {
   return `${diffDay}d ago`;
 }
 
-function notificationIcon(type: NotificationEntry['type']) {
-  switch (type) {
-    case 'CONNECTION_SHARED': return <ShareIcon fontSize="small" color="primary" />;
-    case 'SHARE_REVOKED': return <RemoveCircleOutline fontSize="small" color="error" />;
-    case 'SHARE_PERMISSION_UPDATED': return <EditIcon fontSize="small" color="warning" />;
-  }
+interface NotificationBellProps {
+  navigationActions: NavigationActions;
 }
 
-export default function NotificationBell() {
+export default function NotificationBell({ navigationActions }: NotificationBellProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const notifications = useNotificationListStore((s) => s.notifications);
   const unreadCount = useNotificationListStore((s) => s.unreadCount);
@@ -77,6 +72,12 @@ export default function NotificationBell() {
   const handleClick = (notification: NotificationEntry) => {
     if (!notification.read) {
       markAsRead(notification.id);
+    }
+
+    const navigate = getOnNavigate(notification.type);
+    if (navigate) {
+      navigate(notification, navigationActions);
+      setAnchorEl(null);
     }
   };
 
@@ -135,7 +136,7 @@ export default function NotificationBell() {
                 }}
               >
                 <ListItemIcon sx={{ minWidth: 36 }}>
-                  {notificationIcon(n.type)}
+                  {getNotificationIcon(n.type)}
                 </ListItemIcon>
                 <ListItemText
                   primary={n.message}

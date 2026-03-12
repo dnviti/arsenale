@@ -68,28 +68,28 @@ export interface CreateTenantResponse {
 }
 
 export async function createTenant(name: string): Promise<CreateTenantResponse> {
-  const res = await api.post('/tenants', { name });
-  return res.data;
+  const { data } = await api.post('/tenants', { name });
+  return data;
 }
 
 export async function getMyTenant(): Promise<TenantData> {
-  const res = await api.get('/tenants/mine');
-  return res.data;
+  const { data } = await api.get('/tenants/mine');
+  return data;
 }
 
 export async function getTenantMfaStats(tenantId: string): Promise<{ total: number; withoutMfa: number }> {
-  const res = await api.get(`/tenants/${tenantId}/mfa-stats`);
-  return res.data;
+  const { data } = await api.get(`/tenants/${tenantId}/mfa-stats`);
+  return data;
 }
 
-export async function updateTenant(id: string, data: { name?: string; defaultSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null }): Promise<TenantData> {
-  const res = await api.put(`/tenants/${id}`, data);
-  return res.data;
+export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null }): Promise<TenantData> {
+  const { data } = await api.put(`/tenants/${id}`, payload);
+  return data;
 }
 
 export async function deleteTenant(id: string): Promise<{ deleted: boolean }> {
-  const res = await api.delete(`/tenants/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/tenants/${id}`);
+  return data;
 }
 
 export interface UserProfileData {
@@ -109,13 +109,13 @@ export interface UserProfileData {
 }
 
 export async function getUserProfile(tenantId: string, userId: string): Promise<UserProfileData> {
-  const res = await api.get(`/tenants/${tenantId}/users/${userId}/profile`);
-  return res.data;
+  const { data } = await api.get(`/tenants/${tenantId}/users/${userId}/profile`);
+  return data;
 }
 
 export async function listTenantUsers(tenantId: string): Promise<TenantUser[]> {
-  const res = await api.get(`/tenants/${tenantId}/users`);
-  return res.data;
+  const { data } = await api.get(`/tenants/${tenantId}/users`);
+  return data;
 }
 
 export async function inviteUser(
@@ -123,8 +123,8 @@ export async function inviteUser(
   email: string,
   role: 'ADMIN' | 'MEMBER',
 ): Promise<InviteResult> {
-  const res = await api.post(`/tenants/${tenantId}/invite`, { email, role });
-  return res.data;
+  const { data } = await api.post(`/tenants/${tenantId}/invite`, { email, role });
+  return data;
 }
 
 export async function updateUserRole(
@@ -132,24 +132,24 @@ export async function updateUserRole(
   userId: string,
   role: 'OWNER' | 'ADMIN' | 'MEMBER',
 ): Promise<TenantUser> {
-  const res = await api.put(`/tenants/${tenantId}/users/${userId}`, { role });
-  return res.data;
+  const { data } = await api.put(`/tenants/${tenantId}/users/${userId}`, { role });
+  return data;
 }
 
 export async function removeUser(
   tenantId: string,
   userId: string,
 ): Promise<{ removed: boolean }> {
-  const res = await api.delete(`/tenants/${tenantId}/users/${userId}`);
-  return res.data;
+  const { data } = await api.delete(`/tenants/${tenantId}/users/${userId}`);
+  return data;
 }
 
 export async function createTenantUser(
   tenantId: string,
-  data: CreateUserData,
+  payload: CreateUserData,
 ): Promise<CreateUserResult> {
-  const res = await api.post(`/tenants/${tenantId}/users`, data);
-  return res.data;
+  const { data } = await api.post(`/tenants/${tenantId}/users`, payload);
+  return data;
 }
 
 export async function toggleUserEnabled(
@@ -157,8 +157,8 @@ export async function toggleUserEnabled(
   userId: string,
   enabled: boolean,
 ): Promise<TenantUser> {
-  const res = await api.patch(`/tenants/${tenantId}/users/${userId}/enabled`, { enabled });
-  return res.data;
+  const { data } = await api.patch(`/tenants/${tenantId}/users/${userId}/enabled`, { enabled });
+  return data;
 }
 
 export async function adminChangeUserEmail(
@@ -167,13 +167,13 @@ export async function adminChangeUserEmail(
   newEmail: string,
   verificationId: string,
 ): Promise<{ id: string; email: string }> {
-  const res = await api.put(`/tenants/${tenantId}/users/${userId}/email`, { newEmail, verificationId });
-  return res.data;
+  const { data } = await api.put(`/tenants/${tenantId}/users/${userId}/email`, { newEmail, verificationId });
+  return data;
 }
 
 export async function getMyTenants(): Promise<TenantMembership[]> {
-  const res = await api.get('/tenants/mine/all');
-  return res.data;
+  const { data } = await api.get('/tenants/mine/all');
+  return data;
 }
 
 export async function switchTenant(tenantId: string): Promise<{
@@ -181,8 +181,8 @@ export async function switchTenant(tenantId: string): Promise<{
   csrfToken: string;
   user: { id: string; email: string; username: string | null; avatarData: string | null; tenantId?: string; tenantRole?: string };
 }> {
-  const res = await api.post('/auth/switch-tenant', { tenantId });
-  return res.data;
+  const { data } = await api.post('/auth/switch-tenant', { tenantId });
+  return data;
 }
 
 export async function adminChangeUserPassword(
@@ -191,6 +191,6 @@ export async function adminChangeUserPassword(
   newPassword: string,
   verificationId: string,
 ): Promise<{ recoveryKey: string }> {
-  const res = await api.put(`/tenants/${tenantId}/users/${userId}/password`, { newPassword, verificationId });
-  return res.data;
+  const { data } = await api.put(`/tenants/${tenantId}/users/${userId}/password`, { newPassword, verificationId });
+  return data;
 }

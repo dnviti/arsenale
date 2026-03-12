@@ -5,6 +5,8 @@ import * as sshKeyService from './sshkey.service';
 import * as auditService from './audit.service';
 import * as identityVerification from './identityVerification.service';
 import { logger } from '../utils/logger';
+import { createNotificationAsync } from './notification.service';
+import { emitNotification } from '../socket/notification.handler';
 import {
   generateSalt,
   generateMasterKey,
@@ -312,8 +314,31 @@ export async function inviteUser(tenantId: string, email: string, role: 'ADMIN' 
     throw new AppError('User is already a member of this organization', 400);
   }
 
-  await prisma.tenantMember.create({
-    data: { tenantId, userId: targetUser.id, role, isActive: false },
+  const [membership, tenant] = await Promise.all([
+    prisma.tenantMember.create({
+      data: { tenantId, userId: targetUser.id, role, isActive: false },
+    }),
+    prisma.tenant.findUnique({ where: { id: tenantId }, select: { name: true } }),
+  ]);
+
+  const tenantName = tenant?.name ?? 'an organization';
+  const roleLabel = role === 'ADMIN' ? 'Admin' : 'Member';
+  const msg = `You've been invited to join "${tenantName}" as ${roleLabel}`;
+
+  createNotificationAsync({
+    userId: targetUser.id,
+    type: 'TENANT_INVITATION',
+    message: msg,
+    relatedId: tenantId,
+  });
+
+  emitNotification(targetUser.id, {
+    id: membership.id,
+    type: 'TENANT_INVITATION',
+    message: msg,
+    read: false,
+    relatedId: tenantId,
+    createdAt: new Date(),
   });
 
   return {

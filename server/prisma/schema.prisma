@@ -592,6 +592,8 @@ enum NotificationType {
   SECRET_SHARE_REVOKED
   SECRET_EXPIRING
   SECRET_EXPIRED
+  TENANT_INVITATION
+  RECORDING_READY
 }
 
 model Notification {

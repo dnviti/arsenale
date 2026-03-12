@@ -5,39 +5,40 @@ import { createSecretSchema, updateSecretSchema, listFiltersSchema, shareSecretS
 import { createExternalShareSchema } from '../schemas/externalShare.schemas';
 import * as secretController from '../controllers/secret.controller';
 import * as externalShareController from '../controllers/externalShare.controller';
+import { asyncHandler } from '../middleware/asyncHandler';
 
 const router = Router();
 
 router.use(authenticate);
 
 // Tenant vault management (before /:id to avoid param collision)
-router.post('/tenant-vault/init', secretController.initTenantVault);
-router.post('/tenant-vault/distribute', validate(distributeTenantKeySchema), secretController.distributeTenantKey);
-router.get('/tenant-vault/status', secretController.tenantVaultStatus);
+router.post('/tenant-vault/init', asyncHandler(secretController.initTenantVault));
+router.post('/tenant-vault/distribute', validate(distributeTenantKeySchema), asyncHandler(secretController.distributeTenantKey));
+router.get('/tenant-vault/status', asyncHandler(secretController.tenantVaultStatus));
 
 // External share revoke (before /:id to avoid param collision)
-router.delete('/external-shares/:shareId', externalShareController.revoke);
+router.delete('/external-shares/:shareId', asyncHandler(externalShareController.revoke));
 
 // CRUD
-router.get('/', validate(listFiltersSchema, 'query'), secretController.list);
-router.post('/', validate(createSecretSchema), secretController.create);
-router.get('/:id', validateUuidParam(), secretController.getOne);
-router.put('/:id', validateUuidParam(), validate(updateSecretSchema), secretController.update);
-router.delete('/:id', validateUuidParam(), secretController.remove);
+router.get('/', validate(listFiltersSchema, 'query'), asyncHandler(secretController.list));
+router.post('/', validate(createSecretSchema), asyncHandler(secretController.create));
+router.get('/:id', validateUuidParam(), asyncHandler(secretController.getOne));
+router.put('/:id', validateUuidParam(), validate(updateSecretSchema), asyncHandler(secretController.update));
+router.delete('/:id', validateUuidParam(), asyncHandler(secretController.remove));
 
 // Versions
-router.get('/:id/versions', validateUuidParam(), secretController.listVersions);
-router.get('/:id/versions/:version/data', validateUuidParam(), secretController.getVersionData);
-router.post('/:id/versions/:version/restore', validateUuidParam(), secretController.restoreVersion);
+router.get('/:id/versions', validateUuidParam(), asyncHandler(secretController.listVersions));
+router.get('/:id/versions/:version/data', validateUuidParam(), asyncHandler(secretController.getVersionData));
+router.post('/:id/versions/:version/restore', validateUuidParam(), asyncHandler(secretController.restoreVersion));
 
 // Sharing
-router.post('/:id/share', validateUuidParam(), validate(shareSecretSchema), secretController.share);
-router.delete('/:id/share/:userId', validateUuidParam(), secretController.unshare);
-router.put('/:id/share/:userId', validateUuidParam(), validate(updateSharePermSchema), secretController.updateSharePermission);
-router.get('/:id/shares', validateUuidParam(), secretController.listShares);
+router.post('/:id/share', validateUuidParam(), validate(shareSecretSchema), asyncHandler(secretController.share));
+router.delete('/:id/share/:userId', validateUuidParam(), asyncHandler(secretController.unshare));
+router.put('/:id/share/:userId', validateUuidParam(), validate(updateSharePermSchema), asyncHandler(secretController.updateSharePermission));
+router.get('/:id/shares', validateUuidParam(), asyncHandler(secretController.listShares));
 
 // External sharing
-router.post('/:id/external-shares', validateUuidParam(), validate(createExternalShareSchema), externalShareController.create);
-router.get('/:id/external-shares', validateUuidParam(), externalShareController.list);
+router.post('/:id/external-shares', validateUuidParam(), validate(createExternalShareSchema), asyncHandler(externalShareController.create));
+router.get('/:id/external-shares', validateUuidParam(), asyncHandler(externalShareController.list));
 
 export default router;

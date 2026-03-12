@@ -13,19 +13,15 @@ import { getClientIp } from '../utils/ip';
 import { verifyEmailSchema } from '../schemas/auth.schemas';
 import type { RegisterInput, LoginInput, VerifyTotpInput, RequestSmsInput, VerifySmsInput, RequestWebAuthnInput, VerifyWebAuthnInput, ResendVerificationInput, MfaSetupTokenInput, MfaSetupVerifyInput, SwitchTenantInput, ForgotPasswordInput, ResetTokenInput, CompleteResetInput } from '../schemas/auth.schemas';
 
-export async function register(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { email, password } = req.body as RegisterInput;
-    const result = await authService.register(email, password);
-    auditService.log({ userId: result.userId, action: 'REGISTER', ipAddress: getClientIp(req) });
-    res.status(201).json({
-      message: result.message,
-      emailVerifyRequired: result.emailVerifyRequired,
-      recoveryKey: result.recoveryKey,
-    });
-  } catch (err) {
-    next(err);
-  }
+export async function register(req: Request, res: Response) {
+  const { email, password } = req.body as RegisterInput;
+  const result = await authService.register(email, password);
+  auditService.log({ userId: result.userId, action: 'REGISTER', ipAddress: getClientIp(req) });
+  res.status(201).json({
+    message: result.message,
+    emailVerifyRequired: result.emailVerifyRequired,
+    recoveryKey: result.recoveryKey,
+  });
 }
 
 export async function login(req: Request, res: Response, next: NextFunction) {
@@ -173,20 +169,16 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
   }
 }
 
-export async function logout(req: Request, res: Response, next: NextFunction) {
-  try {
-    const refreshToken = req.cookies?.[config.cookie.refreshTokenName];
-    if (refreshToken) {
-      const userId = await authService.logout(refreshToken);
-      if (userId) {
-        auditService.log({ userId, action: 'LOGOUT', ipAddress: getClientIp(req) });
-      }
+export async function logout(req: Request, res: Response) {
+  const refreshToken = req.cookies?.[config.cookie.refreshTokenName];
+  if (refreshToken) {
+    const userId = await authService.logout(refreshToken);
+    if (userId) {
+      auditService.log({ userId, action: 'LOGOUT', ipAddress: getClientIp(req) });
     }
-    clearAuthCookies(res);
-    res.json({ success: true });
-  } catch (err) {
-    next(err);
   }
+  clearAuthCookies(res);
+  res.json({ success: true });
 }
 
 export async function verifyEmail(req: Request, res: Response, next: NextFunction) {
@@ -205,14 +197,10 @@ export async function verifyEmail(req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function resendVerification(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { email } = req.body as ResendVerificationInput;
-    await authService.resendVerification(email);
-    res.json({ message: 'If an account exists with this email, a verification link has been sent.' });
-  } catch (err) {
-    next(err);
-  }
+export async function resendVerification(req: Request, res: Response) {
+  const { email } = req.body as ResendVerificationInput;
+  await authService.resendVerification(email);
+  res.json({ message: 'If an account exists with this email, a verification link has been sent.' });
 }
 
 export async function mfaSetupInit(req: Request, res: Response, next: NextFunction) {
@@ -250,58 +238,46 @@ export async function mfaSetupVerify(req: Request, res: Response, next: NextFunc
 
 // --- Tenant Switch ---
 
-export async function switchTenant(req: Request, res: Response, next: NextFunction) {
-  try {
-    const authReq = req as AuthRequest;
-    assertAuthenticated(authReq);
-    const { tenantId } = req.body as SwitchTenantInput;
-    const userId = authReq.user.userId;
+export async function switchTenant(req: Request, res: Response) {
+  const authReq = req as AuthRequest;
+  assertAuthenticated(authReq);
+  const { tenantId } = req.body as SwitchTenantInput;
+  const userId = authReq.user.userId;
 
-    const result = await authService.switchTenant(userId, tenantId);
+  const result = await authService.switchTenant(userId, tenantId);
 
-    auditService.log({
-      userId,
-      action: 'TENANT_SWITCH',
-      targetType: 'Tenant',
-      targetId: tenantId,
-      ipAddress: getClientIp(req),
-    });
+  auditService.log({
+    userId,
+    action: 'TENANT_SWITCH',
+    targetType: 'Tenant',
+    targetId: tenantId,
+    ipAddress: getClientIp(req),
+  });
 
-    setRefreshTokenCookie(res, result.refreshToken);
-    const csrfToken = setCsrfCookie(res);
-    res.json({
-      accessToken: result.accessToken,
-      csrfToken,
-      user: result.user,
-    });
-  } catch (err) {
-    next(err);
-  }
+  setRefreshTokenCookie(res, result.refreshToken);
+  const csrfToken = setCsrfCookie(res);
+  res.json({
+    accessToken: result.accessToken,
+    csrfToken,
+    user: result.user,
+  });
 }
 
 // --- Password Reset ---
 
-export async function forgotPassword(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { email } = req.body as ForgotPasswordInput;
-    await passwordResetService.requestPasswordReset(email, getClientIp(req));
-    res.json({ message: 'If an account exists with this email, a password reset link has been sent.' });
-  } catch (err) {
-    next(err);
-  }
+export async function forgotPassword(req: Request, res: Response) {
+  const { email } = req.body as ForgotPasswordInput;
+  await passwordResetService.requestPasswordReset(email, getClientIp(req));
+  res.json({ message: 'If an account exists with this email, a password reset link has been sent.' });
 }
 
-export async function validateResetToken(req: Request, res: Response, next: NextFunction) {
-  try {
-    const { token } = req.body as ResetTokenInput;
-    const result = await passwordResetService.validateResetToken(token);
-    if (!result.valid) {
-      return next(new AppError('Invalid or expired reset link.', 400));
-    }
-    res.json(result);
-  } catch (err) {
-    next(err);
+export async function validateResetToken(req: Request, res: Response) {
+  const { token } = req.body as ResetTokenInput;
+  const result = await passwordResetService.validateResetToken(token);
+  if (!result.valid) {
+    throw new AppError('Invalid or expired reset link.', 400);
   }
+  res.json(result);
 }
 
 export async function requestResetSmsCode(req: Request, res: Response, next: NextFunction) {
@@ -335,11 +311,7 @@ export async function completePasswordReset(req: Request, res: Response, next: N
   }
 }
 
-export async function publicAuthConfig(_req: Request, res: Response, next: NextFunction) {
-  try {
-    const cfg = await getPublicConfig();
-    res.json(cfg);
-  } catch (err) {
-    next(err);
-  }
+export async function publicAuthConfig(_req: Request, res: Response) {
+  const cfg = await getPublicConfig();
+  res.json(cfg);
 }

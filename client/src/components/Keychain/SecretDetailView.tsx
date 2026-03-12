@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Box, Typography, Chip, IconButton, Accordion, AccordionSummary,
   AccordionDetails, Divider, Tooltip, Alert,
@@ -12,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import type { SecretDetail, SecretPayload, SecretType, SecretScope } from '../../api/secrets.api';
 import SecretVersionHistory from './SecretVersionHistory';
+import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 const TYPE_ICONS: Record<SecretType, React.ReactNode> = {
   LOGIN: <VpnKey />,
@@ -49,7 +50,7 @@ interface SecretDetailViewProps {
 
 function SensitiveField({ label, value }: { label: string; value: string }) {
   const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy: handleCopy } = useCopyToClipboard();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -66,12 +67,6 @@ function SensitiveField({ label, value }: { label: string; value: string }) {
     setRevealed(false);
     if (timerRef.current) clearTimeout(timerRef.current);
   };
-
-  const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [value]);
 
   return (
     <Box sx={{ mb: 1.5 }}>
@@ -94,7 +89,7 @@ function SensitiveField({ label, value }: { label: string; value: string }) {
           </IconButton>
         </Tooltip>
         <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-          <IconButton size="small" onClick={handleCopy}>
+          <IconButton size="small" onClick={() => handleCopy(value)}>
             <CopyIcon fontSize="small" />
           </IconButton>
         </Tooltip>
@@ -104,13 +99,7 @@ function SensitiveField({ label, value }: { label: string; value: string }) {
 }
 
 function PlainField({ label, value, copyable, isLink }: { label: string; value: string; copyable?: boolean; isLink?: boolean }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const { copied, copy: handleCopy } = useCopyToClipboard();
 
   return (
     <Box sx={{ mb: 1.5 }}>
@@ -128,7 +117,7 @@ function PlainField({ label, value, copyable, isLink }: { label: string; value: 
         )}
         {copyable && (
           <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-            <IconButton size="small" onClick={handleCopy}>
+            <IconButton size="small" onClick={() => handleCopy(value)}>
               <CopyIcon fontSize="small" />
             </IconButton>
           </Tooltip>

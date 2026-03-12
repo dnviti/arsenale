@@ -7,50 +7,50 @@ export interface VaultStatusResponse {
 }
 
 export async function unlockVault(password: string) {
-  const res = await api.post('/vault/unlock', { password });
-  return res.data as { unlocked: boolean };
+  const { data } = await api.post('/vault/unlock', { password });
+  return data as { unlocked: boolean };
 }
 
 export async function lockVault() {
-  const res = await api.post('/vault/lock');
-  return res.data as { unlocked: boolean };
+  const { data } = await api.post('/vault/lock');
+  return data as { unlocked: boolean };
 }
 
 export async function getVaultStatus() {
-  const res = await api.get('/vault/status');
-  return res.data as VaultStatusResponse;
+  const { data } = await api.get('/vault/status');
+  return data as VaultStatusResponse;
 }
 
 export async function revealPassword(connectionId: string, password?: string) {
-  const res = await api.post('/vault/reveal-password', { connectionId, password });
-  return res.data as { password: string };
+  const { data } = await api.post('/vault/reveal-password', { connectionId, password });
+  return data as { password: string };
 }
 
 // MFA-based vault unlock
 
 export async function unlockVaultWithTotp(code: string) {
-  const res = await api.post('/vault/unlock-mfa/totp', { code });
-  return res.data as { unlocked: boolean };
+  const { data } = await api.post('/vault/unlock-mfa/totp', { code });
+  return data as { unlocked: boolean };
 }
 
 export async function requestVaultWebAuthnOptions() {
-  const res = await api.post('/vault/unlock-mfa/webauthn-options');
-  return res.data;
+  const { data } = await api.post('/vault/unlock-mfa/webauthn-options');
+  return data;
 }
 
 export async function unlockVaultWithWebAuthn(credential: unknown) {
-  const res = await api.post('/vault/unlock-mfa/webauthn', { credential });
-  return res.data as { unlocked: boolean };
+  const { data } = await api.post('/vault/unlock-mfa/webauthn', { credential });
+  return data as { unlocked: boolean };
 }
 
 export async function requestVaultSmsCode() {
-  const res = await api.post('/vault/unlock-mfa/request-sms');
-  return res.data as { sent: boolean };
+  const { data } = await api.post('/vault/unlock-mfa/request-sms');
+  return data as { sent: boolean };
 }
 
 export async function unlockVaultWithSms(code: string) {
-  const res = await api.post('/vault/unlock-mfa/sms', { code });
-  return res.data as { unlocked: boolean };
+  const { data } = await api.post('/vault/unlock-mfa/sms', { code });
+  return data as { unlocked: boolean };
 }
 
 // Vault auto-lock preference
@@ -62,11 +62,11 @@ export interface VaultAutoLockResponse {
 }
 
 export async function getVaultAutoLock() {
-  const res = await api.get('/vault/auto-lock');
-  return res.data as VaultAutoLockResponse;
+  const { data } = await api.get('/vault/auto-lock');
+  return data as VaultAutoLockResponse;
 }
 
 export async function setVaultAutoLock(autoLockMinutes: number | null) {
-  const res = await api.put('/vault/auto-lock', { autoLockMinutes });
-  return res.data as VaultAutoLockResponse;
+  const { data } = await api.put('/vault/auto-lock', { autoLockMinutes });
+  return data as VaultAutoLockResponse;
 }

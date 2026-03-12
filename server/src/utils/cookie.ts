@@ -1,19 +1,7 @@
 import crypto from 'crypto';
 import { Response } from 'express';
 import { config } from '../config';
-
-function parseExpiry(expiry: string): number {
-  const match = expiry.match(/^(\d+)([smhd])$/);
-  if (!match) return 7 * 24 * 60 * 60 * 1000;
-  const value = parseInt(match[1]);
-  switch (match[2]) {
-    case 's': return value * 1000;
-    case 'm': return value * 60 * 1000;
-    case 'h': return value * 60 * 60 * 1000;
-    case 'd': return value * 24 * 60 * 60 * 1000;
-    default: return 7 * 24 * 60 * 60 * 1000;
-  }
-}
+import { parseExpiry } from './format';
 
 export function setRefreshTokenCookie(res: Response, refreshToken: string): void {
   res.cookie(config.cookie.refreshTokenName, refreshToken, {

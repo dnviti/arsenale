@@ -14,16 +14,11 @@ import {
 } from '../api/secrets.api';
 import type { ExternalShareInfo, SecretPayload } from '../api/secrets.api';
 import { extractApiError } from '../utils/apiError';
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 
 function SensitiveValue({ value }: { value: string }) {
   const [visible, setVisible] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const { copied, copy: handleCopy } = useCopyToClipboard();
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -39,7 +34,7 @@ function SensitiveValue({ value }: { value: string }) {
         </IconButton>
       </Tooltip>
       <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-        <IconButton size="small" onClick={handleCopy}>
+        <IconButton size="small" onClick={() => handleCopy(value)}>
           <CopyIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -48,13 +43,7 @@ function SensitiveValue({ value }: { value: string }) {
 }
 
 function PlainValue({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const { copied, copy: handleCopy } = useCopyToClipboard();
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
@@ -62,7 +51,7 @@ function PlainValue({ value }: { value: string }) {
         {value}
       </Typography>
       <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-        <IconButton size="small" onClick={handleCopy}>
+        <IconButton size="small" onClick={() => handleCopy(value)}>
           <CopyIcon fontSize="small" />
         </IconButton>
       </Tooltip>

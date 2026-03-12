@@ -22,7 +22,7 @@ import {
 import { logoutApi } from '../../api/auth.api';
 import { useVaultStore } from '../../store/vaultStore';
 import { useAuthStore } from '../../store/authStore';
-import { extractApiError } from '../../utils/apiError';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 type UnlockMethod = 'webauthn' | 'totp' | 'sms' | 'password';
 const METHOD_PRIORITY: UnlockMethod[] = ['webauthn', 'totp', 'sms', 'password'];
@@ -57,8 +57,7 @@ export default function VaultLockedOverlay() {
   const [activeMethod, setActiveMethod] = useState<UnlockMethod>('password');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { loading, error, clearError, run } = useAsyncAction();
   const [smsSent, setSmsSent] = useState(false);
 
   // Determine default method based on priority
@@ -75,12 +74,11 @@ export default function VaultLockedOverlay() {
 
   // Reset state when switching methods
   useEffect(() => {
-    setError('');
+    clearError();
     setCode('');
     setPassword('');
     setSmsSent(false);
-    setLoading(false);
-  }, [activeMethod]);
+  }, [activeMethod, clearError]);
 
   const onSuccess = useCallback(() => {
     setVaultUnlocked(true);
@@ -90,19 +88,13 @@ export default function VaultLockedOverlay() {
 
   // WebAuthn flow
   const handleWebAuthn = useCallback(async () => {
-    setError('');
-    setLoading(true);
-    try {
+    await run(async () => {
       const options = await requestVaultWebAuthnOptions();
       const credential = await startAuthentication({ optionsJSON: options });
       await unlockVaultWithWebAuthn(credential);
       onSuccess();
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'WebAuthn authentication failed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [onSuccess]);
+    }, 'WebAuthn authentication failed');
+  }, [onSuccess, run]);
 
   // Auto-trigger WebAuthn when it's the active method
   useEffect(() => {
@@ -113,55 +105,31 @@ export default function VaultLockedOverlay() {
   }, [activeMethod, initialized]);
 
   const handlePasswordSubmit = async () => {
-    setError('');
-    setLoading(true);
-    try {
+    const ok = await run(async () => {
       await unlockVault(password);
-      onSuccess();
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to unlock vault'));
-    } finally {
-      setLoading(false);
-    }
+    }, 'Failed to unlock vault');
+    if (ok) onSuccess();
   };
 
   const handleTotpSubmit = async () => {
-    setError('');
-    setLoading(true);
-    try {
+    const ok = await run(async () => {
       await unlockVaultWithTotp(code);
-      onSuccess();
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Invalid TOTP code'));
-    } finally {
-      setLoading(false);
-    }
+    }, 'Invalid TOTP code');
+    if (ok) onSuccess();
   };
 
   const handleSmsRequest = async () => {
-    setError('');
-    setLoading(true);
-    try {
+    const ok = await run(async () => {
       await requestVaultSmsCode();
-      setSmsSent(true);
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to send SMS code'));
-    } finally {
-      setLoading(false);
-    }
+    }, 'Failed to send SMS code');
+    if (ok) setSmsSent(true);
   };
 
   const handleSmsSubmit = async () => {
-    setError('');
-    setLoading(true);
-    try {
+    const ok = await run(async () => {
       await unlockVaultWithSms(code);
-      onSuccess();
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Invalid or expired SMS code'));
-    } finally {
-      setLoading(false);
-    }
+    }, 'Invalid or expired SMS code');
+    if (ok) onSuccess();
   };
 
   const handleLogout = async () => {

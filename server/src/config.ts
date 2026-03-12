@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
+import { parseExpiry } from './utils/format';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -54,19 +55,7 @@ export const config = {
   serverEncryptionKey: resolveServerEncryptionKey(),
   gatewayApiToken: process.env.GATEWAY_API_TOKEN || '',
   vaultTtlMinutes: parseInt(process.env.VAULT_TTL_MINUTES || '30', 10),
-  vaultRecoveryTtlMs: (() => {
-    const expiry = process.env.JWT_REFRESH_EXPIRES_IN || '7d';
-    const match = expiry.match(/^(\d+)([smhd])$/);
-    if (!match) return 7 * 24 * 60 * 60 * 1000;
-    const value = parseInt(match[1]);
-    switch (match[2]) {
-      case 's': return value * 1000;
-      case 'm': return value * 60 * 1000;
-      case 'h': return value * 60 * 60 * 1000;
-      case 'd': return value * 24 * 60 * 60 * 1000;
-      default: return 7 * 24 * 60 * 60 * 1000;
-    }
-  })(),
+  vaultRecoveryTtlMs: parseExpiry(process.env.JWT_REFRESH_EXPIRES_IN || '7d'),
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: (process.env.LOG_LEVEL || 'info') as 'error' | 'warn' | 'info' | 'verbose' | 'debug',
   logFormat: (process.env.LOG_FORMAT || 'text') as 'text' | 'json',

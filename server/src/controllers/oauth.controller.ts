@@ -160,40 +160,28 @@ export function initiateLinkOAuth(req: Request, res: Response, next: NextFunctio
   })(req, res, next);
 }
 
-export async function unlinkOAuth(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const provider = req.params.provider as string;
-    await oauthService.unlinkOAuthAccount(req.user.userId, provider.toUpperCase());
-    auditService.log({
-      userId: req.user.userId, action: 'OAUTH_UNLINK',
-      details: { provider },
-      ipAddress: getClientIp(req),
-    });
-    res.json({ success: true });
-  } catch (err) {
-    next(err);
-  }
+export async function unlinkOAuth(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const provider = req.params.provider as string;
+  await oauthService.unlinkOAuthAccount(req.user.userId, provider.toUpperCase());
+  auditService.log({
+    userId: req.user.userId, action: 'OAUTH_UNLINK',
+    details: { provider },
+    ipAddress: getClientIp(req),
+  });
+  res.json({ success: true });
 }
 
-export async function getLinkedAccounts(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const accounts = await oauthService.getLinkedAccounts(req.user.userId);
-    res.json(accounts);
-  } catch (err) {
-    next(err);
-  }
+export async function getLinkedAccounts(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const accounts = await oauthService.getLinkedAccounts(req.user.userId);
+  res.json(accounts);
 }
 
-export async function setupVault(req: AuthRequest, res: Response, next: NextFunction) {
-  try {
-    assertAuthenticated(req);
-    const { vaultPassword } = req.body as VaultSetupInput;
-    await oauthService.setupVaultForOAuthUser(req.user.userId, vaultPassword);
-    auditService.log({ userId: req.user.userId, action: 'VAULT_SETUP', ipAddress: getClientIp(req) });
-    res.json({ success: true, vaultSetupComplete: true });
-  } catch (err) {
-    next(err);
-  }
+export async function setupVault(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const { vaultPassword } = req.body as VaultSetupInput;
+  await oauthService.setupVaultForOAuthUser(req.user.userId, vaultPassword);
+  auditService.log({ userId: req.user.userId, action: 'VAULT_SETUP', ipAddress: getClientIp(req) });
+  res.json({ success: true, vaultSetupComplete: true });
 }

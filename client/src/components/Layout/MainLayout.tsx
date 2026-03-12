@@ -45,8 +45,10 @@ import { useThemeStore } from '../../store/themeStore';
 import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 import { useTabsStore } from '../../store/tabsStore';
 import { useGatewayMonitor } from '../../hooks/useGatewayMonitor';
+import { useShareSync } from '../../hooks/useShareSync';
 import { useSecretStore } from '../../store/secretStore';
 import { useLazyMount } from '../../hooks/useLazyMount';
+import type { NavigationActions } from '../../utils/notificationActions';
 
 const SIDEBAR_WIDTH = 280;
 
@@ -68,6 +70,7 @@ export default function MainLayout() {
   const fetchExpiringCount = useSecretStore((s) => s.fetchExpiringCount);
 
   useGatewayMonitor();
+  useShareSync();
 
   useEffect(() => {
     if (!terminalDefaultsLoaded) {
@@ -135,6 +138,20 @@ export default function MainLayout() {
   const handleOpenSettings = (tab?: string) => {
     setSettingsInitialTab(tab);
     setSettingsOpen(true);
+  };
+
+  const navigationActions: NavigationActions = {
+    openKeychain: () => setKeychainOpen(true),
+    openRecordings: () => setRecordingsOpen(true),
+    openSettings: handleOpenSettings,
+    selectConnection: (connectionId: string) => {
+      const store = useConnectionsStore.getState();
+      const all = [...store.ownConnections, ...store.sharedConnections, ...store.teamConnections];
+      const conn = all.find((c) => c.id === connectionId);
+      if (conn) {
+        useTabsStore.getState().openTab(conn);
+      }
+    },
   };
 
   const handleEditConnection = (conn: ConnectionData) => {
@@ -225,7 +242,7 @@ export default function MainLayout() {
             </Badge>
           </IconButton>
           <Box sx={{ flexGrow: 1 }} />
-          <NotificationBell />
+          <NotificationBell navigationActions={navigationActions} />
           <IconButton
             color="inherit"
             onClick={toggleTheme}

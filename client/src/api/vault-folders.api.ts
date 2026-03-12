@@ -33,24 +33,24 @@ export interface VaultFoldersResponse {
 }
 
 export async function listVaultFolders(): Promise<VaultFoldersResponse> {
-  const res = await api.get('/vault-folders');
-  return res.data;
+  const { data } = await api.get('/vault-folders');
+  return data;
 }
 
-export async function createVaultFolder(data: VaultFolderInput): Promise<VaultFolderData> {
-  const res = await api.post('/vault-folders', data);
-  return res.data;
+export async function createVaultFolder(payload: VaultFolderInput): Promise<VaultFolderData> {
+  const { data } = await api.post('/vault-folders', payload);
+  return data;
 }
 
 export async function updateVaultFolder(
   id: string,
-  data: VaultFolderUpdate
+  payload: VaultFolderUpdate
 ): Promise<VaultFolderData> {
-  const res = await api.put(`/vault-folders/${id}`, data);
-  return res.data;
+  const { data } = await api.put(`/vault-folders/${id}`, payload);
+  return data;
 }
 
 export async function deleteVaultFolder(id: string): Promise<{ deleted: boolean }> {
-  const res = await api.delete(`/vault-folders/${id}`);
-  return res.data;
+  const { data } = await api.delete(`/vault-folders/${id}`);
+  return data;
 }
