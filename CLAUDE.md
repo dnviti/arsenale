@@ -169,3 +169,32 @@ Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `
 | Client stores | `*Store.ts` | `authStore.ts` |
 | Client API | `*.api.ts` | `connections.api.ts` |
 | Client hooks | `use*.ts` | `useAuth.ts` |
+
+### GitHub Issues Integration
+
+When `.claude/github-issues.json` exists with `"enabled": true`, all task and idea skills automatically sync with GitHub Issues. Both text files and GitHub Issues are co-authoritative (dual sync).
+
+**Config file:** `.claude/github-issues.json` — controls whether GitHub sync is active, the target repo, and label mappings. Copy `.claude/github-issues.example.json` to get started.
+
+**Setup:**
+1. Copy `.claude/github-issues.example.json` to `.claude/github-issues.json` and set `"enabled": true`
+2. Run `bash scripts/setup-github-labels.sh` to create all required labels
+3. Ensure `gh` CLI is authenticated (`gh auth status`)
+
+**Behavior when enabled:**
+- `/task-create` creates a GitHub Issue with task labels (`claude-code`, `task`, `priority:*`, `status:todo`, `section:*`)
+- `/task-pick` updates issue status labels (todo → in-progress → done) and closes issue on completion
+- `/idea-create` creates a GitHub Issue with `idea` label
+- `/idea-approve` closes idea issue, creates task issue with cross-reference
+- `/idea-disapprove` closes idea issue with reason
+- `/idea-refactor` updates issue body when ideas are revised
+- `/git-publish` links PRs to related issues via `Refs #N`
+- `/release` enriches GitHub Releases with issue cross-references
+
+**Issue title format:** `[PREFIX-NNN] Task Title` or `[IDEA-NNN] Idea Title` — the bracketed code is used to look up issues via `gh issue list --search`.
+
+**Dual sync rules:**
+- Skills write to text files first, then sync to GitHub
+- If GitHub sync fails, warn but don't fail the operation
+- Text files win in case of discrepancy
+- `GitHub: #NNN` is stored in each task/idea block for fast lookup

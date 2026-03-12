@@ -166,3 +166,5 @@ trivy-*.sarif
 
 # ignore the security report
 security-report.md
+
+github-issues.json

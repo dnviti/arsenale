@@ -48,9 +48,18 @@ Before picking any new task, you MUST process in-progress tasks from `progressin
 **0a. Read the in-progress task list:**
 Read `progressing.txt` and identify all tasks marked `[~]`. If there are none, skip to Step 1.
 
-**0b. For each in-progress task (in order), verify implementation:**
+**0b. For each in-progress task (in order), switch to the task branch and verify implementation:**
 
-Read the full task block from `progressing.txt` (everything between its `------` separator lines).
+First, check if a task branch exists for this task:
+
+```bash
+git branch --list "task/<task-code-lowercase>"
+```
+
+- **If the branch exists:** Switch to it: `git checkout task/<task-code-lowercase>`
+- **If it does not exist** (legacy task started before branch-per-task): Continue on the current branch.
+
+Then read the full task block from `progressing.txt` (everything between its `------` separator lines).
 
 Extract two key sections:
 - **FILE COINVOLTI** — the list of files to CREARE (create) and MODIFICARE (modify)
@@ -180,6 +189,70 @@ This step is only reached when there are NO in-progress tasks remaining in `prog
 
 **Important:** The task block must be moved completely — do not leave a copy in to-do.txt.
 
+### Step 2.1: Sync GitHub Issue to In-Progress
+
+Check if GitHub Issues integration is enabled:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+1. Read the repo from config: `GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"`
+2. Find the issue by task code:
+   ```bash
+   ISSUE_NUM=$(gh issue list --repo "$GH_REPO" --search "[TASK-CODE] in:title" --label task --json number --jq '.[0].number' 2>/dev/null)
+   ```
+3. If found, update labels and add a comment:
+   ```bash
+   gh issue edit "$ISSUE_NUM" --repo "$GH_REPO" --remove-label "status:todo" --add-label "status:in-progress" 2>/dev/null || true
+   gh issue comment "$ISSUE_NUM" --repo "$GH_REPO" --body "Task picked up. Branch: \`task/<task-code-lowercase>\`" 2>/dev/null || true
+   ```
+4. If the `gh` command fails, warn but continue — the local state is authoritative.
+
+**If `GH_ENABLED` is `false` or the file is missing:** Skip this step.
+
+### Step 2.5: Create a task branch
+
+Create a dedicated git branch for this task, branching from `develop`.
+
+**2.5a. Check the working tree:**
+
+```bash
+git status --porcelain
+```
+
+If there are uncommitted changes, inform the user:
+> "There are uncommitted changes in the working tree. Please commit or stash them before proceeding."
+
+Stop and do not proceed until the working tree is clean.
+
+**2.5b. Switch to develop and pull latest:**
+
+```bash
+git checkout develop
+git pull origin develop
+```
+
+**2.5c. Create the task branch:**
+
+Derive the branch name from the task code: lowercase, hyphenated, with the prefix `task/`.
+
+First check if the branch already exists (e.g., re-picking a task):
+
+```bash
+git branch --list "task/<task-code-lowercase>"
+```
+
+- **If the branch exists:** Switch to it: `git checkout task/<task-code-lowercase>`
+- **If it does not exist:** Create it: `git checkout -b task/<task-code-lowercase>`
+
+For example, for task `CRED-006`, the branch is `task/cred-006`.
+
+Inform the user:
+> "Created branch `task/<code>` from `develop`."
+
 ### Step 3: Read the full task details
 
 Read the complete task block from `progressing.txt` for the selected task — everything between its `------` separator lines: priority, dependencies, description, technical details, and files involved.
@@ -263,6 +336,30 @@ Once the user confirms the work is done:
 6. If the task appears in the recommended order section of `to-do.txt`, update its status annotation to `[COMPLETATO]`
 7. Inform the user: "Task [TASK-CODE] has been moved to done.txt."
 
+**6c.1. Sync GitHub Issue to Done:**
+
+Check if GitHub Issues integration is enabled:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+1. Read the repo: `GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"`
+2. Find the issue:
+   ```bash
+   ISSUE_NUM=$(gh issue list --repo "$GH_REPO" --search "[TASK-CODE] in:title" --label task --state open --json number --jq '.[0].number' 2>/dev/null)
+   ```
+3. If found, update labels and close:
+   ```bash
+   gh issue edit "$ISSUE_NUM" --repo "$GH_REPO" --remove-label "status:in-progress" --add-label "status:done" 2>/dev/null || true
+   gh issue close "$ISSUE_NUM" --repo "$GH_REPO" --comment "Task completed and verified. Quality gate passed." 2>/dev/null || true
+   ```
+4. If `gh` fails, warn but continue.
+
+**If `GH_ENABLED` is `false` or the file is missing:** Skip this step.
+
 **6d. Ask to commit:**
 
 After closing the task, ask the user:
@@ -273,4 +370,28 @@ Use `AskUserQuestion` with options:
 - **"Yes, commit"** — create a commit using the `/commit` skill (or follow the standard git commit workflow). The commit message should reference the task code and briefly describe what was implemented.
 - **"No, skip commit"** — skip the commit; done.
 
-**Important:** Always ask — never auto-commit or auto-close without user confirmation.
+**6e. Ask to merge into develop:**
+
+After the commit (or skip), ask the user:
+
+> "Would you like me to merge branch `task/<task-code>` into `develop`?"
+
+Use `AskUserQuestion` with options:
+- **"Yes, merge into develop"** — execute the merge:
+  ```bash
+  git checkout develop
+  git merge task/<task-code-lowercase> --no-ff -m "Merge task/<task-code-lowercase> into develop"
+  ```
+  Use `--no-ff` to preserve the branch history in the merge commit.
+
+  After a successful merge, inform the user:
+  > "Branch `task/<task-code>` has been merged into `develop`. You are now on `develop`."
+
+  If there are merge conflicts, inform the user and stop:
+  > "Merge conflicts detected. Please resolve them manually, then run `git merge --continue`."
+
+- **"No, stay on task branch"** — skip the merge. Inform the user:
+  > "Staying on branch `task/<task-code>`. You can merge later with:
+  > `git checkout develop && git merge task/<task-code-lowercase>`"
+
+**Important:** Always ask — never auto-commit, auto-close, or auto-merge without user confirmation.

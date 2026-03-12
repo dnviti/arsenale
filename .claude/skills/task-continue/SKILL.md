@@ -35,6 +35,17 @@ Read `progressing.txt` and identify all tasks marked `[~]`.
 
 - **If no argument was provided and multiple `[~]` tasks exist:** Use `AskUserQuestion` to let the user choose which task to continue.
 
+### Step 1.5: Switch to the task branch
+
+After selecting the task, check if a dedicated task branch exists:
+
+```bash
+git branch --list "task/<task-code-lowercase>"
+```
+
+- **If the branch exists and you are not already on it:** Switch to it: `git checkout task/<task-code-lowercase>`. Inform the user: "Switched to branch `task/<task-code>`."
+- **If the branch does not exist:** Inform the user that no task branch was found and continue on the current branch.
+
 ### Step 2: Read the Full Task Block
 
 Read the complete task block from `progressing.txt` for the selected task — everything between its `------` separator lines.

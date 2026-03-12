@@ -86,6 +86,30 @@ Use `Edit` to append the block (with `MOTIVO RIFIUTO:` added) at the end of `ide
 **5d. Remove the idea from `ideas.txt`:**
 Use `Edit` to remove the entire original idea block from `ideas.txt`. Clean up any extra blank lines left behind.
 
+**5e. Sync to GitHub Issues:**
+
+Check if GitHub Issues integration is enabled:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+1. Read the repo: `GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"`
+2. Find the idea issue:
+   ```bash
+   IDEA_ISSUE=$(gh issue list --repo "$GH_REPO" --search "[IDEA-NNN] in:title" --label idea --state open --json number --jq '.[0].number' 2>/dev/null)
+   ```
+3. If found, close with reason:
+   ```bash
+   gh issue close "$IDEA_ISSUE" --repo "$GH_REPO" --reason "not planned" --comment "Idea disapproved. Reason: $REASON_IN_ENGLISH" 2>/dev/null || true
+   ```
+
+**If `GH_ENABLED` is `false` or the file is missing:** Skip this step.
+
+**If `gh` fails:** Warn but do NOT fail — the local move is already complete.
+
 ### Step 6: Confirm and Report
 
 After successfully moving the idea, report:

@@ -130,6 +130,39 @@ For ideas marked **REDUNDANT**, **DUPLICATE**, or **OBSOLETE** (if user confirms
 - Suggest using `/idea-disapprove IDEA-NNN` for each one, with the reason pre-filled
 - Do NOT remove them directly — always go through the proper disapproval flow
 
+### Step 6.5: Sync Updates to GitHub Issues
+
+Check if GitHub Issues integration is enabled:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+For each idea marked **NEEDS UPDATE** that was modified in Step 6:
+
+1. Read the repo: `GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"`
+2. Find the issue:
+   ```bash
+   IDEA_ISSUE=$(gh issue list --repo "$GH_REPO" --search "[IDEA-NNN] in:title" --label idea --json number --jq '.[0].number' 2>/dev/null)
+   ```
+3. If found, update the issue body with the revised content:
+   ```bash
+   gh issue edit "$IDEA_ISSUE" --repo "$GH_REPO" --body "UPDATED_BODY" 2>/dev/null || true
+   gh issue comment "$IDEA_ISSUE" --repo "$GH_REPO" --body "Idea updated via /idea-refactor (YYYY-MM-DD): [brief description of what changed]" 2>/dev/null || true
+   ```
+
+For ideas marked **REDUNDANT**, **DUPLICATE**, or **OBSOLETE**:
+- Add a comment to the issue noting the recommendation (do NOT close — that happens via `/idea-disapprove`):
+  ```bash
+  gh issue comment "$IDEA_ISSUE" --repo "$GH_REPO" --body "Flagged as [REDUNDANT/DUPLICATE/OBSOLETE] by /idea-refactor. Recommended for disapproval." 2>/dev/null || true
+  ```
+
+**If `GH_ENABLED` is `false` or the file is missing:** Skip this step.
+
+**If any `gh` command fails:** Warn but continue.
+
 ### Step 7: Report
 
 After applying changes, summarize:

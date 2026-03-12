@@ -336,6 +336,63 @@ git commit -m "chore(release): vX.Y.Z"
 >    ```
 >    Pushing the tag triggers the Release and Docker Build workflows.
 
+### Step 11.5: Create GitHub Release (if enabled)
+
+Check if GitHub Issues integration is enabled:
+
+```bash
+GH_ENABLED="$(jq -r '.enabled // false' .claude/github-issues.json 2>/dev/null)"
+```
+
+**If `GH_ENABLED` is `true`:**
+
+After the tag has been pushed (either manually by the user or automated), offer to create a GitHub Release with enriched notes:
+
+1. Collect task codes from the changelog entries generated in Step 5.
+
+2. For each task code, find the GitHub issue number:
+   ```bash
+   GH_REPO="$(jq -r '.repo' .claude/github-issues.json)"
+   ISSUE_NUM=$(gh issue list --repo "$GH_REPO" --search "[$CODE] in:title" --label task --json number --jq '.[0].number' 2>/dev/null)
+   ```
+
+3. Build enriched release notes:
+   ```
+   ## What's Changed
+   [changelog content from Step 5 — Added, Changed, Fixed, Removed, Security sections]
+
+   ## Issues Resolved
+   - #N1 — [PREFIX-NNN] Task title
+   - #N2 — [PREFIX-NNN] Task title
+
+   **Full Changelog:** https://github.com/REPO/compare/vPREVIOUS...vX.Y.Z
+   ```
+
+4. Create or edit the GitHub Release:
+   ```bash
+   gh release create "vX.Y.Z" --repo "$GH_REPO" \
+     --title "vX.Y.Z" \
+     --notes "$RELEASE_NOTES" \
+     --target main
+   ```
+   For beta releases, add `--prerelease`:
+   ```bash
+   gh release create "vX.Y.Z-beta" --repo "$GH_REPO" \
+     --title "vX.Y.Z-beta" \
+     --notes "$RELEASE_NOTES" \
+     --target main \
+     --prerelease
+   ```
+
+5. If the release already exists (created by CI), update it instead:
+   ```bash
+   gh release edit "vX.Y.Z" --repo "$GH_REPO" --notes "$RELEASE_NOTES" 2>/dev/null || true
+   ```
+
+**If `GH_ENABLED` is `false` or the file is missing:** Skip this step.
+
+**If `gh` fails:** Warn but do not fail — the local release commit and tag are already done.
+
 ## Important Rules
 
 1. **NEVER skip user confirmation** — always present drafts and wait for approval before writing.
