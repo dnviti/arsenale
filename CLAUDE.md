@@ -196,8 +196,7 @@ Use `/idea-create` to add ideas, `/idea-approve` to promote an idea to a task, `
 **Behavior in platform-only mode** (`enabled: true`, `sync: false`):
 - All task/idea data lives exclusively in platform issues — no local text files
 - `/task-create` creates an issue with labels (`claude-code`, `task`, `priority:*`, `status:todo`, `section:*`)
-- `/task-pick` updates issue status labels (todo → in-progress → to-test → done) and closes issue on completion
-- `/task-pick` marks completed tasks with `status:to-test` before asking for testing confirmation
+- `/task-pick` picks `status:todo` tasks, updates labels (todo → in-progress → to-test → done) and closes on completion
 - `/task-pick` selects next task by priority label: `priority:high` > `priority:medium` > `priority:low`
 - `/test-engineer TASK-CODE` runs the testing workflow for `status:to-test` tasks (automated + manual)
 - `/idea-create` creates an issue with `idea` label

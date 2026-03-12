@@ -1,6 +1,6 @@
 ---
 name: task-pick
-description: Pick up the next task for implementation. Prioritizes verifying and closing in-progress tasks before picking new ones.
+description: Pick up the next status:todo task for implementation.
 disable-model-invocation: true
 argument-hint: "[TASK-CODE]"
 ---
@@ -8,8 +8,7 @@ argument-hint: "[TASK-CODE]"
 # Pick Up a Task
 
 You are a task manager for the Arsenale project. Your job is to:
-1. **First**: verify and close any in-progress tasks that have already been implemented
-2. **Then**: pick up a new task only when all in-progress tasks are resolved
+1. Pick up a `status:todo` task and begin implementation
 
 ## Mode Detection
 
@@ -32,8 +31,6 @@ TRACKER_REPO="$(jq -r '.repo' "$TRACKER_CFG" 2>/dev/null)"
 ### GitHub-only mode:
 
 ```bash
-# In-progress tasks
-gh issue list --repo "$TRACKER_REPO" --label "task,status:in-progress" --state open --json number,title --jq '.[] | "\(.title)"' 2>/dev/null
 # Pending tasks (by priority)
 gh issue list --repo "$TRACKER_REPO" --label "task,status:todo,priority:high" --state open --json number,title --jq '.[] | "\(.title)"' 2>/dev/null
 gh issue list --repo "$TRACKER_REPO" --label "task,status:todo,priority:medium" --state open --json number,title --jq '.[] | "\(.title)"' 2>/dev/null
@@ -43,9 +40,6 @@ gh issue list --repo "$TRACKER_REPO" --label "task,status:done" --state closed -
 ```
 
 ### Local/Dual mode:
-
-#### In-progress tasks (from progressing.txt):
-!`grep '^\[~\]' progressing.txt 2>/dev/null | tr -d '\r'`
 
 #### Pending tasks (from to-do.txt):
 !`grep '^\[ \]' to-do.txt | tr -d '\r'`
@@ -62,128 +56,7 @@ The user wants to pick up a task. The argument provided is: **$ARGUMENTS**
 
 ---
 
-### Step 0: Verify and Close In-Progress Tasks (PRIORITY)
-
-Before picking any new task, you MUST process in-progress tasks.
-
-**In GitHub-only mode:**
-- Query in-progress tasks: `gh issue list --repo "$TRACKER_REPO" --label "task,status:in-progress" --state open --json number,title`
-- If a specific task code was provided AND that task has `status:in-progress` label: jump directly to Step 0b for that task only.
-- Otherwise, process ALL in-progress tasks sequentially.
-
-**In local/dual mode:**
-- Read `progressing.txt` and identify all tasks marked `[~]`.
-- If a specific task code was provided AND found in progressing.txt: jump to Step 0b for that task only.
-- Otherwise, process ALL in-progress tasks.
-
-If there are no in-progress tasks, skip to Step 1.
-
-**0a. Read the in-progress task list** (as described above).
-
-**0b. For each in-progress task, switch to the task branch and verify implementation:**
-
-First, check if a task branch exists:
-```bash
-git branch --list "task/<task-code-lowercase>"
-```
-
-- **If the branch exists:** Switch to it: `git checkout task/<task-code-lowercase>`
-- **If it does not exist:** Continue on the current branch.
-
-**Read the full task details:**
-
-**In GitHub-only mode:**
-- Find the issue: `ISSUE_NUM=$(gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label task --state open --json number --jq '.[0].number')`
-- Read the body: `gh issue view $ISSUE_NUM --repo "$TRACKER_REPO" --json body --jq '.body'`
-- Parse the body to extract **Files Involved** (CREATE / MODIFY) and **Technical Details** sections.
-
-**In local/dual mode:**
-- Read the full task block from `progressing.txt` (between `------` separator lines).
-- Extract **FILE COINVOLTI** (CREARE / MODIFICARE) and **DETTAGLI TECNICI** sections.
-
-Perform these verification checks:
-
-1. **File existence checks:**
-   - For each file marked **CREATE** (or **CREARE**): Use `Glob` to check if the file exists. If not found at the exact path, search nearby directories.
-   - For each file marked **MODIFY** (or **MODIFICARE**): Verify the file exists.
-
-2. **Implementation content checks:**
-   - For files marked **CREATE**: Read the file and verify meaningful implementation. Check for key exports, components, or functions described in Technical Details.
-   - For files marked **MODIFY**: Use `Grep` to verify key changes are present.
-   - Cross-check against Technical Details: for each requirement, verify code artifacts prove implementation.
-
-3. **Build a verification report:**
-   ```
-   VERIFICATION: [TASK-CODE] — [Task Title]
-   ✓ [file path] — [what was found]
-   ✗ [file path] — MISSING: [what was expected]
-
-   Technical checks:
-   ✓ [requirement] — verified in [file]
-   ✗ [requirement] — NOT FOUND
-   ```
-
-**0c. Decision based on verification result:**
-
-- **ALL checks pass (task fully implemented):**
-  1. **Prisma Migration (if needed):** Check whether `server/prisma/schema.prisma` has uncommitted changes:
-     ```bash
-     git diff --name-only HEAD -- server/prisma/schema.prisma
-     ```
-     - **If modified:** `npm run db:migrate -w server -- --name <task-code-lowercase>`
-     - **If NOT modified:** Skip.
-  2. **SAST/Quality Gate (MANDATORY):** Run `npm run verify`. If it fails, fix ALL errors and re-run until it passes.
-  3. **Smoke-Test (MANDATORY):** After the quality gate passes:
-
-     **Start the application:**
-     Run `npm run predev && npm run db:push && npm run dev` using the Bash tool with `run_in_background: true`.
-
-     **Wait for startup and check ports:**
-     Wait 8 seconds, then verify ports 3000 and 3001 are listening:
-     ```bash
-     netstat -ano 2>/dev/null | grep -E ":(3000|3001)\s" | grep LISTENING
-     ```
-
-     **Check for startup errors:**
-     Read the background process output using `TaskOutput`. Scan for: `EADDRINUSE`, `Cannot find module`, `ECONNREFUSED`, `Error`, `TypeError`, `SyntaxError`, `prisma`.
-     Ignore false positives in variable names, file paths, or middleware names.
-
-     **Decision:**
-     - If errors found: fix, re-run verify + smoke-test (max 2 retries).
-     - If no errors: proceed.
-
-     **Stop the application (MANDATORY):**
-     Kill all processes on ports 3000, 3001, 3002:
-     ```bash
-     for port in 3000 3001 3002; do
-       pids=$(netstat -ano 2>/dev/null | grep -E ":${port}\s" | grep LISTENING | awk '{print $5}' | sort -u | tr -d '\r')
-       for pid in $pids; do
-         if [ -n "$pid" ] && [ "$pid" != "0" ]; then
-           taskkill /PID "$pid" /F /T 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
-         fi
-       done
-     done
-     ```
-
-  4. Present the verification report
-  5. **Run the Step 6 completion flow** for this task
-  6. **Continue to the next in-progress task** — repeat Step 0b
-
-- **Some checks fail:**
-  1. Present the verification report
-  2. **Do NOT close the task**
-  3. Read all related files
-  4. Proceed to Step 4 and Step 5 for what remains
-  5. **Stop processing further in-progress tasks**
-
-**0d. When all in-progress tasks have been verified and closed:**
-Inform the user, then continue to Step 1.
-
----
-
 ### Step 1: Determine which task to pick
-
-This step is only reached when there are NO in-progress tasks remaining.
 
 **In GitHub-only mode:**
 - **If a task code was provided** (e.g., `CRED-006`): Search for it: `gh issue list --repo "$TRACKER_REPO" --search "[TASK-CODE] in:title" --label "task,status:todo" --state open --json number,title`
