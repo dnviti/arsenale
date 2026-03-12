@@ -38,6 +38,7 @@ model Tenant {
   sshKeyPair         SshKeyPair?
   vaultSecrets       VaultSecret[]
   tenantVaultMembers TenantVaultMember[]
+  syncProfiles       SyncProfile[]
 }
 
 model Team {
@@ -54,6 +55,7 @@ model Team {
   folders      Folder[]
   vaultSecrets VaultSecret[]
   vaultFolders VaultFolder[]
+  syncProfiles SyncProfile[]
 
   @@unique([tenantId, name])
 }
@@ -146,6 +148,7 @@ model User {
   activeSessions         ActiveSession[]
   webauthnCredentials    WebAuthnCredential[]
   sessionRecordings      SessionRecording[]
+  syncProfilesCreated    SyncProfile[]          @relation("SyncProfileCreator")
 }
 
 enum AuthProvider {
@@ -222,16 +225,21 @@ model Connection {
   updatedAt         DateTime       @updatedAt
 
   gatewayId         String?
+  syncProfileId     String?
+  externalId        String?
 
   folder           Folder?       @relation(fields: [folderId], references: [id], onDelete: SetNull)
   team             Team?         @relation(fields: [teamId], references: [id])
   user             User          @relation(fields: [userId], references: [id])
   gateway          Gateway?      @relation(fields: [gatewayId], references: [id], onDelete: SetNull)
   credentialSecret VaultSecret?  @relation(fields: [credentialSecretId], references: [id], onDelete: SetNull)
+  syncProfile      SyncProfile?  @relation(fields: [syncProfileId], references: [id], onDelete: SetNull)
   shares           SharedConnection[]
   openTabs         OpenTab[]
   activeSessions   ActiveSession[]
   sessionRecordings SessionRecording[]
+
+  @@index([syncProfileId, externalId])
 }
 
 enum ConnectionType {
@@ -557,6 +565,12 @@ enum AuditAction {
   RECORDING_EXPORT_VIDEO
   EXPORT_CONNECTIONS
   IMPORT_CONNECTIONS
+  SYNC_PROFILE_CREATE
+  SYNC_PROFILE_UPDATE
+  SYNC_PROFILE_DELETE
+  SYNC_START
+  SYNC_COMPLETE
+  SYNC_ERROR
 }
 
 model AuditLog {
@@ -882,6 +896,61 @@ enum RecordingStatus {
   RECORDING
   COMPLETE
   ERROR
+}
+
+enum SyncProvider {
+  NETBOX
+}
+
+enum SyncStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  PARTIAL
+  ERROR
+}
+
+model SyncProfile {
+  id                String        @id @default(uuid())
+  name              String
+  tenantId          String
+  provider          SyncProvider
+  config            Json
+  encryptedApiToken String
+  apiTokenIV        String
+  apiTokenTag       String
+  cronExpression    String?
+  enabled           Boolean       @default(true)
+  teamId            String?
+  lastSyncAt        DateTime?
+  lastSyncStatus    SyncStatus?
+  lastSyncDetails   Json?
+  createdById       String
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation("SyncProfileCreator", fields: [createdById], references: [id])
+  team        Team?        @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  connections Connection[]
+  syncLogs    SyncLog[]
+
+  @@index([tenantId])
+  @@index([tenantId, provider])
+}
+
+model SyncLog {
+  id            String     @id @default(uuid())
+  syncProfileId String
+  status        SyncStatus
+  startedAt     DateTime   @default(now())
+  completedAt   DateTime?
+  details       Json?
+  triggeredBy   String
+
+  syncProfile SyncProfile @relation(fields: [syncProfileId], references: [id], onDelete: Cascade)
+
+  @@index([syncProfileId, startedAt])
 }
 
 model AppConfig {

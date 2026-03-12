@@ -11,6 +11,7 @@ import {
   Business as BusinessIcon,
   Groups as GroupsIcon,
   Router as RouterIcon,
+  Sync as SyncIcon,
   AdminPanelSettings as AdminPanelSettingsIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
@@ -31,6 +32,7 @@ import GatewaySection from '../Settings/GatewaySection';
 import EmailProviderSection from '../Settings/EmailProviderSection';
 import SelfSignupSection from '../Settings/SelfSignupSection';
 import TenantAuditLogSection from '../Settings/TenantAuditLogSection';
+import SyncProfileSection from '../Settings/SyncProfileSection';
 import { SlideUp } from '../common/SlideUp';
 
 interface TabDef {
@@ -49,6 +51,7 @@ const BASE_TABS: TabDef[] = [
 const TENANT_TABS: TabDef[] = [
   { id: 'teams', label: 'Teams', icon: <GroupsIcon /> },
   { id: 'gateways', label: 'Gateways', icon: <RouterIcon /> },
+  { id: 'integrations', label: 'Integrations', icon: <SyncIcon /> },
 ];
 
 const ADMIN_TAB: TabDef = {
@@ -199,6 +202,7 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
           {resolvedTab === 'gateways' && (
             <GatewaySection onNavigateToTab={setActiveTab} />
           )}
+          {resolvedTab === 'integrations' && <SyncProfileSection />}
           {resolvedTab === 'administration' && (
             <Stack spacing={3}>
               <SelfSignupSection />
