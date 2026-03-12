@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import { Terminal } from '@xterm/xterm';
@@ -12,7 +12,10 @@ import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import { mergeTerminalConfig, toXtermOptions, resolveThemeForMode, THEME_PRESETS } from '../../constants/terminalThemes';
 import { useThemeStore } from '../../store/themeStore';
 import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
+import ReconnectOverlay from '../shared/ReconnectOverlay';
 import SftpBrowser from '../SSH/SftpBrowser';
+import { useAutoReconnect } from '../../hooks/useAutoReconnect';
+import { isSshPermanentError, isTransientDisconnect } from '../../utils/reconnectClassifier';
 import '@xterm/xterm/css/xterm.css';
 
 interface SshTerminalProps {
@@ -33,6 +36,18 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
   const accessToken = useAuthStore((s) => s.accessToken);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
   const webUiMode = useThemeStore((s) => s.mode);
+
+  // Reconnection state refs
+  const wasConnectedRef = useRef(false);
+  const permanentErrorRef = useRef(false);
+  const cancelledRef = useRef(false);
+  const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const credentialsRef = useRef(credentials);
+  useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
+
+  const accessTokenRef = useRef(accessToken);
+  useEffect(() => { accessTokenRef.current = accessToken; }, [accessToken]);
 
   // Compute xterm options from merged config (applied at mount only)
   const xtermOptions = useMemo(
@@ -113,8 +128,138 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
     return () => clearTimeout(timer);
   }, [sftpOpen]);
 
+  // Connect to SSH session — creates a new socket and emits session:start
+  const connectSession = useCallback(async () => {
+    // Clean up previous socket
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    if (socketRef.current) {
+      socketRef.current.removeAllListeners();
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+
+    const terminal = terminalRef.current;
+    if (!terminal) return;
+
+    const token = accessTokenRef.current;
+    const creds = credentialsRef.current;
+
+    const socket = io('/ssh', {
+      auth: { token },
+      transports: ['websocket'],
+      reconnection: false,
+    });
+    socketRef.current = socket;
+
+    return new Promise<void>((resolve, reject) => {
+      socket.on('connect', () => {
+        socket.emit('session:start', {
+          connectionId,
+          ...(creds?.credentialMode === 'domain'
+            ? { credentialMode: 'domain' }
+            : creds && { username: creds.username, password: creds.password }
+          ),
+        });
+      });
+
+      socket.on('session:ready', () => {
+        wasConnectedRef.current = true;
+        setStatus('connected');
+        resetReconnect();
+        // Send initial size
+        socket.emit('resize', { cols: terminal.cols, rows: terminal.rows });
+
+        // Start heartbeat interval
+        heartbeatIntervalRef.current = setInterval(() => {
+          if (socket.connected) {
+            socket.emit('session:heartbeat');
+          }
+        }, 30_000);
+
+        if (wasConnectedRef.current) {
+          terminal.write('\r\n\x1b[32m[Reconnected]\x1b[0m\r\n');
+        }
+
+        resolve();
+      });
+
+      socket.on('data', (data: string) => {
+        terminal.write(data);
+      });
+
+      socket.on('session:error', (data: { message: string }) => {
+        if (isSshPermanentError('session:error', data)) {
+          permanentErrorRef.current = true;
+          setStatus('error');
+          setError(data.message);
+          terminal.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
+          reject(new Error(data.message));
+        }
+      });
+
+      socket.on('session:closed', () => {
+        terminal.write('\r\n\x1b[33mConnection closed.\x1b[0m\r\n');
+      });
+
+      socket.on('session:timeout', () => {
+        permanentErrorRef.current = true;
+        terminal.write('\r\n\x1b[31mSession expired due to inactivity.\x1b[0m\r\n');
+        setStatus('error');
+        setError('Session expired due to inactivity');
+      });
+
+      socket.on('session:terminated', () => {
+        permanentErrorRef.current = true;
+        cancelReconnect();
+        terminal.write('\r\n\x1b[31mSession terminated by administrator.\x1b[0m\r\n');
+        setStatus('error');
+        setError('Session terminated by administrator');
+      });
+
+      socket.on('connect_error', (err) => {
+        if (isSshPermanentError('connect_error', { message: err.message })) {
+          permanentErrorRef.current = true;
+          setStatus('error');
+          setError(err.message);
+          reject(new Error(err.message));
+        } else {
+          reject(new Error(err.message));
+        }
+      });
+
+      socket.on('disconnect', (reason: string) => {
+        if (heartbeatIntervalRef.current) {
+          clearInterval(heartbeatIntervalRef.current);
+          heartbeatIntervalRef.current = null;
+        }
+        if (cancelledRef.current || permanentErrorRef.current) return;
+        if (wasConnectedRef.current && isTransientDisconnect(reason)) {
+          terminal.write('\r\n\x1b[33m[Reconnecting...]\x1b[0m\r\n');
+          triggerReconnect();
+        } else if (!wasConnectedRef.current) {
+          // Initial connection failed
+          setStatus('error');
+          setError('Connection lost');
+        }
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials/token tracked via refs
+  }, [connectionId]);
+
+  const { reconnectState, attempt, maxRetries, triggerReconnect, cancelReconnect, resetReconnect } = useAutoReconnect(
+    connectSession,
+  );
+
+  // Main mount effect: create terminal and connect
   useEffect(() => {
     if (!termRef.current) return;
+
+    cancelledRef.current = false;
+    permanentErrorRef.current = false;
+    wasConnectedRef.current = false;
 
     const terminal = new Terminal(xtermOptionsRef.current);
 
@@ -125,14 +270,6 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
-
-    // Connect to SSH Socket.io namespace
-    const socket = io('/ssh', {
-      auth: { token: accessToken },
-      transports: ['websocket'],
-    });
-
-    socketRef.current = socket;
 
     // Clipboard: Ctrl+Shift+C to copy, Ctrl+Shift+V to paste
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
@@ -151,8 +288,8 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       if (event.ctrlKey && event.shiftKey && event.key === 'V') {
         if (navigator.clipboard?.readText) {
           navigator.clipboard.readText().then((text) => {
-            if (text && socket.connected) {
-              socket.emit('data', text);
+            if (text && socketRef.current?.connected) {
+              socketRef.current.emit('data', text);
             }
           }).catch((err) => {
             console.warn('Failed to read clipboard:', err);
@@ -177,80 +314,42 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       }
     });
 
-    socket.on('connect', () => {
-      socket.emit('session:start', {
-        connectionId,
-        ...(credentials?.credentialMode === 'domain'
-          ? { credentialMode: 'domain' }
-          : credentials && { username: credentials.username, password: credentials.password }
-        ),
-      });
-    });
-
-    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-
-    socket.on('session:ready', () => {
-      setStatus('connected');
-      // Send initial size
-      socket.emit('resize', { cols: terminal.cols, rows: terminal.rows });
-
-      // Start heartbeat interval
-      heartbeatInterval = setInterval(() => {
-        if (socket.connected) {
-          socket.emit('session:heartbeat');
-        }
-      }, 30_000);
-    });
-
-    socket.on('data', (data: string) => {
-      terminal.write(data);
-    });
-
-    socket.on('session:error', (data: { message: string }) => {
-      setStatus('error');
-      setError(data.message);
-      terminal.write(`\r\n\x1b[31mError: ${data.message}\x1b[0m\r\n`);
-    });
-
-    socket.on('session:closed', () => {
-      terminal.write('\r\n\x1b[33mConnection closed.\x1b[0m\r\n');
-    });
-
-    socket.on('session:timeout', () => {
-      terminal.write('\r\n\x1b[31mSession expired due to inactivity.\x1b[0m\r\n');
-      setStatus('error');
-      setError('Session expired due to inactivity');
-    });
-
-    socket.on('session:terminated', () => {
-      terminal.write('\r\n\x1b[31mSession terminated by administrator.\x1b[0m\r\n');
-      setStatus('error');
-      setError('Session terminated by administrator');
-    });
-
-    socket.on('connect_error', (err) => {
-      setStatus('error');
-      setError(err.message);
-    });
-
     // Send terminal input to server
     terminal.onData((data) => {
-      socket.emit('data', data);
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('data', data);
+      }
     });
 
     // Handle resize
     const handleResize = () => {
       fitAddon.fit();
-      socket.emit('resize', { cols: terminal.cols, rows: terminal.rows });
+      if (socketRef.current?.connected) {
+        socketRef.current.emit('resize', { cols: terminal.cols, rows: terminal.rows });
+      }
     };
 
     const resizeObserver = new ResizeObserver(handleResize);
     resizeObserver.observe(termRef.current);
 
+    // Start initial connection
+    connectSession().catch((err: unknown) => {
+      if (cancelledRef.current) return;
+      if (!permanentErrorRef.current) {
+        setStatus('error');
+        setError(err instanceof Error ? err.message : 'Failed to connect');
+      }
+    });
+
     return () => {
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      cancelledRef.current = true;
+      cancelReconnect();
+      if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       resizeObserver.disconnect();
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+      }
       terminal.dispose();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials intentionally excluded; connect once on mount
@@ -258,7 +357,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
 
   return (
     <Box ref={containerRef} sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
-      {status === 'connecting' && (
+      {status === 'connecting' && reconnectState === 'idle' && (
         <Box
           sx={{
             position: 'absolute',
@@ -277,12 +376,28 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
           <Typography>Connecting...</Typography>
         </Box>
       )}
-      {status === 'error' && (
+      {status === 'error' && reconnectState === 'idle' && (
         <Alert severity="error" sx={{ m: 1 }}>
           {error}
         </Alert>
       )}
-      {status === 'connected' && (
+      {reconnectState === 'reconnecting' && (
+        <ReconnectOverlay state="reconnecting" attempt={attempt} maxRetries={maxRetries} protocol="SSH" />
+      )}
+      {reconnectState === 'failed' && (
+        <ReconnectOverlay
+          state="failed"
+          attempt={attempt}
+          maxRetries={maxRetries}
+          protocol="SSH"
+          onRetry={() => {
+            permanentErrorRef.current = false;
+            wasConnectedRef.current = true;
+            triggerReconnect();
+          }}
+        />
+      )}
+      {status === 'connected' && reconnectState === 'idle' && (
         <FloatingToolbar actions={toolbarActions} containerRef={containerRef} />
       )}
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

@@ -22,6 +22,8 @@ RDP remote desktop sessions are rendered through the Guacamole protocol, providi
 
 VNC connections follow the same pattern as RDP, rendered through the Guacamole protocol with configurable color depth, cursor mode, clipboard encoding, and view-only settings.
 
+All three protocols include automatic reconnection with exponential backoff for transient network interruptions (Wi-Fi switches, brief server hiccups). A visual overlay shows reconnection progress, and Guacamole-based sessions (RDP/VNC) display a connection-unstable indicator when the connection degrades. Permanent errors (admin termination, session timeout, authentication failures) are not retried.
+
 SSH gateway support enables bastion host configurations where connections are routed through intermediate jump hosts. Arsenale supports both traditional SSH bastion hosts (with user-provided credentials) and managed SSH gateways where the platform automatically provisions and manages the infrastructure, including key pairs and container instances.
 
 ## Encrypted Credential Vault

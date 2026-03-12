@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import * as Guacamole from '@glokon/guacamole-common-js';
@@ -8,7 +8,10 @@ import { useAuthStore } from '../../store/authStore';
 import type { CredentialOverride } from '../../store/tabsStore';
 import FileBrowser from './FileBrowser';
 import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
+import ReconnectOverlay from '../shared/ReconnectOverlay';
 import { extractApiError } from '../../utils/apiError';
+import { useAutoReconnect } from '../../hooks/useAutoReconnect';
+import { isGuacPermanentError } from '../../utils/reconnectClassifier';
 
 interface RdpViewerProps {
   connectionId: string;
@@ -25,9 +28,246 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
   const keyboardRef = useRef<Guacamole.Keyboard | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
+  const [status, setStatus] = useState<'connecting' | 'connected' | 'unstable' | 'error'>('connecting');
   const [error, setError] = useState('');
   const [fileBrowserOpen, setFileBrowserOpen] = useState(false);
+
+  // Track whether we ever reached CONNECTED state (for reconnect eligibility)
+  const wasConnectedRef = useRef(false);
+  // Track permanent error flag to prevent reconnection after admin termination etc.
+  const permanentErrorRef = useRef(false);
+  // Track the last guacamole error message for classification at state 5
+  const lastGuacErrorRef = useRef('');
+  // Cleanup function returned by the inner connect setup
+  const innerCleanupRef = useRef<(() => void) | null>(null);
+  // Cancelled flag for async operations
+  const cancelledRef = useRef(false);
+  // Heartbeat interval ref (accessible for cleanup during reconnect)
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // ResizeObserver ref
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+
+  const credentialsRef = useRef(credentials);
+  useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
+
+  // Reconnect connect function — creates a new Guacamole session
+  const connectSession = useCallback(async () => {
+    if (!displayRef.current) return;
+
+    // Clean up previous session
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    if (resizeObserverRef.current) {
+      resizeObserverRef.current.disconnect();
+      resizeObserverRef.current = null;
+    }
+    if (clientRef.current) {
+      clientRef.current.onclipboard = null;
+      clientRef.current.onstatechange = null;
+      clientRef.current.onerror = null;
+      clientRef.current.disconnect();
+      clientRef.current = null;
+    }
+    innerCleanupRef.current?.();
+    innerCleanupRef.current = null;
+    // End old session on server
+    if (sessionIdRef.current) {
+      api.post(`/sessions/rdp/${sessionIdRef.current}/end`).catch(() => {});
+      sessionIdRef.current = null;
+    }
+    // Clear old display elements but keep the container
+    if (displayRef.current) {
+      displayRef.current.innerHTML = '';
+    }
+
+    const creds = credentialsRef.current;
+
+    // Get RDP token from server
+    const res = await api.post('/sessions/rdp', {
+      connectionId,
+      ...(creds?.credentialMode === 'domain'
+        ? { credentialMode: 'domain' }
+        : creds && {
+            username: creds.username,
+            password: creds.password,
+            ...(creds.domain ? { domain: creds.domain } : {}),
+          }
+      ),
+    });
+    const { token, sessionId } = res.data;
+    sessionIdRef.current = sessionId ?? null;
+
+    if (cancelledRef.current) return;
+
+    // Determine WebSocket URL for guacamole-lite (proxied through Vite/nginx)
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/guacamole/?token=${encodeURIComponent(token)}`;
+
+    const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
+    const client = new Guacamole.Client(tunnel);
+    clientRef.current = client;
+
+    // Get display element
+    const display = client.getDisplay().getElement();
+    displayRef.current?.appendChild(display);
+
+    // Resize logic — only active after CONNECTED
+    let connected = false;
+
+    const handleResize = () => {
+      if (!connected || !displayRef.current) return;
+      const width = displayRef.current.clientWidth;
+      const height = displayRef.current.clientHeight;
+      if (width > 0 && height > 0) {
+        client.sendSize(width, height);
+        const guacDisplay = client.getDisplay();
+        const scale = Math.min(
+          width / guacDisplay.getWidth(),
+          height / guacDisplay.getHeight()
+        );
+        if (isFinite(scale) && scale > 0) {
+          guacDisplay.scale(scale);
+        }
+      }
+    };
+
+    // Scale display whenever Guacamole reports a new resolution
+    (client.getDisplay() as unknown as { onresize: (() => void) | null }).onresize = handleResize;
+
+    // Handle state changes
+    client.onstatechange = (state: number) => {
+      if (cancelledRef.current) return;
+      switch (state) {
+        case 3: // CONNECTED
+          connected = true;
+          wasConnectedRef.current = true;
+          lastGuacErrorRef.current = '';
+          setStatus('connected');
+          resetReconnect();
+          // Send initial display size after a short delay to let the RDP session stabilize
+          setTimeout(() => {
+            handleResize();
+            if (displayRef.current && !resizeObserverRef.current) {
+              resizeObserverRef.current = new ResizeObserver(handleResize);
+              resizeObserverRef.current.observe(displayRef.current);
+            }
+          }, 2000);
+          // Start heartbeat to keep the persistent session alive
+          if (sessionIdRef.current && !heartbeatRef.current) {
+            heartbeatRef.current = setInterval(() => {
+              if (sessionIdRef.current) {
+                api.post(`/sessions/rdp/${sessionIdRef.current}/heartbeat`).catch((err) => {
+                  if (err?.response?.status === 410) {
+                    permanentErrorRef.current = true;
+                    setStatus('error');
+                    setError('Session expired due to inactivity. Please reconnect.');
+                    client.disconnect();
+                    if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+                  }
+                });
+              }
+            }, 10_000);
+          }
+          break;
+        case 4: // UNSTABLE
+          if (connected) {
+            setStatus('unstable');
+          }
+          break;
+        case 5: // DISCONNECTED
+          connected = false;
+          if (heartbeatRef.current) {
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
+          }
+          // Check if this is a transient or permanent disconnection
+          if (permanentErrorRef.current) {
+            // Already handled (admin termination, session expired, etc.)
+            return;
+          }
+          if (wasConnectedRef.current && !isGuacPermanentError(lastGuacErrorRef.current)) {
+            // Transient — attempt reconnection
+            triggerReconnect();
+          } else {
+            setStatus('error');
+            setError(lastGuacErrorRef.current || 'Disconnected from remote desktop');
+          }
+          break;
+      }
+    };
+
+    client.onerror = (err: { message?: string }) => {
+      if (cancelledRef.current) return;
+      const msg = err.message || 'RDP connection error';
+      lastGuacErrorRef.current = msg;
+      if (isGuacPermanentError(msg)) {
+        permanentErrorRef.current = true;
+        setStatus('error');
+        setError(msg);
+      }
+      // For non-permanent errors, let onstatechange handle the transition to state 5
+    };
+
+    // Prevent native context menu on the Guacamole display (fixes Firefox)
+    const preventContextMenu = (e: Event) => e.preventDefault();
+    display.addEventListener('contextmenu', preventContextMenu);
+
+    // Mouse events — only forward when this viewer is active
+    const mouse = new Guacamole.Mouse(display);
+    mouse.onEach(['mousedown', 'mouseup', 'mousemove'], (e) => {
+      const mouseEvent = e as Guacamole.Mouse.Event;
+      if (activeRef.current) {
+        mouseEvent.preventDefault();
+        client.sendMouseState(mouseEvent.state);
+      }
+    });
+
+    // Clipboard: remote → browser
+    client.onclipboard = (stream: Guacamole.InputStream, mimetype: string) => {
+      if (mimetype !== 'text/plain') return;
+      const reader = new Guacamole.StringReader(stream);
+      let data = '';
+      reader.ontext = (text: string) => { data += text; };
+      reader.onend = () => {
+        if (data && navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(data).catch((err) => {
+            console.warn('Failed to write to browser clipboard:', err);
+          });
+        }
+      };
+    };
+
+    // Keyboard events — only forward when this viewer is active and focused
+    // displayRef.current is guaranteed non-null here (guarded at the top)
+    const keyboard = new Guacamole.Keyboard(displayRef.current as HTMLElement);
+    keyboardRef.current = keyboard;
+    keyboard.onkeydown = (keysym: number) => {
+      if (!activeRef.current) return false;
+      client.sendKeyEvent(1, keysym);
+      return true;
+    };
+    keyboard.onkeyup = (keysym: number) => {
+      if (!activeRef.current) return;
+      client.sendKeyEvent(0, keysym);
+    };
+
+    // Connect — pass empty string so WebSocketTunnel doesn't append
+    // literal "undefined" to the URL (which corrupts the base64 token)
+    client.connect('');
+
+    innerCleanupRef.current = () => {
+      display.removeEventListener('contextmenu', preventContextMenu);
+      keyboard.onkeydown = null;
+      keyboard.onkeyup = null;
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials tracked via ref
+  }, [connectionId]);
+
+  const { reconnectState, attempt, maxRetries, triggerReconnect, cancelReconnect, resetReconnect } = useAutoReconnect(
+    connectSession,
+  );
 
   // Build toolbar actions list — extensible for future tools
   const toolbarActions = useMemo<ToolbarAction[]>(() => {
@@ -65,6 +305,8 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
 
     const handler = (data: { sessionId: string }) => {
       if (data.sessionId && data.sessionId === sessionIdRef.current) {
+        permanentErrorRef.current = true;
+        cancelReconnect();
         setStatus('error');
         setError('Session terminated by administrator');
         clientRef.current?.disconnect();
@@ -77,188 +319,46 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
       socket.off('session:terminated', handler);
       socket.disconnect();
     };
-  }, [connectionId]);
+  }, [connectionId, cancelReconnect]);
 
+  // Initial connection
   useEffect(() => {
     if (!displayRef.current) return;
 
-    let cancelled = false;
-
-    async function connect() {
-      try {
-        // Get RDP token from server
-        const res = await api.post('/sessions/rdp', {
-          connectionId,
-          ...(credentials?.credentialMode === 'domain'
-            ? { credentialMode: 'domain' }
-            : credentials && {
-                username: credentials.username,
-                password: credentials.password,
-                ...(credentials.domain ? { domain: credentials.domain } : {}),
-              }
-          ),
-        });
-        const { token, sessionId } = res.data;
-        sessionIdRef.current = sessionId ?? null;
-
-        if (cancelled) return;
-
-        // Determine WebSocket URL for guacamole-lite (proxied through Vite/nginx)
-        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${wsProtocol}//${window.location.host}/guacamole/?token=${encodeURIComponent(token)}`;
-
-        const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
-        const client = new Guacamole.Client(tunnel);
-        clientRef.current = client;
-
-        // Get display element
-        const display = client.getDisplay().getElement();
-        displayRef.current?.appendChild(display);
-
-        // Resize logic — only active after CONNECTED
-        let connected = false;
-        let resizeObserver: ResizeObserver | null = null;
-        let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-
-        const handleResize = () => {
-          if (!connected || !displayRef.current) return;
-          const width = displayRef.current.clientWidth;
-          const height = displayRef.current.clientHeight;
-          if (width > 0 && height > 0) {
-            client.sendSize(width, height);
-            const guacDisplay = client.getDisplay();
-            const scale = Math.min(
-              width / guacDisplay.getWidth(),
-              height / guacDisplay.getHeight()
-            );
-            if (isFinite(scale) && scale > 0) {
-              guacDisplay.scale(scale);
-            }
-          }
-        };
-
-        // Scale display whenever Guacamole reports a new resolution
-        (client.getDisplay() as unknown as { onresize: (() => void) | null }).onresize = handleResize;
-
-        // Handle state changes
-        client.onstatechange = (state: number) => {
-          if (cancelled) return;
-          switch (state) {
-            case 3: // CONNECTED
-              connected = true;
-              setStatus('connected');
-              // Send initial display size after a short delay to let the RDP session stabilize
-              setTimeout(() => {
-                handleResize();
-                if (displayRef.current && !resizeObserver) {
-                  resizeObserver = new ResizeObserver(handleResize);
-                  resizeObserver.observe(displayRef.current);
-                }
-              }, 2000);
-              // Start heartbeat to keep the persistent session alive
-              if (sessionIdRef.current && !heartbeatInterval) {
-                heartbeatInterval = setInterval(() => {
-                  if (sessionIdRef.current) {
-                    api.post(`/sessions/rdp/${sessionIdRef.current}/heartbeat`).catch((err) => {
-                      if (err?.response?.status === 410) {
-                        setStatus('error');
-                        setError('Session expired due to inactivity. Please reconnect.');
-                        client.disconnect();
-                        if (heartbeatInterval) { clearInterval(heartbeatInterval); heartbeatInterval = null; }
-                      }
-                    });
-                  }
-                }, 10_000);
-              }
-              break;
-            case 5: // DISCONNECTED
-              connected = false;
-              setStatus('error');
-              setError('Disconnected from remote desktop');
-              break;
-          }
-        };
-
-        client.onerror = (err: { message?: string }) => {
-          if (cancelled) return;
-          setStatus('error');
-          setError(err.message || 'RDP connection error');
-        };
-
-        // Prevent native context menu on the Guacamole display (fixes Firefox)
-        const preventContextMenu = (e: Event) => e.preventDefault();
-        display.addEventListener('contextmenu', preventContextMenu);
-
-        // Mouse events — only forward when this viewer is active
-        const mouse = new Guacamole.Mouse(display);
-        mouse.onEach(['mousedown', 'mouseup', 'mousemove'], (e) => {
-          const mouseEvent = e as Guacamole.Mouse.Event;
-          if (activeRef.current) {
-            mouseEvent.preventDefault();
-            client.sendMouseState(mouseEvent.state);
-          }
-        });
-
-        // Clipboard: remote → browser
-        client.onclipboard = (stream: Guacamole.InputStream, mimetype: string) => {
-          if (mimetype !== 'text/plain') return;
-          const reader = new Guacamole.StringReader(stream);
-          let data = '';
-          reader.ontext = (text: string) => { data += text; };
-          reader.onend = () => {
-            if (data && navigator.clipboard?.writeText) {
-              navigator.clipboard.writeText(data).catch((err) => {
-                console.warn('Failed to write to browser clipboard:', err);
-              });
-            }
-          };
-        };
-
-        // Keyboard events — only forward when this viewer is active and focused
-        // displayRef.current is guaranteed non-null here (guarded at the top of the effect)
-        const keyboard = new Guacamole.Keyboard(displayRef.current as HTMLElement);
-        keyboardRef.current = keyboard;
-        keyboard.onkeydown = (keysym: number) => {
-          if (!activeRef.current) return false;
-          client.sendKeyEvent(1, keysym);
-          return true;
-        };
-        keyboard.onkeyup = (keysym: number) => {
-          if (!activeRef.current) return;
-          client.sendKeyEvent(0, keysym);
-        };
-
-        // Connect — pass empty string so WebSocketTunnel doesn't append
-        // literal "undefined" to the URL (which corrupts the base64 token)
-        client.connect('');
-
-        return () => {
-          resizeObserver?.disconnect();
-          display.removeEventListener('contextmenu', preventContextMenu);
-          keyboard.onkeydown = null;
-          keyboard.onkeyup = null;
-          if (heartbeatInterval) clearInterval(heartbeatInterval);
-        };
-      } catch (err: unknown) {
-        if (cancelled) return;
-        setStatus('error');
-        setError(extractApiError(err, err instanceof Error ? err.message : 'Failed to start RDP session'));
-      }
-    }
-
-    connect();
+    cancelledRef.current = false;
+    permanentErrorRef.current = false;
+    wasConnectedRef.current = false;
+    lastGuacErrorRef.current = '';
 
     // Capture ref value for cleanup — React refs may change by the time cleanup runs
     const displayEl = displayRef.current;
 
+    connectSession().catch((err: unknown) => {
+      if (cancelledRef.current) return;
+      setStatus('error');
+      setError(extractApiError(err, err instanceof Error ? err.message : 'Failed to start RDP session'));
+    });
+
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
+      cancelReconnect();
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+      }
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
+      innerCleanupRef.current?.();
       if (keyboardRef.current) {
         keyboardRef.current.reset();
         keyboardRef.current = null;
       }
       if (clientRef.current) {
         clientRef.current.onclipboard = null;
+        clientRef.current.onstatechange = null;
+        clientRef.current.onerror = null;
         clientRef.current.disconnect();
       }
       // Signal the server to close the persistent session (fire-and-forget)
@@ -349,10 +449,29 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
           <Typography>Connecting to remote desktop...</Typography>
         </Box>
       )}
-      {status === 'error' && (
+      {status === 'error' && reconnectState === 'idle' && (
         <Alert severity="error" sx={{ m: 1 }}>
           {error}
         </Alert>
+      )}
+      {status === 'unstable' && reconnectState === 'idle' && (
+        <ReconnectOverlay state="unstable" attempt={0} maxRetries={maxRetries} protocol="RDP" />
+      )}
+      {reconnectState === 'reconnecting' && (
+        <ReconnectOverlay state="reconnecting" attempt={attempt} maxRetries={maxRetries} protocol="RDP" />
+      )}
+      {reconnectState === 'failed' && (
+        <ReconnectOverlay
+          state="failed"
+          attempt={attempt}
+          maxRetries={maxRetries}
+          protocol="RDP"
+          onRetry={() => {
+            permanentErrorRef.current = false;
+            wasConnectedRef.current = true;
+            triggerReconnect();
+          }}
+        />
       )}
       {toolbarActions.length > 0 && status === 'connected' && (
         <FloatingToolbar actions={toolbarActions} containerRef={containerRef} />
