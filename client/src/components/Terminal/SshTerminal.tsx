@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { useFullscreen } from '../../hooks/useFullscreen';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { io, Socket } from 'socket.io-client';
 import { useAuthStore } from '../../store/authStore';
+import { useTabsStore } from '../../store/tabsStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 import type { CredentialOverride } from '../../store/tabsStore';
@@ -12,6 +14,7 @@ import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import { mergeTerminalConfig, toXtermOptions, resolveThemeForMode, THEME_PRESETS } from '../../constants/terminalThemes';
 import { useThemeStore } from '../../store/themeStore';
 import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
+import SessionContextMenu from '../shared/SessionContextMenu';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
 import SftpBrowser from '../SSH/SftpBrowser';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
@@ -26,7 +29,7 @@ interface SshTerminalProps {
   sshTerminalConfig?: Partial<SshTerminalConfig> | null;
 }
 
-export default function SshTerminal({ connectionId, tabId: _tabId, credentials, sshTerminalConfig }: SshTerminalProps) {
+export default function SshTerminal({ connectionId, tabId, credentials, sshTerminalConfig }: SshTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -37,6 +40,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
   const [dlpPolicy, setDlpPolicy] = useState<ResolvedDlpPolicy | null>(null);
   const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
   useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
+  const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
   const accessToken = useAuthStore((s) => s.accessToken);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
   const webUiMode = useThemeStore((s) => s.mode);
@@ -264,6 +268,31 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
     connectSession,
   );
 
+  const [isFullscreen, toggleFullscreen] = useFullscreen(containerRef);
+
+  // Context menu action handlers
+  const handleCopy = useCallback(() => {
+    if (dlpPolicyRef.current?.disableCopy) return;
+    const selection = terminalRef.current?.getSelection();
+    if (selection && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(selection).catch(() => {});
+    }
+  }, []);
+
+  const handlePasteAction = useCallback(() => {
+    if (dlpPolicyRef.current?.disablePaste) return;
+    if (!navigator.clipboard?.readText) return;
+    navigator.clipboard.readText().then((text) => {
+      if (text && socketRef.current?.connected) {
+        socketRef.current.emit('data', text);
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleDisconnect = useCallback(() => {
+    useTabsStore.getState().closeTab(tabId);
+  }, [tabId]);
+
   // Main mount effect: create terminal and connect
   useEffect(() => {
     if (!termRef.current) return;
@@ -290,8 +319,13 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
     const handleCopy = (e: ClipboardEvent) => {
       if (dlpPolicyRef.current?.disableCopy) { e.preventDefault(); e.stopPropagation(); }
     };
+    const handleContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      setContextMenu({ top: e.clientY, left: e.clientX });
+    };
     termEl.addEventListener('paste', handlePaste, true);
     termEl.addEventListener('copy', handleCopy, true);
+    termEl.addEventListener('contextmenu', handleContextMenu);
 
     // Clipboard: Ctrl+Shift+C to copy, Ctrl+Shift+V to paste
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
@@ -374,6 +408,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       resizeObserver.disconnect();
       termEl.removeEventListener('paste', handlePaste, true);
       termEl.removeEventListener('copy', handleCopy, true);
+      termEl.removeEventListener('contextmenu', handleContextMenu);
       if (socketRef.current) {
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
@@ -428,6 +463,21 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       {status === 'connected' && reconnectState === 'idle' && (
         <FloatingToolbar actions={toolbarActions} containerRef={containerRef} />
       )}
+      <SessionContextMenu
+        anchorPosition={contextMenu}
+        onClose={() => setContextMenu(null)}
+        protocol="SSH"
+        dlpPolicy={dlpPolicy}
+        onCopy={handleCopy}
+        onPaste={handlePasteAction}
+        onFullscreenToggle={toggleFullscreen}
+        isFullscreen={isFullscreen}
+        onDisconnect={handleDisconnect}
+        onToggleSftp={() => togglePref('sshSftpBrowserOpen')}
+        sftpAvailable={!sftpHiddenByDlp}
+        sftpOpen={sftpOpen}
+        container={isFullscreen ? containerRef.current : null}
+      />
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Box
           ref={termRef}

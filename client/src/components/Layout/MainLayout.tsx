@@ -72,6 +72,13 @@ export default function MainLayout() {
   useGatewayMonitor();
   useShareSync();
 
+  // Suppress native browser context menu globally to enforce DLP controls (CTX-301)
+  useEffect(() => {
+    const prevent = (e: MouseEvent) => e.preventDefault();
+    document.addEventListener('contextmenu', prevent, { capture: true });
+    return () => document.removeEventListener('contextmenu', prevent, { capture: true });
+  }, []);
+
   useEffect(() => {
     if (!terminalDefaultsLoaded) {
       fetchTerminalDefaults();
