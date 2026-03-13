@@ -138,6 +138,8 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
               margin="normal" required
               helperText="Minimum 10 characters"
               autoFocus={!skipVerification}
+              error={Boolean(newPassword) && newPassword.length > 0 && newPassword.length < 10}
+              inputProps={{ minLength: 10 }}
             />
             <PasswordStrengthMeter password={newPassword} />
             <TextField
