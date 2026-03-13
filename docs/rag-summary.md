@@ -22,6 +22,8 @@ RDP remote desktop sessions are rendered through the Guacamole protocol, providi
 
 VNC connections follow the same pattern as RDP, rendered through the Guacamole protocol with configurable color depth, cursor mode, clipboard encoding, and view-only settings.
 
+All viewer types support fullscreen mode through a toggle button in the floating toolbar. In fullscreen mode on Chromium-based browsers, the Keyboard Lock API attempts to capture additional system-level shortcuts (such as Alt+Tab or Ctrl+W) and forward them to the remote session; however, some OS-reserved sequences (such as Ctrl+Alt+Del on Windows or Ctrl+Alt+Backspace on Linux) cannot be intercepted by any browser and will still be handled by the operating system. Keyboard input in RDP and VNC sessions is captured at the browser level to prevent browser shortcuts from interfering with the remote desktop. Focus management automatically engages keyboard capture when the mouse enters the viewer area and releases it when the mouse leaves.
+
 All three protocols include automatic reconnection with exponential backoff for transient network interruptions (Wi-Fi switches, brief server hiccups). A visual overlay shows reconnection progress, and Guacamole-based sessions (RDP/VNC) display a connection-unstable indicator when the connection degrades. Permanent errors (admin termination, session timeout, authentication failures) are not retried.
 
 SSH gateway support enables bastion host configurations where connections are routed through intermediate jump hosts. Arsenale supports both traditional SSH bastion hosts (with user-provided credentials) and managed SSH gateways where the platform automatically provisions and manages the infrastructure, including key pairs and container instances.

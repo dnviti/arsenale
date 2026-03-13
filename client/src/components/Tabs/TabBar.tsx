@@ -23,6 +23,11 @@ export default function TabBar() {
         value={activeIndex >= 0 ? activeIndex : 0}
         onChange={(_e, newValue) => {
           if (tabs[newValue]) setActiveTab(tabs[newValue].id);
+          // Blur the tab element to prevent MUI Tabs arrow-key navigation
+          // from intercepting keyboard input meant for the connection viewer
+          if (document.activeElement instanceof HTMLElement) {
+            document.activeElement.blur();
+          }
         }}
         variant="scrollable"
         scrollButtons="auto"

@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useFullscreen } from '../../hooks/useFullscreen';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
-import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
+import {
+  FolderOpen as FolderOpenIcon,
+  Fullscreen as FullscreenIcon,
+  FullscreenExit as FullscreenExitIcon,
+} from '@mui/icons-material';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { io, Socket } from 'socket.io-client';
@@ -18,6 +22,7 @@ import SessionContextMenu from '../shared/SessionContextMenu';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
 import SftpBrowser from '../SSH/SftpBrowser';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
+import { useKeyboardCapture } from '../../hooks/useKeyboardCapture';
 import { isSshPermanentError, isTransientDisconnect } from '../../utils/reconnectClassifier';
 import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import '@xterm/xterm/css/xterm.css';
@@ -25,11 +30,12 @@ import '@xterm/xterm/css/xterm.css';
 interface SshTerminalProps {
   connectionId: string;
   tabId: string;
+  isActive?: boolean;
   credentials?: CredentialOverride;
   sshTerminalConfig?: Partial<SshTerminalConfig> | null;
 }
 
-export default function SshTerminal({ connectionId, tabId, credentials, sshTerminalConfig }: SshTerminalProps) {
+export default function SshTerminal({ connectionId, tabId: _tabId, isActive = true, credentials, sshTerminalConfig }: SshTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -114,6 +120,25 @@ export default function SshTerminal({ connectionId, tabId, credentials, sshTermi
 
   const sftpHiddenByDlp = dlpPolicy?.disableDownload && dlpPolicy?.disableUpload;
 
+  // Keyboard capture and fullscreen
+  const { isFullscreen, toggleFullscreen } = useKeyboardCapture({
+    focusRef: termRef,
+    fullscreenRef: containerRef,
+    isActive,
+    onFullscreenChange: () => {
+      setTimeout(() => {
+        fitAddonRef.current?.fit();
+        if (socketRef.current?.connected && terminalRef.current) {
+          socketRef.current.emit('resize', {
+            cols: terminalRef.current.cols,
+            rows: terminalRef.current.rows,
+          });
+        }
+      }, 100);
+    },
+    suppressBrowserKeys: false,
+  });
+
   const toolbarActions = useMemo<ToolbarAction[]>(() => {
     const actions: ToolbarAction[] = [];
     if (!sftpHiddenByDlp) {
@@ -125,8 +150,15 @@ export default function SshTerminal({ connectionId, tabId, credentials, sshTermi
         active: sftpOpen,
       });
     }
+    actions.push({
+      id: 'fullscreen',
+      icon: isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />,
+      tooltip: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
+      onClick: toggleFullscreen,
+      active: isFullscreen,
+    });
     return actions;
-  }, [sftpOpen, togglePref, sftpHiddenByDlp]);
+  }, [sftpOpen, togglePref, sftpHiddenByDlp, isFullscreen, toggleFullscreen]);
 
   // Refit terminal when SFTP drawer opens/closes
   useEffect(() => {
@@ -481,6 +513,7 @@ export default function SshTerminal({ connectionId, tabId, credentials, sshTermi
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Box
           ref={termRef}
+          tabIndex={-1}
           sx={{ flex: 1, overflow: 'hidden', '& .xterm': { height: '100%', padding: '4px' } }}
         />
         {!sftpHiddenByDlp && (

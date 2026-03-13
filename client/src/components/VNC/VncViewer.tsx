@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
+import {
+  Fullscreen as FullscreenIcon,
+  FullscreenExit as FullscreenExitIcon,
+} from '@mui/icons-material';
 import * as Guacamole from '@glokon/guacamole-common-js';
 import { io } from 'socket.io-client';
 import api from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { ResolvedDlpPolicy } from '../../api/connections.api';
+import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
 import { extractApiError } from '../../utils/apiError';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
+import { useKeyboardCapture } from '../../hooks/useKeyboardCapture';
 import { isGuacPermanentError } from '../../utils/reconnectClassifier';
 
 interface VncViewerProps {
@@ -20,6 +26,7 @@ interface VncViewerProps {
 
 export default function VncViewer({ connectionId, tabId: _tabId, isActive = true, credentials }: VncViewerProps) {
   const displayRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<Guacamole.Client | null>(null);
   const activeRef = useRef(isActive);
   const keyboardRef = useRef<Guacamole.Keyboard | null>(null);
@@ -214,7 +221,7 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
     keyboard.onkeydown = (keysym: number) => {
       if (!activeRef.current) return false;
       client.sendKeyEvent(1, keysym);
-      return true;
+      return false;
     };
     keyboard.onkeyup = (keysym: number) => {
       if (!activeRef.current) return;
@@ -235,13 +242,51 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
     connectSession,
   );
 
-  useEffect(() => {
-    activeRef.current = isActive;
-    if (!isActive) {
-      keyboardRef.current?.reset();
-      displayRef.current?.blur();
-    }
-  }, [isActive]);
+  // Keep activeRef in sync with prop (used by Guacamole keyboard/mouse handlers)
+  useEffect(() => { activeRef.current = isActive; }, [isActive]);
+
+  // Clipboard: browser → remote
+  const isFirefox = useMemo(() => /firefox/i.test(navigator.userAgent), []);
+  const syncClipboardToRemote = useCallback(() => {
+    if (isFirefox) return;
+    if (dlpPolicyRef.current?.disablePaste) return;
+    const client = clientRef.current;
+    if (!client || !activeRef.current) return;
+    if (!navigator.clipboard?.readText) return;
+    navigator.clipboard.readText().then((text) => {
+      if (!text) return;
+      const stream = client.createClipboardStream('text/plain');
+      const writer = new Guacamole.StringWriter(stream);
+      writer.sendText(text);
+      writer.sendEnd();
+    }).catch((err) => {
+      console.warn('Failed to read browser clipboard:', err);
+    });
+  }, [isFirefox]);
+
+  // Keyboard capture, focus management, and fullscreen
+  const { isFullscreen, toggleFullscreen } = useKeyboardCapture({
+    focusRef: displayRef,
+    fullscreenRef: containerRef,
+    isActive,
+    onBlur: () => keyboardRef.current?.reset(),
+    onFocus: syncClipboardToRemote,
+    onMouseDown: syncClipboardToRemote,
+    suppressBrowserKeys: true,
+  });
+
+  // Build toolbar actions list
+  const toolbarActions = useMemo<ToolbarAction[]>(() => {
+    const actions: ToolbarAction[] = [];
+    actions.push({
+      id: 'fullscreen',
+      icon: isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />,
+      tooltip: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
+      onClick: toggleFullscreen,
+      active: isFullscreen,
+    });
+    return actions;
+  }, [isFullscreen, toggleFullscreen]);
 
   // Listen for admin-initiated session termination
   useEffect(() => {
@@ -323,59 +368,8 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials intentionally excluded; connect once on mount
   }, [connectionId]);
 
-  // Focus management
-  useEffect(() => {
-    const container = displayRef.current;
-    if (!container) return;
-
-    const handleMouseEnter = () => {
-      if (activeRef.current) container.focus();
-    };
-    const handleMouseLeave = () => {
-      keyboardRef.current?.reset();
-      container.blur();
-    };
-    const handleBlur = () => {
-      keyboardRef.current?.reset();
-    };
-
-    const isFirefox = /firefox/i.test(navigator.userAgent);
-    const syncClipboardToRemote = () => {
-      if (isFirefox) return;
-      if (dlpPolicyRef.current?.disablePaste) return;
-      const client = clientRef.current;
-      if (!client || !activeRef.current) return;
-      if (!navigator.clipboard?.readText) return;
-      navigator.clipboard.readText().then((text) => {
-        if (!text) return;
-        const stream = client.createClipboardStream('text/plain');
-        const writer = new Guacamole.StringWriter(stream);
-        writer.sendText(text);
-        writer.sendEnd();
-      }).catch((err) => {
-        console.warn('Failed to read browser clipboard:', err);
-      });
-    };
-    const handleFocus = () => { syncClipboardToRemote(); };
-    const handleMouseDown = () => { syncClipboardToRemote(); };
-
-    container.addEventListener('mouseenter', handleMouseEnter);
-    container.addEventListener('mouseleave', handleMouseLeave);
-    container.addEventListener('blur', handleBlur);
-    container.addEventListener('focus', handleFocus);
-    container.addEventListener('mousedown', handleMouseDown);
-
-    return () => {
-      container.removeEventListener('mouseenter', handleMouseEnter);
-      container.removeEventListener('mouseleave', handleMouseLeave);
-      container.removeEventListener('blur', handleBlur);
-      container.removeEventListener('focus', handleFocus);
-      container.removeEventListener('mousedown', handleMouseDown);
-    };
-  }, []);
-
   return (
-    <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <Box ref={containerRef} sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       {status === 'connecting' && (
         <Box
           sx={{
@@ -418,6 +412,9 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
             triggerReconnect();
           }}
         />
+      )}
+      {status === 'connected' && (
+        <FloatingToolbar actions={toolbarActions} containerRef={containerRef} />
       )}
       <Box
         ref={displayRef}

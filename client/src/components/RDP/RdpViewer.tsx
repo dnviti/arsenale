@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { Box, CircularProgress, Typography, Alert } from '@mui/material';
-import { FolderOpen as FolderOpenIcon } from '@mui/icons-material';
+import {
+  FolderOpen as FolderOpenIcon,
+  Fullscreen as FullscreenIcon,
+  FullscreenExit as FullscreenExitIcon,
+} from '@mui/icons-material';
 import * as Guacamole from '@glokon/guacamole-common-js';
 import { io } from 'socket.io-client';
 import api from '../../api/client';
@@ -12,6 +16,7 @@ import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
 import { extractApiError } from '../../utils/apiError';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
+import { useKeyboardCapture } from '../../hooks/useKeyboardCapture';
 import { isGuacPermanentError } from '../../utils/reconnectClassifier';
 
 interface RdpViewerProps {
@@ -252,7 +257,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
     keyboard.onkeydown = (keysym: number) => {
       if (!activeRef.current) return false;
       client.sendKeyEvent(1, keysym);
-      return true;
+      return false;
     };
     keyboard.onkeyup = (keysym: number) => {
       if (!activeRef.current) return;
@@ -275,6 +280,42 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
     connectSession,
   );
 
+  // Keep activeRef in sync with prop (used by Guacamole keyboard/mouse handlers)
+  useEffect(() => { activeRef.current = isActive; }, [isActive]);
+
+  // Clipboard: browser → remote
+  // Firefox 125+ shows a native "Paste" popup every time navigator.clipboard.readText()
+  // is called, so we skip automatic clipboard sync on Firefox to avoid it.
+  // See: https://github.com/Ylianst/MeshCentral/issues/6571
+  const isFirefox = useMemo(() => /firefox/i.test(navigator.userAgent), []);
+  const syncClipboardToRemote = useCallback(() => {
+    if (isFirefox) return;
+    if (dlpPolicyRef.current?.disablePaste) return;
+    const client = clientRef.current;
+    if (!client || !activeRef.current) return;
+    if (!navigator.clipboard?.readText) return;
+    navigator.clipboard.readText().then((text) => {
+      if (!text) return;
+      const stream = client.createClipboardStream('text/plain');
+      const writer = new Guacamole.StringWriter(stream);
+      writer.sendText(text);
+      writer.sendEnd();
+    }).catch((err) => {
+      console.warn('Failed to read browser clipboard:', err);
+    });
+  }, [isFirefox]);
+
+  // Keyboard capture, focus management, and fullscreen
+  const { isFullscreen, toggleFullscreen } = useKeyboardCapture({
+    focusRef: displayRef,
+    fullscreenRef: containerRef,
+    isActive,
+    onBlur: () => keyboardRef.current?.reset(),
+    onFocus: syncClipboardToRemote,
+    onMouseDown: syncClipboardToRemote,
+    suppressBrowserKeys: true,
+  });
+
   // Build toolbar actions list — extensible for future tools
   const driveHiddenByDlp = dlpPolicy?.disableDownload && dlpPolicy?.disableUpload;
   const toolbarActions = useMemo<ToolbarAction[]>(() => {
@@ -288,17 +329,15 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
         active: fileBrowserOpen,
       });
     }
+    actions.push({
+      id: 'fullscreen',
+      icon: isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />,
+      tooltip: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
+      onClick: toggleFullscreen,
+      active: isFullscreen,
+    });
     return actions;
-  }, [enableDrive, driveHiddenByDlp, fileBrowserOpen]);
-
-  // Keep activeRef in sync with prop; release keys and blur on tab switch
-  useEffect(() => {
-    activeRef.current = isActive;
-    if (!isActive) {
-      keyboardRef.current?.reset();
-      displayRef.current?.blur();
-    }
-  }, [isActive]);
+  }, [enableDrive, driveHiddenByDlp, fileBrowserOpen, isFullscreen, toggleFullscreen]);
 
   // Listen for admin-initiated session termination via the /notifications namespace.
   useEffect(() => {
@@ -381,61 +420,6 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials intentionally excluded; connect once on mount
   }, [connectionId]);
 
-  // Focus management: capture keyboard only when mouse hovers over the display
-  useEffect(() => {
-    const container = displayRef.current;
-    if (!container) return;
-
-    const handleMouseEnter = () => {
-      if (activeRef.current) container.focus();
-    };
-    const handleMouseLeave = () => {
-      keyboardRef.current?.reset();
-      container.blur();
-    };
-    const handleBlur = () => {
-      keyboardRef.current?.reset();
-    };
-
-    // Clipboard: browser → remote
-    // Firefox 125+ shows a native "Paste" popup every time navigator.clipboard.readText()
-    // is called, so we skip automatic clipboard sync on Firefox to avoid it.
-    // See: https://github.com/Ylianst/MeshCentral/issues/6571
-    const isFirefox = /firefox/i.test(navigator.userAgent);
-    const syncClipboardToRemote = () => {
-      if (isFirefox) return;
-      if (dlpPolicyRef.current?.disablePaste) return;
-      const client = clientRef.current;
-      if (!client || !activeRef.current) return;
-      if (!navigator.clipboard?.readText) return;
-      navigator.clipboard.readText().then((text) => {
-        if (!text) return;
-        const stream = client.createClipboardStream('text/plain');
-        const writer = new Guacamole.StringWriter(stream);
-        writer.sendText(text);
-        writer.sendEnd();
-      }).catch((err) => {
-        console.warn('Failed to read browser clipboard:', err);
-      });
-    };
-    const handleFocus = () => { syncClipboardToRemote(); };
-    const handleMouseDown = () => { syncClipboardToRemote(); };
-
-    container.addEventListener('mouseenter', handleMouseEnter);
-    container.addEventListener('mouseleave', handleMouseLeave);
-    container.addEventListener('blur', handleBlur);
-    container.addEventListener('focus', handleFocus);
-    container.addEventListener('mousedown', handleMouseDown);
-
-    return () => {
-      container.removeEventListener('mouseenter', handleMouseEnter);
-      container.removeEventListener('mouseleave', handleMouseLeave);
-      container.removeEventListener('blur', handleBlur);
-      container.removeEventListener('focus', handleFocus);
-      container.removeEventListener('mousedown', handleMouseDown);
-    };
-  }, []);
-
   return (
     <Box ref={containerRef} sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
       {status === 'connecting' && (
@@ -481,7 +465,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
           }}
         />
       )}
-      {toolbarActions.length > 0 && status === 'connected' && (
+      {status === 'connected' && (
         <FloatingToolbar actions={toolbarActions} containerRef={containerRef} />
       )}
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>

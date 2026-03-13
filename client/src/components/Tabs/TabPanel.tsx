@@ -41,7 +41,7 @@ export default function TabPanel() {
           }}
         >
           {tab.connection.type === 'SSH' ? (
-            <SshTerminal connectionId={tab.connection.id} tabId={tab.id} credentials={tab.credentials} sshTerminalConfig={tab.connection.sshTerminalConfig} />
+            <SshTerminal connectionId={tab.connection.id} tabId={tab.id} isActive={tab.id === activeTabId} credentials={tab.credentials} sshTerminalConfig={tab.connection.sshTerminalConfig} />
           ) : tab.connection.type === 'VNC' ? (
             <VncViewer connectionId={tab.connection.id} tabId={tab.id} isActive={tab.id === activeTabId} credentials={tab.credentials} />
           ) : (
