@@ -15,6 +15,7 @@ import {
 } from './crypto.service';
 import { sendPasswordResetEmail } from './email';
 import * as auditService from './audit.service';
+import { assertPasswordNotBreached } from './password.service';
 
 const log = logger.child('password-reset');
 
@@ -177,6 +178,9 @@ export async function completePasswordReset(params: {
       throw new Error('Invalid or expired SMS code');
     }
   }
+
+  // Check password against known data breaches (HIBP k-Anonymity)
+  await assertPasswordNotBreached(newPassword);
 
   // Hash new password
   const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);

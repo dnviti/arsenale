@@ -6,6 +6,7 @@ import {
 import { registerApi, getPublicConfig } from '../api/auth.api';
 import { resendVerificationEmail } from '../api/email.api';
 import OAuthButtons from '../components/OAuthButtons';
+import PasswordStrengthMeter from '../components/common/PasswordStrengthMeter';
 import { extractApiError } from '../utils/apiError';
 
 export default function RegisterPage() {
@@ -56,8 +57,8 @@ export default function RegisterPage() {
       setError('Passwords do not match');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (password.length < 10) {
+      setError('Password must be at least 10 characters');
       return;
     }
 
@@ -186,8 +187,9 @@ export default function RegisterPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   margin="normal"
                   required
-                  helperText="Min 8 characters. This password also encrypts your saved credentials."
+                  helperText="Min 10 characters. This password also encrypts your saved credentials."
                 />
+                <PasswordStrengthMeter password={password} />
                 <TextField
                   fullWidth
                   label="Confirm Password"

@@ -8,6 +8,7 @@ import {
   type VerificationMethod,
 } from '../../api/user.api';
 import IdentityVerification from '../common/IdentityVerification';
+import PasswordStrengthMeter from '../common/PasswordStrengthMeter';
 import RecoveryKeyConfirmDialog from '../common/RecoveryKeyConfirmDialog';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
@@ -135,9 +136,12 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
               fullWidth label="New Password" type="password"
               value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
               margin="normal" required
-              helperText="Minimum 8 characters"
+              helperText="Minimum 10 characters"
               autoFocus={!skipVerification}
+              error={Boolean(newPassword) && newPassword.length > 0 && newPassword.length < 10}
+              inputProps={{ minLength: 10 }}
             />
+            <PasswordStrengthMeter password={newPassword} />
             <TextField
               fullWidth label="Confirm New Password" type="password"
               value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}

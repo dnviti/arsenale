@@ -29,6 +29,7 @@ import { sendVerificationEmail } from './email';
 import * as auditService from './audit.service';
 import { getSelfSignupEnabled } from './appConfig.service';
 import { computeBindingHash } from '../utils/tokenBinding';
+import { assertPasswordNotBreached } from './password.service';
 
 const BCRYPT_ROUNDS = 12;
 const RESEND_COOLDOWN_MS = 60 * 1000;
@@ -54,6 +55,9 @@ export async function register(email: string, password: string) {
       recoveryKey: '', // Dummy key, they already have an account
     };
   }
+
+  // Check password against known data breaches (HIBP k-Anonymity)
+  await assertPasswordNotBreached(password);
 
   // Hash password for login
   const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);

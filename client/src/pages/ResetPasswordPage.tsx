@@ -10,6 +10,7 @@ import {
   completePasswordResetApi,
 } from '../api/passwordReset.api';
 import { extractApiError } from '../utils/apiError';
+import PasswordStrengthMeter from '../components/common/PasswordStrengthMeter';
 import RecoveryKeyConfirmDialog from '../components/common/RecoveryKeyConfirmDialog';
 
 type Step = 'validating' | 'sms' | 'form' | 'recovery-key' | 'success' | 'error';
@@ -97,8 +98,8 @@ export default function ResetPasswordPage() {
       setError('Passwords do not match.');
       return;
     }
-    if (newPassword.length < 8) {
-      setError('Password must be at least 8 characters.');
+    if (newPassword.length < 10) {
+      setError('Password must be at least 10 characters.');
       return;
     }
 
@@ -232,8 +233,9 @@ export default function ResetPasswordPage() {
                 margin="normal"
                 required
                 autoFocus
-                helperText="Min 8 characters"
+                helperText="Min 10 characters"
               />
+              <PasswordStrengthMeter password={newPassword} />
               <TextField
                 fullWidth
                 label="Confirm New Password"

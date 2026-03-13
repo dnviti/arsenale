@@ -14,6 +14,7 @@ import {
 import { AppError } from '../middleware/error.middleware';
 import { getEmailStatus, sendEmailChangeCode } from './email';
 import * as identityVerification from './identityVerification.service';
+import { assertPasswordNotBreached } from './password.service';
 
 const BCRYPT_ROUNDS = 12;
 const EMAIL_CHANGE_TTL_MS = 15 * 60 * 1000; // 15 minutes
@@ -261,6 +262,9 @@ export async function changePassword(
     );
     oldDerivedKey.fill(0);
   }
+
+  // Check password against known data breaches (HIBP k-Anonymity)
+  await assertPasswordNotBreached(newPassword);
 
   const newPasswordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
   const newVaultSalt = generateSalt();
