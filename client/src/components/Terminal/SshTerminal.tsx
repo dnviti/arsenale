@@ -27,11 +27,12 @@ import '@xterm/xterm/css/xterm.css';
 interface SshTerminalProps {
   connectionId: string;
   tabId: string;
+  isActive?: boolean;
   credentials?: CredentialOverride;
   sshTerminalConfig?: Partial<SshTerminalConfig> | null;
 }
 
-export default function SshTerminal({ connectionId, tabId: _tabId, credentials, sshTerminalConfig }: SshTerminalProps) {
+export default function SshTerminal({ connectionId, tabId: _tabId, isActive = true, credentials, sshTerminalConfig }: SshTerminalProps) {
   const termRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -119,7 +120,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
   const { isFullscreen, toggleFullscreen } = useKeyboardCapture({
     focusRef: termRef,
     fullscreenRef: containerRef,
-    isActive: true,
+    isActive,
     onFullscreenChange: () => {
       setTimeout(() => {
         fitAddonRef.current?.fit();
@@ -462,6 +463,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Box
           ref={termRef}
+          tabIndex={-1}
           sx={{ flex: 1, overflow: 'hidden', '& .xterm': { height: '100%', padding: '4px' } }}
         />
         {!sftpHiddenByDlp && (

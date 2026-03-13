@@ -40,6 +40,9 @@ export function useKeyboardCapture({
   const [isFocused, setIsFocused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Tracks whether this hook instance successfully acquired the Keyboard Lock
+  const lockAcquiredRef = useRef(false);
+
   // Keep callbacks in refs to avoid re-attaching listeners
   const onBlurRef = useRef(onBlur);
   const onFocusRef = useRef(onFocus);
@@ -153,6 +156,7 @@ export function useKeyboardCapture({
       if (navigator.keyboard?.lock) {
         try {
           await navigator.keyboard.lock();
+          lockAcquiredRef.current = true;
         } catch {
           // Keyboard Lock not supported or denied — fullscreen still works
         }
@@ -166,6 +170,11 @@ export function useKeyboardCapture({
     if (!document.fullscreenElement) return;
     try {
       navigator.keyboard?.unlock();
+      lockAcquiredRef.current = false;
+    } catch {
+      // Keyboard Lock API not supported or failed
+    }
+    try {
       await document.exitFullscreen();
     } catch {
       // Already exited
@@ -184,10 +193,14 @@ export function useKeyboardCapture({
   useEffect(() => {
     const fsEl = fullscreenRef.current;
     return () => {
-      try {
-        navigator.keyboard?.unlock();
-      } catch {
-        // ignore
+      // Only unlock if this instance acquired the lock
+      if (lockAcquiredRef.current) {
+        try {
+          navigator.keyboard?.unlock();
+        } catch {
+          // ignore
+        }
+        lockAcquiredRef.current = false;
       }
       if (document.fullscreenElement === fsEl) {
         document.exitFullscreen().catch(() => {});
