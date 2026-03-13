@@ -110,6 +110,10 @@ export async function getTenant(tenantId: string) {
     mfaRequired: tenant.mfaRequired,
     defaultSessionTimeoutSeconds: tenant.defaultSessionTimeoutSeconds,
     vaultAutoLockMaxMinutes: tenant.vaultAutoLockMaxMinutes,
+    dlpDisableCopy: tenant.dlpDisableCopy,
+    dlpDisablePaste: tenant.dlpDisablePaste,
+    dlpDisableDownload: tenant.dlpDisableDownload,
+    dlpDisableUpload: tenant.dlpDisableUpload,
     userCount: tenant._count.members,
     teamCount: tenant._count.teams,
     createdAt: tenant.createdAt,
@@ -117,7 +121,16 @@ export async function getTenant(tenantId: string) {
   };
 }
 
-export async function updateTenant(tenantId: string, data: { name?: string; defaultSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null }) {
+export async function updateTenant(tenantId: string, data: {
+  name?: string;
+  defaultSessionTimeoutSeconds?: number;
+  mfaRequired?: boolean;
+  vaultAutoLockMaxMinutes?: number | null;
+  dlpDisableCopy?: boolean;
+  dlpDisablePaste?: boolean;
+  dlpDisableDownload?: boolean;
+  dlpDisableUpload?: boolean;
+}) {
   const updateData: Record<string, unknown> = {};
 
   if (data.name !== undefined) {
@@ -132,6 +145,18 @@ export async function updateTenant(tenantId: string, data: { name?: string; defa
   }
   if (data.vaultAutoLockMaxMinutes !== undefined) {
     updateData.vaultAutoLockMaxMinutes = data.vaultAutoLockMaxMinutes;
+  }
+  if (data.dlpDisableCopy !== undefined) {
+    updateData.dlpDisableCopy = data.dlpDisableCopy;
+  }
+  if (data.dlpDisablePaste !== undefined) {
+    updateData.dlpDisablePaste = data.dlpDisablePaste;
+  }
+  if (data.dlpDisableDownload !== undefined) {
+    updateData.dlpDisableDownload = data.dlpDisableDownload;
+  }
+  if (data.dlpDisableUpload !== undefined) {
+    updateData.dlpDisableUpload = data.dlpDisableUpload;
   }
 
   if (Object.keys(updateData).length === 0) {
@@ -150,6 +175,10 @@ export async function updateTenant(tenantId: string, data: { name?: string; defa
     mfaRequired: tenant.mfaRequired,
     defaultSessionTimeoutSeconds: tenant.defaultSessionTimeoutSeconds,
     vaultAutoLockMaxMinutes: tenant.vaultAutoLockMaxMinutes,
+    dlpDisableCopy: tenant.dlpDisableCopy,
+    dlpDisablePaste: tenant.dlpDisablePaste,
+    dlpDisableDownload: tenant.dlpDisableDownload,
+    dlpDisableUpload: tenant.dlpDisableUpload,
     updatedAt: tenant.updatedAt,
   };
 }

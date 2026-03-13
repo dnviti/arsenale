@@ -23,9 +23,11 @@ function formatFileSize(bytes: number): string {
 interface FileBrowserProps {
   open: boolean;
   onClose: () => void;
+  disableDownload?: boolean;
+  disableUpload?: boolean;
 }
 
-export default function FileBrowser({ open, onClose }: FileBrowserProps) {
+export default function FileBrowser({ open, onClose, disableDownload, disableUpload }: FileBrowserProps) {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -129,26 +131,28 @@ export default function FileBrowser({ open, onClose }: FileBrowserProps) {
 
         <Divider />
 
-        <Box sx={{ p: 1.5 }}>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileSelect}
-            style={{ display: 'none' }}
-          />
-          <Button
-            variant="outlined"
-            startIcon={uploading ? <CircularProgress size={16} /> : <UploadIcon />}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            fullWidth
-            size="small"
-          >
-            {uploading ? 'Uploading...' : 'Upload File'}
-          </Button>
-        </Box>
+        {!disableUpload && (
+          <Box sx={{ p: 1.5 }}>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
+            <Button
+              variant="outlined"
+              startIcon={uploading ? <CircularProgress size={16} /> : <UploadIcon />}
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              fullWidth
+              size="small"
+            >
+              {uploading ? 'Uploading...' : 'Upload File'}
+            </Button>
+          </Box>
+        )}
 
-        {dragOver && (
+        {dragOver && !disableUpload && (
           <Box sx={{
             mx: 1.5, p: 2, border: '2px dashed', borderColor: 'primary.main',
             borderRadius: 1, textAlign: 'center', bgcolor: 'action.hover',
@@ -182,9 +186,11 @@ export default function FileBrowser({ open, onClose }: FileBrowserProps) {
                     secondaryTypographyProps={{ fontSize: '0.75rem' }}
                   />
                   <ListItemSecondaryAction>
-                    <IconButton size="small" onClick={() => handleDownload(file.name)} title="Download">
-                      <DownloadIcon fontSize="small" />
-                    </IconButton>
+                    {!disableDownload && (
+                      <IconButton size="small" onClick={() => handleDownload(file.name)} title="Download">
+                        <DownloadIcon fontSize="small" />
+                      </IconButton>
+                    )}
                     <IconButton size="small" onClick={() => handleDelete(file.name)} title="Delete">
                       <DeleteIcon fontSize="small" />
                     </IconButton>

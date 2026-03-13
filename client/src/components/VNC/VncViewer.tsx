@@ -5,6 +5,7 @@ import { io } from 'socket.io-client';
 import api from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import type { CredentialOverride } from '../../store/tabsStore';
+import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
 import { extractApiError } from '../../utils/apiError';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
@@ -25,6 +26,9 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
   const sessionIdRef = useRef<string | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'unstable' | 'error'>('connecting');
   const [error, setError] = useState('');
+  const [dlpPolicy, setDlpPolicy] = useState<ResolvedDlpPolicy | null>(null);
+  const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
+  useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
 
   // Reconnection state refs
   const wasConnectedRef = useRef(false);
@@ -75,8 +79,9 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
         password: creds.password,
       }),
     });
-    const { token, sessionId } = res.data;
+    const { token, sessionId, dlpPolicy: resDlp } = res.data;
     sessionIdRef.current = sessionId ?? null;
+    if (resDlp) { setDlpPolicy(resDlp); dlpPolicyRef.current = resDlp; }
 
     if (cancelledRef.current) return;
 
@@ -195,6 +200,7 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
       let data = '';
       reader.ontext = (text: string) => { data += text; };
       reader.onend = () => {
+        if (dlpPolicyRef.current?.disableCopy) return;
         if (data && navigator.clipboard?.writeText) {
           navigator.clipboard.writeText(data).catch((err) => {
             console.warn('Failed to write to browser clipboard:', err);
@@ -336,6 +342,7 @@ export default function VncViewer({ connectionId, tabId: _tabId, isActive = true
     const isFirefox = /firefox/i.test(navigator.userAgent);
     const syncClipboardToRemote = () => {
       if (isFirefox) return;
+      if (dlpPolicyRef.current?.disablePaste) return;
       const client = clientRef.current;
       if (!client || !activeRef.current) return;
       if (!navigator.clipboard?.readText) return;

@@ -3,11 +3,12 @@ import path from 'path';
 import { mkdir, chmod } from 'fs/promises';
 import prisma from '../lib/prisma';
 import { AuthRequest, RdpSettings, assertAuthenticated, assertTenantAuthenticated } from '../types';
+import type { DlpPolicy, VncSettings } from '../types';
 import { getConnection, getConnectionCredentials } from '../services/connection.service';
 import { resolveDomainCredentials } from '../services/domain.service';
 import { generateGuacamoleToken, mergeRdpSettings } from '../services/rdp.service';
 import { generateVncGuacamoleToken, mergeVncSettings } from '../services/vnc.service';
-import type { VncSettings } from '../types';
+import { resolveDlpPolicy } from '../utils/dlp';
 import * as sessionService from '../services/session.service';
 import * as auditService from '../services/audit.service';
 import { selectInstance } from '../services/loadBalancer.service';
@@ -123,6 +124,18 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
     const connRdpSettings = (conn.rdpSettings as Partial<RdpSettings>) ?? null;
     const mergedRdp = mergeRdpSettings(userRdpDefaults, connRdpSettings);
 
+    // Resolve DLP policy: tenant floor + connection override
+    const tenantDlp = req.user.tenantId
+      ? await prisma.tenant.findUnique({
+          where: { id: req.user.tenantId },
+          select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true },
+        })
+      : null;
+    const dlpPolicy = resolveDlpPolicy(
+      tenantDlp ?? { dlpDisableCopy: false, dlpDisablePaste: false, dlpDisableDownload: false, dlpDisableUpload: false },
+      conn.dlpPolicy as DlpPolicy | null,
+    );
+
     const enableDrive = conn.enableDrive ?? false;
     const drivePath = enableDrive
       ? path.posix.join('/guacd-drive', req.user.userId)
@@ -179,6 +192,7 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       enableDrive,
       drivePath,
       rdpSettings: mergedRdp,
+      dlpPolicy,
       guacdHost,
       guacdPort,
       recording: rdpRecording,
@@ -207,7 +221,7 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       routingDecision,
     });
 
-    res.json({ token, enableDrive, sessionId, recordingId: rdpRecordingId });
+    res.json({ token, enableDrive, sessionId, recordingId: rdpRecordingId, dlpPolicy });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
 
@@ -306,6 +320,18 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
     const connVncSettings = (conn.vncSettings as Partial<VncSettings>) ?? null;
     const mergedVnc = mergeVncSettings(connVncSettings);
 
+    // Resolve DLP policy: tenant floor + connection override
+    const vncTenantDlp = req.user.tenantId
+      ? await prisma.tenant.findUnique({
+          where: { id: req.user.tenantId },
+          select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true },
+        })
+      : null;
+    const vncDlpPolicy = resolveDlpPolicy(
+      vncTenantDlp ?? { dlpDisableCopy: false, dlpDisablePaste: false, dlpDisableDownload: false, dlpDisableUpload: false },
+      conn.dlpPolicy as DlpPolicy | null,
+    );
+
     // Build recording params if enabled
     let vncRecording: { recordingPath: string; recordingName: string } | undefined;
     let vncRecordingId: string | undefined;
@@ -343,6 +369,7 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
       port: conn.port,
       password,
       vncSettings: mergedVnc,
+      dlpPolicy: vncDlpPolicy,
       guacdHost,
       guacdPort,
       recording: vncRecording,
@@ -368,7 +395,7 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
       routingDecision,
     });
 
-    res.json({ token, sessionId, recordingId: vncRecordingId });
+    res.json({ token, sessionId, recordingId: vncRecordingId, dlpPolicy: vncDlpPolicy });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error';
 

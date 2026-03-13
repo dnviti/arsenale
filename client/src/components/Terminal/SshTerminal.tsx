@@ -16,6 +16,7 @@ import ReconnectOverlay from '../shared/ReconnectOverlay';
 import SftpBrowser from '../SSH/SftpBrowser';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
 import { isSshPermanentError, isTransientDisconnect } from '../../utils/reconnectClassifier';
+import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import '@xterm/xterm/css/xterm.css';
 
 interface SshTerminalProps {
@@ -33,6 +34,9 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
   const fitAddonRef = useRef<FitAddon | null>(null);
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error'>('connecting');
   const [error, setError] = useState('');
+  const [dlpPolicy, setDlpPolicy] = useState<ResolvedDlpPolicy | null>(null);
+  const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
+  useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
   const accessToken = useAuthStore((s) => s.accessToken);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
   const webUiMode = useThemeStore((s) => s.mode);
@@ -104,15 +108,21 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
   const sftpOpen = useUiPreferencesStore((s) => s.sshSftpBrowserOpen);
   const togglePref = useUiPreferencesStore((s) => s.toggle);
 
-  const toolbarActions = useMemo<ToolbarAction[]>(() => [
-    {
-      id: 'sftp-browser',
-      icon: <FolderOpenIcon fontSize="small" />,
-      tooltip: 'SFTP File Browser',
-      onClick: () => togglePref('sshSftpBrowserOpen'),
-      active: sftpOpen,
-    },
-  ], [sftpOpen, togglePref]);
+  const sftpHiddenByDlp = dlpPolicy?.disableDownload && dlpPolicy?.disableUpload;
+
+  const toolbarActions = useMemo<ToolbarAction[]>(() => {
+    const actions: ToolbarAction[] = [];
+    if (!sftpHiddenByDlp) {
+      actions.push({
+        id: 'sftp-browser',
+        icon: <FolderOpenIcon fontSize="small" />,
+        tooltip: 'SFTP File Browser',
+        onClick: () => togglePref('sshSftpBrowserOpen'),
+        active: sftpOpen,
+      });
+    }
+    return actions;
+  }, [sftpOpen, togglePref, sftpHiddenByDlp]);
 
   // Refit terminal when SFTP drawer opens/closes
   useEffect(() => {
@@ -165,7 +175,8 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
         });
       });
 
-      socket.on('session:ready', () => {
+      socket.on('session:ready', (data?: { dlpPolicy?: ResolvedDlpPolicy }) => {
+        if (data?.dlpPolicy) { setDlpPolicy(data.dlpPolicy); dlpPolicyRef.current = data.dlpPolicy; }
         wasConnectedRef.current = true;
         setStatus('connected');
         resetReconnect();
@@ -271,21 +282,35 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
+    // DLP: block clipboard DOM events (right-click, Ctrl+V, middle-click) at capture phase
+    const termEl = termRef.current;
+    const handlePaste = (e: ClipboardEvent) => {
+      if (dlpPolicyRef.current?.disablePaste) { e.preventDefault(); e.stopPropagation(); }
+    };
+    const handleCopy = (e: ClipboardEvent) => {
+      if (dlpPolicyRef.current?.disableCopy) { e.preventDefault(); e.stopPropagation(); }
+    };
+    termEl.addEventListener('paste', handlePaste, true);
+    termEl.addEventListener('copy', handleCopy, true);
+
     // Clipboard: Ctrl+Shift+C to copy, Ctrl+Shift+V to paste
     terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
       if (event.type !== 'keydown') return true;
 
       if (event.ctrlKey && event.shiftKey && event.key === 'C') {
+        if (dlpPolicyRef.current?.disableCopy) { event.preventDefault(); return false; }
         const selection = terminal.getSelection();
         if (selection && navigator.clipboard?.writeText) {
           navigator.clipboard.writeText(selection).catch((err) => {
             console.warn('Failed to copy to clipboard:', err);
           });
         }
+        event.preventDefault();
         return false;
       }
 
       if (event.ctrlKey && event.shiftKey && event.key === 'V') {
+        if (dlpPolicyRef.current?.disablePaste) { event.preventDefault(); return false; }
         if (navigator.clipboard?.readText) {
           navigator.clipboard.readText().then((text) => {
             if (text && socketRef.current?.connected) {
@@ -295,6 +320,7 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
             console.warn('Failed to read clipboard:', err);
           });
         }
+        event.preventDefault();
         return false;
       }
 
@@ -346,6 +372,8 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
       cancelReconnect();
       if (heartbeatIntervalRef.current) clearInterval(heartbeatIntervalRef.current);
       resizeObserver.disconnect();
+      termEl.removeEventListener('paste', handlePaste, true);
+      termEl.removeEventListener('copy', handleCopy, true);
       if (socketRef.current) {
         socketRef.current.removeAllListeners();
         socketRef.current.disconnect();
@@ -405,11 +433,15 @@ export default function SshTerminal({ connectionId, tabId: _tabId, credentials, 
           ref={termRef}
           sx={{ flex: 1, overflow: 'hidden', '& .xterm': { height: '100%', padding: '4px' } }}
         />
-        <SftpBrowser
-          open={sftpOpen}
-          onClose={() => togglePref('sshSftpBrowserOpen')}
-          socket={socketRef.current}
-        />
+        {!sftpHiddenByDlp && (
+          <SftpBrowser
+            open={sftpOpen}
+            onClose={() => togglePref('sshSftpBrowserOpen')}
+            socket={socketRef.current}
+            disableDownload={dlpPolicy?.disableDownload}
+            disableUpload={dlpPolicy?.disableUpload}
+          />
+        )}
       </Box>
     </Box>
   );

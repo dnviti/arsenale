@@ -6,7 +6,7 @@ import {
   ToggleButtonGroup, ToggleButton,
 } from '@mui/material';
 import { ExpandMore as ExpandMoreIcon, Keyboard, VpnKey } from '@mui/icons-material';
-import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData } from '../../api/connections.api';
+import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData, DlpPolicy } from '../../api/connections.api';
 import { useConnectionsStore } from '../../store/connectionsStore';
 import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import { mergeTerminalConfig } from '../../constants/terminalThemes';
@@ -50,6 +50,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   const [credentialMode, setCredentialMode] = useState<'manual' | 'keychain'>('manual');
   const [selectedSecretId, setSelectedSecretId] = useState<string | null>(null);
   const [defaultConnectMode, setDefaultConnectMode] = useState<string>('');
+  const [dlpPolicy, setDlpPolicy] = useState<DlpPolicy>({});
   const { loading, error, setError, clearError, run } = useAsyncAction();
   const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
@@ -92,6 +93,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
         setSelectedSecretId(null);
       }
       setDefaultConnectMode(connection.defaultCredentialMode ?? '');
+      setDlpPolicy((connection.dlpPolicy as DlpPolicy) ?? {});
     } else if (open && !connection) {
       setName('');
       setType('SSH');
@@ -109,6 +111,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
       setCredentialMode('manual');
       setSelectedSecretId(null);
       setDefaultConnectMode('');
+      setDlpPolicy({});
     }
   }, [open, connection, fetchGateways, hasTenant]);
 
@@ -161,6 +164,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
             vncSettings: Object.keys(vncSettings).length > 0 ? vncSettings : null,
           }),
           defaultCredentialMode: (defaultConnectMode as 'saved' | 'domain' | 'prompt') || null,
+          ...((type === 'RDP' || type === 'VNC') && {
+            dlpPolicy: Object.values(dlpPolicy).some(Boolean) ? dlpPolicy : null,
+          }),
         };
         if (credentialMode === 'manual') {
           if (username) data.username = username;
@@ -192,6 +198,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
             vncSettings,
           }),
           ...(defaultConnectMode ? { defaultCredentialMode: defaultConnectMode as 'saved' | 'domain' | 'prompt' } : {}),
+          ...((type === 'RDP' || type === 'VNC') && Object.values(dlpPolicy).some(Boolean) && {
+            dlpPolicy,
+          }),
         };
         await createConnection(data);
       }
@@ -217,6 +226,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     setCredentialMode('manual');
     setSelectedSecretId(null);
     setDefaultConnectMode('');
+    setDlpPolicy({});
     clearError();
     onClose();
   };
@@ -410,6 +420,38 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                   mode="connection"
                   resolvedDefaults={mergeVncConfig()}
                 />
+              </AccordionDetails>
+            </Accordion>
+          )}
+          {(type === 'RDP' || type === 'VNC') && (
+            <Accordion variant="outlined" disableGutters>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography variant="subtitle2">Data Loss Prevention</Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                  These restrictions are additive to the organization&apos;s DLP policy.
+                </Typography>
+                <FormControlLabel
+                  control={<Checkbox checked={dlpPolicy.disableCopy ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disableCopy: e.target.checked || undefined }))} />}
+                  label="Disable clipboard copy (remote to local)"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={dlpPolicy.disablePaste ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disablePaste: e.target.checked || undefined }))} />}
+                  label="Disable clipboard paste (local to remote)"
+                />
+                {type === 'RDP' && (
+                  <>
+                    <FormControlLabel
+                      control={<Checkbox checked={dlpPolicy.disableDownload ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disableDownload: e.target.checked || undefined }))} />}
+                      label="Disable file download from shared drive"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={dlpPolicy.disableUpload ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disableUpload: e.target.checked || undefined }))} />}
+                      label="Disable file upload to shared drive"
+                    />
+                  </>
+                )}
               </AccordionDetails>
             </Accordion>
           )}

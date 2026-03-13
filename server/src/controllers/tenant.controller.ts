@@ -56,6 +56,16 @@ export async function updateTenant(req: AuthRequest, res: Response) {
       ipAddress: getClientIp(req),
     });
   }
+  const dlpFields = ['dlpDisableCopy', 'dlpDisablePaste', 'dlpDisableDownload', 'dlpDisableUpload'] as const;
+  const dlpChanges = dlpFields.filter((f) => data[f] !== undefined);
+  if (dlpChanges.length > 0) {
+    auditService.log({
+      userId: req.user.userId, action: 'TENANT_DLP_POLICY_UPDATE',
+      targetType: 'Tenant', targetId: tenantId,
+      details: Object.fromEntries(dlpChanges.map((f) => [f, data[f]])),
+      ipAddress: getClientIp(req),
+    });
+  }
   auditService.log({
     userId: req.user.userId, action: 'TENANT_UPDATE',
     targetType: 'Tenant', targetId: tenantId,

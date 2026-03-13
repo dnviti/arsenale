@@ -61,6 +61,12 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
   const [vaultAutoLockMax, setVaultAutoLockMax] = useState<string>('none');
   const [savingVaultLock, setSavingVaultLock] = useState(false);
   const [vaultLockError, setVaultLockError] = useState('');
+  const [dlpDisableCopy, setDlpDisableCopy] = useState(false);
+  const [dlpDisablePaste, setDlpDisablePaste] = useState(false);
+  const [dlpDisableDownload, setDlpDisableDownload] = useState(false);
+  const [dlpDisableUpload, setDlpDisableUpload] = useState(false);
+  const [savingDlp, setSavingDlp] = useState(false);
+  const [dlpError, setDlpError] = useState('');
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [togglingUser, setTogglingUser] = useState<string | null>(null);
 
@@ -112,6 +118,10 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
       setSessionTimeout(String(Math.floor(tenant.defaultSessionTimeoutSeconds / 60)));
       setMfaRequired(tenant.mfaRequired);
       setVaultAutoLockMax(tenant.vaultAutoLockMaxMinutes == null ? 'none' : String(tenant.vaultAutoLockMaxMinutes));
+      setDlpDisableCopy(tenant.dlpDisableCopy);
+      setDlpDisablePaste(tenant.dlpDisablePaste);
+      setDlpDisableDownload(tenant.dlpDisableDownload);
+      setDlpDisableUpload(tenant.dlpDisableUpload);
       fetchUsers();
     }
   }, [tenant, fetchUsers]);
@@ -505,6 +515,44 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
                   When set, members cannot configure a vault auto-lock timeout exceeding this value or disable auto-lock.
                 </Typography>
+              </Box>
+
+              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Typography variant="subtitle2" gutterBottom>Data Loss Prevention (DLP)</Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                  Organization-wide restrictions for RDP and VNC sessions. Per-connection overrides can only be more restrictive.
+                </Typography>
+                {dlpError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setDlpError('')}>{dlpError}</Alert>}
+                {([
+                  { key: 'dlpDisableCopy' as const, label: 'Disable clipboard copy (remote to local)', value: dlpDisableCopy, setter: setDlpDisableCopy },
+                  { key: 'dlpDisablePaste' as const, label: 'Disable clipboard paste (local to remote)', value: dlpDisablePaste, setter: setDlpDisablePaste },
+                  { key: 'dlpDisableDownload' as const, label: 'Disable file download from shared drive', value: dlpDisableDownload, setter: setDlpDisableDownload },
+                  { key: 'dlpDisableUpload' as const, label: 'Disable file upload to shared drive', value: dlpDisableUpload, setter: setDlpDisableUpload },
+                ] as const).map(({ key, label, value, setter }) => (
+                  <FormControlLabel
+                    key={key}
+                    control={
+                      <Switch
+                        checked={value}
+                        disabled={savingDlp}
+                        onChange={async (_, checked) => {
+                          setDlpError('');
+                          setSavingDlp(true);
+                          try {
+                            await updateTenant({ [key]: checked });
+                            setter(checked);
+                          } catch (err: unknown) {
+                            setDlpError(extractApiError(err, 'Failed to update DLP policy'));
+                          } finally {
+                            setSavingDlp(false);
+                          }
+                        }}
+                      />
+                    }
+                    label={label}
+                    sx={{ display: 'block' }}
+                  />
+                ))}
               </Box>
             </Box>
           )}

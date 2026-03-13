@@ -32,6 +32,10 @@ model Tenant {
   mfaRequired                  Boolean  @default(false)
   vaultAutoLockMaxMinutes      Int?
   defaultSessionTimeoutSeconds Int      @default(3600)
+  dlpDisableCopy               Boolean  @default(false)
+  dlpDisablePaste              Boolean  @default(false)
+  dlpDisableDownload           Boolean  @default(false)
+  dlpDisableUpload             Boolean  @default(false)
   createdAt                    DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -226,6 +230,7 @@ model Connection {
   sshTerminalConfig Json?
   rdpSettings       Json?
   vncSettings       Json?
+  dlpPolicy         Json?
   defaultCredentialMode String?
   userId            String
   createdAt         DateTime       @default(now())
@@ -590,6 +595,7 @@ enum AuditAction {
   TEAM_MEMBERSHIP_EXPIRED
   TENANT_MEMBERSHIP_EXPIRY_UPDATE
   TEAM_MEMBERSHIP_EXPIRY_UPDATE
+  TENANT_DLP_POLICY_UPDATE
 }
 
 model AuditLog {

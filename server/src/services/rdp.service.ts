@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { config } from '../config';
-import type { RdpSettings } from '../types';
+import type { RdpSettings, ResolvedDlpPolicy } from '../types';
 
 export interface RecordingParams {
   recordingPath: string;
@@ -18,6 +18,7 @@ export interface RdpConnectionParams {
   rdpSettings?: Partial<RdpSettings>;
   guacdHost?: string;
   guacdPort?: number;
+  dlpPolicy?: ResolvedDlpPolicy;
   recording?: RecordingParams;
   metadata?: {
     userId: string;
@@ -142,6 +143,11 @@ export function generateGuacamoleToken(params: RdpConnectionParams): string {
     settings['drive-path'] = params.drivePath;
     settings['create-drive-path'] = 'true';
   }
+
+  if (params.dlpPolicy?.disableCopy) settings['disable-copy'] = 'true';
+  if (params.dlpPolicy?.disablePaste) settings['disable-paste'] = 'true';
+  if (params.dlpPolicy?.disableDownload) settings['disable-download'] = 'true';
+  if (params.dlpPolicy?.disableUpload) settings['disable-upload'] = 'true';
 
   const connectionConfig = {
     connection: {

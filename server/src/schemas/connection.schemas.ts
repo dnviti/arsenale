@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { sshTerminalConfigSchema, rdpSettingsSchema, vncSettingsSchema } from './common.schemas';
+import { sshTerminalConfigSchema, rdpSettingsSchema, vncSettingsSchema, dlpPolicySchema } from './common.schemas';
 
 export const createConnectionSchema = z.object({
   name: z.string().min(1),
@@ -18,6 +18,7 @@ export const createConnectionSchema = z.object({
   sshTerminalConfig: sshTerminalConfigSchema.optional(),
   rdpSettings: rdpSettingsSchema.optional(),
   vncSettings: vncSettingsSchema.optional(),
+  dlpPolicy: dlpPolicySchema.nullable().optional(),
   defaultCredentialMode: z.enum(['saved', 'domain', 'prompt']).nullable().optional(),
 }).refine(
   (data) => data.credentialSecretId || (data.username !== undefined && data.password !== undefined),
@@ -42,6 +43,7 @@ export const updateConnectionSchema = z.object({
   sshTerminalConfig: sshTerminalConfigSchema.nullable().optional(),
   rdpSettings: rdpSettingsSchema.nullable().optional(),
   vncSettings: vncSettingsSchema.nullable().optional(),
+  dlpPolicy: dlpPolicySchema.nullable().optional(),
   defaultCredentialMode: z.enum(['saved', 'domain', 'prompt']).nullable().optional(),
 });
 

@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { AuthRequest, assertAuthenticated } from '../types';
+import prisma from '../lib/prisma';
 import * as fileService from '../services/file.service';
 import { AppError } from '../middleware/error.middleware';
 import type { FileNameInput } from '../schemas/files.schemas';
@@ -12,6 +13,15 @@ export async function list(req: AuthRequest, res: Response) {
 
 export async function download(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
+  if (req.user.tenantId) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user.tenantId },
+      select: { dlpDisableDownload: true },
+    });
+    if (tenant?.dlpDisableDownload) {
+      throw new AppError('File download is disabled by organization policy', 403);
+    }
+  }
   const { name } = req.params as FileNameInput;
   const filePath = await fileService.getFilePath(req.user.userId, name);
   res.download(filePath, name);
@@ -19,6 +29,15 @@ export async function download(req: AuthRequest, res: Response) {
 
 export async function upload(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
+  if (req.user.tenantId) {
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user.tenantId },
+      select: { dlpDisableUpload: true },
+    });
+    if (tenant?.dlpDisableUpload) {
+      throw new AppError('File upload is disabled by organization policy', 403);
+    }
+  }
   if (!req.file) {
     throw new AppError('No file uploaded', 400);
   }

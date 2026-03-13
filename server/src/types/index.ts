@@ -125,6 +125,20 @@ export interface VncSettings {
   disableAudio?: boolean;
 }
 
+export interface DlpPolicy {
+  disableCopy?: boolean;
+  disablePaste?: boolean;
+  disableDownload?: boolean;
+  disableUpload?: boolean;
+}
+
+export interface ResolvedDlpPolicy {
+  disableCopy: boolean;
+  disablePaste: boolean;
+  disableDownload: boolean;
+  disableUpload: boolean;
+}
+
 // --- Secret Payload Types (discriminated union) ---
 
 export interface LoginSecretData {

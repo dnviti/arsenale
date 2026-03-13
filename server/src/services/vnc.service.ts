@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { VncSettings } from '../types';
+import type { VncSettings, ResolvedDlpPolicy } from '../types';
 import { getGuacamoleKey } from './rdp.service';
 
 export interface VncRecordingParams {
@@ -14,6 +14,7 @@ export interface VncConnectionParams {
   vncSettings?: Partial<VncSettings>;
   guacdHost?: string;
   guacdPort?: number;
+  dlpPolicy?: ResolvedDlpPolicy;
   recording?: VncRecordingParams;
   metadata?: {
     userId: string;
@@ -73,6 +74,9 @@ export function generateVncGuacamoleToken(params: VncConnectionParams): string {
     settings['recording-exclude-output'] = 'false';
     settings['recording-exclude-mouse'] = 'false';
   }
+
+  if (params.dlpPolicy?.disableCopy) settings['disable-copy'] = 'true';
+  if (params.dlpPolicy?.disablePaste) settings['disable-paste'] = 'true';
 
   const connectionConfig = {
     connection: {

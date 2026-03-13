@@ -50,9 +50,11 @@ interface SftpBrowserProps {
   open: boolean;
   onClose: () => void;
   socket: Socket | null;
+  disableDownload?: boolean;
+  disableUpload?: boolean;
 }
 
-export default function SftpBrowser({ open, onClose, socket }: SftpBrowserProps) {
+export default function SftpBrowser({ open, onClose, socket, disableDownload, disableUpload }: SftpBrowserProps) {
   const [currentPath, setCurrentPath] = useState('/');
   const [entries, setEntries] = useState<SftpEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -230,9 +232,9 @@ export default function SftpBrowser({ open, onClose, socket }: SftpBrowserProps)
       >
         <Box
           sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+          onDragOver={disableUpload ? undefined : handleDragOver}
+          onDragLeave={disableUpload ? undefined : handleDragLeave}
+          onDrop={disableUpload ? undefined : handleDrop}
         >
           {/* Header */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, pl: 2 }}>
@@ -279,22 +281,26 @@ export default function SftpBrowser({ open, onClose, socket }: SftpBrowserProps)
 
           {/* Action bar */}
           <Box sx={{ display: 'flex', gap: 0.5, p: 1, px: 1.5 }}>
-            <input
-              type="file"
-              multiple
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<UploadIcon />}
-              onClick={() => fileInputRef.current?.click()}
-              sx={{ flex: 1, fontSize: '0.75rem' }}
-            >
-              Upload
-            </Button>
+            {!disableUpload && (
+              <>
+                <input
+                  type="file"
+                  multiple
+                  ref={fileInputRef}
+                  onChange={handleFileSelect}
+                  style={{ display: 'none' }}
+                />
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<UploadIcon />}
+                  onClick={() => fileInputRef.current?.click()}
+                  sx={{ flex: 1, fontSize: '0.75rem' }}
+                >
+                  Upload
+                </Button>
+              </>
+            )}
             <Button
               variant="outlined"
               size="small"
@@ -310,7 +316,7 @@ export default function SftpBrowser({ open, onClose, socket }: SftpBrowserProps)
           </Box>
 
           {/* Drag overlay */}
-          {dragOver && (
+          {dragOver && !disableUpload && (
             <Box sx={{
               mx: 1.5, p: 2, border: '2px dashed', borderColor: 'primary.main',
               borderRadius: 1, textAlign: 'center', bgcolor: 'action.hover',
@@ -361,7 +367,7 @@ export default function SftpBrowser({ open, onClose, socket }: SftpBrowserProps)
                       secondaryTypographyProps={{ fontSize: '0.7rem' }}
                     />
                     <ListItemSecondaryAction>
-                      {entry.type === 'file' && (
+                      {entry.type === 'file' && !disableDownload && (
                         <IconButton size="small" onClick={() => handleDownload(entry)} title="Download">
                           <DownloadIcon fontSize="small" />
                         </IconButton>

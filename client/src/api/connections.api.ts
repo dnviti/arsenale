@@ -3,6 +3,20 @@ import type { SshTerminalConfig } from '../constants/terminalThemes';
 import type { RdpSettings } from '../constants/rdpDefaults';
 import type { VncSettings } from '../constants/vncDefaults';
 
+export interface DlpPolicy {
+  disableCopy?: boolean;
+  disablePaste?: boolean;
+  disableDownload?: boolean;
+  disableUpload?: boolean;
+}
+
+export interface ResolvedDlpPolicy {
+  disableCopy: boolean;
+  disablePaste: boolean;
+  disableDownload: boolean;
+  disableUpload: boolean;
+}
+
 export interface ConnectionInput {
   name: string;
   type: 'RDP' | 'SSH' | 'VNC';
@@ -21,6 +35,7 @@ export interface ConnectionInput {
   rdpSettings?: Partial<RdpSettings>;
   vncSettings?: Partial<VncSettings>;
   defaultCredentialMode?: 'saved' | 'domain' | 'prompt' | null;
+  dlpPolicy?: DlpPolicy | null;
 }
 
 export interface ConnectionData {
@@ -45,6 +60,7 @@ export interface ConnectionData {
   rdpSettings?: Partial<RdpSettings> | null;
   vncSettings?: Partial<VncSettings> | null;
   defaultCredentialMode?: 'saved' | 'domain' | 'prompt' | null;
+  dlpPolicy?: DlpPolicy | null;
   isOwner: boolean;
   permission?: string;
   sharedBy?: string;
@@ -85,6 +101,7 @@ export interface ConnectionUpdate {
   rdpSettings?: Partial<RdpSettings> | null;
   vncSettings?: Partial<VncSettings> | null;
   defaultCredentialMode?: 'saved' | 'domain' | 'prompt' | null;
+  dlpPolicy?: DlpPolicy | null;
 }
 
 export async function updateConnection(

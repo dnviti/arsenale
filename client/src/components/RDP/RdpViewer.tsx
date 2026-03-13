@@ -6,6 +6,7 @@ import { io } from 'socket.io-client';
 import api from '../../api/client';
 import { useAuthStore } from '../../store/authStore';
 import type { CredentialOverride } from '../../store/tabsStore';
+import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import FileBrowser from './FileBrowser';
 import FloatingToolbar, { ToolbarAction } from '../shared/FloatingToolbar';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
@@ -31,6 +32,9 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
   const [status, setStatus] = useState<'connecting' | 'connected' | 'unstable' | 'error'>('connecting');
   const [error, setError] = useState('');
   const [fileBrowserOpen, setFileBrowserOpen] = useState(false);
+  const [dlpPolicy, setDlpPolicy] = useState<ResolvedDlpPolicy | null>(null);
+  const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
+  useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
 
   // Track whether we ever reached CONNECTED state (for reconnect eligibility)
   const wasConnectedRef = useRef(false);
@@ -96,8 +100,9 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
           }
       ),
     });
-    const { token, sessionId } = res.data;
+    const { token, sessionId, dlpPolicy: resDlp } = res.data;
     sessionIdRef.current = sessionId ?? null;
+    if (resDlp) { setDlpPolicy(resDlp); dlpPolicyRef.current = resDlp; }
 
     if (cancelledRef.current) return;
 
@@ -231,6 +236,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
       let data = '';
       reader.ontext = (text: string) => { data += text; };
       reader.onend = () => {
+        if (dlpPolicyRef.current?.disableCopy) return;
         if (data && navigator.clipboard?.writeText) {
           navigator.clipboard.writeText(data).catch((err) => {
             console.warn('Failed to write to browser clipboard:', err);
@@ -270,9 +276,10 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
   );
 
   // Build toolbar actions list — extensible for future tools
+  const driveHiddenByDlp = dlpPolicy?.disableDownload && dlpPolicy?.disableUpload;
   const toolbarActions = useMemo<ToolbarAction[]>(() => {
     const actions: ToolbarAction[] = [];
-    if (enableDrive) {
+    if (enableDrive && !driveHiddenByDlp) {
       actions.push({
         id: 'shared-drive',
         icon: <FolderOpenIcon fontSize="small" />,
@@ -282,7 +289,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
       });
     }
     return actions;
-  }, [enableDrive, fileBrowserOpen]);
+  }, [enableDrive, driveHiddenByDlp, fileBrowserOpen]);
 
   // Keep activeRef in sync with prop; release keys and blur on tab switch
   useEffect(() => {
@@ -397,6 +404,7 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
     const isFirefox = /firefox/i.test(navigator.userAgent);
     const syncClipboardToRemote = () => {
       if (isFirefox) return;
+      if (dlpPolicyRef.current?.disablePaste) return;
       const client = clientRef.current;
       if (!client || !activeRef.current) return;
       if (!navigator.clipboard?.readText) return;
@@ -488,8 +496,13 @@ export default function RdpViewer({ connectionId, tabId: _tabId, isActive = true
             '& > div': { width: '100% !important', height: '100% !important' },
           }}
         />
-        {enableDrive && (
-          <FileBrowser open={fileBrowserOpen} onClose={() => setFileBrowserOpen(false)} />
+        {enableDrive && !driveHiddenByDlp && (
+          <FileBrowser
+            open={fileBrowserOpen}
+            onClose={() => setFileBrowserOpen(false)}
+            disableDownload={dlpPolicy?.disableDownload}
+            disableUpload={dlpPolicy?.disableUpload}
+          />
         )}
       </Box>
     </Box>

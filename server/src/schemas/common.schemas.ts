@@ -53,3 +53,12 @@ export const vncSettingsSchema = z.object({
 });
 
 export type VncSettings = z.infer<typeof vncSettingsSchema>;
+
+export const dlpPolicySchema = z.object({
+  disableCopy: z.boolean().optional(),
+  disablePaste: z.boolean().optional(),
+  disableDownload: z.boolean().optional(),
+  disableUpload: z.boolean().optional(),
+});
+
+export type DlpPolicyInput = z.infer<typeof dlpPolicySchema>;

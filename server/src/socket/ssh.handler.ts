@@ -3,7 +3,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { SFTPWrapper } from 'ssh2';
 import { config } from '../config';
-import { AuthPayload, SftpEntry } from '../types';
+import { AuthPayload, SftpEntry, DlpPolicy, ResolvedDlpPolicy } from '../types';
 import { verifyJwt } from '../utils/jwt';
 import { createSshConnection, createSshConnectionViaBastion, createSftpSession, resizeSshTerminal, SshSession } from '../services/ssh.service';
 import { getConnectionCredentials, getConnection } from '../services/connection.service';
@@ -16,6 +16,8 @@ import * as auditService from '../services/audit.service';
 import { AsciicastWriter, startRecording, completeRecording, failRecording, buildRecordingPath } from '../services/recording.service';
 import { logger } from '../utils/logger';
 import { getSocketClientIp } from '../utils/ip';
+import prisma from '../lib/prisma';
+import { resolveDlpPolicy } from '../utils/dlp';
 
 interface ActiveTransfer {
   stream: NodeJS.ReadableStream | NodeJS.WritableStream;
@@ -61,6 +63,7 @@ export function setupSshHandler(io: Server) {
     let lastActivityUpdate = 0;
     let recordingWriter: AsciicastWriter | null = null;
     let recordingId: string | null = null;
+    let dlpPolicy: ResolvedDlpPolicy | null = null;
 
     async function ensureSftp(): Promise<SFTPWrapper> {
       if (sftpSession) return sftpSession;
@@ -127,6 +130,18 @@ export function setupSshHandler(io: Server) {
           socket.emit('session:error', { message: msg });
           return;
         }
+
+        // Resolve DLP policy: tenant floor + connection override
+        const tenantDlp = user.tenantId
+          ? await prisma.tenant.findUnique({
+              where: { id: user.tenantId },
+              select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true },
+            })
+          : null;
+        dlpPolicy = resolveDlpPolicy(
+          tenantDlp ?? { dlpDisableCopy: false, dlpDisablePaste: false, dlpDisableDownload: false, dlpDisableUpload: false },
+          conn.dlpPolicy as DlpPolicy | null,
+        );
 
         let username: string;
         let password: string;
@@ -258,7 +273,7 @@ export function setupSshHandler(io: Server) {
         const sessionId = `${user.userId}:${socket.id}`;
         activeSessions.set(sessionId, session);
 
-        socket.emit('session:ready');
+        socket.emit('session:ready', { dlpPolicy });
 
         // Start recording if enabled
         if (config.recordingEnabled) {
@@ -483,6 +498,10 @@ export function setupSshHandler(io: Server) {
       callback?: (res: { transferId?: string; error?: string }) => void,
     ) => {
       try {
+        if (dlpPolicy?.disableUpload) {
+          callback?.({ error: 'File upload is disabled by organization policy' });
+          return;
+        }
         if (data.fileSize > config.sftpMaxFileSize) {
           callback?.({ error: `File too large (max ${Math.round(config.sftpMaxFileSize / 1024 / 1024)}MB)` });
           return;
@@ -585,6 +604,10 @@ export function setupSshHandler(io: Server) {
       callback?: (res: { transferId?: string; totalBytes?: number; filename?: string; error?: string }) => void,
     ) => {
       try {
+        if (dlpPolicy?.disableDownload) {
+          callback?.({ error: 'File download is disabled by organization policy' });
+          return;
+        }
         const sftp = await ensureSftp();
         const safePath = sanitizePath(data.remotePath);
         const filename = path.posix.basename(safePath);
