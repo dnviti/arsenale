@@ -36,6 +36,10 @@ A secrets manager built into the vault allows users to store various credential 
 
 A recovery key is generated during registration, enabling vault recovery if the user forgets their password. This key is displayed once and must be saved securely by the user.
 
+### External Credential Providers
+
+Connections can reference credentials stored in external secret management systems instead of duplicating them in Arsenale's internal vault. HashiCorp Vault is supported as an external credential provider, using the KV v2 secrets engine. Tenant administrators configure vault providers with server URL, authentication method (static token or AppRole), namespace, mount path, and optional CA certificate. At connection time, credentials are fetched from HashiCorp Vault and injected into SSH/RDP/VNC session parameters. Fetched credentials are cached in-memory with a configurable TTL to minimize API calls. External vault credentials are never persisted in Arsenale's database.
+
 ## Team Collaboration and Sharing
 
 Connections can be shared with other users using granular permission levels. When a connection is shared, the credentials are re-encrypted using the recipient's vault key, ensuring that shared credentials remain protected by each user's individual encryption. Share permissions can be set to read-only or full access, controlling whether recipients can modify connection settings.
