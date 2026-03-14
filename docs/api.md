@@ -35,6 +35,8 @@ All REST endpoints are mounted under `/api`. The server runs on port 3001 (confi
 | Public Share | `/api/share` | No | External secret access (public) |
 | Recordings | `/api/recordings` | Yes | Session recording management |
 | GeoIP | `/api/geoip` | Yes | IP geolocation lookup |
+| LDAP | `/api/ldap` | Yes (Admin) | LDAP integration status, test, and manual sync |
+| Sync | `/api/sync` | Yes (Admin) | External sync profiles (NetBox), CRUD and manual trigger |
 
 <!-- manual-start -->
 <!-- manual-end -->

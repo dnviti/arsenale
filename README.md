@@ -34,7 +34,7 @@ A web-based application for managing and accessing remote SSH and RDP connection
 | Layer | Technologies |
 |-------|-------------|
 | **Server** | Express, TypeScript, Prisma, Socket.IO, ssh2, guacamole-lite |
-| **Client** | React 19, Vite, Material-UI v6, Zustand, XTerm.js, guacamole-common-js |
+| **Client** | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
 | **Database** | PostgreSQL 16 |
 | **Infrastructure** | Docker / Podman / Kubernetes, Nginx, guacd, ssh-gateway |
 

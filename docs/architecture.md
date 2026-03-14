@@ -99,7 +99,7 @@ All Socket.IO namespaces authenticate via JWT middleware using the `auth.token` 
 
 - **React 19** with TypeScript
 - **Vite** — dev server (port 3000) with proxy to backend
-- **Material-UI (MUI) v6** — component library
+- **Material-UI (MUI) v7** — component library
 - **Zustand** — state management (14 stores)
 - **Axios** — HTTP client with automatic JWT refresh
 - **Socket.IO Client** — real-time SSH terminals, notifications, gateway monitoring
