@@ -30,7 +30,8 @@ jobs:
   # ── Job 1: Build memory + static analysis (Python, zero tokens) ────────
   build-and-analyze:
     name: Build Memory & Analyze
-    if: github.ref == 'refs/heads/develop' || github.event_name == 'workflow_dispatch'
+    # Note: schedule always runs on default branch (main), but we check out
+    # develop explicitly. No branch guard needed — the checkout ref is the control.
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
