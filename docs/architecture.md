@@ -163,7 +163,7 @@ App
 
 ### API Layer
 
-25 API modules in `client/src/api/` provide typed Axios wrappers for every server endpoint. The central `client.ts` configures:
+29 API modules in `client/src/api/` provide typed Axios wrappers for every server endpoint. The central `client.ts` configures:
 
 - Automatic `Authorization: Bearer <jwt>` header injection
 - CSRF token injection for auth-sensitive endpoints (refresh, logout, tenant-switch)

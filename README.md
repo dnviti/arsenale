@@ -19,13 +19,17 @@ A web-based application for managing and accessing remote SSH and RDP connection
 - **Connection Sharing** — Share connections with other users (read-only or full access) with per-recipient re-encryption
 - **Folder Organization** — Hierarchical folder tree with drag-and-drop reordering for personal and team connections
 - **Tabbed Interface** — Open multiple sessions side by side; pop out connections into standalone windows
-- **Multi-Tenant Organizations** — Tenant-scoped RBAC with Owner/Admin/Operator/Member/Consultant/Auditor/Guest roles
+- **Multi-Tenant Organizations** — Tenant-scoped RBAC with Owner/Admin/Operator/Member/Consultant/Auditor/Guest roles; time-limited memberships
 - **Team Collaboration** — Teams with shared connection pools, folders, and vault sections
 - **Multi-Factor Authentication** — TOTP, SMS OTP (Twilio, AWS SNS, Vonage), and WebAuthn/FIDO2 passkeys
-- **OAuth & SAML SSO** — Google, Microsoft, GitHub, any OIDC provider, and SAML 2.0 identity providers
+- **OAuth & SAML SSO** — Google, Microsoft, GitHub, any OIDC provider, SAML 2.0, and LDAP identity providers
 - **Audit Logging** — 100+ action types with IP and GeoIP tracking; geographic visualization for admins
 - **Session Recording** — Record SSH (asciicast) and RDP/VNC (Guacamole format) sessions with in-browser playback and video export
 - **DLP Policies** — Tenant and per-connection controls for clipboard copy/paste and file upload/download
+- **Connection Policy Enforcement** — Admin-enforced SSH/RDP/VNC settings that override user configuration
+- **IP Allowlist** — Per-tenant IP/CIDR allowlists with flag (audit) or block enforcement modes
+- **Session Limits** — Max concurrent sessions per user and absolute session timeouts (OWASP A07)
+- **External Vault Integration** — Reference credentials from HashiCorp Vault (KV v2) instead of storing them in Arsenale
 - **SSH Gateway Management** — Deploy, scale, and monitor SSH gateway containers via Docker, Podman, or Kubernetes
 - **JWT Authentication** — Short-lived access tokens with httpOnly refresh cookies, CSRF protection, and token binding
 
@@ -82,7 +86,7 @@ This starts:
 
 ## Environment Variables
 
-Key variables — see [docs/environment.md](docs/environment.md) for the full reference (121 variables).
+Key variables — see [docs/environment.md](docs/environment.md) for the full reference (123 variables).
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -117,13 +121,13 @@ arsenale/
 │   │   ├── orchestrator/         # Container orchestration (Docker/Podman/Kubernetes)
 │   │   └── types/                # Shared TypeScript types
 │   └── prisma/
-│       └── schema.prisma         # Database schema (58 models)
+│       └── schema.prisma         # Database schema (32 models)
 │
 ├── client/                        # React frontend
 │   ├── src/
 │   │   ├── pages/                # Login, Register, Dashboard, RecordingPlayer, PublicShare
 │   │   ├── components/           # UI components (RDP, VNC, Terminal, Sidebar, Tabs, Dialogs, Settings, Keychain)
-│   │   ├── api/                  # Axios API clients with JWT interceptor (25 modules)
+│   │   ├── api/                  # Axios API clients with JWT interceptor (29 modules)
 │   │   ├── store/                # Zustand state stores (14 stores)
 │   │   └── hooks/                # Custom React hooks
 │   └── nginx.conf                # Production reverse proxy config
@@ -186,7 +190,7 @@ This starts the full container stack:
 
 Layered architecture: **Routes → Controllers → Services → Prisma ORM**
 
-- 230+ REST endpoints across 28 route groups
+- 238+ REST endpoints across 29 route groups
 - Socket.IO namespaces: `/ssh` (terminal), `/notifications`, `/gateway-monitor`
 - Guacamole WebSocket server (port 3002) for RDP/VNC tunneling
 - Background jobs: SSH key rotation, gateway health checks, session cleanup, secret expiry notifications

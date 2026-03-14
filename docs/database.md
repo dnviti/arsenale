@@ -110,10 +110,20 @@ The database models a multi-tenant remote access management system:
 | mfaRequired | Boolean | Default: false | Mandatory MFA policy |
 | vaultAutoLockMaxMinutes | Int? | Optional | Maximum vault auto-lock for members |
 | defaultSessionTimeoutSeconds | Int | Default: 3600 | Default session inactivity timeout |
+| maxConcurrentSessions | Int | Default: 0 | Max concurrent login sessions per user (0 = unlimited) |
+| absoluteSessionTimeoutSeconds | Int | Default: 43200 | Absolute session timeout forcing re-auth (OWASP A07) |
+| dlpDisableCopy | Boolean | Default: false | Tenant-level DLP: disable clipboard copy (remote→local) |
+| dlpDisablePaste | Boolean | Default: false | Tenant-level DLP: disable clipboard paste (local→remote) |
+| dlpDisableDownload | Boolean | Default: false | Tenant-level DLP: disable file download |
+| dlpDisableUpload | Boolean | Default: false | Tenant-level DLP: disable file upload |
+| enforcedConnectionSettings | Json? | Optional | JSON policy overriding user SSH/RDP/VNC settings |
+| ipAllowlistEnabled | Boolean | Default: false | IP allowlist enforcement active |
+| ipAllowlistMode | String | Default: "flag" | Enforcement mode: `flag` (audit) or `block` (reject) |
+| ipAllowlistEntries | String[] | Default: [] | Allowed IP addresses and CIDR ranges |
 | createdAt | DateTime | Auto | Creation timestamp |
 | updatedAt | DateTime | Auto | Last update timestamp |
 
-**Relations**: members (TenantMember[]), teams (Team[]), gateways (Gateway[]), gatewayTemplates (GatewayTemplate[]), sshKeyPair (SshKeyPair?), vaultSecrets (VaultSecret[]), tenantVaultMembers (TenantVaultMember[])
+**Relations**: members (TenantMember[]), teams (Team[]), gateways (Gateway[]), gatewayTemplates (GatewayTemplate[]), sshKeyPair (SshKeyPair?), vaultSecrets (VaultSecret[]), tenantVaultMembers (TenantVaultMember[]), syncProfiles (SyncProfile[]), externalVaultProviders (ExternalVaultProvider[])
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -148,8 +158,9 @@ The database models a multi-tenant remote access management system:
 | teamVaultKeyIV | String? | Optional | Team vault key IV |
 | teamVaultKeyTag | String? | Optional | Team vault key auth tag |
 | joinedAt | DateTime | Auto | Join timestamp |
+| expiresAt | DateTime? | Optional | Membership expiry date (null = permanent) |
 
-**Unique constraint**: `[teamId, userId]`
+**Unique constraint**: `[teamId, userId]` | **Index**: `[expiresAt]`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -181,9 +192,14 @@ The database models a multi-tenant remote access management system:
 | sshTerminalConfig | Json? | Optional | Per-connection SSH terminal settings |
 | rdpSettings | Json? | Optional | Per-connection RDP settings |
 | vncSettings | Json? | Optional | Per-connection VNC settings |
+| dlpPolicy | Json? | Optional | Per-connection DLP overrides (most-restrictive wins vs tenant policy) |
 | defaultCredentialMode | String? | Optional | Default credential mode (saved/domain/manual) |
 | userId | String | FK -> User | Owner |
 | gatewayId | String? | FK -> Gateway (set null) | Assigned gateway |
+| syncProfileId | String? | FK -> SyncProfile (set null) | Source sync profile (managed by external sync) |
+| externalId | String? | Optional | External system identifier (e.g. NetBox device ID) |
+| externalVaultProviderId | String? | FK -> ExternalVaultProvider (set null) | External credential provider |
+| externalVaultPath | String? | Optional | Path to credentials in the external vault |
 | createdAt | DateTime | Auto | Creation timestamp |
 | updatedAt | DateTime | Auto | Last update timestamp |
 
@@ -458,6 +474,8 @@ The database models a multi-tenant remote access management system:
 | token | String | Unique | Refresh token value |
 | userId | String | FK -> User (cascade) | Token owner |
 | tokenFamily | String | Indexed | Rotation family ID |
+| familyCreatedAt | DateTime | Auto | Family creation timestamp (for session age tracking) |
+| ipUaHash | String? | Optional | SHA-256 of IP+UserAgent for token binding |
 | revokedAt | DateTime? | Optional | Revocation timestamp |
 | expiresAt | DateTime | Required | Token expiry |
 | createdAt | DateTime | Auto | |
@@ -551,10 +569,66 @@ The database models a multi-tenant remote access management system:
 #### OpenTab, TenantMember, TenantVaultMember, VaultFolder, AppConfig
 
 - **OpenTab**: userId + connectionId (unique), sortOrder, isActive. Index: `[userId]`
-- **TenantMember**: tenantId + userId (unique), role (TenantRole), isActive. Index: `[userId, isActive]`
+- **TenantMember**: tenantId + userId (unique), role (TenantRole), isActive, `expiresAt` (optional expiry). Indexes: `[userId, isActive]`, `[tenantId, isActive]`, `[expiresAt]`
 - **TenantVaultMember**: tenantId + userId (unique), encryptedTenantVaultKey + IV + tag
 - **VaultFolder**: self-referential tree, scoped to personal/team/tenant. Indexes: `[userId, scope]`, `[teamId]`, `[tenantId]`
 - **AppConfig**: key (PK string), value, updatedAt
+
+#### ExternalVaultProvider
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | |
+| tenantId | String | FK -> Tenant (cascade) | Owning tenant |
+| name | String | Required | Display name |
+| serverUrl | String | Required | Vault server URL |
+| authMethod | ExternalVaultAuthMethod | Enum | TOKEN or APPROLE |
+| namespace | String? | Optional | HashiCorp Vault namespace |
+| mountPath | String | Default: "secret" | KV v2 mount path |
+| encryptedAuthPayload | String | Required | AES-256-GCM encrypted credentials (token or AppRole) |
+| authPayloadIV, authPayloadTag | String | Required | Encryption metadata |
+| caCertificate | String? | Optional | CA certificate for TLS verification |
+| cacheTtlSeconds | Int | Default: 300 | In-memory credential cache TTL |
+| enabled | Boolean | Default: true | Provider active |
+| createdAt, updatedAt | DateTime | Auto | |
+
+**Unique constraint**: `[tenantId, name]` | **Index**: `[tenantId]`
+
+#### SyncProfile
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | |
+| name | String | Required | Display name |
+| tenantId | String | FK -> Tenant (cascade) | Owning tenant |
+| provider | SyncProvider | Enum | e.g., NETBOX |
+| config | Json | Required | Provider-specific configuration |
+| encryptedApiToken | String | Required | AES-256-GCM encrypted API token |
+| apiTokenIV, apiTokenTag | String | Required | |
+| cronExpression | String? | Optional | Scheduled sync cron expression |
+| enabled | Boolean | Default: true | |
+| teamId | String? | FK -> Team (set null) | Optional target team |
+| lastSyncAt | DateTime? | Optional | |
+| lastSyncStatus | SyncStatus? | Optional | |
+| lastSyncDetails | Json? | Optional | |
+| createdById | String | FK -> User | Creator |
+| createdAt, updatedAt | DateTime | Auto | |
+
+**Indexes**: `[tenantId]`, `[tenantId, provider]`
+
+#### SyncLog
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | |
+| syncProfileId | String | FK -> SyncProfile (cascade) | |
+| status | SyncStatus | Enum | |
+| startedAt | DateTime | Auto | |
+| completedAt | DateTime? | Optional | |
+| details | Json? | Optional | Sync run details |
+| triggeredBy | String | Required | Who triggered the sync |
+
+**Index**: `[syncProfileId, startedAt]`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -566,18 +640,21 @@ The database models a multi-tenant remote access management system:
 | **ConnectionType** | `RDP`, `SSH`, `VNC` |
 | **GatewayType** | `GUACD`, `SSH_BASTION`, `MANAGED_SSH` |
 | **Permission** | `READ_ONLY`, `FULL_ACCESS` |
-| **TenantRole** | `OWNER`, `ADMIN`, `MEMBER` |
+| **TenantRole** | `OWNER`, `ADMIN`, `OPERATOR`, `MEMBER`, `CONSULTANT`, `AUDITOR`, `GUEST` |
 | **TeamRole** | `TEAM_ADMIN`, `TEAM_EDITOR`, `TEAM_VIEWER` |
 | **SecretType** | `LOGIN`, `SSH_KEY`, `CERTIFICATE`, `API_KEY`, `SECURE_NOTE` |
 | **SecretScope** | `PERSONAL`, `TEAM`, `TENANT` |
 | **SessionProtocol** | `SSH`, `RDP`, `VNC` |
 | **SessionStatus** | `ACTIVE`, `IDLE`, `CLOSED` |
-| **AuthProvider** | `LOCAL`, `GOOGLE`, `MICROSOFT`, `GITHUB`, `OIDC`, `SAML` |
+| **AuthProvider** | `LOCAL`, `GOOGLE`, `MICROSOFT`, `GITHUB`, `OIDC`, `SAML`, `LDAP` |
 | **GatewayHealthStatus** | `UNKNOWN`, `REACHABLE`, `UNREACHABLE` |
 | **ManagedInstanceStatus** | `PROVISIONING`, `RUNNING`, `STOPPED`, `ERROR`, `REMOVING` |
 | **LoadBalancingStrategy** | `ROUND_ROBIN`, `LEAST_CONNECTIONS` |
-| **NotificationType** | `CONNECTION_SHARED`, `SHARE_PERMISSION_UPDATED`, `SHARE_REVOKED`, `SECRET_SHARED`, `SECRET_SHARE_REVOKED`, `SECRET_EXPIRING`, `SECRET_EXPIRED` |
+| **NotificationType** | `CONNECTION_SHARED`, `SHARE_PERMISSION_UPDATED`, `SHARE_REVOKED`, `SECRET_SHARED`, `SECRET_SHARE_REVOKED`, `SECRET_EXPIRING`, `SECRET_EXPIRED`, `TENANT_INVITATION`, `RECORDING_READY`, `IMPOSSIBLE_TRAVEL_DETECTED` |
 | **RecordingStatus** | `RECORDING`, `COMPLETE`, `ERROR` |
+| **ExternalVaultAuthMethod** | `TOKEN`, `APPROLE` |
+| **SyncProvider** | `NETBOX` |
+| **SyncStatus** | `PENDING`, `RUNNING`, `SUCCESS`, `PARTIAL`, `ERROR` |
 | **AuditAction** | 100+ values — see `server/prisma/schema.prisma` for the full list |
 
 <!-- manual-start -->

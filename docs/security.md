@@ -9,11 +9,15 @@ Arsenale employs a defense-in-depth security model:
 
 1. **Vault encryption** — all credentials encrypted at rest with AES-256-GCM, user-derived keys via Argon2id
 2. **JWT authentication** — short-lived access tokens with httpOnly refresh token cookies and CSRF protection
-3. **Multi-factor authentication** — TOTP, SMS OTP, and WebAuthn/FIDO2 passkeys
-4. **Tenant isolation** — multi-tenant RBAC with per-tenant policies
-5. **Audit logging** — 100+ action types with IP and geo-location tracking
-6. **Rate limiting** — per-IP login throttling and account lockout
-7. **Security headers** — Helmet with strict CSP, HSTS, and frame protection
+3. **Token binding** — JWT tokens bound to originating IP + User-Agent via SHA-256 hash
+4. **Multi-factor authentication** — TOTP, SMS OTP, and WebAuthn/FIDO2 passkeys
+5. **Tenant isolation** — multi-tenant RBAC with per-tenant policies
+6. **Session limits** — max concurrent sessions and absolute session timeouts (OWASP A07)
+7. **IP allowlist** — per-tenant IP/CIDR allowlists with flag or block enforcement modes
+8. **DLP policies** — clipboard and file transfer controls for RDP, VNC, and SSH sessions
+9. **Audit logging** — 100+ action types with IP and geo-location tracking
+10. **Rate limiting** — per-IP login throttling and account lockout
+11. **Security headers** — Helmet with strict CSP, HSTS, and frame protection
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -239,6 +243,73 @@ Helmet middleware applies the following security headers:
 | Strict-Transport-Security | `max-age=31536000; includeSubDomains` |
 | X-Frame-Options | `DENY` |
 | Referrer-Policy | `strict-origin-when-cross-origin` |
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Token Binding
+
+Token binding ties JWT access tokens and refresh tokens to the originating client's IP address and User-Agent. A SHA-256 hash of the IP+UA is stored in the `RefreshToken` record (`ipUaHash` field).
+
+- If a refresh token is presented from a different IP or User-Agent, the token is rejected and the entire token family is revoked
+- A `TOKEN_HIJACK_ATTEMPT` audit event is logged for security monitoring
+- Enabled by default; disable via `TOKEN_BINDING_ENABLED=false` for environments with dynamic IPs (e.g., mobile clients, VPNs)
+- Tokens issued before binding was enabled are accepted without verification for backward compatibility
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Session Limits (OWASP A07)
+
+Tenant administrators can enforce two session-level controls:
+
+| Policy | Field | Default | Description |
+|--------|-------|---------|-------------|
+| **Max concurrent sessions** | `maxConcurrentSessions` | 0 (unlimited) | When exceeded, the oldest active session family is evicted |
+| **Absolute session timeout** | `absoluteSessionTimeoutSeconds` | 43200 (12h) | Forces re-authentication after a fixed duration regardless of activity |
+
+- `SESSION_LIMIT_EXCEEDED` and `SESSION_ABSOLUTE_TIMEOUT` audit actions are logged when these controls trigger
+- Configured in Settings → Administration → Security
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## IP Allowlist
+
+Tenant-level IP allowlists restrict which IP addresses and CIDR ranges may log in to a tenant.
+
+| Mode | Behavior |
+|------|----------|
+| `flag` | Login succeeds; `UNTRUSTED_IP` flag appended to audit log |
+| `block` | Login rejected with 403; `LOGIN_FAILURE` audit event logged with `reason: "ip_not_allowed"` |
+
+- Checked at every token-issuance point: password login, TOTP, SMS MFA, WebAuthn, OAuth, SAML
+- An empty allowlist with the feature enabled means all IPs are untrusted
+- API: `GET /api/tenants/:id/ip-allowlist` and `PUT /api/tenants/:id/ip-allowlist` (admin only)
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## DLP Policies
+
+Data Loss Prevention policies control clipboard and file operations in remote sessions.
+
+**Tenant-level controls** (floor that applies to all connections):
+
+| Field | Description |
+|-------|-------------|
+| `dlpDisableCopy` | Block clipboard copy from remote to local |
+| `dlpDisablePaste` | Block clipboard paste from local to remote |
+| `dlpDisableDownload` | Block file download from remote |
+| `dlpDisableUpload` | Block file upload to remote |
+
+**Per-connection overrides** (`Connection.dlpPolicy` JSON field): can only be **more** restrictive than the tenant floor (logical OR / most-restrictive wins).
+
+**Protocol enforcement:**
+- **RDP/VNC**: Clipboard via Guacamole `disable-copy`/`disable-paste` parameters + client-side defense-in-depth. File transfer via Guacamole parameters + server-side API guards.
+- **SSH**: Clipboard enforced client-side in terminal (Ctrl+Shift+C/V). SFTP enforced **server-side** in the Socket.IO handler (authoritative), with client-side UI hiding as defense-in-depth.
+
+DLP policy changes are tracked under the `TENANT_DLP_POLICY_UPDATE` audit action.
 
 <!-- manual-start -->
 <!-- manual-end -->

@@ -31,6 +31,7 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 | `JWT_SECRET` | string | `dev-secret-change-me` | **Prod** | Both | JWT signing secret | **Must be strong random in production** |
 | `JWT_EXPIRES_IN` | string | `15m` | No | Both | Access token lifetime (e.g., `15m`, `1h`) | |
 | `JWT_REFRESH_EXPIRES_IN` | string | `7d` | No | Both | Refresh token lifetime (e.g., `7d`, `30d`) | |
+| `TOKEN_BINDING_ENABLED` | boolean | `true` | No | Both | Bind JWT tokens to client IP + User-Agent. Set `false` for environments with dynamic IPs. | |
 
 ### Guacamole
 

@@ -37,6 +37,7 @@ All REST endpoints are mounted under `/api`. The server runs on port 3001 (confi
 | GeoIP | `/api/geoip` | Yes | IP geolocation lookup |
 | LDAP | `/api/ldap` | Yes (Admin) | LDAP integration status, test, and manual sync |
 | Sync | `/api/sync` | Yes (Admin) | External sync profiles (NetBox), CRUD and manual trigger |
+| External Vault | `/api/external-vault` | Yes (Admin) | HashiCorp Vault external credential provider CRUD and test |
 
 <!-- manual-start -->
 <!-- manual-end -->
