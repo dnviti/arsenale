@@ -9,19 +9,12 @@
 #
 # Required secrets:
 #   ANTHROPIC_API_KEY — Claude API key for agent invocations
-#
-# Required repository variables (Settings > Variables > Actions):
-#   AGENTIC_TASK_CRON — Cron expression for schedule (e.g., "0 */6 * * *")
-#                       If not set, only manual dispatch is available.
 
 name: "Agentic Fleet — Task Implementation"
 
 on:
   schedule:
-    # Uses repository variable; GitHub evaluates this at workflow registration.
-    # If AGENTIC_TASK_CRON is not set, this defaults to a non-matching expression
-    # that effectively disables scheduled runs (Feb 30 = never).
-    - cron: ${{ vars.AGENTIC_TASK_CRON || '0 0 30 2 *' }}
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:
