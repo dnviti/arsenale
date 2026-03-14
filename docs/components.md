@@ -1,6 +1,6 @@
 # Components
 
-> Auto-generated on 2026-03-11 by `/docs create components`.
+> Auto-generated on 2026-03-14 by `/docs create components`.
 > Source of truth is the codebase. Run `/docs update components` after code changes.
 
 ## Overview

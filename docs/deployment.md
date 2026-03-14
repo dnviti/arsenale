@@ -1,6 +1,6 @@
 # Deployment
 
-> Auto-generated on 2026-03-11 by `/docs create deployment`.
+> Auto-generated on 2026-03-14 by `/docs create deployment`.
 > Source of truth is the codebase. Run `/docs update deployment` after code changes.
 
 ## Prerequisites

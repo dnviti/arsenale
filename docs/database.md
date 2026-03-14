@@ -1,6 +1,6 @@
 # Database
 
-> Auto-generated on 2026-03-11 by `/docs create database`.
+> Auto-generated on 2026-03-14 by `/docs create database`.
 > Source of truth is the codebase. Run `/docs update database` after code changes.
 
 ## Overview

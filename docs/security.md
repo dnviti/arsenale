@@ -1,6 +1,6 @@
 # Security
 
-> Auto-generated on 2026-03-11 by `/docs create security`.
+> Auto-generated on 2026-03-14 by `/docs create security`.
 > Source of truth is the codebase. Run `/docs update security` after code changes.
 
 ## Overview

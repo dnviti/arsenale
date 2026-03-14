@@ -1,6 +1,6 @@
 # Environment Variables
 
-> Auto-generated on 2026-03-11 by `/docs create environment`.
+> Auto-generated on 2026-03-14 by `/docs create environment`.
 > Source of truth is the codebase. Run `/docs update environment` after code changes.
 
 ## Overview

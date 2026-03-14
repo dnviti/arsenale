@@ -1,6 +1,6 @@
 # Arsenale
 
-> Auto-generated on 2026-03-11. High-level product overview for LLM RAG consumption.
+> Auto-generated on 2026-03-14. High-level product overview for LLM RAG consumption.
 
 ## What is Arsenale
 

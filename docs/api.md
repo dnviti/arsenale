@@ -1,6 +1,6 @@
 # API Reference
 
-> Auto-generated on 2026-03-11 by `/docs create api`.
+> Auto-generated on 2026-03-14 by `/docs create api`.
 > Source of truth is the codebase. Run `/docs update api` after code changes.
 
 ## Overview
