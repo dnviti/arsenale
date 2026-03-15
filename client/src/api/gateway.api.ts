@@ -410,6 +410,44 @@ export async function fetchTunnelOverview(): Promise<TunnelOverviewData> {
   return data;
 }
 
+export interface TunnelEventData {
+  action: string;
+  timestamp: string;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+}
+
+export interface TunnelMetricsData {
+  connected: boolean;
+  connectedAt?: string;
+  lastHeartbeat?: string;
+  pingPongLatency?: number;
+  activeStreams?: number;
+  bytesTransferred?: number;
+  clientVersion?: string;
+  clientIp?: string;
+  heartbeatMetadata?: {
+    healthy: boolean;
+    latencyMs?: number;
+    activeStreams?: number;
+  };
+}
+
+export async function forceDisconnectTunnel(gatewayId: string): Promise<{ disconnected: boolean }> {
+  const { data } = await api.post(`/gateways/${gatewayId}/tunnel-disconnect`);
+  return data;
+}
+
+export async function getTunnelEvents(gatewayId: string): Promise<{ events: TunnelEventData[] }> {
+  const { data } = await api.get(`/gateways/${gatewayId}/tunnel-events`);
+  return data;
+}
+
+export async function getTunnelMetrics(gatewayId: string): Promise<TunnelMetricsData> {
+  const { data } = await api.get(`/gateways/${gatewayId}/tunnel-metrics`);
+  return data;
+}
+
 export async function generateTunnelToken(gatewayId: string): Promise<TunnelTokenResponse> {
   const { data } = await api.post(`/gateways/${gatewayId}/tunnel-token`);
   return data;

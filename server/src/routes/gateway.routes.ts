@@ -55,5 +55,8 @@ router.put('/:id/scaling', requireTenantRole('OPERATOR'), validateUuidParam(), v
 // Zero-trust tunnel token management
 router.post('/:id/tunnel-token', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.generateTunnelToken));
 router.delete('/:id/tunnel-token', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.revokeTunnelToken));
+router.post('/:id/tunnel-disconnect', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.forceDisconnectTunnel));
+router.get('/:id/tunnel-events', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.getTunnelEvents));
+router.get('/:id/tunnel-metrics', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.getTunnelMetrics));
 
 export default router;

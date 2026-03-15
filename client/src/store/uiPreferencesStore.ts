@@ -45,11 +45,14 @@ interface UiPreferences {
   toolbarDockedSide: 'left' | 'right';
   toolbarDockedY: number;
   tunnelSectionOpen: boolean;
+  tunnelEventLogOpen: boolean;
+  tunnelDeployGuidesOpen: boolean;
+  tunnelMetricsOpen: boolean;
 }
 
 interface UiPreferencesState extends UiPreferences {
   set: <K extends keyof UiPreferences>(key: K, value: UiPreferences[K]) => void;
-  toggle: (key: keyof Omit<UiPreferences, 'sidebarTeamSections' | 'settingsActiveTab' | 'keychainScopeFilter' | 'keychainTypeFilter' | 'keychainSortBy' | 'orchestrationDashboardTab' | 'orchestrationRefreshInterval' | 'gatewayActiveSubTab' | 'auditLogAction' | 'auditLogSearch' | 'auditLogTargetType' | 'auditLogGatewayId' | 'auditLogSortBy' | 'auditLogSortOrder' | 'tenantAuditLogAction' | 'tenantAuditLogSearch' | 'tenantAuditLogTargetType' | 'tenantAuditLogGatewayId' | 'tenantAuditLogUserId' | 'tenantAuditLogSortBy' | 'tenantAuditLogSortOrder' | 'tenantAuditLogViewMode' | 'connAuditLogAction' | 'connAuditLogSearch' | 'connAuditLogGatewayId' | 'connAuditLogUserId' | 'connAuditLogSortBy' | 'connAuditLogSortOrder' | 'lastActiveTenantId' | 'keychainFolderExpandState' | 'toolbarDockedSide' | 'toolbarDockedY'>) => void;
+  toggle: (key: { [K in keyof UiPreferences]: UiPreferences[K] extends boolean ? K : never }[keyof UiPreferences]) => void;
   toggleTeamSection: (teamId: string) => void;
   toggleKeychainFolder: (folderId: string) => void;
 }
@@ -98,6 +101,9 @@ const defaults: UiPreferences = {
   toolbarDockedSide: 'left',
   toolbarDockedY: 50,
   tunnelSectionOpen: false,
+  tunnelEventLogOpen: false,
+  tunnelDeployGuidesOpen: false,
+  tunnelMetricsOpen: true,
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(

@@ -6,7 +6,7 @@ import { config } from '../config';
 import { tcpProbe } from '../utils/tcpProbe';
 import { startMonitor, startInstanceMonitor, stopMonitor, restartMonitor } from './gatewayMonitor.service';
 import { logger } from '../utils/logger';
-import { generateTunnelToken, revokeTunnelToken, isTunnelConnected, getTunnelInfo } from './tunnel.service';
+import { generateTunnelToken, revokeTunnelToken, isTunnelConnected, deregisterTunnel, getTunnelInfo } from './tunnel.service';
 
 const log = logger.child('gateway');
 import { removeGatewayInstance } from './managedGateway.service';
@@ -621,4 +621,64 @@ export async function getTunnelOverview(tenantId: string) {
     disconnected,
     avgRttMs: rttCount > 0 ? Math.round(rttSum / rttCount) : null,
   };
+}
+
+export async function forceDisconnectTunnel(
+  tenantId: string,
+  gatewayId: string,
+): Promise<void> {
+  const existing = await prisma.gateway.findFirst({
+    where: { id: gatewayId, tenantId },
+    select: { id: true },
+  });
+  if (!existing) throw new AppError('Gateway not found', 404);
+
+  if (!isTunnelConnected(gatewayId)) {
+    throw new AppError('Tunnel is not connected', 400);
+  }
+
+  deregisterTunnel(gatewayId);
+}
+
+export async function getTunnelEvents(
+  tenantId: string,
+  gatewayId: string,
+): Promise<Array<{ action: string; timestamp: Date; details: unknown; ipAddress: string | null }>> {
+  const existing = await prisma.gateway.findFirst({
+    where: { id: gatewayId, tenantId },
+    select: { id: true },
+  });
+  if (!existing) throw new AppError('Gateway not found', 404);
+
+  const events = await prisma.auditLog.findMany({
+    where: {
+      targetId: gatewayId,
+      targetType: 'Gateway',
+      action: { in: ['TUNNEL_CONNECT', 'TUNNEL_DISCONNECT'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    select: {
+      action: true,
+      createdAt: true,
+      details: true,
+      ipAddress: true,
+    },
+  });
+
+  return events.map((e: { action: string; createdAt: Date; details: unknown; ipAddress: string | null }) => ({
+    action: e.action,
+    timestamp: e.createdAt,
+    details: e.details,
+    ipAddress: e.ipAddress,
+  }));
+}
+
+export function getTunnelMetrics(
+  tenantId: string,
+  gatewayId: string,
+) {
+  // tenantId verification is done at the controller level before calling this
+  void tenantId;
+  return getTunnelInfo(gatewayId);
 }
