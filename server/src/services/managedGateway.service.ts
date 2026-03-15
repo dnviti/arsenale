@@ -784,3 +784,94 @@ export async function pushSshKeyToInstances(
 
   return results;
 }
+
+// ---------------------------------------------------------------------------
+// Certificate rotation — rolling restart
+// ---------------------------------------------------------------------------
+
+/**
+ * Perform a rolling restart of all RUNNING instances for a managed gateway
+ * so that they pick up a newly rotated mTLS client certificate.
+ *
+ * Instances are restarted one at a time to avoid total service interruption.
+ * Each instance receives the updated TUNNEL_CLIENT_CERT env var before restart.
+ */
+export async function rollingRestartForCertRotation(
+  gatewayId: string,
+  newClientCert: string,
+): Promise<void> {
+  const orchestrator = getOrchestrator();
+  if (orchestrator.type === OrchestratorType.NONE) {
+    log.warn(`rollingRestartForCertRotation: no orchestrator available for gateway ${gatewayId}`);
+    return;
+  }
+
+  const instances = await prisma.managedGatewayInstance.findMany({
+    where: {
+      gatewayId,
+      status: ManagedInstanceStatus.RUNNING,
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  if (instances.length === 0) {
+    log.info(`rollingRestartForCertRotation: no running instances for gateway ${gatewayId}`);
+    return;
+  }
+
+  log.info(`rollingRestartForCertRotation: restarting ${instances.length} instance(s) for gateway ${gatewayId}`);
+
+  let restarted = 0;
+  let failed = 0;
+
+  for (const instance of instances) {
+    try {
+      // Inject the new client cert into the container's environment
+      await orchestrator.updateContainerEnv(instance.containerId, {
+        TUNNEL_CLIENT_CERT: newClientCert,
+      });
+
+      await orchestrator.restartContainer(instance.containerId);
+
+      await prisma.managedGatewayInstance.update({
+        where: { id: instance.id },
+        data: {
+          healthStatus: 'restarting',
+          lastHealthCheck: new Date(),
+          consecutiveFailures: 0,
+          errorMessage: null,
+        },
+      });
+
+      restarted++;
+      log.info(`rollingRestartForCertRotation: restarted instance ${instance.id}`);
+    } catch (err) {
+      failed++;
+      log.error(`rollingRestartForCertRotation: failed to restart instance ${instance.id}: ${(err as Error).message}`);
+
+      await prisma.managedGatewayInstance.update({
+        where: { id: instance.id },
+        data: {
+          errorMessage: `Cert rotation restart failed: ${(err as Error).message}`,
+        },
+      }).catch(() => { /* best-effort */ });
+    }
+  }
+
+  auditService.log({
+    action: 'GATEWAY_RECONCILE',
+    targetType: 'Gateway',
+    targetId: gatewayId,
+    details: {
+      action: 'cert_rotation_rolling_restart',
+      total: instances.length,
+      restarted,
+      failed,
+    },
+  });
+
+  log.info(`rollingRestartForCertRotation: gateway ${gatewayId} — ${restarted} restarted, ${failed} failed`);
+
+  // Emit real-time instance status update
+  emitInstancesForGateway(gatewayId).catch(() => {});
+}
