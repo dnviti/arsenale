@@ -160,7 +160,7 @@ export async function getExternalShareInfo(token: string): Promise<ExternalShare
     return {
       id: crypto.randomUUID(),
       secretName: 'Shared Secret',
-      secretType: 'credential',
+      secretType: 'LOGIN',
       hasPin: true,
       expiresAt: new Date(0).toISOString(),
       isExpired: true,
@@ -193,19 +193,20 @@ export async function accessExternalShare(
   });
 
   if (!share) {
-    throw new AppError('Share not found', 404);
+    // Return the same status/message as expired shares to prevent token enumeration
+    throw new AppError('Share is no longer available', 410);
   }
 
   if (share.isRevoked) {
-    throw new AppError('This share has been revoked', 410);
+    throw new AppError('Share is no longer available', 410);
   }
 
   if (share.expiresAt < new Date()) {
-    throw new AppError('This share has expired', 410);
+    throw new AppError('Share is no longer available', 410);
   }
 
   if (share.maxAccessCount !== null && share.accessCount >= share.maxAccessCount) {
-    throw new AppError('Access limit reached', 410);
+    throw new AppError('Share is no longer available', 410);
   }
 
   if (share.hasPin && (!pin || pin.trim() === '')) {
