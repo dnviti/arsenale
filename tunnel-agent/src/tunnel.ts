@@ -203,6 +203,15 @@ export class TunnelAgent {
         // PONG received — heartbeat acknowledged (no-op)
         break;
 
+      case MsgType.HEARTBEAT:
+        // Server-initiated heartbeat — no action needed on the agent side
+        break;
+
+      case MsgType.CERT_RENEW:
+        // TODO: Implement client certificate hot-reload when the server pushes a renewed cert
+        warn('Certificate renewal via tunnel not yet implemented');
+        break;
+
       default:
         warn(`Unknown message type ${type} — ignored`);
     }

@@ -3,18 +3,20 @@
  *
  * Mirrors the server-side TunnelBroker wire format:
  *   4-byte header:
- *     byte 0  : message type  (OPEN=1, DATA=2, CLOSE=3, PING=4, PONG=5)
+ *     byte 0  : message type  (OPEN=1, DATA=2, CLOSE=3, PING=4, PONG=5, HEARTBEAT=6, CERT_RENEW=7)
  *     byte 1  : flags         (reserved, set to 0)
  *     bytes 2-3 : streamId   (uint16 big-endian)
  *   followed by payload (variable length, 0 bytes for OPEN/CLOSE/PING/PONG)
  */
 
 export const MsgType = {
-  OPEN:  1,
-  DATA:  2,
-  CLOSE: 3,
-  PING:  4,
-  PONG:  5,
+  OPEN:       1,
+  DATA:       2,
+  CLOSE:      3,
+  PING:       4,
+  PONG:       5,
+  HEARTBEAT:  6,
+  CERT_RENEW: 7,
 } as const;
 
 export type MsgTypeValue = typeof MsgType[keyof typeof MsgType];
