@@ -65,18 +65,29 @@ export function createSshConnection(
       reject(err);
     });
 
-    const connectOpts = {
-      ...(params.sock
-        ? { sock: params.sock }
-        : { host: params.host, port: params.port }),
-      username: params.username,
-      ...(params.privateKey
-        ? { privateKey: params.privateKey, passphrase: params.passphrase }
-        : { password: params.password }),
-      readyTimeout: SSH_READY_TIMEOUT_MS,
-      keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
-    };
-    client.connect(connectOpts);
+    if (params.sock) {
+      // Route through pre-established tunnel stream — no direct TCP connection
+      client.connect({
+        sock: params.sock,
+        username: params.username,
+        ...(params.privateKey
+          ? { privateKey: params.privateKey, passphrase: params.passphrase }
+          : { password: params.password }),
+        readyTimeout: SSH_READY_TIMEOUT_MS,
+        keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
+      });
+    } else {
+      client.connect({
+        host: params.host,
+        port: params.port,
+        username: params.username,
+        ...(params.privateKey
+          ? { privateKey: params.privateKey, passphrase: params.passphrase }
+          : { password: params.password }),
+        readyTimeout: SSH_READY_TIMEOUT_MS,
+        keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
+      });
+    }
   });
 }
 
@@ -136,18 +147,29 @@ export function createSshConnectionViaBastion(
       reject(new Error(`Bastion connection failed: ${bastionErr.message}`));
     });
 
-    const bastionOpts = {
-      ...(params.sock
-        ? { sock: params.sock }
-        : { host: params.bastionHost, port: params.bastionPort }),
-      username: params.bastionUsername,
-      ...(params.bastionPrivateKey
-        ? { privateKey: params.bastionPrivateKey }
-        : { password: params.bastionPassword }),
-      readyTimeout: SSH_READY_TIMEOUT_MS,
-      keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
-    };
-    bastionClient.connect(bastionOpts);
+    if (params.sock) {
+      // Route through pre-established tunnel stream — no direct TCP to bastion
+      bastionClient.connect({
+        sock: params.sock,
+        username: params.bastionUsername,
+        ...(params.bastionPrivateKey
+          ? { privateKey: params.bastionPrivateKey }
+          : { password: params.bastionPassword }),
+        readyTimeout: SSH_READY_TIMEOUT_MS,
+        keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
+      });
+    } else {
+      bastionClient.connect({
+        host: params.bastionHost,
+        port: params.bastionPort,
+        username: params.bastionUsername,
+        ...(params.bastionPrivateKey
+          ? { privateKey: params.bastionPrivateKey }
+          : { password: params.bastionPassword }),
+        readyTimeout: SSH_READY_TIMEOUT_MS,
+        keepaliveInterval: SSH_KEEPALIVE_INTERVAL_MS,
+      });
+    }
   });
 }
 

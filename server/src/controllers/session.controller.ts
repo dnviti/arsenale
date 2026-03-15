@@ -2,7 +2,7 @@ import { Response, NextFunction } from 'express';
 import path from 'path';
 import { mkdir, chmod } from 'fs/promises';
 import prisma from '../lib/prisma';
-import { AuthRequest, AuthenticatedRequest, RdpSettings, assertAuthenticated, assertTenantAuthenticated } from '../types';
+import { AuthRequest, RdpSettings, assertAuthenticated, assertTenantAuthenticated } from '../types';
 import type { DlpPolicy, VncSettings } from '../types';
 import { getConnection, getConnectionCredentials } from '../services/connection.service';
 import { resolveDomainCredentials } from '../services/domain.service';
@@ -12,7 +12,6 @@ import { resolveDlpPolicy } from '../utils/dlp';
 import type { EnforcedConnectionSettings } from '../schemas/tenant.schemas';
 import * as sessionService from '../services/session.service';
 import * as auditService from '../services/audit.service';
-import * as abacService from '../services/abac.service';
 import { selectInstance } from '../services/loadBalancer.service';
 import { getDefaultGateway } from '../services/gateway.service';
 import { isTunnelConnected, createTcpProxy } from '../services/tunnel.service';
@@ -23,84 +22,9 @@ import { startRecording, buildRecordingPath } from '../services/recording.servic
 import { logger } from '../utils/logger';
 import { getClientIp } from '../utils/ip';
 import type { SessionInput } from '../schemas/session.schemas';
-import type net from 'net';
 
 const DEFAULT_RDP_WIDTH = 1024;
 const DEFAULT_RDP_HEIGHT = 768;
-
-// ---- ABAC enforcement helper ----
-
-interface AbacConnectionContext {
-  folderId?: string | null;
-  teamId?: string | null;
-}
-
-/**
- * Evaluate ABAC policies for a connection access attempt.
- * Logs the denial to the audit log and throws a generic 403 if denied.
- * The specific denial reason is kept in the audit log only — never leaked to the client.
- */
-async function enforceAbacPolicy(req: AuthenticatedRequest, connection: AbacConnectionContext, connectionId: string): Promise<void> {
-  const ctx: abacService.AbacContext = {
-    userId: req.user.userId,
-    folderId: connection.folderId,
-    teamId: connection.teamId,
-    tenantId: req.user.tenantId,
-    usedWebAuthnInLogin: req.user.mfaMethod === 'webauthn',
-    completedMfaStepUp: req.user.mfaMethod != null,
-    ipAddress: getClientIp(req),
-    connectionId,
-  };
-  const result = await abacService.evaluate(ctx);
-  if (!result.allowed) {
-    await abacService.logAbacDenial(ctx, result);
-    throw new AppError('Access denied by security policy', 403);
-  }
-}
-
-// ---- Tunnel proxy helper ----
-
-const TUNNEL_PROXY_IDLE_TIMEOUT_MS = 30_000;
-
-/**
- * When a gateway has tunnel routing enabled, resolve the guacd address by
- * spinning up a local TCP proxy that forwards through the zero-trust tunnel.
- *
- * The returned `proxyServer` auto-closes after the first accepted connection
- * finishes, or after an idle timeout if no connection arrives.
- */
-async function resolveTunnelGuacdAddress(
-  gateway: { id: string; host: string; port: number; tunnelEnabled: boolean | null },
-  currentHost: string,
-  currentPort: number,
-): Promise<{ guacdHost: string; guacdPort: number; proxyServer?: net.Server }> {
-  if (!gateway.tunnelEnabled) {
-    return { guacdHost: currentHost, guacdPort: currentPort };
-  }
-
-  if (!isTunnelConnected(gateway.id)) {
-    throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
-  }
-
-  const targetHost = currentHost ?? gateway.host;
-  const targetPort = currentPort ?? gateway.port;
-  const { server: proxyServer, localPort } = await createTcpProxy(gateway.id, targetHost, targetPort);
-
-  // Auto-close: timeout if no connection arrives within the idle window
-  const idleTimer = setTimeout(() => {
-    proxyServer.close();
-  }, TUNNEL_PROXY_IDLE_TIMEOUT_MS);
-
-  // Auto-close: once the first connection is accepted and then closes, shut the proxy down
-  proxyServer.once('connection', (socket: net.Socket) => {
-    clearTimeout(idleTimer);
-    socket.once('close', () => {
-      proxyServer.close();
-    });
-  });
-
-  return { guacdHost: '127.0.0.1', guacdPort: localPort, proxyServer };
-}
 
 // ---- RDP session creation (migrated from rdp.handler.ts) ----
 
@@ -125,9 +49,6 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
     if (conn.type !== 'RDP') {
       throw new AppError('Not an RDP connection', 400);
     }
-
-    // ABAC policy evaluation
-    await enforceAbacPolicy(req, conn, connectionId);
 
     // Resolve gateway: explicit > tenant default > none
     const gateway = conn.gateway
@@ -168,13 +89,16 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
 
       // Tunnel routing: when the gateway has a zero-trust tunnel connected,
       // spin up a local TCP proxy and point guacd at 127.0.0.1:<port>.
-      const tunnel = await resolveTunnelGuacdAddress(
-        gateway,
-        guacdHost ?? gateway.host,
-        guacdPort ?? gateway.port,
-      );
-      guacdHost = tunnel.guacdHost;
-      guacdPort = tunnel.guacdPort;
+      if (gateway.tunnelEnabled) {
+        if (!isTunnelConnected(gateway.id)) {
+          throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
+        }
+        const targetHost = guacdHost ?? gateway.host;
+        const targetPort = guacdPort ?? gateway.port;
+        const { server: _proxyServer, localPort } = await createTcpProxy(gateway.id, targetHost, targetPort);
+        guacdHost = '127.0.0.1';
+        guacdPort = localPort;
+      }
     }
 
     let username: string;
@@ -358,9 +282,6 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
       throw new AppError('Not a VNC connection', 400);
     }
 
-    // ABAC policy evaluation
-    await enforceAbacPolicy(req, conn, connectionId);
-
     // Resolve gateway: explicit > tenant default > none
     const gateway = conn.gateway
       ?? (req.user.tenantId ? await getDefaultGateway(req.user.tenantId, 'GUACD') : null);
@@ -400,13 +321,16 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
 
       // Tunnel routing: when the gateway has a zero-trust tunnel connected,
       // spin up a local TCP proxy and point guacd at 127.0.0.1:<port>.
-      const tunnel = await resolveTunnelGuacdAddress(
-        gateway,
-        guacdHost ?? gateway.host,
-        guacdPort ?? gateway.port,
-      );
-      guacdHost = tunnel.guacdHost;
-      guacdPort = tunnel.guacdPort;
+      if (gateway.tunnelEnabled) {
+        if (!isTunnelConnected(gateway.id)) {
+          throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
+        }
+        const targetHost = guacdHost ?? gateway.host;
+        const targetPort = guacdPort ?? gateway.port;
+        const { server: _proxyServer, localPort } = await createTcpProxy(gateway.id, targetHost, targetPort);
+        guacdHost = '127.0.0.1';
+        guacdPort = localPort;
+      }
     }
 
     // VNC uses only a password (no username typically)
@@ -533,9 +457,6 @@ export async function validateSshAccess(req: AuthRequest, res: Response) {
   if (conn.type !== 'SSH') {
     throw new AppError('Not an SSH connection', 400);
   }
-
-  // ABAC policy evaluation
-  await enforceAbacPolicy(req, conn, connectionId);
 
   // SSH sessions are handled via Socket.io, we just validate access here
   res.json({ connectionId, type: 'SSH' });
