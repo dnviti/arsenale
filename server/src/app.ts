@@ -35,6 +35,7 @@ import externalVaultRoutes from './routes/externalVault.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
+import { validateCsrf } from './middleware/csrf.middleware';
 import { config } from './config';
 
 const app = express();
@@ -62,6 +63,14 @@ app.use(express.json({ limit: '500kb' }));
 app.use(cookieParser());
 app.use(passport.initialize());
 if (config.logHttpRequests) app.use(requestLogger);
+
+// Global CSRF validation for all state-changing requests (after CORS, before routes)
+app.use('/api', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  const publicPrefixes = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email', '/auth/verify-totp', '/auth/request-sms-code', '/auth/verify-sms', '/auth/request-webauthn-options', '/auth/verify-webauthn', '/auth/mfa-setup/', '/auth/resend-verification', '/auth/saml', '/auth/config', '/share'];
+  if (publicPrefixes.some(p => req.path.startsWith(p))) return next();
+  return validateCsrf(req, res, next);
+});
 
 // Routes
 app.use('/api/auth/saml', samlRoutes);
