@@ -325,9 +325,6 @@ export function startInstanceMonitor(gatewayId: string, tenantId: string, interv
 
 const TUNNEL_HEARTBEAT_TIMEOUT_MS = 45_000; // 45 s
 
-/** In-memory cache of the last health status per gateway — avoids a DB query on every probe cycle. */
-const lastKnownStatus = new Map<string, GatewayHealthStatus>();
-
 /**
  * Determine gateway health from tunnel state instead of a TCP probe.
  *
@@ -370,12 +367,11 @@ async function probeViaTunnel(gatewayId: string, tenantId: string): Promise<void
 
     log.debug(`Tunnel probe ${gatewayId}: ${status}${latencyMs != null ? ` ${latencyMs}ms RTT` : ''}`);
 
-    // Detect state transition using in-memory cache (avoids a DB read on every cycle)
-    const prevStatus = lastKnownStatus.get(gatewayId);
-    if (prevStatus != null && prevStatus !== status) {
-      log.info(`Gateway ${gatewayId} tunnel health changed: ${prevStatus} → ${status}`);
+    // Detect state transition
+    const prev = await prisma.gateway.findUnique({ where: { id: gatewayId }, select: { lastHealthStatus: true } });
+    if (prev && prev.lastHealthStatus !== status) {
+      log.info(`Gateway ${gatewayId} tunnel health changed: ${prev.lastHealthStatus ?? 'UNKNOWN'} → ${status}`);
     }
-    lastKnownStatus.set(gatewayId, status);
 
     await prisma.gateway.update({
       where: { id: gatewayId },
