@@ -56,6 +56,11 @@ app.use(helmet({
   frameguard: { action: 'deny' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
+// Permissions-Policy header (not included in Helmet by default)
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=(), accelerometer=()');
+  next();
+});
 if (config.trustProxy !== false) app.set('trust proxy', config.trustProxy);
 app.use(cors({ origin: [config.clientUrl], credentials: true }));
 app.use(express.json({ limit: '500kb' }));
