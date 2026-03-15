@@ -57,7 +57,16 @@ app.use(helmet({
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 }));
 if (config.trustProxy !== false) app.set('trust proxy', config.trustProxy);
-app.use(cors({ origin: [config.clientUrl], credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || origin === config.clientUrl) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '500kb' }));
 app.use(cookieParser());
 app.use(passport.initialize());
