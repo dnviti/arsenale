@@ -16,6 +16,26 @@ import { extractApiError } from '../../utils/apiError';
 // eslint-disable-next-line security/detect-unsafe-regex
 const CIDR_RE = /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
 
+/** Validate IP/CIDR beyond the regex — checks octet ranges and prefix length */
+function isValidCidr(value: string): boolean {
+  if (!CIDR_RE.test(value)) return false;
+  const slash = value.lastIndexOf('/');
+  if (slash === -1) {
+    // Bare IP — check IPv4 octet ranges
+    const parts = value.split('.');
+    if (parts.length === 4) return parts.every((p) => { const n = Number(p); return n >= 0 && n <= 255; });
+    return true; // IPv6 — regex already validates hex chars
+  }
+  const ip = value.substring(0, slash);
+  const prefix = parseInt(value.substring(slash + 1), 10);
+  const v4Parts = ip.split('.');
+  if (v4Parts.length === 4) {
+    return v4Parts.every((p) => { const n = Number(p); return n >= 0 && n <= 255; }) && prefix >= 0 && prefix <= 32;
+  }
+  // IPv6
+  return prefix >= 0 && prefix <= 128;
+}
+
 export default function TunnelConfigSection() {
   const user = useAuthStore((s) => s.user);
   const tenant = useTenantStore((s) => s.tenant);
@@ -82,10 +102,10 @@ export default function TunnelConfigSection() {
     tunnelTokenRotationDays, tunnelTokenMaxLifetimeDays, tunnelAgentAllowedCidrs,
   ]);
 
-  const handleAddCidr = () => {
+  const handleAddCidr = useCallback(() => {
     const trimmed = newCidr.trim();
     if (!trimmed) return;
-    if (!CIDR_RE.test(trimmed)) {
+    if (!isValidCidr(trimmed)) {
       setCidrError('Invalid IP or CIDR format (e.g. 10.0.0.0/8)');
       return;
     }
@@ -96,18 +116,18 @@ export default function TunnelConfigSection() {
     setTunnelAgentAllowedCidrs((prev) => [...prev, trimmed]);
     setNewCidr('');
     setCidrError('');
-  };
+  }, [newCidr, tunnelAgentAllowedCidrs]);
 
-  const handleCidrKeyDown = (e: KeyboardEvent) => {
+  const handleCidrKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       handleAddCidr();
     }
-  };
+  }, [handleAddCidr]);
 
-  const handleRemoveCidr = (entry: string) => {
+  const handleRemoveCidr = useCallback((entry: string) => {
     setTunnelAgentAllowedCidrs((prev) => prev.filter((e) => e !== entry));
-  };
+  }, []);
 
   if (!tenant) return null;
 
@@ -184,7 +204,7 @@ export default function TunnelConfigSection() {
               value={tunnelTokenRotationDays}
               onChange={(e) => { setTunnelTokenRotationDays(Math.max(1, parseInt(e.target.value, 10) || 1)); setSuccess(false); }}
               disabled={saving || !tunnelAutoTokenRotation}
-              slotProps={{ htmlInput: { min: 1, max: 3650 } }}
+              slotProps={{ htmlInput: { min: 1, max: 365 } }}
               sx={{ width: 200 }}
             />
             <TextField
@@ -198,7 +218,7 @@ export default function TunnelConfigSection() {
                 setSuccess(false);
               }}
               disabled={saving}
-              slotProps={{ htmlInput: { min: 1, max: 3650 } }}
+              slotProps={{ htmlInput: { min: 1, max: 365 } }}
               helperText="Leave empty for no limit"
               sx={{ width: 220 }}
             />

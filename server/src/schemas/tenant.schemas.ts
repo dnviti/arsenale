@@ -34,10 +34,24 @@ export const updateTenantSchema = z.object({
   enforcedConnectionSettings: enforcedConnectionSettingsSchema,
   tunnelDefaultEnabled: z.boolean().optional(),
   tunnelAutoTokenRotation: z.boolean().optional(),
-  tunnelTokenRotationDays: z.number().int().min(1).max(3650).optional(),
+  tunnelTokenRotationDays: z.number().int().min(1).max(365).optional(),
   tunnelRequireForRemote: z.boolean().optional(),
-  tunnelTokenMaxLifetimeDays: z.number().int().min(1).max(3650).nullable().optional(),
-  tunnelAgentAllowedCidrs: z.array(z.string().regex(cidrRegex, 'Invalid IP/CIDR format')).max(100).optional(),
+  tunnelTokenMaxLifetimeDays: z.number().int().min(1).max(365).nullable().optional(),
+  tunnelAgentAllowedCidrs: z.array(z.string().regex(cidrRegex, 'Invalid IP/CIDR format')).max(100).optional()
+    .refine((entries) => {
+      if (!entries) return true;
+      return entries.every((entry) => {
+        const slash = entry.lastIndexOf('/');
+        if (slash === -1) {
+          return net.isIPv4(entry) || net.isIPv6(entry);
+        }
+        const ip = entry.substring(0, slash);
+        const prefix = parseInt(entry.substring(slash + 1), 10);
+        if (net.isIPv4(ip)) return prefix >= 0 && prefix <= 32;
+        if (net.isIPv6(ip)) return prefix >= 0 && prefix <= 128;
+        return false;
+      });
+    }, { message: 'Invalid IP address or CIDR notation' }),
 });
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>;
 

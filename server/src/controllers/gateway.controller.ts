@@ -1,7 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, assertTenantAuthenticated } from '../types';
 import * as gatewayService from '../services/gateway.service';
-import { isTunnelConnected, getTunnelInfo } from '../services/tunnel.service';
+import { isTunnelConnected } from '../services/tunnel.service';
 import * as sshKeyService from '../services/sshkey.service';
 import * as managedGatewayService from '../services/managedGateway.service';
 import * as autoscalerService from '../services/autoscaler.service';
@@ -570,33 +570,6 @@ export async function revokeTunnelToken(req: AuthRequest, res: Response) {
 
 export async function tunnelOverview(req: AuthRequest, res: Response) {
   assertTenantAuthenticated(req);
-  const gateways = await prisma.gateway.findMany({
-    where: { tenantId: req.user.tenantId, tunnelEnabled: true },
-    select: { id: true },
-  });
-
-  let connected = 0;
-  let disconnected = 0;
-  let rttSum = 0;
-  let rttCount = 0;
-
-  for (const gw of gateways) {
-    const info = getTunnelInfo(gw.id);
-    if (info) {
-      connected++;
-      if (info.pingPongLatency != null) {
-        rttSum += info.pingPongLatency;
-        rttCount++;
-      }
-    } else {
-      disconnected++;
-    }
-  }
-
-  res.json({
-    total: gateways.length,
-    connected,
-    disconnected,
-    avgRttMs: rttCount > 0 ? Math.round(rttSum / rttCount) : null,
-  });
+  const overview = await gatewayService.getTunnelOverview(req.user.tenantId);
+  res.json(overview);
 }
