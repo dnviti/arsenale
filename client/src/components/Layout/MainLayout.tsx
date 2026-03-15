@@ -34,6 +34,7 @@ const GeoIpDialog = lazy(() => import('../Audit/GeoIpDialog'));
 
 import TenantSwitcher from './TenantSwitcher';
 import NotificationBell from './NotificationBell';
+import VersionIndicator from './VersionIndicator';
 import { useAuthStore } from '../../store/authStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { logoutApi } from '../../api/auth.api';
@@ -303,7 +304,8 @@ export default function MainLayout() {
             minWidth: SIDEBAR_WIDTH,
             borderRight: 1,
             borderColor: 'divider',
-            overflow: 'auto',
+            display: 'flex',
+            flexDirection: 'column',
             bgcolor: 'background.paper',
             userSelect: 'none',
           }}
@@ -324,18 +326,21 @@ export default function MainLayout() {
               </Typography>
             </Alert>
           )}
-          <ConnectionTree
-            onEditConnection={handleEditConnection}
-            onShareConnection={handleShareConnection}
-            onConnectAsConnection={setConnectAsTarget}
-            onCreateConnection={handleCreateConnection}
-            onCreateFolder={handleCreateFolder}
-            onEditFolder={handleEditFolder}
-            onShareFolder={handleShareFolder}
-            onViewAuditLog={(conn) => setConnectionAuditTarget({ id: conn.id, name: conn.name })}
-            onImport={() => setImportDialogOpen(true)}
-            onExport={() => setExportDialogOpen(true)}
-          />
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
+            <ConnectionTree
+              onEditConnection={handleEditConnection}
+              onShareConnection={handleShareConnection}
+              onConnectAsConnection={setConnectAsTarget}
+              onCreateConnection={handleCreateConnection}
+              onCreateFolder={handleCreateFolder}
+              onEditFolder={handleEditFolder}
+              onShareFolder={handleShareFolder}
+              onViewAuditLog={(conn) => setConnectionAuditTarget({ id: conn.id, name: conn.name })}
+              onImport={() => setImportDialogOpen(true)}
+              onExport={() => setExportDialogOpen(true)}
+            />
+          </Box>
+          <VersionIndicator />
         </Box>
 
         {/* Main content */}
