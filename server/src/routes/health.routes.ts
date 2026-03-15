@@ -8,7 +8,7 @@ import {
 const router = Router();
 
 /* eslint-disable @typescript-eslint/no-require-imports */
-const { version } = require('../../../package.json') as { version: string };
+const { version } = require('../../package.json') as { version: string };
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 router.get('/health', (_req: Request, res: Response) => {
