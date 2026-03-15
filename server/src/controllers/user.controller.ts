@@ -8,6 +8,9 @@ import { getClientIp } from '../utils/ip';
 import type { UpdateProfileInput, ChangePasswordInput, InitiateEmailChangeInput, ConfirmEmailChangeInput, InitiateIdentityInput, ConfirmIdentityInput, UploadAvatarInput, UserSearchInput, UpdateDomainProfileInput } from '../schemas/user.schemas';
 import type { SshTerminalConfig, RdpSettings } from '../schemas/common.schemas';
 
+/** Roles allowed to perform tenant-wide user searches. */
+const ADMIN_ROLES = new Set(['OWNER', 'ADMIN']);
+
 export async function getProfile(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
   const result = await userService.getProfile(req.user.userId);
@@ -105,8 +108,7 @@ export async function search(req: AuthRequest, res: Response) {
   const { q, scope, teamId } = req.query as UserSearchInput;
 
   // Only OWNER and ADMIN roles may use tenant-wide search; others fall back to team scope
-  const adminRoles = new Set(['OWNER', 'ADMIN']);
-  const effectiveScope = scope === 'tenant' && !adminRoles.has(req.user.tenantRole)
+  const effectiveScope = scope === 'tenant' && !ADMIN_ROLES.has(req.user.tenantRole)
     ? 'team'
     : scope;
 
