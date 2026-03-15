@@ -8,19 +8,11 @@ RUN npm install
 COPY client/ .
 RUN npm run build
 
-FROM alpine:3.21
-
-RUN apk add --no-cache nginx \
-    && mkdir -p /etc/nginx/conf.d /usr/share/nginx/html \
-    && mkdir -p /var/cache/nginx /var/lib/nginx /var/log/nginx \
-    && chown -R nginx:nginx /var/cache/nginx /var/lib/nginx /var/log/nginx \
-    && chown -R nginx:nginx /usr/share/nginx/html
+FROM nginx:1.28-alpine
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY client/nginx.main.conf /etc/nginx/nginx.conf
 COPY client/nginx.conf /etc/nginx/conf.d/default.conf
-
-USER nginx
 
 EXPOSE 8080
 
