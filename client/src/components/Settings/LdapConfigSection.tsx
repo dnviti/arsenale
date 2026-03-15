@@ -77,6 +77,15 @@ export default function LdapConfigSection() {
               color="success"
               variant="outlined"
             />
+            {status.syncEnabled && (
+              <Chip
+                icon={<SyncIcon />}
+                label="Auto-Sync"
+                color="info"
+                variant="outlined"
+                size="small"
+              />
+            )}
           </Stack>
 
           <Box>
@@ -92,6 +101,11 @@ export default function LdapConfigSection() {
             {status.syncEnabled && (
               <Typography variant="body2">
                 Sync schedule: <code>{status.syncCron}</code>
+              </Typography>
+            )}
+            {testResult && testResult.ok && testResult.userCount !== undefined && (
+              <Typography variant="body2">
+                Directory entries: {testResult.userCount} users{testResult.groupCount !== undefined ? `, ${testResult.groupCount} groups` : ''}
               </Typography>
             )}
           </Box>

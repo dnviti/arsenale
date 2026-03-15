@@ -72,6 +72,14 @@ export default function EmailProviderSection() {
             <Typography variant="body2">
               From: <code>{status.from}</code>
             </Typography>
+            {status.host && (
+              <Typography variant="body2">
+                Host: <code>{status.host}:{status.port || 587}</code>
+                {status.secure !== undefined && (
+                  <> ({status.secure ? 'TLS' : 'Plain'})</>
+                )}
+              </Typography>
+            )}
 
             <Box>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>

@@ -31,9 +31,13 @@ import TeamSection from '../Settings/TeamSection';
 import GatewaySection from '../Settings/GatewaySection';
 import EmailProviderSection from '../Settings/EmailProviderSection';
 import SelfSignupSection from '../Settings/SelfSignupSection';
+import IpAllowlistSection from '../Settings/IpAllowlistSection';
 import TenantAuditLogSection from '../Settings/TenantAuditLogSection';
 import LdapConfigSection from '../Settings/LdapConfigSection';
 import SyncProfileSection from '../Settings/SyncProfileSection';
+import TenantConnectionPolicySection from '../Settings/TenantConnectionPolicySection';
+import SamlConfigSection from '../Settings/SamlConfigSection';
+import OAuthProvidersAdminSection from '../Settings/OAuthProvidersAdminSection';
 import { SlideUp } from '../common/SlideUp';
 import { isAdminOrAbove } from '../../utils/roles';
 
@@ -196,7 +200,10 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
             </Stack>
           )}
           {resolvedTab === 'organization' && (
-            <TenantSection onNavigateToTab={setActiveTab} onViewUserProfile={onViewUserProfile} />
+            <Stack spacing={3}>
+              <TenantSection onNavigateToTab={setActiveTab} onViewUserProfile={onViewUserProfile} />
+              {isAdmin && <TenantConnectionPolicySection />}
+            </Stack>
           )}
           {resolvedTab === 'teams' && (
             <TeamSection onNavigateToTab={setActiveTab} />
@@ -208,8 +215,11 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
           {resolvedTab === 'administration' && (
             <Stack spacing={3}>
               <SelfSignupSection />
+              <IpAllowlistSection />
+              <OAuthProvidersAdminSection />
               <EmailProviderSection />
               <LdapConfigSection />
+              <SamlConfigSection />
               <TenantAuditLogSection onViewUserProfile={onViewUserProfile} onGeoIpClick={onGeoIpClick} />
             </Stack>
           )}

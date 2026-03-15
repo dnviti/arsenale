@@ -1,5 +1,14 @@
 import api from './client';
 import type { TenantRole } from '../utils/roles';
+import type { SshTerminalConfig } from '../constants/terminalThemes';
+import type { RdpSettings } from '../constants/rdpDefaults';
+import type { VncSettings } from '../constants/vncDefaults';
+
+export interface EnforcedConnectionSettings {
+  ssh?: Partial<SshTerminalConfig>;
+  rdp?: Partial<RdpSettings>;
+  vnc?: Partial<VncSettings>;
+}
 
 export interface TenantData {
   id: string;
@@ -9,10 +18,13 @@ export interface TenantData {
   vaultAutoLockMaxMinutes: number | null;
   userCount: number;
   defaultSessionTimeoutSeconds: number;
+  maxConcurrentSessions: number;
+  absoluteSessionTimeoutSeconds: number;
   dlpDisableCopy: boolean;
   dlpDisablePaste: boolean;
   dlpDisableDownload: boolean;
   dlpDisableUpload: boolean;
+  enforcedConnectionSettings?: EnforcedConnectionSettings | null;
   teamCount: number;
   createdAt: string;
   updatedAt: string;
@@ -90,7 +102,7 @@ export async function getTenantMfaStats(tenantId: string): Promise<{ total: numb
   return data;
 }
 
-export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null; dlpDisableCopy?: boolean; dlpDisablePaste?: boolean; dlpDisableDownload?: boolean; dlpDisableUpload?: boolean }): Promise<TenantData> {
+export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; maxConcurrentSessions?: number; absoluteSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null; dlpDisableCopy?: boolean; dlpDisablePaste?: boolean; dlpDisableDownload?: boolean; dlpDisableUpload?: boolean; enforcedConnectionSettings?: EnforcedConnectionSettings | null }): Promise<TenantData> {
   const { data } = await api.put(`/tenants/${id}`, payload);
   return data;
 }
@@ -210,4 +222,20 @@ export async function updateMembershipExpiry(
   expiresAt: string | null,
 ): Promise<void> {
   await api.patch(`/tenants/${tenantId}/users/${userId}/expiry`, { expiresAt });
+}
+
+export interface IpAllowlistData {
+  enabled: boolean;
+  mode: 'flag' | 'block';
+  entries: string[];
+}
+
+export async function getIpAllowlist(tenantId: string): Promise<IpAllowlistData> {
+  const { data } = await api.get<IpAllowlistData>(`/tenants/${tenantId}/ip-allowlist`);
+  return data;
+}
+
+export async function updateIpAllowlist(tenantId: string, payload: IpAllowlistData): Promise<IpAllowlistData> {
+  const { data } = await api.put<IpAllowlistData>(`/tenants/${tenantId}/ip-allowlist`, payload);
+  return data;
 }

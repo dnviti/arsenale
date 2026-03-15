@@ -3,29 +3,44 @@
 </div>
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
-[![Verify](https://github.com/dnviti/arsenale/actions/workflows/verify.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/verify.yml)
-[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](CHANGELOG.md)
+[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/verify-server.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/verify-server.yml)
+[![Verify Client](https://github.com/dnviti/arsenale/actions/workflows/verify-client.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/verify-client.yml)
+[![Version](https://img.shields.io/badge/version-1.3.2-green.svg)](CHANGELOG.md)
 
 A web-based application for managing and accessing remote SSH and RDP connections from your browser. Organize connections in folders, share them with team members, and keep credentials encrypted at rest with a personal vault.
 
 ## Features
 
-- **SSH Terminal** — Interactive terminal sessions powered by XTerm.js and Socket.IO
-- **RDP Viewer** — Remote desktop connections via Apache Guacamole
-- **Encrypted Vault** — All credentials encrypted at rest with AES-256-GCM; master key derived from your password via Argon2
-- **Connection Sharing** — Share connections with other users (read-only or full access)
-- **Folder Organization** — Hierarchical folder tree to keep connections organized
-- **Tabbed Interface** — Open multiple sessions side by side
-- **JWT Authentication** — Secure auth with automatic token refresh
+- **SSH Terminal** — Interactive terminal sessions powered by XTerm.js and Socket.IO, with integrated SFTP file browser
+- **RDP Viewer** — Remote desktop connections via Apache Guacamole with clipboard sync and drive redirection
+- **VNC Viewer** — VNC sessions via the Guacamole protocol
+- **Encrypted Vault** — All credentials encrypted at rest with AES-256-GCM; master key derived from your password via Argon2id
+- **Secrets Keychain** — Store login credentials, SSH keys, certificates, API keys, and secure notes with full versioning and expiry notifications
+- **Connection Sharing** — Share connections with other users (read-only or full access) with per-recipient re-encryption
+- **Folder Organization** — Hierarchical folder tree with drag-and-drop reordering for personal and team connections
+- **Tabbed Interface** — Open multiple sessions side by side; pop out connections into standalone windows
+- **Multi-Tenant Organizations** — Tenant-scoped RBAC with Owner/Admin/Operator/Member/Consultant/Auditor/Guest roles; time-limited memberships
+- **Team Collaboration** — Teams with shared connection pools, folders, and vault sections
+- **Multi-Factor Authentication** — TOTP, SMS OTP (Twilio, AWS SNS, Vonage), and WebAuthn/FIDO2 passkeys
+- **OAuth & SAML SSO** — Google, Microsoft, GitHub, any OIDC provider, SAML 2.0, and LDAP identity providers
+- **Audit Logging** — 100+ action types with IP and GeoIP tracking; geographic visualization for admins
+- **Session Recording** — Record SSH (asciicast) and RDP/VNC (Guacamole format) sessions with in-browser playback and video export
+- **DLP Policies** — Tenant and per-connection controls for clipboard copy/paste and file upload/download
+- **Connection Policy Enforcement** — Admin-enforced SSH/RDP/VNC settings that override user configuration
+- **IP Allowlist** — Per-tenant IP/CIDR allowlists with flag (audit) or block enforcement modes
+- **Session Limits** — Max concurrent sessions per user and absolute session timeouts (OWASP A07)
+- **External Vault Integration** — Reference credentials from HashiCorp Vault (KV v2) instead of storing them in Arsenale
+- **SSH Gateway Management** — Deploy, scale, and monitor SSH gateway containers via Docker, Podman, or Kubernetes
+- **JWT Authentication** — Short-lived access tokens with httpOnly refresh cookies, CSRF protection, and token binding
 
 ## Tech Stack
 
 | Layer | Technologies |
 |-------|-------------|
 | **Server** | Express, TypeScript, Prisma, Socket.IO, ssh2, guacamole-lite |
-| **Client** | React 19, Vite, Material-UI v6, Zustand, XTerm.js, guacamole-common-js |
+| **Client** | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
 | **Database** | PostgreSQL 16 |
-| **Infrastructure** | Docker, Nginx, guacd |
+| **Infrastructure** | Docker / Podman / Kubernetes, Nginx, guacd, ssh-gateway |
 
 ## Prerequisites
 
@@ -71,19 +86,24 @@ This starts:
 
 ## Environment Variables
 
+Key variables — see [docs/environment.md](docs/environment.md) for the full reference (123 variables).
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgresql://arsenale:arsenale_password@127.0.0.1:5432/arsenale` | PostgreSQL connection string |
-| `JWT_SECRET` | `change-me-in-production` | Secret key for signing JWT tokens |
+| `JWT_SECRET` | `dev-secret-change-me` | Secret key for signing JWT tokens (**must be strong in production**) |
 | `JWT_EXPIRES_IN` | `15m` | Access token TTL |
 | `JWT_REFRESH_EXPIRES_IN` | `7d` | Refresh token TTL |
 | `GUACD_HOST` | `localhost` | Guacamole daemon hostname |
 | `GUACD_PORT` | `4822` | Guacamole daemon port |
-| `GUACAMOLE_SECRET` | `change-me-guacamole-secret` | Guacamole encryption secret |
+| `GUACAMOLE_SECRET` | `dev-guac-secret` | Guacamole token encryption key (**must be strong in production**) |
+| `SERVER_ENCRYPTION_KEY` | Auto-generated | 32-byte hex key for server-level encryption (**required in production**) |
 | `PORT` | `3001` | Express server port |
 | `GUACAMOLE_WS_PORT` | `3002` | Guacamole WebSocket port |
 | `NODE_ENV` | `development` | Environment mode |
 | `VAULT_TTL_MINUTES` | `30` | Vault session auto-lock timeout (minutes) |
+| `CLIENT_URL` | `http://localhost:3000` | Client URL (CORS, OAuth redirects, emails) |
+| `RECORDING_ENABLED` | `false` | Enable session recording |
 
 ## Project Structure
 
@@ -96,24 +116,27 @@ arsenale/
 │   │   ├── routes/               # REST API route definitions
 │   │   ├── controllers/          # Request handling and validation
 │   │   ├── services/             # Business logic and database operations
-│   │   ├── socket/               # Socket.IO SSH handlers
-│   │   ├── middleware/           # Auth and error handling
+│   │   ├── socket/               # Socket.IO handlers (SSH, notifications, gateway monitor)
+│   │   ├── middleware/           # Auth, CSRF, rate limiting, error handling
+│   │   ├── orchestrator/         # Container orchestration (Docker/Podman/Kubernetes)
 │   │   └── types/                # Shared TypeScript types
 │   └── prisma/
-│       └── schema.prisma         # Database schema
+│       └── schema.prisma         # Database schema (32 models)
 │
 ├── client/                        # React frontend
 │   ├── src/
-│   │   ├── pages/                # Login, Register, Dashboard
-│   │   ├── components/           # UI components (RDP, Terminal, Sidebar, Tabs, Dialogs)
-│   │   ├── api/                  # Axios API clients with JWT interceptor
-│   │   ├── store/                # Zustand state stores
+│   │   ├── pages/                # Login, Register, Dashboard, RecordingPlayer, PublicShare
+│   │   ├── components/           # UI components (RDP, VNC, Terminal, Sidebar, Tabs, Dialogs, Settings, Keychain)
+│   │   ├── api/                  # Axios API clients with JWT interceptor (29 modules)
+│   │   ├── store/                # Zustand state stores (14 stores)
 │   │   └── hooks/                # Custom React hooks
 │   └── nginx.conf                # Production reverse proxy config
 │
-├── docker-compose.yml            # Production stack
-├── docker-compose.dev.yml        # Dev (guacd + PostgreSQL)
-└── .env.example                  # Environment template
+├── ssh-gateway/                   # Optional SSH gateway container
+├── docker/guacenc/                # Recording-to-video conversion sidecar
+├── compose.yml                    # Production Docker Compose stack
+├── compose.dev.yml                # Dev containers (PostgreSQL + guacenc)
+└── .env.example                   # Environment template (121 variables)
 ```
 
 ## Available Scripts
@@ -153,11 +176,13 @@ cp .env.production.example .env.production
 npm run docker:prod
 ```
 
-This starts four containers:
+This starts the full container stack:
 - **PostgreSQL 16** — Production database
-- **guacd** — Apache Guacamole daemon for RDP
-- **Server** — Express API (runs migrations on startup)
+- **guacd** — Apache Guacamole daemon for RDP/VNC
+- **guacenc** — Recording-to-video conversion sidecar
+- **Server** — Express API + Guacamole WebSocket (runs migrations on startup)
 - **Client** — Nginx serving the React app with reverse proxy to the API
+- **ssh-gateway** — Optional SSH gateway container (port 2222)
 
 ## Architecture
 
@@ -165,21 +190,25 @@ This starts four containers:
 
 Layered architecture: **Routes → Controllers → Services → Prisma ORM**
 
-- REST API for connections, folders, sharing, vault, and auth
-- Socket.IO namespace (`/ssh`) for real-time SSH terminal sessions
-- Guacamole WebSocket server (port 3002) for RDP tunneling
+- 238+ REST endpoints across 29 route groups
+- Socket.IO namespaces: `/ssh` (terminal), `/notifications`, `/gateway-monitor`
+- Guacamole WebSocket server (port 3002) for RDP/VNC tunneling
+- Background jobs: SSH key rotation, gateway health checks, session cleanup, secret expiry notifications
+- Container orchestration: Docker, Podman, and Kubernetes providers
 
 ### Client
 
-- Zustand stores manage auth, connections, tabs, and vault state
+- 14 Zustand stores manage auth, connections, tabs, vault, teams, tenants, gateways, and UI preferences
 - Axios interceptor handles automatic JWT refresh on 401 responses
-- XTerm.js renders SSH terminals; guacamole-common-js renders RDP sessions
+- XTerm.js renders SSH terminals; guacamole-common-js renders RDP/VNC sessions
+- All UI layout preferences persisted via `uiPreferencesStore` (localStorage)
 
 ### Vault & Encryption
 
-- User password → Argon2 → master key → AES-256-GCM encryption of all credentials
+- User password → Argon2id → master key → AES-256-GCM encryption of all credentials
 - Master key held in server memory with auto-expiring sessions (configurable TTL)
 - Vault must be unlocked to view or use stored credentials
+- Recovery key generated at registration enables vault access after password reset
 
 ## Contributing
 

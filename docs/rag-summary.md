@@ -1,6 +1,6 @@
 # Arsenale
 
-> Auto-generated on 2026-03-11. High-level product overview for LLM RAG consumption.
+> Auto-generated on 2026-03-15. High-level product overview for LLM RAG consumption.
 
 ## What is Arsenale
 
@@ -32,9 +32,15 @@ SSH gateway support enables bastion host configurations where connections are ro
 
 Every user's credentials are encrypted at rest using AES-256-GCM with keys derived from their password through Argon2id. The vault uses a zero-knowledge architecture: the server stores only encrypted data and never has access to the plaintext master key. When users log in, their password unlocks the vault for a configurable time window, after which it automatically locks. Users can also unlock the vault using multi-factor authentication methods after the initial session, without re-entering their password.
 
-A secrets manager built into the vault allows users to store various credential types including login credentials, SSH key pairs, TLS certificates, API keys, and encrypted notes. Secrets support versioning with full history, allowing users to view previous values and restore older versions. Expiry dates can be set on secrets, with automatic notifications when secrets are approaching or have passed their expiration. Secrets can be organized into folders scoped to personal, team, or organization levels.
+A secrets manager built into the vault allows users to store various credential types including login credentials, SSH key pairs, TLS certificates, API keys, and encrypted notes. Secrets support versioning with full history, allowing users to view previous values and restore older versions. Expiry dates can be set on secrets, with automated scope-aware notifications (personal, team, tenant) when secrets are approaching or have passed expiration, using configurable notification bands (expired, 1 day, 7 days, 30 days) with deduplication. Secrets can be organized into folders scoped to personal, team, or organization levels.
+
+Domain credentials (domain name, username, encrypted password) can be stored at the user profile level and reused across domain-joined connections without re-entering credentials each time.
 
 A recovery key is generated during registration, enabling vault recovery if the user forgets their password. This key is displayed once and must be saved securely by the user.
+
+### External Credential Providers
+
+Connections can reference credentials stored in external secret management systems instead of duplicating them in Arsenale's internal vault. HashiCorp Vault is supported as an external credential provider, using the KV v2 secrets engine. Tenant administrators configure vault providers with server URL, authentication method (static token or AppRole), namespace, mount path, and optional CA certificate. At connection time, credentials are fetched from HashiCorp Vault and injected into SSH/RDP/VNC session parameters. Fetched credentials are cached in-memory with a configurable TTL to minimize API calls. External vault credentials are never persisted in Arsenale's database.
 
 ## Team Collaboration and Sharing
 
@@ -54,15 +60,17 @@ Arsenale supports multi-tenant architecture where each organization operates in 
 
 Tenant roles provide a seven-level hierarchical access control: Owner > Admin > Operator > Member > Consultant > Auditor > Guest. Owners have full control including tenant deletion. Admins can manage users, configure policies, and administer gateways. Operators can manage gateways and view active sessions. Members have standard access to their assigned resources. Consultants have access to assigned connections only. Auditors have read-only access to audit logs and sessions. Guests can view shared connection info without connecting. Non-hierarchical access is supported via role-any checks (e.g., Auditors access audit routes despite being below Member in the hierarchy).
 
-Tenant-level policies allow administrators to enforce mandatory multi-factor authentication for all members, set maximum vault auto-lock durations to prevent users from keeping vaults unlocked indefinitely, and configure default session inactivity timeouts. User accounts can be enabled or disabled by administrators, and admins can perform identity-verified operations like changing user emails or resetting passwords.
+Tenant-level policies allow administrators to enforce mandatory multi-factor authentication for all members, set maximum vault auto-lock durations to prevent users from keeping vaults unlocked indefinitely, configure default session inactivity timeouts, limit concurrent login sessions per user (oldest sessions are evicted when the limit is exceeded), and enforce absolute session timeouts that force re-authentication after a fixed duration regardless of user activity (OWASP A07). User accounts can be enabled or disabled by administrators, and admins can perform identity-verified operations like changing user emails or resetting passwords.
 
 Time-limited memberships allow administrators to set an optional expiration date on tenant and team memberships. Expired memberships are automatically filtered out at token issuance time (defense in depth) and cleaned up by a batch scheduler running every 5 minutes. When a tenant membership expires, the user is removed from all teams in that tenant and their refresh tokens are revoked for immediate lockout. Owner memberships cannot expire. Administrators can set, change, or remove expiration dates from the organization settings UI.
 
 ## Security
 
-Arsenale supports multiple MFA methods: TOTP authenticator apps, SMS one-time passwords (via Twilio, AWS SNS, or Vonage), and WebAuthn/FIDO2 passkeys for hardware security key and biometric authentication. Users can register multiple methods simultaneously. Identity verification is required for sensitive operations like email changes or password resets, using the same MFA infrastructure.
+Arsenale supports multiple MFA methods: TOTP authenticator apps, SMS one-time passwords (via Twilio, AWS SNS, or Vonage), and WebAuthn/FIDO2 passkeys for hardware security key and biometric authentication. Users can register multiple methods simultaneously. A comprehensive identity verification framework supports multiple verification methods (email OTP, TOTP, SMS OTP, WebAuthn, password) and is required for sensitive operations like email changes, password resets, and administrative actions.
 
-Account lockout protection automatically locks accounts after repeated failed login attempts, with configurable thresholds and durations. Rate limiting is applied to login, registration, password reset, and SMS endpoints to prevent abuse.
+Account lockout protection automatically locks accounts after repeated failed login attempts, with configurable thresholds and durations. Rate limiting is applied to login, registration, password reset, SMS, vault, session, and OAuth endpoints to prevent abuse.
+
+Impossible travel detection uses Haversine-based geo-velocity analysis to flag login attempts that would require physically impossible travel speeds between consecutive sessions. Logins within 50 km are skipped. When a suspicious login is detected, administrators are notified via the audit system.
 
 Password breach protection queries the HaveIBeenPwned API using k-Anonymity during registration, password change, and password reset. Only the first 5 characters of the SHA-1 hash are sent to the API, preserving privacy. Passwords found in known data breaches are rejected with a clear error message. If the HIBP API is unreachable, the check fails open to maintain availability. A real-time password strength meter powered by zxcvbn is displayed on all password forms (registration, reset, change), providing a five-level score (Very Weak through Very Strong) with contextual feedback and suggestions. Server-side password validation requires a minimum of 10 characters with lowercase, uppercase, and digit requirements.
 
@@ -74,23 +82,37 @@ Session monitoring allows administrators to view all active remote sessions acro
 
 Session recording can be enabled to capture SSH terminal sessions (in asciicast format) and RDP/VNC sessions (in Guacamole format). Recordings can be played back in-browser, analyzed for command extraction, and exported as video files. Recording retention is configurable with automatic cleanup.
 
+Tenant-level IP allowlists restrict which IP addresses and CIDR ranges are permitted to log in to a tenant. Configured by admins in Settings → Administration → IP Allowlist, the feature supports two enforcement modes: **flag** mode allows the login but appends an `UNTRUSTED_IP` flag to the audit log entry for later review, while **block** mode rejects the login with a 403 response and writes a `LOGIN_FAILURE` audit event with `reason: "ip_not_allowed"`. The allowlist is checked at every token-issuance point across all authentication paths: password login, TOTP, SMS MFA, WebAuthn, OAuth (Google, Microsoft, GitHub, OIDC), and SAML. An empty allowlist with the feature enabled means all IPs are untrusted (flag) or all are blocked — admins should always add their own IP before enabling block mode. Allowlist changes are recorded under the `TENANT_UPDATE` audit action. The Settings UI includes a chip-based CIDR input and a client-side "Test IP" tool. The three schema fields added to the `Tenant` model are `ipAllowlistEnabled` (Boolean, default false), `ipAllowlistMode` (String, default "flag"), and `ipAllowlistEntries` (String array). API endpoints: `GET /api/tenants/:id/ip-allowlist` and `PUT /api/tenants/:id/ip-allowlist` (admin only).
+
 Data Loss Prevention (DLP) policies control clipboard and file operations in RDP, VNC, and SSH sessions. Tenant-level policies set an organization-wide floor that applies to all connections, while per-connection DLP overrides can only be more restrictive (logical OR / most restrictive wins). Four controls are available: disable clipboard copy (remote to local), disable clipboard paste (local to remote), disable file download, and disable file upload. For RDP and VNC, clipboard restrictions are enforced via Guacamole protocol parameters (`disable-copy`, `disable-paste`) with additional client-side gating as defense-in-depth. RDP file transfer restrictions are enforced both via Guacamole parameters (`disable-download`, `disable-upload`) and server-side guards on the file upload/download API. For SSH sessions, clipboard restrictions are enforced client-side in the terminal (Ctrl+Shift+C for copy, Ctrl+Shift+V for paste), and SFTP file transfer restrictions are enforced server-side in the Socket.IO handler (authoritative) with client-side UI hiding of upload/download controls as defense-in-depth. When both download and upload are disabled, the file browser UI (drive for RDP, SFTP for SSH) is hidden entirely. DLP policy changes are tracked in the audit log under the `TENANT_DLP_POLICY_UPDATE` action.
 
 The native browser right-click context menu is globally suppressed across the entire authenticated UI to prevent access to browser functions (Save As, Print, Inspect) that could bypass DLP controls. Existing custom context menus in the sidebar (connections, folders, vault secrets) are unaffected as they already call `preventDefault()` and `stopPropagation()`. SSH terminal sessions provide a custom right-click context menu (`SessionContextMenu`) with DLP-aware Copy and Paste actions, SFTP file browser toggle, fullscreen toggle, and session disconnect. Copy and Paste menu items are disabled when the corresponding DLP policy flags are active. RDP and VNC sessions retain their native right-click forwarding to the remote machine; session-specific actions for these protocols (clipboard, special keys, screenshot, disconnect) are available via the docked edge toolbar.
 
 Browser-level exfiltration vectors are blocked as an additional DLP hardening layer in both development and production builds. DevTools shortcuts (F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C), View Source (Ctrl+U), Save Page (Ctrl+S), and Print (Ctrl+P) are all intercepted and suppressed. Ctrl+Shift+C is carved out when an SSH terminal is focused so the terminal's own DLP-aware copy handler processes it instead. Drag-and-drop from the page to external applications is also prevented. Text selection is disabled on UI chrome elements (AppBar, toolbar, tabs, sidebar, drawers) while remaining enabled in form inputs, text areas, and terminal/viewer content.
 
+## Connection Policy Enforcement
+
+Organization administrators can define enforced connection settings that override user and per-connection configurations for SSH, RDP, and VNC protocols. These policies are stored as a JSON field on the Tenant model and applied as the highest-priority layer in the settings merge chain (system defaults, user defaults, connection overrides, then tenant-enforced). On the client side, enforced fields are shown with a lock icon and cannot be modified by users. The policy is configured in the Organization tab of Settings and audited via the TENANT_CONNECTION_POLICY_UPDATE audit action.
+
 ## Infrastructure Management
 
 SSH gateways can be managed entirely by Arsenale through container orchestration. The platform supports Docker, Podman, and Kubernetes as orchestration backends, automatically detecting the available runtime. Managed gateways can be deployed, scaled, and monitored from the web interface.
 
-Auto-scaling automatically adjusts the number of gateway container instances based on active session counts, with configurable minimum and maximum replicas, sessions-per-instance thresholds, and scale-down cooldown periods. Load balancing distributes sessions across instances using round-robin or least-connections strategies.
+Auto-scaling automatically adjusts the number of gateway container instances based on active session counts, with configurable minimum and maximum replicas, sessions-per-instance thresholds, and scale-down cooldown periods. Load balancing distributes sessions across instances using a configurable strategy: round-robin or least-connections, selectable per gateway.
 
-SSH key pairs are managed at the tenant level with automatic rotation on configurable schedules. Keys can be pushed to gateway instances via an API sidecar, and private keys can be downloaded for manual configuration.
+SSH key pairs are managed at the tenant level with optional automatic rotation on configurable schedules (default 90 days). Auto-rotation can be enabled per key pair. Keys can be pushed to gateway instances via an API sidecar, and private keys can be downloaded for manual configuration.
 
 Gateway health monitoring continuously checks gateway availability with configurable intervals, reporting latency and status in real time through WebSocket updates.
 
 Gateway templates provide reusable configurations for quick deployment of new gateways with pre-configured auto-scaling, monitoring, and load balancing settings.
+
+## External Sync
+
+Sync profiles allow organizations to automatically import and synchronize connections from external data sources such as NetBox. Profiles are configured with a provider type, credentials, and mapping rules, then can be run on-demand or on a scheduled basis. Each sync run produces a log with created, updated, and deleted connection counts.
+
+## Admin CLI
+
+Arsenale includes a server-side CLI (`arsenale`) for administrative operations that can be run from the host or inside the container. The CLI provides commands for user management, tenant administration, and other platform operations without requiring web UI access.
 
 ## User Experience
 
@@ -102,7 +124,11 @@ Real-time notifications alert users to sharing events, secret expiry warnings, a
 
 OAuth single sign-on supports Google, Microsoft, GitHub, any OIDC-compliant identity provider (Authentik, Keycloak, Authelia, Zitadel), and SAML 2.0 identity providers (Azure AD/Entra ID, Okta, OneLogin, ADFS). Multiple identity providers can be linked to a single account.
 
-Email verification supports multiple providers including SMTP, SendGrid, Amazon SES, Resend, and Mailgun, with automatic console logging in development environments.
+LDAP authentication allows organizations to authenticate users against an existing LDAP/Active Directory server. LDAP integration supports STARTTLS, TLS certificate validation, group-based access control, automatic user provisioning on first login, and periodic background synchronization to keep user attributes and group memberships current.
+
+Platform administrators can control self-registration (sign-up) via a toggle in the admin panel, which can also be locked at the environment level.
+
+Email verification supports multiple providers including SMTP, SendGrid, Amazon SES, Resend, and Mailgun, with automatic console logging in development environments. Administrators can view provider status and send test emails from the settings panel.
 
 Connection import and export supports CSV, JSON, mRemoteNG configuration files, and RDP files for easy migration from other tools.
 

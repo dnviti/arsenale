@@ -4,6 +4,9 @@ export interface EmailStatus {
   provider: string;
   configured: boolean;
   from: string;
+  host?: string;
+  port?: number;
+  secure?: boolean;
 }
 
 export async function getEmailStatus(): Promise<EmailStatus> {

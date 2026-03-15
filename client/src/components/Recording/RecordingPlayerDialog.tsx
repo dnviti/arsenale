@@ -1,16 +1,20 @@
 import { useState } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, Box, IconButton, Typography,
-  Chip, Tooltip,
+  Chip, Tooltip, CircularProgress, Collapse, Table, TableBody, TableRow,
+  TableCell, Alert,
 } from '@mui/material';
 import {
   Close as CloseIcon,
   Fullscreen as FullscreenIcon,
   FullscreenExit as FullscreenExitIcon,
   OpenInNew as OpenInNewIcon,
+  Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 import type { Recording } from '../../api/recordings.api';
+import { analyzeRecording, type RecordingAnalysis } from '../../api/recordings.api';
 import { openRecordingWindow } from '../../utils/openRecordingWindow';
+import { extractApiError } from '../../utils/apiError';
 import GuacPlayer from './GuacPlayer';
 import SshPlayer from './SshPlayer';
 
@@ -33,6 +37,10 @@ export default function RecordingPlayerDialog({
   open, onClose, recording,
 }: RecordingPlayerDialogProps) {
   const [fullScreen, setFullScreen] = useState(false);
+  const [analysis, setAnalysis] = useState<RecordingAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState('');
+  const [showAnalysis, setShowAnalysis] = useState(false);
 
   if (!recording) return null;
 
@@ -44,6 +52,22 @@ export default function RecordingPlayerDialog({
   const contentHeight = isSsh
     ? Math.max((recording.height || 24) * 9, 432)
     : (recording.height || 768);
+
+  const handleAnalyze = async () => {
+    if (!recording) return;
+    if (analysis) { setShowAnalysis((v) => !v); return; }
+    setAnalyzing(true);
+    setAnalysisError('');
+    try {
+      const result = await analyzeRecording(recording.id);
+      setAnalysis(result);
+      setShowAnalysis(true);
+    } catch (err: unknown) {
+      setAnalysisError(extractApiError(err, 'Failed to analyze recording'));
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const handleOpenInNewWindow = () => {
     openRecordingWindow(recording.id, recording.width, recording.height);
@@ -78,6 +102,13 @@ export default function RecordingPlayerDialog({
           size="small"
           color={protocolColor(recording.protocol) as 'success' | 'primary' | 'warning' | 'default'}
         />
+        {!isSsh && (
+          <Tooltip title={analysis ? (showAnalysis ? 'Hide analysis' : 'Show analysis') : 'Analyze recording'}>
+            <IconButton onClick={handleAnalyze} size="small" disabled={analyzing}>
+              {analyzing ? <CircularProgress size={18} /> : <AnalyticsIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        )}
         <Tooltip title="Open in new window">
           <IconButton onClick={handleOpenInNewWindow} size="small">
             <OpenInNewIcon fontSize="small" />
@@ -93,6 +124,26 @@ export default function RecordingPlayerDialog({
         </IconButton>
       </DialogTitle>
       <DialogContent dividers sx={{ p: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {analysisError && <Alert severity="error" sx={{ m: 1 }}>{analysisError}</Alert>}
+        <Collapse in={showAnalysis && !!analysis}>
+          {analysis && (
+            <Box sx={{ p: 2, bgcolor: 'action.hover', maxHeight: 200, overflow: 'auto' }}>
+              <Typography variant="subtitle2" gutterBottom>Recording Analysis</Typography>
+              <Table size="small">
+                <TableBody>
+                  <TableRow><TableCell>File Size</TableCell><TableCell>{(analysis.fileSize / 1024 / 1024).toFixed(2)} MB</TableCell></TableRow>
+                  <TableRow><TableCell>Display</TableCell><TableCell>{analysis.displayWidth} x {analysis.displayHeight}</TableCell></TableRow>
+                  <TableRow><TableCell>Sync Frames</TableCell><TableCell>{analysis.syncCount}</TableCell></TableRow>
+                  <TableRow><TableCell>Has Display Data</TableCell><TableCell>{analysis.hasLayer0Image ? 'Yes' : 'No'}</TableCell></TableRow>
+                  <TableRow><TableCell>Truncated</TableCell><TableCell>{analysis.truncated ? 'Yes (>10MB)' : 'No'}</TableCell></TableRow>
+                  {Object.entries(analysis.instructions).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([op, count]) => (
+                    <TableRow key={op}><TableCell sx={{ pl: 3 }}>{op}</TableCell><TableCell>{count.toLocaleString()}</TableCell></TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Box>
+          )}
+        </Collapse>
         <Box
           sx={{
             flex: 1,

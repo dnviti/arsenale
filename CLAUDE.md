@@ -80,7 +80,7 @@ Layered architecture: **Routes → Controllers → Services → Prisma ORM**
 - `client/src/pages/` — Page components (Login, Register, Dashboard)
 - `client/src/components/` — UI components (Layout, RDP viewer, Terminal, Dialogs, Tabs)
 - `client/src/hooks/` — Custom hooks (`useAuth`, `useSocket`)
-- UI framework: Material-UI (MUI) v6
+- UI framework: Material-UI (MUI) v7
 
 ### Browser Extension (Chrome Manifest V3)
 

@@ -8,7 +8,7 @@ import { setRefreshTokenCookie, setCsrfCookie } from '../utils/cookie';
 import { logger } from '../utils/logger';
 import { getClientIp } from '../utils/ip';
 import { getRequestBinding } from '../utils/tokenBinding';
-import type { CreateTenantInput, UpdateTenantInput, InviteUserInput, UpdateRoleInput, CreateUserInput, ToggleUserEnabledInput, AdminChangeEmailInput, AdminChangePasswordInput, UpdateMembershipExpiryInput } from '../schemas/tenant.schemas';
+import type { CreateTenantInput, UpdateTenantInput, InviteUserInput, UpdateRoleInput, CreateUserInput, ToggleUserEnabledInput, AdminChangeEmailInput, AdminChangePasswordInput, UpdateMembershipExpiryInput, IpAllowlistInput } from '../schemas/tenant.schemas';
 
 export async function createTenant(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
@@ -64,6 +64,14 @@ export async function updateTenant(req: AuthRequest, res: Response) {
       userId: req.user.userId, action: 'TENANT_DLP_POLICY_UPDATE',
       targetType: 'Tenant', targetId: tenantId,
       details: Object.fromEntries(dlpChanges.map((f) => [f, data[f]])),
+      ipAddress: getClientIp(req),
+    });
+  }
+  if (data.enforcedConnectionSettings !== undefined) {
+    auditService.log({
+      userId: req.user.userId, action: 'TENANT_CONNECTION_POLICY_UPDATE',
+      targetType: 'Tenant', targetId: tenantId,
+      details: { enforcedConnectionSettings: data.enforcedConnectionSettings },
       ipAddress: getClientIp(req),
     });
   }
@@ -247,4 +255,27 @@ export async function updateMembershipExpiry(req: AuthRequest, res: Response) {
     ipAddress: getClientIp(req),
   });
   res.json(result);
+}
+
+export async function getIpAllowlist(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const tenantId = req.params.id as string;
+  const data = await tenantService.getIpAllowlist(tenantId);
+  res.json(data);
+}
+
+export async function updateIpAllowlist(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const tenantId = req.params.id as string;
+  const { enabled, mode, entries } = req.body as IpAllowlistInput;
+  const data = await tenantService.updateIpAllowlist(tenantId, { enabled, mode, entries });
+  auditService.log({
+    userId: req.user.userId,
+    action: 'TENANT_UPDATE',
+    targetType: 'Tenant',
+    targetId: tenantId,
+    details: { field: 'ipAllowlist', enabled, mode, entriesCount: entries.length },
+    ipAddress: getClientIp(req),
+  });
+  res.json(data);
 }

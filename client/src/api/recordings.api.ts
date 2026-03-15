@@ -64,3 +64,18 @@ export async function exportRecordingVideo(id: string): Promise<Blob> {
   });
   return data;
 }
+
+export interface RecordingAnalysis {
+  fileSize: number;
+  truncated: boolean;
+  instructions: Record<string, number>;
+  syncCount: number;
+  displayWidth: number;
+  displayHeight: number;
+  hasLayer0Image: boolean;
+}
+
+export async function analyzeRecording(id: string): Promise<RecordingAnalysis> {
+  const { data } = await api.get<RecordingAnalysis>(`/recordings/${id}/analyze`);
+  return data;
+}

@@ -14,6 +14,7 @@ import { initiateIdentityVerification, type VerificationMethod } from '../../api
 import InviteDialog from '../Dialogs/InviteDialog';
 import CreateUserDialog from '../Dialogs/CreateUserDialog';
 import IdentityVerification from '../common/IdentityVerification';
+import VaultProvidersSection from './VaultProvidersSection';
 import { extractApiError } from '../../utils/apiError';
 import { ALL_ROLES, ROLE_LABELS, isAdminOrAbove, type TenantRole } from '../../utils/roles';
 
@@ -58,9 +59,16 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
   const [mfaError, setMfaError] = useState('');
   const [mfaConfirmOpen, setMfaConfirmOpen] = useState(false);
   const [mfaStats, setMfaStats] = useState<{ total: number; withoutMfa: number } | null>(null);
+  const [mfaDashboard, setMfaDashboard] = useState<{ total: number; withoutMfa: number } | null>(null);
   const [vaultAutoLockMax, setVaultAutoLockMax] = useState<string>('none');
   const [savingVaultLock, setSavingVaultLock] = useState(false);
   const [vaultLockError, setVaultLockError] = useState('');
+  const [maxConcurrentSessions, setMaxConcurrentSessions] = useState<string>('0');
+  const [savingConcurrentSessions, setSavingConcurrentSessions] = useState(false);
+  const [concurrentSessionsError, setConcurrentSessionsError] = useState('');
+  const [absoluteSessionTimeout, setAbsoluteSessionTimeout] = useState<string>('43200');
+  const [savingAbsoluteTimeout, setSavingAbsoluteTimeout] = useState(false);
+  const [absoluteTimeoutError, setAbsoluteTimeoutError] = useState('');
   const [dlpDisableCopy, setDlpDisableCopy] = useState(false);
   const [dlpDisablePaste, setDlpDisablePaste] = useState(false);
   const [dlpDisableDownload, setDlpDisableDownload] = useState(false);
@@ -118,13 +126,18 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
       setSessionTimeout(String(Math.floor(tenant.defaultSessionTimeoutSeconds / 60)));
       setMfaRequired(tenant.mfaRequired);
       setVaultAutoLockMax(tenant.vaultAutoLockMaxMinutes == null ? 'none' : String(tenant.vaultAutoLockMaxMinutes));
+      setMaxConcurrentSessions(String(tenant.maxConcurrentSessions));
+      setAbsoluteSessionTimeout(String(tenant.absoluteSessionTimeoutSeconds));
       setDlpDisableCopy(tenant.dlpDisableCopy);
       setDlpDisablePaste(tenant.dlpDisablePaste);
       setDlpDisableDownload(tenant.dlpDisableDownload);
       setDlpDisableUpload(tenant.dlpDisableUpload);
       fetchUsers();
+      if (isAdmin) {
+        getTenantMfaStats(tenant.id).then(setMfaDashboard).catch(() => {});
+      }
     }
-  }, [tenant, fetchUsers]);
+  }, [tenant, fetchUsers, isAdmin]);
 
   const handleSaveName = async () => {
     if (!editName.trim() || editName.trim().length < 2) {
@@ -468,6 +481,26 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
           {isAdmin && (
             <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
               <Typography variant="subtitle2" gutterBottom>Security Policy</Typography>
+              {mfaDashboard && (
+                <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    MFA Adoption
+                  </Typography>
+                  <Stack direction="row" spacing={2} alignItems="center">
+                    <Chip
+                      label={`${mfaDashboard.total - mfaDashboard.withoutMfa} / ${mfaDashboard.total} users`}
+                      color={mfaDashboard.withoutMfa === 0 ? 'success' : 'warning'}
+                      variant="outlined"
+                      size="small"
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                      {mfaDashboard.withoutMfa === 0
+                        ? 'All members have MFA configured'
+                        : `${mfaDashboard.withoutMfa} member${mfaDashboard.withoutMfa > 1 ? 's' : ''} without MFA`}
+                    </Typography>
+                  </Stack>
+                </Box>
+              )}
               {mfaError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setMfaError('')}>{mfaError}</Alert>}
               <FormControlLabel
                 control={
@@ -514,6 +547,75 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
                 </Select>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
                   When set, members cannot configure a vault auto-lock timeout exceeding this value or disable auto-lock.
+                </Typography>
+              </Box>
+
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>Max concurrent sessions per user</Typography>
+                {concurrentSessionsError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setConcurrentSessionsError('')}>{concurrentSessionsError}</Alert>}
+                <Select
+                  value={maxConcurrentSessions}
+                  size="small"
+                  disabled={savingConcurrentSessions}
+                  onChange={async (e) => {
+                    const val = e.target.value as string;
+                    setConcurrentSessionsError('');
+                    setSavingConcurrentSessions(true);
+                    try {
+                      await updateTenant({ maxConcurrentSessions: Number(val) });
+                      setMaxConcurrentSessions(val);
+                    } catch (err: unknown) {
+                      setConcurrentSessionsError(extractApiError(err, 'Failed to update concurrent session limit'));
+                    } finally {
+                      setSavingConcurrentSessions(false);
+                    }
+                  }}
+                  sx={{ minWidth: 200 }}
+                >
+                  <MenuItem value="0">Unlimited</MenuItem>
+                  <MenuItem value="1">1 session</MenuItem>
+                  <MenuItem value="2">2 sessions</MenuItem>
+                  <MenuItem value="3">3 sessions</MenuItem>
+                  <MenuItem value="5">5 sessions</MenuItem>
+                  <MenuItem value="10">10 sessions</MenuItem>
+                </Select>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                  When exceeded, the oldest session is automatically terminated. Set to Unlimited to disable.
+                </Typography>
+              </Box>
+
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>Absolute session timeout</Typography>
+                {absoluteTimeoutError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setAbsoluteTimeoutError('')}>{absoluteTimeoutError}</Alert>}
+                <Select
+                  value={absoluteSessionTimeout}
+                  size="small"
+                  disabled={savingAbsoluteTimeout}
+                  onChange={async (e) => {
+                    const val = e.target.value as string;
+                    setAbsoluteTimeoutError('');
+                    setSavingAbsoluteTimeout(true);
+                    try {
+                      await updateTenant({ absoluteSessionTimeoutSeconds: Number(val) });
+                      setAbsoluteSessionTimeout(val);
+                    } catch (err: unknown) {
+                      setAbsoluteTimeoutError(extractApiError(err, 'Failed to update absolute session timeout'));
+                    } finally {
+                      setSavingAbsoluteTimeout(false);
+                    }
+                  }}
+                  sx={{ minWidth: 200 }}
+                >
+                  <MenuItem value="0">Disabled</MenuItem>
+                  <MenuItem value="3600">1 hour</MenuItem>
+                  <MenuItem value="14400">4 hours</MenuItem>
+                  <MenuItem value="28800">8 hours</MenuItem>
+                  <MenuItem value="43200">12 hours</MenuItem>
+                  <MenuItem value="86400">24 hours</MenuItem>
+                  <MenuItem value="604800">7 days</MenuItem>
+                </Select>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                  Forces re-authentication after this duration, regardless of user activity. Disabled means no forced re-login.
                 </Typography>
               </Box>
 
@@ -571,6 +673,15 @@ export default function TenantSection({ onNavigateToTab, onViewUserProfile }: Te
           )}
         </CardContent>
       </Card>
+
+      {/* External Vault Providers */}
+      {isAdmin && tenant && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <VaultProvidersSection tenantId={tenant.id} />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Members */}
       <Card sx={{ mb: 3 }}>

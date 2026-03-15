@@ -55,6 +55,16 @@ export default tseslint.config(
     },
   },
 
+  // ── Test file relaxations ──────────────────────────────────────
+  {
+    files: ["**/*.test.ts", "**/*.test.tsx"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-non-null-assertion": "off",
+      "no-console": "off",
+    },
+  },
+
   // ── Client-specific rules (React) ─────────────────────────────
   {
     files: ["client/src/**/*.{ts,tsx}"],

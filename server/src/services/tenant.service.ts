@@ -1,5 +1,5 @@
 import prisma from '../lib/prisma';
-import { TenantRole } from '../generated/prisma/client';
+import { Prisma, TenantRole } from '../generated/prisma/client';
 import bcrypt from 'bcrypt';
 import { TenantRoleType } from '../types';
 import { AppError } from '../middleware/error.middleware';
@@ -109,11 +109,14 @@ export async function getTenant(tenantId: string) {
     slug: tenant.slug,
     mfaRequired: tenant.mfaRequired,
     defaultSessionTimeoutSeconds: tenant.defaultSessionTimeoutSeconds,
+    maxConcurrentSessions: tenant.maxConcurrentSessions,
+    absoluteSessionTimeoutSeconds: tenant.absoluteSessionTimeoutSeconds,
     vaultAutoLockMaxMinutes: tenant.vaultAutoLockMaxMinutes,
     dlpDisableCopy: tenant.dlpDisableCopy,
     dlpDisablePaste: tenant.dlpDisablePaste,
     dlpDisableDownload: tenant.dlpDisableDownload,
     dlpDisableUpload: tenant.dlpDisableUpload,
+    enforcedConnectionSettings: tenant.enforcedConnectionSettings,
     userCount: tenant._count.members,
     teamCount: tenant._count.teams,
     createdAt: tenant.createdAt,
@@ -124,12 +127,15 @@ export async function getTenant(tenantId: string) {
 export async function updateTenant(tenantId: string, data: {
   name?: string;
   defaultSessionTimeoutSeconds?: number;
+  maxConcurrentSessions?: number;
+  absoluteSessionTimeoutSeconds?: number;
   mfaRequired?: boolean;
   vaultAutoLockMaxMinutes?: number | null;
   dlpDisableCopy?: boolean;
   dlpDisablePaste?: boolean;
   dlpDisableDownload?: boolean;
   dlpDisableUpload?: boolean;
+  enforcedConnectionSettings?: Prisma.InputJsonValue | null;
 }) {
   const updateData: Record<string, unknown> = {};
 
@@ -139,6 +145,12 @@ export async function updateTenant(tenantId: string, data: {
   }
   if (data.defaultSessionTimeoutSeconds !== undefined) {
     updateData.defaultSessionTimeoutSeconds = data.defaultSessionTimeoutSeconds;
+  }
+  if (data.maxConcurrentSessions !== undefined) {
+    updateData.maxConcurrentSessions = data.maxConcurrentSessions;
+  }
+  if (data.absoluteSessionTimeoutSeconds !== undefined) {
+    updateData.absoluteSessionTimeoutSeconds = data.absoluteSessionTimeoutSeconds;
   }
   if (data.mfaRequired !== undefined) {
     updateData.mfaRequired = data.mfaRequired;
@@ -158,6 +170,11 @@ export async function updateTenant(tenantId: string, data: {
   if (data.dlpDisableUpload !== undefined) {
     updateData.dlpDisableUpload = data.dlpDisableUpload;
   }
+  if (data.enforcedConnectionSettings !== undefined) {
+    updateData.enforcedConnectionSettings = data.enforcedConnectionSettings === null
+      ? Prisma.JsonNull
+      : data.enforcedConnectionSettings;
+  }
 
   if (Object.keys(updateData).length === 0) {
     throw new AppError('No fields to update', 400);
@@ -174,11 +191,14 @@ export async function updateTenant(tenantId: string, data: {
     slug: tenant.slug,
     mfaRequired: tenant.mfaRequired,
     defaultSessionTimeoutSeconds: tenant.defaultSessionTimeoutSeconds,
+    maxConcurrentSessions: tenant.maxConcurrentSessions,
+    absoluteSessionTimeoutSeconds: tenant.absoluteSessionTimeoutSeconds,
     vaultAutoLockMaxMinutes: tenant.vaultAutoLockMaxMinutes,
     dlpDisableCopy: tenant.dlpDisableCopy,
     dlpDisablePaste: tenant.dlpDisablePaste,
     dlpDisableDownload: tenant.dlpDisableDownload,
     dlpDisableUpload: tenant.dlpDisableUpload,
+    enforcedConnectionSettings: tenant.enforcedConnectionSettings,
     updatedAt: tenant.updatedAt,
   };
 }
@@ -828,4 +848,37 @@ export async function listUserTenants(userId: string) {
     isActive: m.isActive,
     joinedAt: m.joinedAt,
   }));
+}
+
+export async function getIpAllowlist(tenantId: string) {
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { ipAllowlistEnabled: true, ipAllowlistMode: true, ipAllowlistEntries: true },
+  });
+  if (!tenant) throw new AppError('Organization not found', 404);
+  return {
+    enabled: tenant.ipAllowlistEnabled ?? false,
+    mode: (tenant.ipAllowlistMode ?? 'flag') as 'flag' | 'block',
+    entries: tenant.ipAllowlistEntries ?? [],
+  };
+}
+
+export async function updateIpAllowlist(
+  tenantId: string,
+  payload: { enabled: boolean; mode: 'flag' | 'block'; entries: string[] },
+) {
+  const tenant = await prisma.tenant.update({
+    where: { id: tenantId },
+    data: {
+      ipAllowlistEnabled: payload.enabled,
+      ipAllowlistMode: payload.mode,
+      ipAllowlistEntries: payload.entries,
+    },
+    select: { ipAllowlistEnabled: true, ipAllowlistMode: true, ipAllowlistEntries: true },
+  });
+  return {
+    enabled: tenant.ipAllowlistEnabled ?? false,
+    mode: (tenant.ipAllowlistMode ?? 'flag') as 'flag' | 'block',
+    entries: tenant.ipAllowlistEntries ?? [],
+  };
 }
