@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Box, Alert,
   FormControl, InputLabel, Select, MenuItem, FormControlLabel, Checkbox,
@@ -262,68 +262,72 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     if (!ok) setTunnelError('Failed to revoke tunnel token');
   };
 
+  const gatewayId = gateway?.id;
+
   const fetchTunnelEvents = useCallback(async () => {
-    if (!gateway) return;
+    if (!gatewayId) return;
     setTunnelEventsLoading(true);
     try {
-      const { events } = await getTunnelEventsApi(gateway.id);
+      const { events } = await getTunnelEventsApi(gatewayId);
       setTunnelEvents(events);
     } catch (err) {
       setTunnelError(extractApiError(err, 'Failed to load tunnel events'));
     } finally {
       setTunnelEventsLoading(false);
     }
-  }, [gateway]);
+  }, [gatewayId]);
 
   const fetchTunnelMetrics = useCallback(async () => {
-    if (!gateway) return;
+    if (!gatewayId) return;
     setTunnelMetricsLoading(true);
     try {
-      const metrics = await getTunnelMetricsApi(gateway.id);
+      const metrics = await getTunnelMetricsApi(gatewayId);
       setTunnelMetrics(metrics);
     } catch {
       setTunnelMetrics(null);
     } finally {
       setTunnelMetricsLoading(false);
     }
-  }, [gateway]);
+  }, [gatewayId]);
 
   // Fetch tunnel events and metrics when dialog opens with a tunnel-enabled gateway
   useEffect(() => {
-    if (open && gateway && isTunnelEnabled) {
+    if (open && gatewayId && isTunnelEnabled) {
       fetchTunnelEvents();
       if (isTunnelConnected) {
         fetchTunnelMetrics();
       }
     }
-  }, [open, gateway, isTunnelEnabled, isTunnelConnected, fetchTunnelEvents, fetchTunnelMetrics]);
+  }, [open, gatewayId, isTunnelEnabled, isTunnelConnected, fetchTunnelEvents, fetchTunnelMetrics]);
 
-  const handleForceDisconnect = async () => {
-    if (!gateway) return;
+  const handleForceDisconnect = useCallback(async () => {
+    if (!gatewayId) return;
     setDisconnectConfirmOpen(false);
     setTunnelError('');
     const ok = await runTunnelAction(async () => {
-      await forceDisconnectApi(gateway.id);
+      await forceDisconnectApi(gatewayId);
     }, 'Failed to disconnect tunnel');
     if (ok) {
       // Refresh gateway list to update connected status
       await useGatewayStore.getState().fetchGateways();
     }
-  };
+  }, [gatewayId, runTunnelAction]);
 
-  const buildDockerCommand = (token: string): string => {
-    const serverUrl = window.location.origin;
+  const serverUrl = window.location.origin;
+
+  const dockerCommand = useMemo(() => {
+    if (!tunnelToken) return '';
     return [
       'docker run -d --restart=unless-stopped \\',
-      `  -e TUNNEL_TOKEN="${token}" \\`,
+      `  -e TUNNEL_TOKEN="${tunnelToken}" \\`,
       `  -e TUNNEL_SERVER_URL="${serverUrl}" \\`,
-      `  -e TUNNEL_GATEWAY_ID="${gateway?.id ?? ''}" \\`,
+      `  -e TUNNEL_GATEWAY_ID="${gatewayId ?? ''}" \\`,
       '  arsenale/tunnel-agent:latest',
     ].join('\n');
-  };
+  }, [tunnelToken, serverUrl, gatewayId]);
 
-  const buildDockerCompose = (token: string): string => {
-    const serverUrl = window.location.origin;
+  const dockerCompose = useMemo(() => {
+    if (!tunnelToken) return '';
     return [
       'services:',
       '  arsenale-gateway:',
@@ -331,14 +335,14 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       '    restart: always',
       '    environment:',
       `      TUNNEL_SERVER_URL: "${serverUrl}"`,
-      `      TUNNEL_TOKEN: "${token}"`,
-      `      TUNNEL_GATEWAY_ID: "${gateway?.id ?? ''}"`,
+      `      TUNNEL_TOKEN: "${tunnelToken}"`,
+      `      TUNNEL_GATEWAY_ID: "${gatewayId ?? ''}"`,
       '      TUNNEL_LOCAL_PORT: "4822"',
     ].join('\n');
-  };
+  }, [tunnelToken, serverUrl, gatewayId]);
 
-  const buildSystemdUnit = (token: string): string => {
-    const serverUrl = window.location.origin;
+  const systemdUnit = useMemo(() => {
+    if (!tunnelToken) return '';
     return [
       '[Unit]',
       'Description=Arsenale Tunnel Agent',
@@ -350,15 +354,15 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       'Restart=always',
       'RestartSec=5',
       `Environment=TUNNEL_SERVER_URL=${serverUrl}`,
-      `Environment=TUNNEL_TOKEN=${token}`,
-      `Environment=TUNNEL_GATEWAY_ID=${gateway?.id ?? ''}`,
+      `Environment=TUNNEL_TOKEN=${tunnelToken}`,
+      `Environment=TUNNEL_GATEWAY_ID=${gatewayId ?? ''}`,
       'Environment=TUNNEL_LOCAL_PORT=4822',
       'ExecStart=/usr/local/bin/arsenale-tunnel-agent',
       '',
       '[Install]',
       'WantedBy=multi-user.target',
     ].join('\n');
-  };
+  }, [tunnelToken, serverUrl, gatewayId]);
 
   const formatUptime = (connectedAt: string): string => {
     const diff = Date.now() - new Date(connectedAt).getTime();
@@ -783,7 +787,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                           {tunnelToken ? (
                             <>
                               <TextField
-                                value={buildDockerCommand(tunnelToken)}
+                                value={dockerCommand}
                                 multiline
                                 minRows={3}
                                 size="small"
@@ -793,7 +797,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                               <Button
                                 size="small"
                                 startIcon={<CopyIcon />}
-                                onClick={() => copyCmd(buildDockerCommand(tunnelToken))}
+                                onClick={() => copyCmd(dockerCommand)}
                               >
                                 {cmdCopied ? 'Copied!' : 'Copy Docker Command'}
                               </Button>
@@ -1013,7 +1017,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                               <Box>
                                 <Typography variant="caption" fontWeight={500}>Docker Compose</Typography>
                                 <TextField
-                                  value={buildDockerCompose(tunnelToken)}
+                                  value={dockerCompose}
                                   multiline
                                   minRows={3}
                                   size="small"
@@ -1022,7 +1026,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                                   sx={{ mt: 0.5 }}
                                 />
                                 <Tooltip title={composeCopied ? 'Copied!' : 'Copy to clipboard'}>
-                                  <IconButton size="small" onClick={() => copyCompose(buildDockerCompose(tunnelToken))} sx={{ mt: 0.5 }}>
+                                  <IconButton size="small" onClick={() => copyCompose(dockerCompose)} sx={{ mt: 0.5 }}>
                                     <CopyIcon fontSize="small" />
                                   </IconButton>
                                 </Tooltip>
@@ -1032,7 +1036,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                               <Box>
                                 <Typography variant="caption" fontWeight={500}>Systemd Unit</Typography>
                                 <TextField
-                                  value={buildSystemdUnit(tunnelToken)}
+                                  value={systemdUnit}
                                   multiline
                                   minRows={3}
                                   size="small"
@@ -1041,7 +1045,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                                   sx={{ mt: 0.5 }}
                                 />
                                 <Tooltip title={systemdCopied ? 'Copied!' : 'Copy to clipboard'}>
-                                  <IconButton size="small" onClick={() => copySystemd(buildSystemdUnit(tunnelToken))} sx={{ mt: 0.5 }}>
+                                  <IconButton size="small" onClick={() => copySystemd(systemdUnit)} sx={{ mt: 0.5 }}>
                                     <CopyIcon fontSize="small" />
                                   </IconButton>
                                 </Tooltip>

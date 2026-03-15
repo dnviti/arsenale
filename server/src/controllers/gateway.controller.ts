@@ -564,14 +564,7 @@ export async function getTunnelEvents(req: AuthRequest, res: Response) {
 export async function getTunnelMetrics(req: AuthRequest, res: Response) {
   assertTenantAuthenticated(req);
   const gatewayId = req.params.id as string;
-
-  // Verify gateway belongs to tenant
-  const gateway = await prisma.gateway.findFirst({
-    where: { id: gatewayId, tenantId: req.user.tenantId },
-  });
-  if (!gateway) throw new AppError('Gateway not found', 404);
-
-  const info = gatewayService.getTunnelMetrics(req.user.tenantId, gatewayId);
+  const info = await gatewayService.getTunnelMetrics(req.user.tenantId, gatewayId);
   res.json(info ?? { connected: false });
 }
 
