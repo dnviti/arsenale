@@ -1,4 +1,4 @@
-import prisma from '../lib/prisma';
+import prisma, { Prisma } from '../lib/prisma';
 import type { AccessPolicyTargetType } from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
 
@@ -20,19 +20,18 @@ export interface AccessPolicyData {
  */
 export async function listPolicies(tenantId: string): Promise<AccessPolicyData[]> {
   // Gather target IDs belonging to this tenant
-  const teamIds = await prisma.team
-    .findMany({ where: { tenantId }, select: { id: true } })
-    .then((rows: Array<{ id: string }>) => rows.map((r: { id: string }) => r.id));
+  const teamRows = await prisma.team.findMany({ where: { tenantId }, select: { id: true } });
+  const teamIds = teamRows.map((r: { id: string }) => r.id);
 
   // Folders belong to teams (team folders) or users. For tenant scope,
   // fetch folders whose team belongs to this tenant.
-  const folderIds = teamIds.length > 0
-    ? await prisma.folder
-        .findMany({ where: { teamId: { in: teamIds } }, select: { id: true } })
-        .then((rows: Array<{ id: string }>) => rows.map((r: { id: string }) => r.id))
-    : [];
+  let folderIds: string[] = [];
+  if (teamIds.length > 0) {
+    const folderRows = await prisma.folder.findMany({ where: { teamId: { in: teamIds } }, select: { id: true } });
+    folderIds = folderRows.map((r: { id: string }) => r.id);
+  }
 
-  const orConditions: Array<{ targetType: AccessPolicyTargetType; targetId: string } | { targetType: AccessPolicyTargetType; targetId: { in: string[] } }> = [
+  const orConditions: Prisma.AccessPolicyWhereInput[] = [
     { targetType: 'TENANT', targetId: tenantId },
   ];
   if (teamIds.length > 0) {
@@ -50,6 +49,7 @@ export async function listPolicies(tenantId: string): Promise<AccessPolicyData[]
 
 /**
  * Create a new access policy with target validation.
+ * Prevents duplicate policies for the same (targetType, targetId) pair.
  */
 export async function createPolicy(
   tenantId: string,
@@ -62,6 +62,14 @@ export async function createPolicy(
   },
 ): Promise<AccessPolicyData> {
   await validateTarget(tenantId, data.targetType, data.targetId);
+
+  // Prevent duplicate policies for the same target
+  const existing = await prisma.accessPolicy.findFirst({
+    where: { targetType: data.targetType, targetId: data.targetId },
+  });
+  if (existing) {
+    throw new AppError('A policy already exists for this target. Edit the existing policy instead.', 409);
+  }
 
   return prisma.accessPolicy.create({
     data: {

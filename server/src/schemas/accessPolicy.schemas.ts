@@ -14,10 +14,14 @@ function isValidTimeWindow(w: string): boolean {
   return true;
 }
 
-const timeWindowsString = z.string().refine(
-  (val) => val.split(',').map((w) => w.trim()).every(isValidTimeWindow),
-  { message: 'Each time window must be in "HH:MM-HH:MM" format (hours 0-23, minutes 0-59)' },
-);
+const timeWindowsString = z.string()
+  .transform((val) => val.trim() || null)
+  .pipe(
+    z.string().refine(
+      (val) => val.split(',').map((w) => w.trim()).every(isValidTimeWindow),
+      { message: 'Each time window must be in "HH:MM-HH:MM" format (hours 0-23, minutes 0-59)' },
+    ).nullable(),
+  );
 
 export const createAccessPolicySchema = z.object({
   targetType: z.enum(['TENANT', 'TEAM', 'FOLDER']),

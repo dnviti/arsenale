@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Card, CardContent, Typography, Box, Button, Alert, CircularProgress,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -14,6 +14,7 @@ import { listTeams, type TeamData } from '../../api/team.api';
 import { listFolders, type FolderData } from '../../api/folders.api';
 import type { AccessPolicyData, AccessPolicyTargetType, CreateAccessPolicyInput } from '../../api/accessPolicy.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { isAdminOrAbove } from '../../utils/roles';
 
 // eslint-disable-next-line security/detect-unsafe-regex
 const TIME_WINDOW_RE = /^(\d{2}:\d{2}-\d{2}:\d{2})(,\s*\d{2}:\d{2}-\d{2}:\d{2})*$/;
@@ -62,8 +63,11 @@ export default function AccessPolicySection() {
   const user = useAuthStore((s) => s.user);
   const tenantId = user?.tenantId;
 
+  const isAdmin = isAdminOrAbove(user?.tenantRole);
+
   const policies = useAccessPolicyStore((s) => s.policies);
   const loading = useAccessPolicyStore((s) => s.loading);
+  const fetchError = useAccessPolicyStore((s) => s.error);
   const fetchPolicies = useAccessPolicyStore((s) => s.fetchPolicies);
   const createPolicyAction = useAccessPolicyStore((s) => s.createPolicy);
   const updatePolicyAction = useAccessPolicyStore((s) => s.updatePolicy);
@@ -98,14 +102,14 @@ export default function AccessPolicySection() {
     return map;
   }, [tenantId, teams, folders]);
 
-  const handleOpenCreate = () => {
+  const handleOpenCreate = useCallback(() => {
     setEditingPolicy(null);
     setForm({ ...emptyForm, targetId: tenantId ?? '' });
     setFormError('');
     setDialogOpen(true);
-  };
+  }, [tenantId]);
 
-  const handleOpenEdit = (policy: AccessPolicyData) => {
+  const handleOpenEdit = useCallback((policy: AccessPolicyData) => {
     setEditingPolicy(policy);
     setForm({
       targetType: policy.targetType,
@@ -116,12 +120,12 @@ export default function AccessPolicySection() {
     });
     setFormError('');
     setDialogOpen(true);
-  };
+  }, []);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setDialogOpen(false);
     setEditingPolicy(null);
-  };
+  }, []);
 
   const handleSave = async () => {
     // Validate time windows
@@ -192,7 +196,7 @@ export default function AccessPolicySection() {
     );
   }
 
-  if (!tenantId) return null;
+  if (!tenantId || !isAdmin) return null;
 
   return (
     <>
@@ -216,7 +220,11 @@ export default function AccessPolicySection() {
             Policies are additive -- all applicable policies must pass (most restrictive wins).
           </Typography>
 
-          {policies.length === 0 ? (
+          {fetchError && (
+            <Alert severity="error" sx={{ mb: 2 }}>{fetchError}</Alert>
+          )}
+
+          {policies.length === 0 && !fetchError ? (
             <Alert severity="info">
               No access policies defined. All sessions are allowed by default.
             </Alert>

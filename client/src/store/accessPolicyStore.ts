@@ -8,6 +8,7 @@ import {
 interface AccessPolicyState {
   policies: AccessPolicyData[];
   loading: boolean;
+  error: string | null;
 
   fetchPolicies: () => Promise<void>;
   createPolicy: (data: CreateAccessPolicyInput) => Promise<AccessPolicyData>;
@@ -19,21 +20,21 @@ interface AccessPolicyState {
 export const useAccessPolicyStore = create<AccessPolicyState>((set) => ({
   policies: [],
   loading: false,
+  error: null,
 
   fetchPolicies: async () => {
-    set({ loading: true });
+    set({ loading: true, error: null });
     try {
       const policies = await listAccessPolicies();
       set({ policies, loading: false });
     } catch {
-      set({ loading: false });
+      set({ loading: false, error: 'Failed to load access policies' });
     }
   },
 
   createPolicy: async (data) => {
     const policy = await createAccessPolicyApi(data);
-    const policies = await listAccessPolicies();
-    set({ policies });
+    set((state) => ({ policies: [policy, ...state.policies] }));
     return policy;
   },
 
@@ -51,5 +52,5 @@ export const useAccessPolicyStore = create<AccessPolicyState>((set) => ({
     }));
   },
 
-  reset: () => set({ policies: [], loading: false }),
+  reset: () => set({ policies: [], loading: false, error: null }),
 }));
