@@ -6,12 +6,12 @@ on:
     branches: [main]
     paths:
       - 'ssh-gateway/**'
+      - 'tunnel-agent/**'
   pull_request:
     branches: [main]
     paths:
       - 'ssh-gateway/**'
-  schedule:
-    - cron: '0 6 1 * *'
+      - 'tunnel-agent/**'
   workflow_dispatch:
 
 concurrency:
@@ -60,7 +60,7 @@ jobs:
       - name: Build image for scanning
         uses: docker/build-push-action@v7
         with:
-          context: ./ssh-gateway
+          context: .
           file: ./ssh-gateway/Dockerfile
           push: false
           load: true
@@ -87,7 +87,7 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: docker/build-push-action@v7
         with:
-          context: ./ssh-gateway
+          context: .
           file: ./ssh-gateway/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
