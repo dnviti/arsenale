@@ -97,6 +97,11 @@ app.use('/api/vault-providers', externalVaultRoutes);
 // Health & readiness probes
 app.use('/api', healthRoutes);
 
+// Custom 404 handler for API routes (prevents framework disclosure)
+app.use('/api', (_req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 // Error handler
 app.use(errorHandler);
 
