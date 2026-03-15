@@ -239,15 +239,15 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     if (!ok) setTunnelError('Failed to revoke tunnel token');
   };
 
-  const buildConnectionString = (token: string): string => {
-    const serverUrl = window.location.origin;
-    const payload = { serverUrl, tunnelToken: token, gatewayId: gateway?.id ?? '' };
-    return btoa(JSON.stringify(payload));
-  };
-
   const buildDockerCommand = (token: string): string => {
-    const connStr = buildConnectionString(token);
-    return `docker run -d --restart=unless-stopped \\\n  -e ARSENALE_CONNECTION="${connStr}" \\\n  arsenale/tunnel-agent:latest`;
+    const serverUrl = window.location.origin;
+    return [
+      'docker run -d --restart=unless-stopped \\',
+      `  -e TUNNEL_TOKEN="${token}" \\`,
+      `  -e TUNNEL_SERVER_URL="${serverUrl}" \\`,
+      `  -e TUNNEL_GATEWAY_ID="${gateway?.id ?? ''}" \\`,
+      '  arsenale/tunnel-agent:latest',
+    ].join('\n');
   };
 
   const certExpDisplay = (): string | null => {
@@ -290,6 +290,9 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     setRevokeConfirmOpen(false);
     onClose();
   };
+
+  // Cache cert expiry display to avoid double computation
+  const certInfo = certExpDisplay();
 
   // Render tunnel status chip
   const renderTunnelStatusChip = () => {
@@ -619,9 +622,9 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                       </Box>
 
                       {/* Cert expiry */}
-                      {certExpDisplay() && (
+                      {certInfo && (
                         <Alert severity="info" sx={{ py: 0.5 }}>
-                          {certExpDisplay()}
+                          {certInfo}
                         </Alert>
                       )}
 

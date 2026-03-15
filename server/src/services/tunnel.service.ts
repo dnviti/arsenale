@@ -394,7 +394,8 @@ function handleClose(conn: TunnelConnection, streamId: number): void {
 }
 
 function handlePing(conn: TunnelConnection, streamId: number): void {
-  conn.lastPingSentAt = Date.now();
+  // Respond with PONG — do NOT set lastPingSentAt here; that field tracks
+  // outbound PINGs we initiate, not inbound PINGs from the agent.
   const frame = buildFrame(MsgType.PONG, streamId);
   conn.ws.send(frame, (err) => {
     if (err) log.warn(`[tunnel] ${conn.gatewayId}: failed to send PONG: ${err.message}`);
@@ -641,6 +642,10 @@ export function createTcpProxy(
 ): Promise<{ server: net.Server; localPort: number }> {
   return new Promise((resolve, reject) => {
     const server = net.createServer(async (socket) => {
+      // Only accept a single connection, then close the server to avoid leaks.
+      // Each session call creates its own proxy, so one connection is all we need.
+      server.close();
+
       try {
         const remote = await openStream(gatewayId, targetHost, targetPort);
         socket.pipe(remote);
