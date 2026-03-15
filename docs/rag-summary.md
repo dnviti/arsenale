@@ -76,6 +76,8 @@ Password breach protection queries the HaveIBeenPwned API using k-Anonymity duri
 
 Token binding ties JWT access tokens and refresh tokens to the originating client's IP address and User-Agent via a SHA-256 hash embedded in the token payload and stored on refresh token records. If a token is presented from a different IP or User-Agent than the one that issued it, the token is rejected and the session is terminated. For refresh tokens, the entire token family is revoked to prevent further use. A `TOKEN_HIJACK_ATTEMPT` audit event is logged for security monitoring. Token binding is enabled by default and can be disabled globally via the `TOKEN_BINDING_ENABLED` environment variable for environments with dynamic IPs. Tokens issued before token binding was enabled are accepted without verification for backward compatibility.
 
+Attribute-Based Access Control (ABAC) extends the role-based permission model by evaluating context attributes when a user attempts to start a session. ABAC policies (`AccessPolicy` Prisma model) are scoped to a `FOLDER`, `TEAM`, or `TENANT` target. Each policy can enforce: time-window restrictions (comma-separated `HH:MM-HH:MM` UTC ranges — e.g., `"09:00-18:00"` restricts sessions to business hours), trusted-device requirements (user must have authenticated with WebAuthn during the current login), and MFA step-up requirements (user must have completed any MFA challenge — TOTP, WebAuthn, or SMS — during login). Policies are evaluated at session start for SSH, RDP, and VNC connections; the first matching denial returns HTTP 403 and logs a `SESSION_DENIED_ABAC` audit event with `details.reason` set to `outside_working_hours`, `untrusted_device`, or `mfa_step_up_required`. The MFA method used during login (`totp`, `webauthn`, or `sms`) is now embedded in the JWT payload as `mfaMethod` and is forwarded to the ABAC evaluator. The ABAC service lives at `server/src/services/abac.service.ts`. Segregation of Duties enforcement for privileged access management (PAM) checkout requests — preventing a user from approving their own secret checkout — will be added when PAM-111 is implemented.
+
 Comprehensive audit logging tracks over 100 distinct action types across the platform, including authentication events, connection usage, sharing activities, administrative operations, and session lifecycle events. Audit logs include client IP addresses and optional geographic location enrichment using MaxMind GeoLite2 data. Administrators can view tenant-wide audit logs with geographic visualization on an interactive map.
 
 Session monitoring allows administrators to view all active remote sessions across the organization, with the ability to terminate sessions remotely. Idle session detection automatically marks sessions as idle after configurable inactivity periods.
@@ -105,6 +107,42 @@ SSH key pairs are managed at the tenant level with optional automatic rotation o
 Gateway health monitoring continuously checks gateway availability with configurable intervals, reporting latency and status in real time through WebSocket updates.
 
 Gateway templates provide reusable configurations for quick deployment of new gateways with pre-configured auto-scaling, monitoring, and load balancing settings.
+
+## Zero-Trust Tunnel (TunnelBroker)
+
+The TunnelBroker enables zero-trust environments where gateway agents cannot expose inbound ports (similar to Cloudflare Tunnel, but self-hosted). Gateway agents establish outbound-only WSS connections to the Arsenale server at `/api/tunnel/connect`, and the server proxies TCP streams back through those connections.
+
+The tunnel system uses a binary multiplexing protocol with 4-byte frames (type, flags, streamId uint16) and message types OPEN/DATA/CLOSE/PING/PONG. The `openStream(gatewayId, host, port)` API returns a `net.Duplex`-compatible stream for transparent integration with SSH2 and guacamole-lite.
+
+Authentication uses a 256-bit token (stored encrypted with AES-256-GCM + SHA-256 hash for constant-time comparison) presented via the `Authorization: Bearer` header. Each gateway has a unique token bound to its ID. Token generation/revocation is available via `POST /gateways/:id/tunnel-token` and `DELETE /gateways/:id/tunnel-token` (OPERATOR role required).
+
+The Gateway model includes tunnel fields: `tunnelEnabled`, encrypted token (ciphertext/IV/tag), `tunnelTokenHash` (unique), connection timestamps, client IP/version, and optional mTLS certificate material (`tunnelCaCert`, `tunnelCaKey`, `tunnelClientCert`, `tunnelClientCertExp`). `ManagedGatewayInstance` includes `tunnelProxyHost`/`tunnelProxyPort` for GUACD tunnel proxying.
+
+The Tenant model includes tunnel configuration fields: `tunnelDefaultEnabled` (new gateways default to tunnel mode), `tunnelAutoTokenRotation` + `tunnelTokenRotationDays` (scheduled token rotation), `tunnelRequireForRemote` (force tunnel for non-LAN connections), `tunnelTokenMaxLifetimeDays` (max token lifetime), and `tunnelAgentAllowedCidrs` (CIDR allowlist for agent source IPs).
+
+Audit actions `TUNNEL_CONNECT`, `TUNNEL_DISCONNECT`, `TUNNEL_TOKEN_GENERATE`, and `TUNNEL_TOKEN_ROTATE` are recorded for all tunnel lifecycle events.
+
+The `GatewayData` API type exposes `tunnelEnabled`, `tunnelConnected` (live registry check), `tunnelConnectedAt`, and `tunnelClientCertExp`. The client `gateway.api.ts` provides `generateTunnelToken`, `revokeTunnelToken`, `forceDisconnectTunnel`, `getTunnelEvents`, and `getTunnelMetrics` functions. The `gatewayStore` holds a `tunnelStatuses` map updated via `applyTunnelStatusUpdate` and `tunnel:metrics` Socket.IO events.
+
+### Tunnel UI
+
+`GatewayDialog.tsx` (edit mode only) includes a "Zero-Trust Tunnel" MUI Accordion section persisted via `tunnelSectionOpen` in `uiPreferencesStore`. When tunnel is disabled the admin sees an "Enable Zero-Trust Tunnel" button. Once enabled: managed gateways show a one-time plain token (copy before closing); non-managed gateways show a pre-built `docker run` command with a base64-encoded connection string (`{ serverUrl, tunnelToken, gatewayId }`). Token rotation, revocation, and force disconnect are inline with inline confirmation. Certificate expiry is shown with days-until-renewal. Host/port fields become read-only when tunnel is active.
+
+Additional tunnel UI panels (all collapsible, persisted via `uiPreferencesStore`): **Live Metrics** (`tunnelMetricsOpen`) shows uptime, RTT, active streams, and agent version as MUI Chips when tunnel is connected, fetched from `GET /gateways/:id/tunnel-metrics`. **Connection Event Log** (`tunnelEventLogOpen`) shows the last 20 TUNNEL_CONNECT/TUNNEL_DISCONNECT audit events with timestamps, IP addresses, and forced-disconnect indicators, fetched from `GET /gateways/:id/tunnel-events`. **Deployment Guides** (`tunnelDeployGuidesOpen`) appears when a token has been generated for non-managed gateways, providing Docker Compose and systemd unit file snippets with copy buttons alongside the existing Docker Run command. **Force Disconnect** (`POST /gateways/:id/tunnel-disconnect`) forcefully closes the tunnel WebSocket for a connected gateway (OPERATOR role).
+
+`GatewaySection.tsx` shows a `VpnLock` icon badge (green = connected, red = disconnected) next to the health chip for any `tunnelEnabled` gateway. The Tooltip contains connected-since, RTT, active streams, and agent version from live `tunnelStatuses`.
+
+## Tunnel Agent (`tunnel-agent/`)
+
+The `tunnel-agent` is a lightweight Node.js workspace (`tunnel-agent/`) that is embedded into every managed gateway container image (ssh-gateway and custom guacd). It is dormant by default — if `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, and `TUNNEL_GATEWAY_ID` are absent, the process exits cleanly and the gateway starts normally.
+
+When tunnel env vars are present, the agent auto-activates and establishes an outbound WSS connection to the TunnelBroker using the same binary multiplexing protocol (OPEN/DATA/CLOSE/PING/PONG, 4-byte header). On receiving an OPEN frame with a `host:port` payload, it opens a local TCP connection and bridges data bidirectionally through DATA frames. The agent sends 15-second PING heartbeats with JSON health metadata (`{ healthy, latencyMs, activeStreams }`) obtained by probing the local service.
+
+Auto-reconnect uses exponential backoff (1 s → 2 s → … → 60 s). Optional mTLS is supported via `TUNNEL_CA_CERT`, `TUNNEL_CLIENT_CERT`, and `TUNNEL_CLIENT_KEY` env vars.
+
+A standalone `tunnel-agent/Dockerfile` is provided for deploying the agent alongside non-managed (external) gateways. For managed gateways, the `ssh-gateway/Dockerfile` and `docker/guacd/Dockerfile` both embed the agent via a multi-stage build (monorepo root context required) and launch it from their entrypoints as a background process.
+
+When `tunnelEnabled=true` on a managed gateway, `managedGateway.service.ts` automatically injects `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, `TUNNEL_GATEWAY_ID`, and `TUNNEL_LOCAL_PORT` into the container environment, and suppresses host-port publishing (`publishPorts=false` behavior) so traffic flows exclusively through the tunnel.
 
 ## External Sync
 
@@ -142,4 +180,4 @@ Configuration is handled through a single environment file with sensible default
 
 ## Technology
 
-Arsenale is built on a modern open-source stack: a Node.js and TypeScript server with a layered Express architecture backed by PostgreSQL through Prisma ORM, and a React client with Zustand state management and Material UI components. Remote desktop rendering uses the Guacamole protocol via guacamole-lite and guacamole-common-js. SSH terminals use XTerm.js with the ssh2 library. Real-time communication uses Socket.IO for terminal I/O, notifications, and monitoring updates.
+Arsenale is built on a modern open-source stack: a Node.js and TypeScript server with a layered Express architecture backed by PostgreSQL through Prisma ORM, and a React client with Zustand state management and Material UI components. The monorepo includes three workspaces: `server/`, `client/`, and `tunnel-agent/`. Remote desktop rendering uses the Guacamole protocol via guacamole-lite and guacamole-common-js. SSH terminals use XTerm.js with the ssh2 library. Real-time communication uses Socket.IO for terminal I/O, notifications, and monitoring updates. The zero-trust tunnel system uses raw `ws` WebSocket connections with a custom binary multiplexing protocol for proxying TCP streams through outbound-only gateway agent connections. The ABAC policy engine evaluates `AccessPolicy` Prisma records at session start time to enforce time-window, trusted-device, and MFA step-up constraints.

@@ -41,6 +41,21 @@
 | lastCheckedAt | DateTime? | Optional | Last health check |
 | lastLatencyMs | Int? | Optional | Last check latency |
 | lastError | String? | Optional | Last error message |
+| tunnelEnabled | Boolean | Default: false | Whether zero-trust tunnel is enabled |
+| encryptedTunnelToken | String? | Optional | AES-256-GCM encrypted tunnel agent token |
+| tunnelTokenIV | String? | Optional | IV for tunnel token encryption |
+| tunnelTokenTag | String? | Optional | Auth tag for tunnel token encryption |
+| tunnelTokenHash | String? | Unique, Optional | SHA-256 hash of the plaintext token (used for auth lookup) |
+| tunnelConnectedAt | DateTime? | Optional | Timestamp when the tunnel agent last connected |
+| tunnelLastHeartbeat | DateTime? | Optional | Timestamp of the last heartbeat from the agent |
+| tunnelClientVersion | String? | Optional | Agent software version string |
+| tunnelClientIp | String? | Optional | Agent remote IP address |
+| tunnelCaCert | String? | Optional | PEM-encoded CA certificate for mTLS |
+| tunnelCaKey | String? | Optional | Encrypted CA private key |
+| tunnelCaKeyIV | String? | Optional | IV for CA key encryption |
+| tunnelCaKeyTag | String? | Optional | Auth tag for CA key encryption |
+| tunnelClientCert | String? | Optional | PEM-encoded client certificate issued to the agent |
+| tunnelClientCertExp | DateTime? | Optional | Client certificate expiry date |
 | createdAt | DateTime | Auto | |
 | updatedAt | DateTime | Auto | |
 
@@ -117,9 +132,24 @@
 | lastHealthCheck | DateTime? | Optional | |
 | errorMessage | String? | Optional | |
 | consecutiveFailures | Int | Default: 0 | |
+| tunnelProxyHost | String? | Optional | Hostname to reach this instance via the tunnel broker |
+| tunnelProxyPort | Int? | Optional | Port to reach this instance via the tunnel broker |
 | createdAt, updatedAt | DateTime | Auto | |
 
 **Indexes**: `[gatewayId]`, `[status]`
 
 <!-- manual-start -->
 <!-- manual-end -->
+
+## Tenant Tunnel Configuration
+
+The following fields on the **Tenant** model control tenant-wide tunnel defaults and policies:
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| tunnelDefaultEnabled | Boolean | Default: false | New gateways in this tenant have tunnelling enabled by default |
+| tunnelAutoTokenRotation | Boolean | Default: false | Automatically rotate tunnel agent tokens on a schedule |
+| tunnelTokenRotationDays | Int | Default: 90 | Days between automatic token rotations |
+| tunnelRequireForRemote | Boolean | Default: false | Require tunnel for all remote (non-LAN) connections |
+| tunnelTokenMaxLifetimeDays | Int? | Optional | Maximum allowed lifetime for tunnel tokens (null = unlimited) |
+| tunnelAgentAllowedCidrs | String[] | Default: [] | CIDR allowlist for tunnel agent source IPs (empty = allow all) |

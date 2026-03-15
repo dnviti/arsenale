@@ -5,12 +5,13 @@
 
 ## System Overview
 
-Arsenale is a **monorepo** managed by npm workspaces with two packages:
+Arsenale is a **monorepo** managed by npm workspaces with three packages:
 
 ```
 arsenale/
 ├── server/          # Express + TypeScript backend (workspace: "server")
 ├── client/          # React 19 + Vite frontend (workspace: "client")
+├── tunnel-agent/    # Lightweight tunnel agent embedded in gateway containers (workspace: "tunnel-agent")
 ├── ssh-gateway/     # Optional SSH gateway container
 ├── docker/          # Docker build contexts (guacenc sidecar)
 ├── compose.yml      # Production Docker Compose
@@ -97,6 +98,77 @@ The Express app (`server/src/app.ts`) applies middleware in this order:
 | `/gateway-monitor` | `server/src/socket/gatewayMonitor.handler.ts` | Real-time gateway health + instance updates |
 
 All Socket.IO namespaces authenticate via JWT middleware using the `auth.token` handshake parameter.
+
+### Zero-Trust Tunnel (TunnelBroker)
+
+The TunnelBroker enables zero-trust network access by allowing gateway agents to connect to the Arsenale server through outbound-only WSS connections, eliminating the need for inbound ports on gateway hosts. This is conceptually similar to Cloudflare Tunnel, but fully self-hosted.
+
+**Server side:**
+
+- `server/src/services/tunnel.service.ts` — Core TunnelBroker service. Maintains a global registry (`Map<gatewayId, TunnelConnection>`) of connected agents. Key exports:
+  - `registerTunnel()` / `deregisterTunnel()` — Manage agent lifecycle in the registry
+  - `openStream(gatewayId, host, port)` — Returns a `net.Duplex`-compatible stream for transparent integration with SSH2 and guacamole-lite
+  - `generateTunnelToken()` / `revokeTunnelToken()` — Token management (256-bit, AES-256-GCM encrypted, SHA-256 hashed for constant-time comparison)
+  - `authenticateTunnelRequest()` — Validates bearer token against stored hash
+  - `createTcpProxy()` — Creates a local TCP proxy server that bridges to a remote service through the tunnel
+  - `sendCertRenew()` / `processCertRotations()` / `startCertRotationScheduler()` — mTLS certificate rotation
+- `server/src/socket/tunnel.handler.ts` — Raw `ws` WebSocket server attached at `/api/tunnel/connect`. Authenticates upgrade requests via `Authorization: Bearer <tunnel-token>` and `X-Gateway-Id` headers, then delegates to the TunnelBroker for frame processing.
+
+**Binary multiplexing protocol:**
+
+```
+4-byte header:
+  byte 0   : message type (OPEN=1, DATA=2, CLOSE=3, PING=4, PONG=5, HEARTBEAT=6, CERT_RENEW=7)
+  byte 1   : flags (reserved, 0)
+  bytes 2-3: streamId (uint16 big-endian)
++ variable-length payload
+```
+
+When the server needs to reach a service behind a gateway (e.g., SSH or guacd), it calls `openStream()` which sends an OPEN frame with a `host:port` payload through the tunnel WebSocket. The agent opens a local TCP connection and bridges DATA frames bidirectionally. CLOSE frames tear down individual streams. PING/PONG frames provide heartbeat and RTT measurement. HEARTBEAT frames carry JSON health metadata (`{ healthy, latencyMs, activeStreams }`).
+
+**Health monitoring integration:**
+
+`server/src/services/gatewayMonitor.service.ts` imports `hasTunnel()` and `getTunnelInfo()` from the tunnel service. For tunnel-enabled gateways, health checks use tunnel connection state and heartbeat metadata rather than direct TCP probes. Tunnel metrics (uptime, RTT, active streams, bytes transferred, agent health) are emitted via a `TunnelMetricsEvent` through Socket.IO to the `/gateway-monitor` namespace.
+
+**Tunnel Agent (`tunnel-agent/` workspace):**
+
+A lightweight Node.js package embedded into every managed gateway container image. Source files:
+
+| File | Purpose |
+|------|---------|
+| `tunnel-agent/src/index.ts` | Entry point; loads config and starts the agent |
+| `tunnel-agent/src/tunnel.ts` | `TunnelAgent` class: manages WSS connection, reconnection, heartbeats |
+| `tunnel-agent/src/config.ts` | Reads configuration from environment variables; exits cleanly if absent (dormant mode) |
+| `tunnel-agent/src/tcpForwarder.ts` | Handles OPEN/DATA/CLOSE frames by opening local TCP connections to the target service |
+| `tunnel-agent/src/protocol.ts` | Shared binary frame encoding/decoding (`buildFrame`, `parseFrame`) |
+| `tunnel-agent/src/auth.ts` | Builds WebSocket connection options (bearer token, mTLS certificates) |
+
+The agent is dormant by default. It activates only when `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, `TUNNEL_GATEWAY_ID`, and `TUNNEL_LOCAL_PORT` are set. Auto-reconnect uses exponential backoff (1s to 60s). Optional mTLS is supported via `TUNNEL_CA_CERT`, `TUNNEL_CLIENT_CERT`, and `TUNNEL_CLIENT_KEY` environment variables.
+
+For managed gateways, `managedGateway.service.ts` automatically injects tunnel environment variables into the container and suppresses host-port publishing so traffic flows exclusively through the tunnel.
+
+A standalone `tunnel-agent/Dockerfile` is provided for deploying alongside non-managed (external) gateways. For managed gateways, the `ssh-gateway/Dockerfile` and `docker/guacd/Dockerfile` embed the agent via multi-stage builds.
+
+**Audit actions:** `TUNNEL_CONNECT`, `TUNNEL_DISCONNECT`, `TUNNEL_TOKEN_GENERATE`, `TUNNEL_TOKEN_ROTATE`.
+
+### Attribute-Based Access Control (ABAC)
+
+ABAC extends the role-based permission model by evaluating contextual attributes at session start time.
+
+- `server/src/services/abac.service.ts` — Core evaluation engine. The `evaluate(ctx: AbacContext)` function collects all `AccessPolicy` records matching the connection's folder, team, and tenant scopes, then checks each policy's constraints. Policies are **additive** (most restrictive combination wins). Returns `{ allowed: true }` or `{ allowed: false, reason, policyId, targetType, targetId }` on the first denial.
+- `server/src/services/accessPolicy.service.ts` — CRUD service for `AccessPolicy` Prisma records. Provides `listPolicies(tenantId)`, `createPolicy()`, `updatePolicy()`, and `deletePolicy()` with tenant-scoped target validation (TENANT, TEAM, or FOLDER).
+
+**Policy constraints:**
+
+| Constraint | Field | Effect |
+|------------|-------|--------|
+| Time windows | `allowedTimeWindows` | Comma-separated `HH:MM-HH:MM` UTC ranges; sessions denied outside these windows. Supports overnight ranges (e.g., `22:00-06:00`). |
+| Trusted device | `requireTrustedDevice` | User must have authenticated with WebAuthn during the current login session. |
+| MFA step-up | `requireMfaStepUp` | User must have completed any MFA challenge (TOTP, WebAuthn, or SMS) during login. |
+
+**Evaluation context (`AbacContext`):** Includes `userId`, `folderId`, `teamId`, `tenantId`, `usedWebAuthnInLogin`, `completedMfaStepUp`, `ipAddress`, and `connectionId`. The MFA method used during login (`totp`, `webauthn`, or `sms`) is embedded in the JWT payload as `mfaMethod` and forwarded to the evaluator.
+
+**Deny reasons:** `outside_working_hours`, `untrusted_device`, `mfa_step_up_required`. Denials are logged as `SESSION_DENIED_ABAC` audit events with details including the triggering policy and reason.
 
 <!-- manual-start -->
 <!-- manual-end -->

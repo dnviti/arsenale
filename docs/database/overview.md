@@ -35,6 +35,7 @@ The database models a multi-tenant remote access management system:
 - **OAuthAccount** links external identity providers (Google, Microsoft, GitHub, OIDC, SAML).
 - **WebAuthnCredential** stores FIDO2/passkey credentials for passwordless MFA.
 - **OpenTab** persists the user's open connection tabs server-side.
+- **AccessPolicy** stores ABAC (Attribute-Based Access Control) policies scoped to tenants, teams, or folders, enforcing time windows, trusted device, and MFA step-up constraints.
 - **AppConfig** stores key-value application settings (e.g., self-signup toggle).
 
 <!-- manual-start -->

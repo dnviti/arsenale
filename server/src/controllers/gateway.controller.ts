@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest, assertTenantAuthenticated } from '../types';
 import * as gatewayService from '../services/gateway.service';
+import { isTunnelConnected } from '../services/tunnel.service';
 import * as sshKeyService from '../services/sshkey.service';
 import * as managedGatewayService from '../services/managedGateway.service';
 import * as autoscalerService from '../services/autoscaler.service';
@@ -532,4 +533,72 @@ export async function deployFromTemplate(req: AuthRequest, res: Response) {
     ipAddress: getClientIp(req),
   });
   res.status(201).json(result);
+}
+
+// ---------------------------------------------------------------------------
+// Zero-trust tunnel token management
+// ---------------------------------------------------------------------------
+
+export async function forceDisconnectTunnel(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const gatewayId = req.params.id as string;
+  await gatewayService.forceDisconnectTunnel(req.user.tenantId, gatewayId);
+  auditService.log({
+    userId: req.user.userId,
+    action: 'TUNNEL_DISCONNECT',
+    targetType: 'Gateway',
+    targetId: gatewayId,
+    details: { forced: true },
+    ipAddress: getClientIp(req),
+  });
+  res.json({ disconnected: true });
+}
+
+export async function getTunnelEvents(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const gatewayId = req.params.id as string;
+  const events = await gatewayService.getTunnelEvents(req.user.tenantId, gatewayId);
+  res.json({ events });
+}
+
+export async function getTunnelMetrics(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const gatewayId = req.params.id as string;
+  const info = await gatewayService.getTunnelMetrics(req.user.tenantId, gatewayId);
+  res.json(info ?? { connected: false });
+}
+
+export async function generateTunnelToken(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const gatewayId = req.params.id as string;
+  const result = await gatewayService.generateGatewayTunnelToken(
+    req.user.tenantId,
+    gatewayId,
+    req.user.userId,
+  );
+  // Audit logging is handled by tunnel.service — no duplicate here
+  // Return the plain token only once — the caller must store it
+  res.status(201).json({
+    token: result.token,
+    tunnelEnabled: result.tunnelEnabled,
+    tunnelConnected: isTunnelConnected(gatewayId),
+  });
+}
+
+export async function revokeTunnelToken(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const gatewayId = req.params.id as string;
+  await gatewayService.revokeGatewayTunnelToken(
+    req.user.tenantId,
+    gatewayId,
+    req.user.userId,
+  );
+  // Audit logging is handled by tunnel.service — no duplicate here
+  res.json({ revoked: true, tunnelEnabled: false });
+}
+
+export async function tunnelOverview(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const overview = await gatewayService.getTunnelOverview(req.user.tenantId);
+  res.json(overview);
 }

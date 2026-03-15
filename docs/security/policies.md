@@ -102,6 +102,43 @@ Source: `server/src/utils/hostValidation.ts`
 <!-- manual-start -->
 <!-- manual-end -->
 
+## Attribute-Based Access Control (ABAC)
+
+ABAC policies (stored in the `AccessPolicy` model) add contextual constraints to session access. Each policy targets a **Tenant**, **Team**, or **Folder** and enforces one or more of the following attributes:
+
+### Policy Evaluation Flow
+
+1. When a user opens a remote session (SSH, RDP, or VNC), the server collects the **ABAC context**: folder ID, team ID, tenant ID, whether WebAuthn was used in the current login, and whether MFA step-up was completed.
+2. All `AccessPolicy` records matching the connection's folder, team, and tenant are fetched in a single query.
+3. Policies are sorted by specificity: **FOLDER > TEAM > TENANT** (most specific first).
+4. Each policy is evaluated in order. The first denial short-circuits — access is denied immediately.
+5. If all policies pass (or no policies exist), access is granted.
+
+### Additive Policy Semantics
+
+Policies are **additive** (conjunctive): every applicable policy must pass for access to be granted. A permissive TENANT policy cannot override a restrictive FOLDER policy. The most restrictive combination always wins.
+
+### Constraint Types
+
+| Constraint | Field | Behavior |
+|-----------|-------|----------|
+| **Time window** | `allowedTimeWindows` | Comma-separated `HH:MM-HH:MM` UTC windows. Access is allowed if the current UTC time falls within **any** window. Overnight windows (e.g., `22:00-06:00`) are supported. Malformed windows fail closed (treated as deny). |
+| **Trusted device** | `requireTrustedDevice` | The user must have authenticated with a **WebAuthn credential** (FIDO2/passkey) during the current login session. |
+| **MFA step-up** | `requireMfaStepUp` | The user must have completed an **MFA challenge** (TOTP or WebAuthn) during the current login session. |
+
+### Denial Handling
+
+When a policy denies access:
+
+- The denial reason is one of: `outside_working_hours`, `untrusted_device`, or `mfa_step_up_required`
+- A `SESSION_DENIED_ABAC` audit log entry is created with the denial reason, policy ID, target type/ID, and GeoIP data
+- The caller receives a 403 response
+
+Source: `server/src/services/abac.service.ts`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
 ## Input Validation
 
 All API endpoints use Zod schema validation via the `validate` middleware (`server/src/middleware/validate.middleware.ts`):

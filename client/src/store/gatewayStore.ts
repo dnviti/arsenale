@@ -15,6 +15,9 @@ import {
   type GatewayTemplateData,
   type GatewayTemplateInput,
   type GatewayTemplateUpdate,
+  type TunnelTokenResponse,
+  type TunnelOverviewData,
+  fetchTunnelOverview as fetchTunnelOverviewApi,
   listActiveSessions as listActiveSessionsApi,
   getSessionCount as getSessionCountApi,
   getSessionCountByGateway as getSessionCountByGatewayApi,
@@ -31,13 +34,26 @@ import {
   updateGatewayTemplate as updateGatewayTemplateApi,
   deleteGatewayTemplate as deleteGatewayTemplateApi,
   deployFromTemplate as deployFromTemplateApi,
+  generateTunnelToken as generateTunnelTokenApi,
+  revokeTunnelToken as revokeTunnelTokenApi,
 } from '../api/gateway.api';
+
+export interface TunnelStatusEvent {
+  gatewayId: string;
+  connected: boolean;
+  connectedAt: string | null;
+  rttMs: number | null;
+  activeStreams: number;
+  agentVersion: string | null;
+  checkedAt: string;
+}
 
 interface GatewayState {
   gateways: GatewayData[];
   loading: boolean;
   sshKeyPair: SshKeyPairData | null;
   sshKeyLoading: boolean;
+  tunnelStatuses: Record<string, TunnelStatusEvent>;
 
   // Orchestration state
   activeSessions: ActiveSessionData[];
@@ -87,6 +103,16 @@ interface GatewayState {
   deleteTemplate: (id: string) => Promise<void>;
   deployFromTemplate: (templateId: string) => Promise<GatewayData>;
 
+  // Tunnel token actions
+  generateTunnelToken: (gatewayId: string) => Promise<TunnelTokenResponse>;
+  revokeTunnelToken: (gatewayId: string) => Promise<void>;
+  applyTunnelStatusUpdate: (event: TunnelStatusEvent) => void;
+
+  // Tunnel fleet overview
+  tunnelOverview: TunnelOverviewData | null;
+  tunnelOverviewLoading: boolean;
+  fetchTunnelOverview: () => Promise<void>;
+
   reset: () => void;
 }
 
@@ -99,6 +125,9 @@ const initialOrchestrationState = {
   sessionsLoading: false,
   templates: [] as GatewayTemplateData[],
   templatesLoading: false,
+  tunnelStatuses: {} as Record<string, TunnelStatusEvent>,
+  tunnelOverview: null as TunnelOverviewData | null,
+  tunnelOverviewLoading: false,
 };
 
 export const useGatewayStore = create<GatewayState>((set) => ({
@@ -341,6 +370,46 @@ export const useGatewayStore = create<GatewayState>((set) => ({
     ]);
     set({ gateways, templates });
     return gateway;
+  },
+
+  // ---------- Tunnel token actions ----------
+
+  generateTunnelToken: async (gatewayId) => {
+    const result = await generateTunnelTokenApi(gatewayId);
+    set((state) => ({
+      gateways: state.gateways.map((g) =>
+        g.id === gatewayId ? { ...g, tunnelEnabled: result.tunnelEnabled, tunnelConnected: result.tunnelConnected } : g,
+      ),
+    }));
+    return result;
+  },
+
+  revokeTunnelToken: async (gatewayId) => {
+    await revokeTunnelTokenApi(gatewayId);
+    set((state) => ({
+      gateways: state.gateways.map((g) =>
+        g.id === gatewayId ? { ...g, tunnelEnabled: false, tunnelConnected: false } : g,
+      ),
+    }));
+  },
+
+  applyTunnelStatusUpdate: (event) => {
+    set((state) => ({
+      tunnelStatuses: { ...state.tunnelStatuses, [event.gatewayId]: event },
+      gateways: state.gateways.map((g) =>
+        g.id === event.gatewayId ? { ...g, tunnelConnected: event.connected } : g,
+      ),
+    }));
+  },
+
+  fetchTunnelOverview: async () => {
+    set({ tunnelOverviewLoading: true });
+    try {
+      const tunnelOverview = await fetchTunnelOverviewApi();
+      set({ tunnelOverview, tunnelOverviewLoading: false });
+    } catch {
+      set({ tunnelOverviewLoading: false });
+    }
   },
 
   reset: () => set({

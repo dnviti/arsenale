@@ -39,6 +39,7 @@ All REST endpoints are mounted under `/api`. The server runs on port 3001 (confi
 | Vault Folders | `/api/vault-folders` | Yes | Vault (keychain) folder CRUD |
 | Sync | `/api/sync-profiles` | Yes (Admin) | External sync profiles (NetBox), CRUD, test, and manual trigger |
 | External Vault | `/api/vault-providers` | Yes (Admin) | HashiCorp Vault external credential provider CRUD and test |
+| Access Policies | `/api/access-policies` | Yes (Admin) | ABAC access policy CRUD (time windows, device trust, MFA step-up) |
 
 <!-- manual-start -->
 <!-- manual-end -->

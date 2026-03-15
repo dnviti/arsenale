@@ -144,6 +144,36 @@ Tenant administrators can enforce two session-level controls:
 <!-- manual-start -->
 <!-- manual-end -->
 
+## Tunnel Agent Authentication
+
+Tunnel agents (gateway-side daemons) authenticate to the broker WebSocket endpoint using a bearer token scheme with SHA-256 hashing:
+
+### Token Lifecycle
+
+1. **Generation**: An admin generates a tunnel token via the API. The server creates a 256-bit random token (`crypto.randomBytes(32)`), encrypts it with AES-256-GCM using `SERVER_ENCRYPTION_KEY`, computes its SHA-256 hash, and stores both the encrypted token and the hash on the `Gateway` record.
+2. **Distribution**: The plaintext token is returned to the admin exactly once. It is never stored in plaintext on the server.
+3. **Rotation**: Revoking a token clears all token fields, disconnects any active tunnel, and logs a `TUNNEL_TOKEN_ROTATE` audit event. A new token can then be generated.
+
+### Authentication Flow
+
+1. The tunnel agent opens a WebSocket connection and presents the plaintext token as a `Bearer` token in the `Authorization` header.
+2. The server computes the SHA-256 hash of the incoming token and looks up the `Gateway` record by `tunnelTokenHash` (unique index).
+3. A **constant-time comparison** (`crypto.timingSafeEqual`) is performed between the stored hash and the incoming hash.
+4. As defense in depth, the server also decrypts the stored encrypted token and performs a second constant-time comparison against the presented token.
+5. If both checks pass and `tunnelEnabled` is `true`, the connection is accepted and a `TUNNEL_CONNECT` audit event is logged.
+
+### Security Properties
+
+- **No plaintext storage**: Only the encrypted token and its SHA-256 hash are persisted.
+- **Constant-time comparison**: Prevents timing side-channel attacks on token validation.
+- **Defense in depth**: Dual verification (hash lookup + decryption check) ensures integrity even if one layer is compromised.
+- **Tenant-level controls**: `tunnelAgentAllowedCidrs` restricts which source IPs can establish tunnels. `tunnelTokenMaxLifetimeDays` enforces token expiry.
+
+Source: `server/src/services/tunnel.service.ts`, `server/src/services/crypto.service.ts`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
 ## LDAP Authentication
 
 LDAP authentication (`server/src/services/ldap.service.ts`) supports secure directory-based login:

@@ -36,6 +36,10 @@ export interface GatewayData {
   templateId: string | null;
   totalInstances: number;
   runningInstances: number;
+  tunnelEnabled: boolean;
+  tunnelConnected: boolean;
+  tunnelConnectedAt: string | null;
+  tunnelClientCertExp: string | null;
 }
 
 export interface GatewayInput {
@@ -383,5 +387,73 @@ export async function deleteGatewayTemplate(id: string): Promise<{ deleted: bool
 
 export async function deployFromTemplate(templateId: string): Promise<GatewayData> {
   const { data } = await api.post(`/gateways/templates/${templateId}/deploy`);
+  return data;
+}
+
+// ---------- Zero-Trust Tunnel Token Management ----------
+
+export interface TunnelTokenResponse {
+  token: string;
+  tunnelEnabled: boolean;
+  tunnelConnected: boolean;
+}
+
+export interface TunnelOverviewData {
+  total: number;
+  connected: number;
+  disconnected: number;
+  avgRttMs: number | null;
+}
+
+export async function fetchTunnelOverview(): Promise<TunnelOverviewData> {
+  const { data } = await api.get('/gateways/tunnel-overview');
+  return data;
+}
+
+export interface TunnelEventData {
+  action: string;
+  timestamp: string;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+}
+
+export interface TunnelMetricsData {
+  connected: boolean;
+  connectedAt?: string;
+  lastHeartbeat?: string;
+  pingPongLatency?: number;
+  activeStreams?: number;
+  bytesTransferred?: number;
+  clientVersion?: string;
+  clientIp?: string;
+  heartbeatMetadata?: {
+    healthy: boolean;
+    latencyMs?: number;
+    activeStreams?: number;
+  };
+}
+
+export async function forceDisconnectTunnel(gatewayId: string): Promise<{ disconnected: boolean }> {
+  const { data } = await api.post(`/gateways/${gatewayId}/tunnel-disconnect`);
+  return data;
+}
+
+export async function getTunnelEvents(gatewayId: string): Promise<{ events: TunnelEventData[] }> {
+  const { data } = await api.get(`/gateways/${gatewayId}/tunnel-events`);
+  return data;
+}
+
+export async function getTunnelMetrics(gatewayId: string): Promise<TunnelMetricsData> {
+  const { data } = await api.get(`/gateways/${gatewayId}/tunnel-metrics`);
+  return data;
+}
+
+export async function generateTunnelToken(gatewayId: string): Promise<TunnelTokenResponse> {
+  const { data } = await api.post(`/gateways/${gatewayId}/tunnel-token`);
+  return data;
+}
+
+export async function revokeTunnelToken(gatewayId: string): Promise<{ revoked: boolean; tunnelEnabled: boolean }> {
+  const { data } = await api.delete(`/gateways/${gatewayId}/tunnel-token`);
   return data;
 }

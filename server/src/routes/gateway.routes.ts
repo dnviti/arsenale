@@ -25,6 +25,9 @@ router.post('/ssh-keypair/rotate', requireTenantRole('OPERATOR'), asyncHandler(g
 router.patch('/ssh-keypair/rotation', requireTenantRole('OPERATOR'), validate(rotationPolicySchema), asyncHandler(gatewayController.updateRotationPolicy));
 router.get('/ssh-keypair/rotation', requireTenantRole('OPERATOR'), asyncHandler(gatewayController.getRotationStatus));
 
+// Tunnel fleet overview (must be before /:id routes)
+router.get('/tunnel-overview', requireTenantRole('ADMIN'), asyncHandler(gatewayController.tunnelOverview));
+
 // Gateway templates (must be before /:id routes)
 router.get('/templates', requireTenantRole('OPERATOR'), asyncHandler(gatewayController.listTemplates));
 router.post('/templates', requireTenantRole('OPERATOR'), validate(createTemplateSchema), asyncHandler(gatewayController.createTemplate));
@@ -48,5 +51,12 @@ router.get('/:id/instances/:instanceId/logs', requireTenantRole('OPERATOR'), val
 // Auto-scaling configuration
 router.get('/:id/scaling', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.getScalingStatus));
 router.put('/:id/scaling', requireTenantRole('OPERATOR'), validateUuidParam(), validate(scalingConfigSchema), asyncHandler(gatewayController.updateScalingConfig));
+
+// Zero-trust tunnel token management
+router.post('/:id/tunnel-token', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.generateTunnelToken));
+router.delete('/:id/tunnel-token', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.revokeTunnelToken));
+router.post('/:id/tunnel-disconnect', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.forceDisconnectTunnel));
+router.get('/:id/tunnel-events', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.getTunnelEvents));
+router.get('/:id/tunnel-metrics', requireTenantRole('OPERATOR'), validateUuidParam(), asyncHandler(gatewayController.getTunnelMetrics));
 
 export default router;

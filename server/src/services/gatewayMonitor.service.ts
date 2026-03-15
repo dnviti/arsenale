@@ -1,6 +1,7 @@
 import prisma, { ManagedInstanceStatus } from '../lib/prisma';
 import type { GatewayHealthStatus } from '../lib/prisma';
 import { tcpProbe } from '../utils/tcpProbe';
+import { hasTunnel, getTunnelInfo } from './tunnel.service';
 import { logger } from '../utils/logger';
 
 const log = logger.child('gateway-monitor');
@@ -14,6 +15,17 @@ export interface GatewayHealthEvent {
   checkedAt: string;
 }
 
+export interface TunnelMetricsEvent {
+  gatewayId: string;
+  connectedAt: string;
+  uptimeMs: number;
+  rttMs: number | null;
+  activeStreams: number;
+  bytesTransferred: number;
+  agentHealthy: boolean | null;
+  checkedAt: string;
+}
+
 // ---------------------------------------------------------------------------
 // Emitter callbacks — set by the Socket.IO handler at startup
 // ---------------------------------------------------------------------------
@@ -22,6 +34,7 @@ let emitHealthUpdate: ((tenantId: string, payload: GatewayHealthEvent) => void) 
 let emitInstancesUpdate: ((tenantId: string, payload: InstancesUpdatedEvent) => void) | null = null;
 let emitScalingUpdate: ((tenantId: string, payload: ScalingUpdatedEvent) => void) | null = null;
 let emitGatewayUpdate: ((tenantId: string, payload: GatewayUpdatedEvent) => void) | null = null;
+let emitTunnelMetricsUpdate: ((tenantId: string, payload: TunnelMetricsEvent) => void) | null = null;
 
 export interface InstancesUpdatedEvent {
   gatewayId: string;
@@ -63,6 +76,10 @@ export function setScalingEmitter(fn: (tenantId: string, payload: ScalingUpdated
 
 export function setGatewayEmitter(fn: (tenantId: string, payload: GatewayUpdatedEvent) => void) {
   emitGatewayUpdate = fn;
+}
+
+export function setTunnelMetricsEmitter(fn: (tenantId: string, payload: TunnelMetricsEvent) => void) {
+  emitTunnelMetricsUpdate = fn;
 }
 
 // ---------------------------------------------------------------------------
@@ -302,20 +319,132 @@ export function startInstanceMonitor(gatewayId: string, tenantId: string, interv
   monitors.set(gatewayId, handle);
 }
 
+// ---------------------------------------------------------------------------
+// Tunnel-based health monitoring
+// ---------------------------------------------------------------------------
+
+const TUNNEL_HEARTBEAT_TIMEOUT_MS = 45_000; // 45 s
+
+/**
+ * Determine gateway health from tunnel state instead of a TCP probe.
+ *
+ * Health mapping:
+ *   - No active tunnel OR heartbeat older than 45 s  → UNREACHABLE
+ *   - Tunnel connected + recent heartbeat + agent healthy → REACHABLE
+ *   - Tunnel connected + recent heartbeat + agent unhealthy → DEGRADED (stored as UNREACHABLE;
+ *     the error field carries the detail)
+ */
+async function probeViaTunnel(gatewayId: string, tenantId: string): Promise<void> {
+  try {
+    const now = new Date();
+    const connected = hasTunnel(gatewayId);
+    const info = getTunnelInfo(gatewayId);
+
+    let status: GatewayHealthStatus;
+    let latencyMs: number | null = null;
+    let error: string | null = null;
+
+    if (!connected || !info) {
+      status = 'UNREACHABLE';
+      error = 'Tunnel not connected';
+    } else {
+      const heartbeatAge = info.lastHeartbeat
+        ? now.getTime() - info.lastHeartbeat.getTime()
+        : Infinity;
+
+      if (heartbeatAge > TUNNEL_HEARTBEAT_TIMEOUT_MS) {
+        status = 'UNREACHABLE';
+        error = `Heartbeat timeout (last: ${info.lastHeartbeat?.toISOString() ?? 'never'})`;
+      } else if (info.heartbeatMetadata && !info.heartbeatMetadata.healthy) {
+        // Agent reports the local service is unhealthy — surface as UNREACHABLE with detail
+        status = 'UNREACHABLE';
+        error = 'Agent reports local service unhealthy';
+      } else {
+        status = 'REACHABLE';
+        latencyMs = info.pingPongLatency ?? null;
+      }
+    }
+
+    log.debug(`Tunnel probe ${gatewayId}: ${status}${latencyMs != null ? ` ${latencyMs}ms RTT` : ''}`);
+
+    // Detect state transition
+    const prev = await prisma.gateway.findUnique({ where: { id: gatewayId }, select: { lastHealthStatus: true } });
+    if (prev && prev.lastHealthStatus !== status) {
+      log.info(`Gateway ${gatewayId} tunnel health changed: ${prev.lastHealthStatus ?? 'UNKNOWN'} → ${status}`);
+    }
+
+    await prisma.gateway.update({
+      where: { id: gatewayId },
+      data: { lastHealthStatus: status, lastCheckedAt: now, lastLatencyMs: latencyMs, lastError: error },
+    });
+
+    if (emitHealthUpdate) {
+      emitHealthUpdate(tenantId, { gatewayId, status, latencyMs, error, checkedAt: now.toISOString() });
+    }
+
+    // Emit tunnel metrics if we have an active connection
+    if (connected && info && emitTunnelMetricsUpdate) {
+      emitTunnelMetricsUpdate(tenantId, {
+        gatewayId,
+        connectedAt: info.connectedAt.toISOString(),
+        uptimeMs: now.getTime() - info.connectedAt.getTime(),
+        rttMs: info.pingPongLatency ?? null,
+        activeStreams: info.activeStreams,
+        bytesTransferred: info.bytesTransferred,
+        agentHealthy: info.heartbeatMetadata?.healthy ?? null,
+        checkedAt: now.toISOString(),
+      });
+    }
+  } catch (err) {
+    log.error(`Tunnel probe failed for gateway ${gatewayId}:`, (err as Error).message);
+  }
+}
+
+export function startTunnelMonitor(gatewayId: string, tenantId: string, intervalMs: number) {
+  stopMonitor(gatewayId);
+
+  log.info(`Starting tunnel-based monitor for ${gatewayId} (every ${intervalMs}ms)`);
+
+  probeViaTunnel(gatewayId, tenantId);
+
+  const handle = setInterval(() => {
+    probeViaTunnel(gatewayId, tenantId);
+  }, intervalMs);
+
+  monitors.set(gatewayId, handle);
+}
+
 export async function startAllMonitors() {
   const gateways = await prisma.gateway.findMany({
     where: { monitoringEnabled: true },
-    select: { id: true, host: true, port: true, tenantId: true, monitorIntervalMs: true, publishPorts: true, type: true },
+    select: {
+      id: true,
+      host: true,
+      port: true,
+      tenantId: true,
+      monitorIntervalMs: true,
+      publishPorts: true,
+      type: true,
+      tunnelEnabled: true,
+    },
   });
 
-  const isPublishPortsManaged = (gw: { publishPorts: boolean; type: string }) =>
-    gw.publishPorts && (gw.type === 'MANAGED_SSH' || gw.type === 'GUACD');
+  const isTunnelGateway = (gw: { tunnelEnabled: boolean }) => gw.tunnelEnabled;
 
-  const probeable = gateways.filter((gw) => !isPublishPortsManaged(gw));
+  const isPublishPortsManaged = (gw: { publishPorts: boolean; type: string; tunnelEnabled: boolean }) =>
+    !gw.tunnelEnabled && gw.publishPorts && (gw.type === 'MANAGED_SSH' || gw.type === 'GUACD');
+
+  const tunnelBased = gateways.filter(isTunnelGateway);
   const instanceBased = gateways.filter(isPublishPortsManaged);
+  type GwRow = (typeof gateways)[number];
+  const probeable = gateways.filter(
+    (gw: GwRow) => !isTunnelGateway(gw) && !isPublishPortsManaged(gw),
+  );
 
   logger.info(
-    `[gateway-monitor] Starting monitors for ${probeable.length} direct + ${instanceBased.length} instance-based (${gateways.length} total)`,
+    `[gateway-monitor] Starting monitors for ${probeable.length} direct + ` +
+    `${instanceBased.length} instance-based + ${tunnelBased.length} tunnel-based ` +
+    `(${gateways.length} total)`,
   );
 
   for (const gw of probeable) {
@@ -324,6 +453,10 @@ export async function startAllMonitors() {
 
   for (const gw of instanceBased) {
     startInstanceMonitor(gw.id, gw.tenantId, gw.monitorIntervalMs);
+  }
+
+  for (const gw of tunnelBased) {
+    startTunnelMonitor(gw.id, gw.tenantId, gw.monitorIntervalMs);
   }
 }
 

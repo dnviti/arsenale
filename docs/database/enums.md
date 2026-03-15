@@ -23,7 +23,20 @@
 | **ExternalVaultAuthMethod** | `TOKEN`, `APPROLE` |
 | **SyncProvider** | `NETBOX` |
 | **SyncStatus** | `PENDING`, `RUNNING`, `SUCCESS`, `PARTIAL`, `ERROR` |
+| **AccessPolicyTargetType** | `TENANT`, `TEAM`, `FOLDER` |
 | **AuditAction** | 100+ values — see `server/prisma/schema.prisma` for the full list |
+
+### New AuditAction Values (Tunnel & ABAC)
+
+The following `AuditAction` values were added for zero-trust tunnel and ABAC features:
+
+| Value | Description |
+|-------|-------------|
+| `TUNNEL_CONNECT` | Tunnel agent successfully connected via WebSocket |
+| `TUNNEL_DISCONNECT` | Tunnel agent disconnected |
+| `TUNNEL_TOKEN_GENERATE` | A new tunnel agent token was generated for a gateway |
+| `TUNNEL_TOKEN_ROTATE` | A tunnel agent token was revoked/rotated |
+| `SESSION_DENIED_ABAC` | A session was denied by an ABAC access policy evaluation |
 
 <!-- manual-start -->
 <!-- manual-end -->

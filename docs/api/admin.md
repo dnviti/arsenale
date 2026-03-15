@@ -119,5 +119,237 @@ All endpoints require authentication and tenant membership. Most require Operato
 | `GET` | `/api/gateways/:id/scaling` | Get scaling status |
 | `PUT` | `/api/gateways/:id/scaling` | Update scaling config |
 
+### Zero-Trust Tunnel Management
+
+All tunnel endpoints require authentication and tenant membership with Operator role, except tunnel overview which requires Admin role.
+
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| `GET` | `/api/gateways/tunnel-overview` | Admin | Fleet-wide tunnel status overview |
+| `POST` | `/api/gateways/:id/tunnel-token` | Operator | Generate tunnel token for gateway |
+| `DELETE` | `/api/gateways/:id/tunnel-token` | Operator | Revoke tunnel token |
+| `POST` | `/api/gateways/:id/tunnel-disconnect` | Operator | Force disconnect an active tunnel |
+| `GET` | `/api/gateways/:id/tunnel-events` | Operator | Get recent tunnel connect/disconnect events |
+| `GET` | `/api/gateways/:id/tunnel-metrics` | Operator | Get live tunnel metrics |
+
+#### `GET /api/gateways/tunnel-overview`
+
+Returns fleet-wide tunnel status for all tunnel-enabled gateways in the tenant.
+
+**Auth**: Admin
+
+**Response**:
+```json
+{
+  "total": 5,
+  "connected": 3,
+  "disconnected": 2,
+  "avgRttMs": 42
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | `number` | Total tunnel-enabled gateways |
+| `connected` | `number` | Currently connected tunnels |
+| `disconnected` | `number` | Tunnel-enabled but not connected |
+| `avgRttMs` | `number \| null` | Average round-trip latency in ms (null if no data) |
+
+#### `POST /api/gateways/:id/tunnel-token`
+
+Generate a new tunnel token for a gateway. The plain token is returned only once and must be stored by the caller.
+
+**Auth**: Operator
+
+**Response** (`201`):
+```json
+{
+  "token": "tunneltok_abc123...",
+  "tunnelEnabled": true,
+  "tunnelConnected": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `token` | `string` | Plain-text tunnel token (shown only once) |
+| `tunnelEnabled` | `boolean` | Whether tunnel is now enabled on the gateway |
+| `tunnelConnected` | `boolean` | Whether a tunnel client is currently connected |
+
+#### `DELETE /api/gateways/:id/tunnel-token`
+
+Revoke the tunnel token for a gateway. Disconnects any active tunnel.
+
+**Auth**: Operator
+
+**Response**:
+```json
+{
+  "revoked": true,
+  "tunnelEnabled": false
+}
+```
+
+#### `POST /api/gateways/:id/tunnel-disconnect`
+
+Force disconnect an active tunnel without revoking the token. The tunnel client can reconnect using the same token.
+
+**Auth**: Operator
+
+**Response**:
+```json
+{
+  "disconnected": true
+}
+```
+
+**Errors**: `400` if tunnel is not currently connected.
+
+#### `GET /api/gateways/:id/tunnel-events`
+
+Returns the 20 most recent tunnel connect/disconnect audit events for a gateway.
+
+**Auth**: Operator
+
+**Response**:
+```json
+{
+  "events": [
+    {
+      "action": "TUNNEL_CONNECT",
+      "timestamp": "2026-03-15T10:30:00.000Z",
+      "details": { "clientVersion": "1.0.0" },
+      "ipAddress": "203.0.113.10"
+    },
+    {
+      "action": "TUNNEL_DISCONNECT",
+      "timestamp": "2026-03-15T09:15:00.000Z",
+      "details": { "forced": true },
+      "ipAddress": "203.0.113.10"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `events[].action` | `string` | `TUNNEL_CONNECT` or `TUNNEL_DISCONNECT` |
+| `events[].timestamp` | `string` | ISO 8601 timestamp |
+| `events[].details` | `object \| null` | Safe audit details (clientVersion, forced) |
+| `events[].ipAddress` | `string \| null` | Client IP address |
+
+#### `GET /api/gateways/:id/tunnel-metrics`
+
+Returns live metrics for an active tunnel connection. Returns `{ connected: false }` if no tunnel is connected.
+
+**Auth**: Operator
+
+**Response** (connected):
+```json
+{
+  "connectedAt": "2026-03-15T08:00:00.000Z",
+  "lastHeartbeat": "2026-03-15T10:30:00.000Z",
+  "pingPongLatency": 35,
+  "activeStreams": 2,
+  "bytesTransferred": 1048576,
+  "clientVersion": "1.0.0",
+  "clientIp": "203.0.113.10"
+}
+```
+
+**Response** (not connected):
+```json
+{
+  "connected": false
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `connectedAt` | `string` | ISO 8601 connection start time |
+| `lastHeartbeat` | `string \| undefined` | Last heartbeat timestamp |
+| `pingPongLatency` | `number \| undefined` | WebSocket ping/pong latency in ms |
+| `activeStreams` | `number` | Number of active multiplexed streams |
+| `bytesTransferred` | `number` | Total bytes transferred through tunnel |
+| `clientVersion` | `string \| undefined` | Tunnel client version string |
+| `clientIp` | `string \| undefined` | Tunnel client IP address |
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Access Policies (ABAC)
+
+All endpoints require authentication and tenant membership with Admin role. Mounted at `/api/access-policies`.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/access-policies` | List all access policies |
+| `POST` | `/api/access-policies` | Create an access policy |
+| `PUT` | `/api/access-policies/:id` | Update an access policy |
+| `DELETE` | `/api/access-policies/:id` | Delete an access policy |
+
+### `GET /api/access-policies`
+
+List all access policies for the current tenant.
+
+**Response**: `AccessPolicy[]`
+
+### `POST /api/access-policies`
+
+Create a new access policy.
+
+**Body**:
+```json
+{
+  "targetType": "TENANT",
+  "targetId": "uuid",
+  "allowedTimeWindows": "09:00-17:00,20:00-22:00",
+  "requireTrustedDevice": true,
+  "requireMfaStepUp": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `targetType` | `"TENANT" \| "TEAM" \| "FOLDER"` | Yes | Scope of the policy |
+| `targetId` | `string (UUID)` | Yes | ID of the tenant, team, or folder |
+| `allowedTimeWindows` | `string \| null` | No | Comma-separated time windows in `HH:MM-HH:MM` format (24h) |
+| `requireTrustedDevice` | `boolean` | No | Require a trusted/verified device |
+| `requireMfaStepUp` | `boolean` | No | Require MFA step-up authentication |
+
+**Response** (`201`): The created `AccessPolicy` object.
+
+### `PUT /api/access-policies/:id`
+
+Update an existing access policy. Only the fields provided are updated.
+
+**Body**:
+```json
+{
+  "allowedTimeWindows": "08:00-18:00",
+  "requireTrustedDevice": false,
+  "requireMfaStepUp": true
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `allowedTimeWindows` | `string \| null` | No | Comma-separated time windows in `HH:MM-HH:MM` format |
+| `requireTrustedDevice` | `boolean` | No | Require a trusted/verified device |
+| `requireMfaStepUp` | `boolean` | No | Require MFA step-up authentication |
+
+**Response**: The updated `AccessPolicy` object.
+
+### `DELETE /api/access-policies/:id`
+
+Delete an access policy.
+
+**Response**:
+```json
+{
+  "deleted": true
+}
+```
+
 <!-- manual-start -->
 <!-- manual-end -->

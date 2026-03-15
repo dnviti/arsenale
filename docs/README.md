@@ -43,6 +43,11 @@
 - [Policies](security/policies.md) — Sharing, DLP, IP allowlist, SSRF prevention
 - [Production Hardening](security/production.md) — Security headers, production checklist
 
+## Guides
+
+- [Zero-Trust Tunnel User Guide](guides/zero-trust-tunnel-user-guide.md) — Deploying and configuring tunnels (Docker, systemd, K8s), ABAC policies, monitoring
+- [Tunnel Implementation Guide](guides/tunnel-implementation-guide.md) — Technical deep-dive: binary protocol, TunnelBroker, ABAC engine, security hardening, extending
+
 ## Operations
 
 - [Deployment](deployment.md) — Dev setup, production Docker, Nginx, troubleshooting

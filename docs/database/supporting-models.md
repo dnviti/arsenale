@@ -127,3 +127,22 @@
 
 <!-- manual-start -->
 <!-- manual-end -->
+
+## AccessPolicy
+
+Attribute-Based Access Control (ABAC) policies that restrict session access based on contextual attributes. Policies are scoped to a tenant, team, or folder and evaluated additively (most restrictive combination wins).
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| targetType | AccessPolicyTargetType | Enum | Scope: `TENANT`, `TEAM`, or `FOLDER` |
+| targetId | String | Required | ID of the Tenant, Team, or Folder this policy governs |
+| allowedTimeWindows | String? | Optional | Comma-separated time windows in `HH:MM-HH:MM` UTC format (e.g., `09:00-18:00`). Null = any time allowed |
+| requireTrustedDevice | Boolean | Default: false | Require WebAuthn-authenticated login (trusted device) |
+| requireMfaStepUp | Boolean | Default: false | Require MFA step-up (TOTP or WebAuthn) in current session |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Index**: `[targetType, targetId]`
+
+Source: `server/src/services/abac.service.ts`
