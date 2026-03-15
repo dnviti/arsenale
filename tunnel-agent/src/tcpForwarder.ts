@@ -47,6 +47,14 @@ export function handleOpenFrame(
     return;
   }
 
+  // Security: only allow connections to localhost targets (prevent SSRF)
+  const ALLOWED_HOSTS = ['localhost', '127.0.0.1', '::1'];
+  if (!ALLOWED_HOSTS.includes(host)) {
+    warn(`OPEN frame for stream ${streamId} rejected: non-localhost host "${host}" is not allowed`);
+    ws.send(buildFrame(MsgType.CLOSE, streamId));
+    return;
+  }
+
   log(`Opening local TCP connection to ${host}:${port} for stream ${streamId}`);
 
   const socket = net.connect(port, host);

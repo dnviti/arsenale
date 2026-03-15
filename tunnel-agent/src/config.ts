@@ -5,6 +5,19 @@
  * If TUNNEL_SERVER_URL is absent the agent exits cleanly (dormant mode).
  */
 
+import fs from 'fs';
+import path from 'path';
+
+function getPackageVersion(): string {
+  try {
+    const pkgPath = path.resolve(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    return pkg.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 export interface TunnelConfig {
   /** WSS URL of the TunnelBroker server, e.g. wss://my-server.example.com/tunnel */
   serverUrl: string;
@@ -79,7 +92,7 @@ export function loadConfig(): TunnelConfig | null {
     caCert: process.env.TUNNEL_CA_CERT?.trim() || undefined,
     clientCert: process.env.TUNNEL_CLIENT_CERT?.trim() || undefined,
     clientKey: process.env.TUNNEL_CLIENT_KEY?.trim() || undefined,
-    agentVersion: process.env.TUNNEL_AGENT_VERSION?.trim() || '1.4.1',
+    agentVersion: process.env.TUNNEL_AGENT_VERSION?.trim() || getPackageVersion(),
     pingIntervalMs: parseInt(process.env.TUNNEL_PING_INTERVAL_MS || '15000', 10),
     reconnectInitialMs: parseInt(process.env.TUNNEL_RECONNECT_INITIAL_MS || '1000', 10),
     reconnectMaxMs: parseInt(process.env.TUNNEL_RECONNECT_MAX_MS || '60000', 10),

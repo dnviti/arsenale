@@ -194,8 +194,13 @@ export async function deployGatewayInstance(
       });
 
       // Build the server tunnel URL from the server's own address
-      const tunnelServerUrl = process.env.TUNNEL_SERVER_URL
-        || `wss://localhost:${config.port}/tunnel`;
+      const tunnelServerUrl = process.env.TUNNEL_SERVER_URL;
+      if (!tunnelServerUrl) {
+        throw new AppError(
+          'TUNNEL_SERVER_URL environment variable is required when tunnel is enabled for a gateway',
+          500,
+        );
+      }
 
       tunnelEnvOptions = {
         serverUrl: tunnelServerUrl,

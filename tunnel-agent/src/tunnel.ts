@@ -71,7 +71,8 @@ export class TunnelAgent {
       this.ws.close(1001, 'agent shutdown');
     }
     log('Agent stopped');
-    process.exit(0);
+    // Allow WS close frame to flush before exiting
+    setTimeout(() => process.exit(0), 500);
   }
 
   // ---------------------------------------------------------------------------
@@ -214,12 +215,17 @@ export class TunnelAgent {
   private probeLocalService(): Promise<HealthStatus> {
     return new Promise<HealthStatus>((resolve) => {
       const start = Date.now();
+      let resolved = false;
+
       const socket = net.connect(
         this.cfg.localServicePort,
         this.cfg.localServiceHost,
       );
 
       const done = (healthy: boolean) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
         if (!socket.destroyed) socket.destroy();
         resolve({
           healthy,
@@ -232,7 +238,7 @@ export class TunnelAgent {
       socket.once('error', () => done(false));
 
       // Timeout after 2 s
-      setTimeout(() => done(false), 2_000);
+      const timer = setTimeout(() => done(false), 2_000);
     });
   }
 }

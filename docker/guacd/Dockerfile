@@ -30,7 +30,7 @@ LABEL org.opencontainers.image.licenses="BUSL-1.1"
 
 USER root
 
-# Install Node.js runtime (Alpine-based guacd uses Debian, so use apt)
+# Install Node.js runtime (Debian-based guacd image, so use apt)
 RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
