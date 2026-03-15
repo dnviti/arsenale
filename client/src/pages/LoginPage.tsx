@@ -23,7 +23,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [ldapEnabled, setLdapEnabled] = useState(false);
-  const [ldapProviderName, setLdapProviderName] = useState('LDAP');
+  const ldapProviderName = 'LDAP';
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -51,7 +51,6 @@ export default function LoginPage() {
       .then((p) => {
         if (p.ldap) {
           setLdapEnabled(true);
-          setLdapProviderName(p.ldapProviderName || 'LDAP');
         }
       })
       .catch(() => {});

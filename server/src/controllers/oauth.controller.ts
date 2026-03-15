@@ -130,17 +130,14 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
 }
 
 export function getAvailableProviders(_req: Request, res: Response) {
-  res.json({
-    google: config.oauth.google.enabled,
-    microsoft: config.oauth.microsoft.enabled,
-    github: config.oauth.github.enabled,
-    oidc: config.oauth.oidc.enabled,
-    oidcProviderName: config.oauth.oidc.providerName,
-    saml: config.oauth.saml.enabled,
-    samlProviderName: config.oauth.saml.providerName,
-    ldap: config.ldap.enabled && !!config.ldap.serverUrl,
-    ldapProviderName: config.ldap.providerName,
-  });
+  const providers: Record<string, boolean> = {};
+  if (config.oauth.google.enabled) providers.google = true;
+  if (config.oauth.microsoft.enabled) providers.microsoft = true;
+  if (config.oauth.github.enabled) providers.github = true;
+  if (config.oauth.oidc.enabled) providers.oidc = true;
+  if (config.oauth.saml.enabled) providers.saml = true;
+  if (config.ldap.enabled && !!config.ldap.serverUrl) providers.ldap = true;
+  res.json(providers);
 }
 
 export function initiateLinkOAuth(req: Request, res: Response, next: NextFunction) {

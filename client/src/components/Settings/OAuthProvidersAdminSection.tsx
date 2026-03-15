@@ -13,17 +13,16 @@ import { extractApiError } from '../../utils/apiError';
 interface ProviderRow {
   label: string;
   enabled: boolean;
-  providerName?: string;
 }
 
 function buildProviderRows(providers: OAuthProviders): ProviderRow[] {
   return [
-    { label: 'Google', enabled: providers.google },
-    { label: 'Microsoft', enabled: providers.microsoft },
-    { label: 'GitHub', enabled: providers.github },
-    { label: 'OIDC', enabled: !!providers.oidc, providerName: providers.oidcProviderName },
-    { label: 'SAML', enabled: !!providers.saml, providerName: providers.samlProviderName },
-    { label: 'LDAP', enabled: !!providers.ldap, providerName: providers.ldapProviderName },
+    { label: 'Google', enabled: !!providers.google },
+    { label: 'Microsoft', enabled: !!providers.microsoft },
+    { label: 'GitHub', enabled: !!providers.github },
+    { label: 'OIDC', enabled: !!providers.oidc },
+    { label: 'SAML', enabled: !!providers.saml },
+    { label: 'LDAP', enabled: !!providers.ldap },
   ];
 }
 
@@ -66,13 +65,7 @@ export default function OAuthProvidersAdminSection() {
                 </Typography>
                 <Chip
                   icon={row.enabled ? <CheckIcon /> : <BlockIcon />}
-                  label={
-                    row.enabled
-                      ? row.providerName
-                        ? `Enabled — ${row.providerName}`
-                        : 'Enabled'
-                      : 'Disabled'
-                  }
+                  label={row.enabled ? 'Enabled' : 'Disabled'}
                   color={row.enabled ? 'success' : 'default'}
                   variant="outlined"
                   size="small"

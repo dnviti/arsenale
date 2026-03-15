@@ -100,7 +100,7 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
             startIcon={<OidcIcon />}
             onClick={() => initiateOAuthLogin('oidc')}
           >
-            {label} with {providers.oidcProviderName || 'SSO'}
+            {label} with SSO
           </Button>
         )}
         {providers.saml && (
@@ -110,7 +110,7 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
             startIcon={<SamlIcon />}
             onClick={() => initiateSamlLogin()}
           >
-            {label} with {providers.samlProviderName || 'SAML SSO'}
+            {label} with SAML SSO
           </Button>
         )}
       </Stack>

@@ -79,12 +79,7 @@ export default function LinkedAccountsSection({ hasPassword }: LinkedAccountsSec
   const linkedProviders = new Set(accounts.map((a) => a.provider));
   const totalAuthMethods = accounts.length + (hasPassword ? 1 : 0);
 
-  // Compute labels with dynamic OIDC/SAML provider names
-  const labels: Record<string, string> = {
-    ...providerLabels,
-    ...(providers?.oidcProviderName ? { OIDC: providers.oidcProviderName } : {}),
-    ...(providers?.samlProviderName ? { SAML: providers.samlProviderName } : {}),
-  };
+  const labels: Record<string, string> = { ...providerLabels };
 
   const handleUnlink = async (provider: string) => {
     setError('');

@@ -50,3 +50,7 @@ export async function setSelfSignupEnabled(enabled: boolean): Promise<void> {
 export async function getPublicConfig(): Promise<{ selfSignupEnabled: boolean; selfSignupEnvLocked: boolean }> {
   return { selfSignupEnabled: await getSelfSignupEnabled(), selfSignupEnvLocked: isSelfSignupEnvLocked() };
 }
+
+export async function getMinimalPublicConfig(): Promise<{ selfSignupEnabled: boolean }> {
+  return { selfSignupEnabled: await getSelfSignupEnabled() };
+}

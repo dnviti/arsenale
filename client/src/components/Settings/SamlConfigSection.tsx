@@ -12,7 +12,7 @@ import { extractApiError } from '../../utils/apiError';
 
 export default function SamlConfigSection() {
   const [enabled, setEnabled] = useState(false);
-  const [providerName, setProviderName] = useState('SAML');
+  const providerName = 'SAML';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -20,9 +20,6 @@ export default function SamlConfigSection() {
     getOAuthProviders()
       .then((providers) => {
         setEnabled(!!providers.saml);
-        if (providers.samlProviderName) {
-          setProviderName(providers.samlProviderName);
-        }
       })
       .catch((err: unknown) => {
         setError(extractApiError(err, 'Failed to load SAML configuration'));

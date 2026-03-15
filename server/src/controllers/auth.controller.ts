@@ -6,7 +6,7 @@ import * as auditService from '../services/audit.service';
 import { AppError } from '../middleware/error.middleware';
 import { config } from '../config';
 import { setRefreshTokenCookie, setCsrfCookie, clearAuthCookies } from '../utils/cookie';
-import { getPublicConfig } from '../services/appConfig.service';
+import { getMinimalPublicConfig } from '../services/appConfig.service';
 import type { AuthRequest } from '../types';
 import { assertAuthenticated } from '../types';
 import { getClientIp } from '../utils/ip';
@@ -342,6 +342,6 @@ export async function completePasswordReset(req: Request, res: Response, next: N
 }
 
 export async function publicAuthConfig(_req: Request, res: Response) {
-  const cfg = await getPublicConfig();
+  const cfg = await getMinimalPublicConfig();
   res.json(cfg);
 }
