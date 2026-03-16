@@ -12,6 +12,7 @@ import {
   removeAccount,
   touchAccount,
 } from './lib/accountStore';
+import { getOrCreateKey } from './lib/tokenEncryption';
 import { findMatchingCredentials, extractDomain } from './lib/urlMatcher';
 import type { CredentialIndexEntry } from './lib/urlMatcher';
 import type {
@@ -47,6 +48,14 @@ const AUTOFILL_PREFS_KEY = 'autofillPreferences';
 
 chrome.alarms.create(CREDENTIAL_INDEX_REFRESH_ALARM, {
   periodInMinutes: CREDENTIAL_INDEX_REFRESH_MINUTES,
+});
+
+// ── Token encryption key bootstrap ─────────────────────────────────────
+// Eagerly create (or restore) the AES-GCM encryption key in
+// chrome.storage.session so that token decrypt/encrypt operations in
+// accountStore never have to wait for key generation on the hot path.
+getOrCreateKey().catch(() => {
+  // Best-effort: key will be created lazily on first account access
 });
 
 /** Default autofill preferences. */
