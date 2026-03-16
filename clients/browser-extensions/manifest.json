@@ -8,7 +8,7 @@
     "alarms",
     "activeTab"
   ],
-  "host_permissions": [
+  "optional_host_permissions": [
     "https://*/api/*",
     "http://*/api/*"
   ],
@@ -35,11 +35,5 @@
     "48": "icons/icon-48.png",
     "128": "icons/icon-128.png"
   },
-  "content_scripts": [
-    {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ]
+  "content_scripts": []
 }

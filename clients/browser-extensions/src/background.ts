@@ -34,7 +34,12 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // ── Message handler ────────────────────────────────────────────────────
 chrome.runtime.onMessage.addListener(
-  (message: BackgroundMessage, _sender, sendResponse: (response: BackgroundResponse) => void) => {
+  (message: BackgroundMessage, sender, sendResponse: (response: BackgroundResponse) => void) => {
+    // Security: only accept messages from our own extension
+    if (sender.id !== chrome.runtime.id) {
+      sendResponse({ success: false, error: 'Unauthorized sender' });
+      return true;
+    }
     handleMessage(message).then(sendResponse);
     // Return true to indicate we will respond asynchronously
     return true;
@@ -118,11 +123,17 @@ async function handleApiRequest(
   body?: unknown,
 ): Promise<BackgroundResponse> {
   try {
+    // Security: validate that the path is a safe relative API path
+    const sanitizedPath = path.startsWith('/') ? path : `/${path}`;
+    if (!sanitizedPath.startsWith('/api/') || sanitizedPath.includes('..')) {
+      return { success: false, error: 'Invalid API path: must start with /api/ and cannot contain ..' };
+    }
+
     const accounts = await getAccounts();
     const account = accounts.find((a) => a.id === accountId);
     if (!account) return { success: false, error: 'Account not found' };
 
-    const url = `${account.serverUrl}${path.startsWith('/') ? path : `/${path}`}`;
+    const url = `${account.serverUrl}${sanitizedPath}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${account.accessToken}`,

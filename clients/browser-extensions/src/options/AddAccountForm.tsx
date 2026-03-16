@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { healthCheck } from '../lib/apiClient';
 
 interface AddAccountFormProps {
   onSubmit: (serverUrl: string, email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -20,8 +21,6 @@ export function AddAccountForm({ onSubmit }: AddAccountFormProps): React.ReactEl
     setError(null);
 
     try {
-      // Import dynamically to keep the form component simpler
-      const { healthCheck } = await import('../lib/apiClient');
       const result = await healthCheck(serverUrl.trim());
       if (result.success) {
         setServerValid(true);

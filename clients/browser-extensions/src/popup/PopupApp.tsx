@@ -1,20 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import type { Account } from '../types';
 import { sendMessage } from '../lib/apiClient';
+import { fetchAccounts } from '../lib/fetchAccounts';
 import { AccountSwitcher } from './AccountSwitcher';
 import { VaultStatus } from './VaultStatus';
 import { TabPanel } from './TabPanel';
 import './popup.css';
 
 type Tab = 'keychain' | 'connections';
-
-async function fetchAccounts(): Promise<{ accounts: Account[]; activeId: string | null }> {
-  const res = await sendMessage<Account[]>({ type: 'GET_ACCOUNTS' });
-  const accounts = res.success && res.data ? res.data : [];
-  const storage = await chrome.storage.local.get('activeAccountId');
-  const activeId = (storage['activeAccountId'] as string | null | undefined) ?? null;
-  return { accounts, activeId };
-}
 
 export function PopupApp(): React.ReactElement {
   const [accounts, setAccounts] = useState<Account[]>([]);
