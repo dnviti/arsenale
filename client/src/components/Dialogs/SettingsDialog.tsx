@@ -6,6 +6,7 @@ import {
 import {
   Close as CloseIcon,
   Person as PersonIcon,
+  Palette as PaletteIcon,
   Terminal as TerminalIcon,
   Shield as ShieldIcon,
   Business as BusinessIcon,
@@ -43,6 +44,7 @@ import TunnelConfigSection from '../Settings/TunnelConfigSection';
 import SamlConfigSection from '../Settings/SamlConfigSection';
 import OAuthProvidersAdminSection from '../Settings/OAuthProvidersAdminSection';
 import AccessPolicySection from '../Settings/AccessPolicySection';
+import AppearanceSection from '../Settings/AppearanceSection';
 import { SlideUp } from '../common/SlideUp';
 import { isAdminOrAbove } from '../../utils/roles';
 
@@ -54,6 +56,7 @@ interface TabDef {
 
 const BASE_TABS: TabDef[] = [
   { id: 'profile', label: 'Profile', icon: <PersonIcon /> },
+  { id: 'appearance', label: 'Appearance', icon: <PaletteIcon /> },
   { id: 'connections', label: 'Connections', icon: <TerminalIcon /> },
   { id: 'security', label: 'Security', icon: <ShieldIcon /> },
   { id: 'organization', label: 'Organization', icon: <BusinessIcon /> },
@@ -200,6 +203,9 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
               <ProfileSection onHasPasswordResolved={setHasPassword} linkedProvider={linkedProvider} />
               <ChangePasswordSection hasPassword={hasPassword} />
             </Stack>
+          )}
+          {resolvedTab === 'appearance' && (
+            <AppearanceSection />
           )}
           {resolvedTab === 'connections' && (
             <Stack spacing={3}>

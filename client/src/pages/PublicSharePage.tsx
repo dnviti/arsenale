@@ -28,18 +28,18 @@ function SensitiveValue({ value }: { value: string }) {
           fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
           wordBreak: 'break-all',
           flex: 1,
-          color: visible ? '#f4f4f5' : '#a1a1aa',
+          color: visible ? 'text.primary' : 'text.secondary',
         }}
       >
         {visible ? value : '\u2022'.repeat(Math.min(value.length, 24))}
       </Typography>
       <Tooltip title={visible ? 'Hide' : 'Reveal'}>
-        <IconButton size="small" onClick={() => setVisible(!visible)} sx={{ color: '#a1a1aa' }}>
+        <IconButton size="small" onClick={() => setVisible(!visible)} sx={{ color: 'text.secondary' }}>
           {visible ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
         </IconButton>
       </Tooltip>
       <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-        <IconButton size="small" onClick={() => handleCopy(value)} sx={{ color: '#a1a1aa' }}>
+        <IconButton size="small" onClick={() => handleCopy(value)} sx={{ color: 'text.secondary' }}>
           <CopyIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -52,11 +52,11 @@ function PlainValue({ value }: { value: string }) {
 
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-      <Typography variant="body2" sx={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: 'break-all', flex: 1, color: '#f4f4f5' }}>
+      <Typography variant="body2" sx={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: 'break-all', flex: 1, color: 'text.primary' }}>
         {value}
       </Typography>
       <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-        <IconButton size="small" onClick={() => handleCopy(value)} sx={{ color: '#a1a1aa' }}>
+        <IconButton size="small" onClick={() => handleCopy(value)} sx={{ color: 'text.secondary' }}>
           <CopyIcon fontSize="small" />
         </IconButton>
       </Tooltip>
@@ -68,7 +68,7 @@ function SecretField({ label, value, sensitive }: { label: string; value?: strin
   if (!value) return null;
   return (
     <Box sx={{ mb: 1.5 }}>
-      <Typography variant="caption" sx={{ color: '#a1a1aa' }}>{label}</Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary' }}>{label}</Typography>
       {sensitive ? <SensitiveValue value={value} /> : <PlainValue value={value} />}
     </Box>
   );
@@ -193,20 +193,20 @@ export default function PublicSharePage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'radial-gradient(ellipse at 50% 0%, #161619 0%, #08080a 70%)',
+        background: (theme) => `radial-gradient(ellipse at 50% 0%, ${theme.palette.background.paper} 0%, ${theme.palette.background.default} 70%)`,
         p: 2,
       }}
     >
-      <Card sx={{ maxWidth: 500, width: '100%', bgcolor: '#0f0f12', border: '1px solid rgba(35,35,40,0.6)', borderRadius: 4 }}>
+      <Card sx={{ maxWidth: 500, width: '100%', bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 4 }}>
         <CardContent sx={{ p: 3 }}>
-          <Typography variant="h6" align="center" sx={{ mb: 2, fontFamily: "'Playfair Display', 'Georgia', serif", color: '#f4f4f5', fontWeight: 600 }}>
+          <Typography variant="h6" align="center" sx={{ mb: 2, fontFamily: (theme) => theme.typography.h6.fontFamily, color: 'text.primary', fontWeight: 600 }}>
             Arsenale
           </Typography>
-          <Divider sx={{ mb: 2, borderColor: 'rgba(35,35,40,0.6)' }} />
+          <Divider sx={{ mb: 2, borderColor: 'divider' }} />
 
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress sx={{ color: '#00e5a0' }} />
+              <CircularProgress sx={{ color: 'primary.main' }} />
             </Box>
           ) : error && !data && !info ? (
             <Alert severity="error">{error}</Alert>
@@ -214,7 +214,7 @@ export default function PublicSharePage() {
             <Alert severity="warning">{unavailableReason}</Alert>
           ) : data ? (
             <>
-              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600, color: '#f4f4f5' }}>
+              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600, color: 'text.primary' }}>
                 {secretName}
               </Typography>
               <SecretData data={data} />
@@ -224,10 +224,10 @@ export default function PublicSharePage() {
             </>
           ) : info?.hasPin ? (
             <>
-              <Typography variant="subtitle1" sx={{ mb: 1, color: '#f4f4f5' }}>
+              <Typography variant="subtitle1" sx={{ mb: 1, color: 'text.primary' }}>
                 {info.secretName}
               </Typography>
-              <Typography variant="body2" sx={{ mb: 2, color: '#a1a1aa' }}>
+              <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
                 This secret is protected with a PIN. Enter the PIN to access it.
               </Typography>
               {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -242,13 +242,13 @@ export default function PublicSharePage() {
                   mb: 2,
                   '& .MuiOutlinedInput-root': {
                     fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                    color: '#f4f4f5',
-                    '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' },
-                    '&:hover fieldset': { borderColor: '#a1a1aa' },
-                    '&.Mui-focused fieldset': { borderColor: '#00e5a0' },
+                    color: 'text.primary',
+                    '& fieldset': { borderColor: 'divider' },
+                    '&:hover fieldset': { borderColor: 'text.secondary' },
+                    '&.Mui-focused fieldset': { borderColor: 'primary.main' },
                   },
-                  '& .MuiInputLabel-root': { color: '#a1a1aa' },
-                  '& .MuiInputLabel-root.Mui-focused': { color: '#00e5a0' },
+                  '& .MuiInputLabel-root': { color: 'text.secondary' },
+                  '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
                 }}
                 onKeyDown={(e) => { if (e.key === 'Enter') handlePinSubmit(); }}
               />
@@ -258,11 +258,11 @@ export default function PublicSharePage() {
                 onClick={handlePinSubmit}
                 disabled={accessing}
                 sx={{
-                  bgcolor: '#00e5a0',
-                  color: '#08080a',
+                  bgcolor: 'primary.main',
+                  color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
                   fontWeight: 600,
-                  '&:hover': { bgcolor: '#00cc8e' },
-                  '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: '#08080a' },
+                  '&:hover': { bgcolor: 'secondary.main' },
+                  '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) },
                 }}
               >
                 {accessing ? 'Decrypting...' : 'Decrypt'}
@@ -270,7 +270,7 @@ export default function PublicSharePage() {
             </>
           ) : (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress sx={{ color: '#00e5a0' }} />
+              <CircularProgress sx={{ color: 'primary.main' }} />
             </Box>
           )}
         </CardContent>

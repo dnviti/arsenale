@@ -30,7 +30,7 @@ export default function VersionIndicator() {
         alignItems: 'center',
         gap: 0.5,
         borderTop: 1,
-        borderColor: 'rgba(35,35,40,0.6)',
+        borderColor: 'divider',
       }}
     >
       <Chip
@@ -40,9 +40,9 @@ export default function VersionIndicator() {
         sx={{
           height: 20,
           fontSize: '0.7rem',
-          color: '#52525b',
-          borderColor: 'rgba(0,229,160,0.15)',
-          backgroundColor: 'rgba(0,229,160,0.03)',
+          color: 'text.disabled',
+          borderColor: (theme) => `${theme.palette.primary.main}26`,
+          backgroundColor: (theme) => `${theme.palette.primary.main}08`,
           '& .MuiChip-label': { px: 0.75 },
         }}
       />
@@ -64,11 +64,11 @@ export default function VersionIndicator() {
               sx={{
                 height: 20,
                 fontSize: '0.7rem',
-                color: '#00e5a0',
-                borderColor: 'rgba(0,229,160,0.4)',
-                backgroundColor: 'rgba(0,229,160,0.06)',
+                color: 'primary.main',
+                borderColor: (theme) => `${theme.palette.primary.main}66`,
+                backgroundColor: (theme) => `${theme.palette.primary.main}0F`,
                 '& .MuiChip-label': { px: 0.75 },
-                '& .MuiChip-icon': { color: '#00e5a0' },
+                '& .MuiChip-icon': { color: 'primary.main' },
               }}
             />
           </Link>

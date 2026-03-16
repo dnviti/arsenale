@@ -18,7 +18,7 @@ export default function TabBar() {
   const activeIndex = tabs.findIndex((t) => t.id === activeTabId);
 
   return (
-    <Box sx={{ borderBottom: '1px solid rgba(35,35,40,0.6)', bgcolor: '#0f0f12' }}>
+    <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
       <Tabs
         value={activeIndex >= 0 ? activeIndex : 0}
         onChange={(_e, newValue) => {
@@ -34,7 +34,7 @@ export default function TabBar() {
         sx={{
           minHeight: 36,
           '& .MuiTabs-indicator': {
-            backgroundColor: '#00e5a0',
+            backgroundColor: 'primary.main',
           },
         }}
       >
@@ -47,18 +47,18 @@ export default function TabBar() {
               minHeight: 36,
               textTransform: 'none',
               py: 0,
-              color: '#a1a1aa',
-              '&.Mui-selected': { color: '#f4f4f5' },
-              '&:hover': { bgcolor: 'rgba(0,229,160,0.04)' },
+              color: 'text.secondary',
+              '&.Mui-selected': { color: 'text.primary' },
+              '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}0A` },
             }}
             icon={
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 {tab.connection.type === 'SSH' ? (
-                  <SshIcon sx={{ fontSize: 16, color: isActive ? '#00e5a0' : 'inherit' }} />
+                  <SshIcon sx={{ fontSize: 16, color: isActive ? 'primary.main' : 'inherit' }} />
                 ) : tab.connection.type === 'VNC' ? (
-                  <VncIcon sx={{ fontSize: 16, color: isActive ? '#00e5a0' : 'inherit' }} />
+                  <VncIcon sx={{ fontSize: 16, color: isActive ? 'primary.main' : 'inherit' }} />
                 ) : (
-                  <RdpIcon sx={{ fontSize: 16, color: isActive ? '#00e5a0' : 'inherit' }} />
+                  <RdpIcon sx={{ fontSize: 16, color: isActive ? 'primary.main' : 'inherit' }} />
                 )}
                 <span>{tab.connection.name}</span>
                 <Box
@@ -81,7 +81,7 @@ export default function TabBar() {
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    '&:hover': { bgcolor: 'rgba(0,229,160,0.08)' },
+                    '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` },
                   }}
                 >
                   <CloseIcon sx={{ fontSize: 14 }} />

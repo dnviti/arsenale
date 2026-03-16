@@ -47,14 +47,14 @@ export default function VaultSetupPage() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      bgcolor: '#08080a',
-      background: 'radial-gradient(ellipse at 50% 0%, rgba(0,229,160,0.03) 0%, #08080a 70%)',
+      bgcolor: 'background.default',
+      background: (theme) => `radial-gradient(ellipse at 50% 0%, ${theme.palette.primary.main}08 0%, ${theme.palette.background.default} 70%)`,
     }}>
       <Card sx={{
         width: 450,
         maxWidth: '90vw',
-        bgcolor: '#0f0f12',
-        border: '1px solid rgba(35,35,40,0.6)',
+        bgcolor: 'background.paper',
+        border: 1, borderColor: 'divider',
         borderRadius: 4,
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
       }}>
@@ -64,22 +64,22 @@ export default function VaultSetupPage() {
               width: 6,
               height: 6,
               borderRadius: '50%',
-              bgcolor: '#00e5a0',
-              boxShadow: '0 0 8px rgba(0,229,160,0.4)',
+              bgcolor: 'primary.main',
+              boxShadow: (theme) => `0 0 8px ${theme.palette.primary.main}66`,
             }} />
           </Box>
           <Typography variant="h4" gutterBottom align="center" sx={{
-            fontFamily: '"Playfair Display", Georgia, "Times New Roman", serif',
-            color: '#f4f4f5',
+            fontFamily: (theme) => theme.typography.h4.fontFamily,
+            color: 'text.primary',
             fontWeight: 600,
             letterSpacing: '-0.01em',
           }}>
             Set Up Your Vault
           </Typography>
-          <Typography variant="body2" align="center" sx={{ mb: 1, color: '#a1a1aa' }}>
+          <Typography variant="body2" align="center" sx={{ mb: 1, color: 'text.secondary' }}>
             Your vault encrypts all saved connection credentials.
           </Typography>
-          <Typography variant="body2" align="center" sx={{ mb: 3, color: '#a1a1aa' }}>
+          <Typography variant="body2" align="center" sx={{ mb: 3, color: 'text.secondary' }}>
             This vault password is separate from your OAuth login and cannot be recovered if lost.
           </Typography>
 
@@ -97,14 +97,14 @@ export default function VaultSetupPage() {
               helperText="Min 8 characters. This password encrypts your saved credentials."
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  bgcolor: '#161619',
-                  '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' },
-                  '&:hover fieldset': { borderColor: 'rgba(55,55,60,0.8)' },
-                  '&.Mui-focused fieldset': { borderColor: '#00e5a0' },
+                  bgcolor: 'background.default',
+                  '& fieldset': { borderColor: 'divider' },
+                  '&:hover fieldset': { borderColor: 'text.disabled' },
+                  '&.Mui-focused fieldset': { borderColor: 'primary.main' },
                 },
-                '& .MuiInputLabel-root': { color: '#a1a1aa' },
-                '& .MuiInputBase-input': { color: '#f4f4f5' },
-                '& .MuiFormHelperText-root': { color: '#a1a1aa' },
+                '& .MuiInputLabel-root': { color: 'text.secondary' },
+                '& .MuiInputBase-input': { color: 'text.primary' },
+                '& .MuiFormHelperText-root': { color: 'text.secondary' },
               }}
             />
             <TextField
@@ -117,13 +117,13 @@ export default function VaultSetupPage() {
               required
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  bgcolor: '#161619',
-                  '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' },
-                  '&:hover fieldset': { borderColor: 'rgba(55,55,60,0.8)' },
-                  '&.Mui-focused fieldset': { borderColor: '#00e5a0' },
+                  bgcolor: 'background.default',
+                  '& fieldset': { borderColor: 'divider' },
+                  '&:hover fieldset': { borderColor: 'text.disabled' },
+                  '&.Mui-focused fieldset': { borderColor: 'primary.main' },
                 },
-                '& .MuiInputLabel-root': { color: '#a1a1aa' },
-                '& .MuiInputBase-input': { color: '#f4f4f5' },
+                '& .MuiInputLabel-root': { color: 'text.secondary' },
+                '& .MuiInputBase-input': { color: 'text.primary' },
               }}
             />
             <Button
@@ -134,14 +134,14 @@ export default function VaultSetupPage() {
               sx={{
                 mt: 3,
                 py: 1.4,
-                bgcolor: '#00e5a0',
-                color: '#08080a',
+                bgcolor: 'primary.main',
+                color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
                 fontWeight: 600,
                 textTransform: 'none',
                 fontSize: '0.95rem',
                 borderRadius: 2,
-                '&:hover': { bgcolor: '#00cc8e' },
-                '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: 'rgba(8,8,10,0.5)' },
+                '&:hover': { bgcolor: 'secondary.main' },
+                '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) },
               }}
             >
               {loading ? 'Setting up...' : 'Set Vault Password'}

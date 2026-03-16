@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Button, Stack, Divider, Typography, CircularProgress } from '@mui/material';
+import { Button, Stack, Divider, Typography, CircularProgress, useTheme } from '@mui/material';
 import GitHubIcon from '@mui/icons-material/GitHub';
 import GoogleIcon from '@mui/icons-material/Google';
 import { getOAuthProviders, initiateOAuthLogin, initiateSamlLogin, OAuthProviders } from '../api/oauth.api';
@@ -38,6 +38,7 @@ interface OAuthButtonsProps {
 export default function OAuthButtons({ mode }: OAuthButtonsProps) {
   const [providers, setProviders] = useState<OAuthProviders | null>(null);
   const [loading, setLoading] = useState(true);
+  const theme = useTheme();
 
   useEffect(() => {
     getOAuthProviders()
@@ -49,7 +50,7 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
   if (loading) {
     return (
       <Stack alignItems="center" sx={{ my: 2 }}>
-        <CircularProgress size={20} sx={{ color: '#00e5a0' }} />
+        <CircularProgress size={20} sx={{ color: 'primary.main' }} />
       </Stack>
     );
   }
@@ -59,15 +60,16 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
   }
 
   const label = mode === 'login' ? 'Sign in' : 'Sign up';
+  const alpha = theme.palette.mode === 'dark' ? 0.6 : 0.2;
 
   const oauthButtonSx = {
-    borderColor: 'rgba(35,35,40,0.6)',
-    color: '#a1a1aa',
-    bgcolor: 'rgba(22,22,25,0.6)',
+    borderColor: theme.palette.divider,
+    color: 'text.secondary',
+    bgcolor: `rgba(${theme.palette.mode === 'dark' ? '22,22,25' : '0,0,0'}, ${alpha * 0.3})`,
     '&:hover': {
-      borderColor: 'rgba(0,229,160,0.3)',
-      color: '#f4f4f5',
-      bgcolor: 'rgba(22,22,25,0.8)',
+      borderColor: `${theme.palette.primary.main}50`,
+      color: 'text.primary',
+      bgcolor: `rgba(${theme.palette.mode === 'dark' ? '22,22,25' : '0,0,0'}, ${alpha * 0.5})`,
     },
   };
 
@@ -132,7 +134,7 @@ export default function OAuthButtons({ mode }: OAuthButtonsProps) {
       </Stack>
 
       <Divider sx={{ mb: 2 }}>
-        <Typography variant="body2" sx={{ color: '#52525b' }}>
+        <Typography variant="body2" color="text.disabled">
           or
         </Typography>
       </Divider>
