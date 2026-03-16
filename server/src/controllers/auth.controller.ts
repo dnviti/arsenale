@@ -182,14 +182,25 @@ export async function verifyWebAuthn(req: Request, res: Response, next: NextFunc
 
 export async function refresh(req: Request, res: Response, next: NextFunction) {
   try {
-    const refreshToken = req.cookies?.[config.cookie.refreshTokenName];
+    // Accept refresh token from cookie (web client) or request body (extension client).
+    // Extensions operate from a different origin and cannot use httpOnly cookies.
+    const refreshToken = req.cookies?.[config.cookie.refreshTokenName]
+      || (req.body as { refreshToken?: string })?.refreshToken;
     if (!refreshToken) {
       return next(new AppError('Missing refresh token', 401));
     }
+
+    const isExtensionClient = !req.cookies?.[config.cookie.refreshTokenName] && typeof (req.body as { refreshToken?: string })?.refreshToken === 'string';
     const result = await authService.refreshAccessToken(refreshToken, getRequestBinding(req));
-    setRefreshTokenCookie(res, result.refreshToken);
-    const csrfToken = setCsrfCookie(res);
-    res.json({ accessToken: result.accessToken, csrfToken, user: result.user });
+
+    if (isExtensionClient) {
+      // Extension clients receive tokens in the response body (no cookies)
+      res.json({ accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user });
+    } else {
+      setRefreshTokenCookie(res, result.refreshToken);
+      const csrfToken = setCsrfCookie(res);
+      res.json({ accessToken: result.accessToken, csrfToken, user: result.user });
+    }
   } catch (err) {
     if (err instanceof Error && err.message.includes('refresh token')) {
       clearAuthCookies(res);
@@ -200,7 +211,9 @@ export async function refresh(req: Request, res: Response, next: NextFunction) {
 }
 
 export async function logout(req: Request, res: Response) {
-  const refreshToken = req.cookies?.[config.cookie.refreshTokenName];
+  // Accept refresh token from cookie (web client) or request body (extension client)
+  const refreshToken = req.cookies?.[config.cookie.refreshTokenName]
+    || (req.body as { refreshToken?: string })?.refreshToken;
   if (refreshToken) {
     const userId = await authService.logout(refreshToken);
     if (userId) {

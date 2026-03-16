@@ -16,7 +16,9 @@ import type {
   BackgroundMessage,
   BackgroundResponse,
   HealthCheckResult,
+  LoginResponse,
   LoginResult,
+  PendingAccount,
 } from './types';
 
 // ── Token refresh alarm ────────────────────────────────────────────────
@@ -26,10 +28,30 @@ const REFRESH_INTERVAL_MINUTES = 10;
 chrome.alarms.create(REFRESH_ALARM, { periodInMinutes: REFRESH_INTERVAL_MINUTES });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== REFRESH_ALARM) return;
-  const account = await getActiveAccount();
-  if (!account) return;
-  await refreshTokenForAccount(account.id);
+  // Per-account refresh alarms are named "token-refresh-{accountId}"
+  if (alarm.name.startsWith('token-refresh-')) {
+    const accountId = alarm.name.replace('token-refresh-', '');
+    const result = await refreshTokenForAccount(accountId);
+    if (!result.success) {
+      // Mark account as session expired and show badge
+      await updateAccount({ id: accountId, sessionExpired: true });
+      chrome.action.setBadgeText({ text: '!' });
+      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+    }
+    return;
+  }
+
+  // Fallback: periodic refresh for active account
+  if (alarm.name === REFRESH_ALARM) {
+    const account = await getActiveAccount();
+    if (!account || account.sessionExpired) return;
+    const result = await refreshTokenForAccount(account.id);
+    if (!result.success) {
+      await updateAccount({ id: account.id, sessionExpired: true });
+      chrome.action.setBadgeText({ text: '!' });
+      chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+    }
+  }
 });
 
 // ── Message handler ────────────────────────────────────────────────────
@@ -47,6 +69,20 @@ async function handleMessage(message: BackgroundMessage): Promise<BackgroundResp
       return handleHealthCheck(message.serverUrl);
     case 'LOGIN':
       return handleLogin(message.serverUrl, message.email, message.password);
+    case 'VERIFY_TOTP':
+      return handleVerifyTotp(message.serverUrl, message.tempToken, message.code, message.pendingAccount);
+    case 'REQUEST_SMS_CODE':
+      return handleRequestSmsCode(message.serverUrl, message.tempToken);
+    case 'VERIFY_SMS':
+      return handleVerifySms(message.serverUrl, message.tempToken, message.code, message.pendingAccount);
+    case 'REQUEST_WEBAUTHN_OPTIONS':
+      return handleRequestWebAuthnOptions(message.serverUrl, message.tempToken);
+    case 'VERIFY_WEBAUTHN':
+      return handleVerifyWebAuthn(message.serverUrl, message.tempToken, message.credential, message.pendingAccount);
+    case 'SWITCH_TENANT':
+      return handleSwitchTenant(message.accountId, message.tenantId);
+    case 'LOGOUT_ACCOUNT':
+      return handleLogoutAccount(message.accountId);
     case 'API_REQUEST':
       return handleApiRequest(message.accountId, message.method, message.path, message.body);
     case 'REFRESH_TOKEN':
@@ -82,7 +118,7 @@ async function handleLogin(
   serverUrl: string,
   email: string,
   password: string,
-): Promise<BackgroundResponse<{ accountId: string }>> {
+): Promise<BackgroundResponse<LoginResponse>> {
   try {
     const url = normalizeUrl(serverUrl);
     const res = await fetch(`${url}/api/auth/login`, {
@@ -92,20 +128,247 @@ async function handleLogin(
     });
     if (!res.ok) {
       const body = await res.text();
-      return { success: false, error: body || `Login failed with ${String(res.status)}` };
+      let errorMsg = body || `Login failed with ${String(res.status)}`;
+      try {
+        const parsed = JSON.parse(body) as { error?: string };
+        if (parsed.error) errorMsg = parsed.error;
+      } catch { /* use raw body */ }
+      return { success: false, error: errorMsg };
+    }
+    const data = (await res.json()) as LoginResponse;
+
+    // If MFA is required or setup is needed, return the challenge info
+    if ('requiresMFA' in data || 'mfaSetupRequired' in data) {
+      return { success: true, data };
+    }
+
+    // Full success — create account entry
+    const loginData = data as LoginResult;
+    const account = await addAccount({
+      label: loginData.user.name || loginData.user.email,
+      serverUrl: url,
+      userId: loginData.user.id,
+      email: loginData.user.email,
+      accessToken: loginData.accessToken,
+      refreshToken: loginData.refreshToken,
+      tenantId: loginData.user.tenantId,
+      tenantName: loginData.user.tenantName,
+    });
+
+    // Schedule per-account token refresh
+    scheduleRefreshAlarm(account.id, loginData.accessToken);
+
+    // Clear any session expired badge
+    clearBadgeIfNoExpired();
+
+    return { success: true, data: { ...loginData, accountId: account.id } as unknown as LoginResponse };
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Complete MFA with a TOTP code and create the account entry. */
+async function handleVerifyTotp(
+  serverUrl: string,
+  tempToken: string,
+  code: string,
+  pendingAccount: PendingAccount,
+): Promise<BackgroundResponse<LoginResult>> {
+  try {
+    const url = normalizeUrl(serverUrl);
+    const res = await fetch(`${url}/api/auth/verify-totp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken, code }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let errorMsg = body || `TOTP verification failed (${String(res.status)})`;
+      try {
+        const parsed = JSON.parse(body) as { error?: string };
+        if (parsed.error) errorMsg = parsed.error;
+      } catch { /* use raw body */ }
+      return { success: false, error: errorMsg };
     }
     const data = (await res.json()) as LoginResult;
-    const account = await addAccount({
-      label: data.user.name || data.user.email,
-      serverUrl: url,
-      userId: data.user.id,
-      email: data.user.email,
+    return await createAccountFromMfa(url, pendingAccount, data);
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Request an SMS code for MFA. */
+async function handleRequestSmsCode(
+  serverUrl: string,
+  tempToken: string,
+): Promise<BackgroundResponse> {
+  try {
+    const url = normalizeUrl(serverUrl);
+    const res = await fetch(`${url}/api/auth/request-sms-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return { success: false, error: body || `SMS request failed (${String(res.status)})` };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Complete MFA with an SMS code and create the account entry. */
+async function handleVerifySms(
+  serverUrl: string,
+  tempToken: string,
+  code: string,
+  pendingAccount: PendingAccount,
+): Promise<BackgroundResponse<LoginResult>> {
+  try {
+    const url = normalizeUrl(serverUrl);
+    const res = await fetch(`${url}/api/auth/verify-sms`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken, code }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let errorMsg = body || `SMS verification failed (${String(res.status)})`;
+      try {
+        const parsed = JSON.parse(body) as { error?: string };
+        if (parsed.error) errorMsg = parsed.error;
+      } catch { /* use raw body */ }
+      return { success: false, error: errorMsg };
+    }
+    const data = (await res.json()) as LoginResult;
+    return await createAccountFromMfa(url, pendingAccount, data);
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Request WebAuthn assertion options. */
+async function handleRequestWebAuthnOptions(
+  serverUrl: string,
+  tempToken: string,
+): Promise<BackgroundResponse<Record<string, unknown>>> {
+  try {
+    const url = normalizeUrl(serverUrl);
+    const res = await fetch(`${url}/api/auth/request-webauthn-options`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      return { success: false, error: body || `WebAuthn options request failed (${String(res.status)})` };
+    }
+    const data = (await res.json()) as Record<string, unknown>;
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Complete MFA with a WebAuthn credential and create the account entry. */
+async function handleVerifyWebAuthn(
+  serverUrl: string,
+  tempToken: string,
+  credential: Record<string, unknown>,
+  pendingAccount: PendingAccount,
+): Promise<BackgroundResponse<LoginResult>> {
+  try {
+    const url = normalizeUrl(serverUrl);
+    const res = await fetch(`${url}/api/auth/verify-webauthn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempToken, credential }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      let errorMsg = body || `WebAuthn verification failed (${String(res.status)})`;
+      try {
+        const parsed = JSON.parse(body) as { error?: string };
+        if (parsed.error) errorMsg = parsed.error;
+      } catch { /* use raw body */ }
+      return { success: false, error: errorMsg };
+    }
+    const data = (await res.json()) as LoginResult;
+    return await createAccountFromMfa(url, pendingAccount, data);
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Switch tenant for an existing account. */
+async function handleSwitchTenant(
+  accountId: string,
+  tenantId: string,
+): Promise<BackgroundResponse> {
+  try {
+    const accounts = await getAccounts();
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) return { success: false, error: 'Account not found' };
+
+    const res = await fetch(`${account.serverUrl}/api/auth/switch-tenant`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${account.accessToken}`,
+      },
+      body: JSON.stringify({ tenantId }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      return { success: false, error: body || `Tenant switch failed (${String(res.status)})` };
+    }
+
+    const data = (await res.json()) as { accessToken: string; refreshToken: string; user: LoginResult['user'] };
+    await updateAccount({
+      id: accountId,
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
       tenantId: data.user.tenantId,
       tenantName: data.user.tenantName,
     });
-    return { success: true, data: { accountId: account.id } };
+
+    scheduleRefreshAlarm(accountId, data.accessToken);
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: formatError(err) };
+  }
+}
+
+/** Logout: revoke refresh token on the server and remove the account locally. */
+async function handleLogoutAccount(accountId: string): Promise<BackgroundResponse> {
+  try {
+    const accounts = await getAccounts();
+    const account = accounts.find((a) => a.id === accountId);
+    if (!account) return { success: false, error: 'Account not found' };
+
+    // Best-effort server logout — send refresh token in body (extension pattern)
+    try {
+      await fetch(`${account.serverUrl}/api/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${account.accessToken}`,
+        },
+        body: JSON.stringify({ refreshToken: account.refreshToken }),
+      });
+    } catch {
+      // Server logout is best-effort; continue with local cleanup
+    }
+
+    // Cancel the per-account refresh alarm
+    chrome.alarms.clear(`token-refresh-${accountId}`);
+
+    await removeAccount(accountId);
+    clearBadgeIfNoExpired();
+    return { success: true };
   } catch (err) {
     return { success: false, error: formatError(err) };
   }
@@ -175,14 +438,27 @@ async function refreshTokenForAccount(accountId: string): Promise<BackgroundResp
       body: JSON.stringify({ refreshToken: account.refreshToken }),
     });
 
-    if (!res.ok) return { success: false, error: 'Token refresh failed' };
+    if (!res.ok) {
+      // Mark session as expired on 401
+      if (res.status === 401) {
+        await updateAccount({ id: accountId, sessionExpired: true });
+        chrome.action.setBadgeText({ text: '!' });
+        chrome.action.setBadgeBackgroundColor({ color: '#ef4444' });
+      }
+      return { success: false, error: 'Token refresh failed' };
+    }
 
     const data = (await res.json()) as { accessToken: string; refreshToken: string };
     await updateAccount({
       id: accountId,
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
+      sessionExpired: false,
     });
+
+    // Reschedule the per-account alarm based on new token expiry
+    scheduleRefreshAlarm(accountId, data.accessToken);
+
     return { success: true };
   } catch (err) {
     return { success: false, error: formatError(err) };
@@ -201,6 +477,7 @@ async function handleSetActiveAccount(accountId: string): Promise<BackgroundResp
 }
 
 async function handleRemoveAccount(accountId: string): Promise<BackgroundResponse> {
+  chrome.alarms.clear(`token-refresh-${accountId}`);
   await removeAccount(accountId);
   return { success: true };
 }
@@ -210,6 +487,62 @@ async function handleUpdateAccount(
 ): Promise<BackgroundResponse> {
   const result = await updateAccount(partial as Parameters<typeof updateAccount>[0]);
   return result ? { success: true, data: result } : { success: false, error: 'Account not found' };
+}
+
+// ── Shared helpers ─────────────────────────────────────────────────────
+
+/** After MFA verification succeeds, create the account entry and schedule refresh. */
+async function createAccountFromMfa(
+  serverUrl: string,
+  pendingAccount: PendingAccount,
+  data: LoginResult,
+): Promise<BackgroundResponse<LoginResult>> {
+  const account = await addAccount({
+    label: data.user.name || data.user.email,
+    serverUrl,
+    userId: data.user.id,
+    email: pendingAccount.email,
+    accessToken: data.accessToken,
+    refreshToken: data.refreshToken,
+    tenantId: data.user.tenantId,
+    tenantName: data.user.tenantName,
+  });
+
+  scheduleRefreshAlarm(account.id, data.accessToken);
+  clearBadgeIfNoExpired();
+
+  return { success: true, data: { ...data, accountId: account.id } as unknown as LoginResult };
+}
+
+/**
+ * Parse a JWT access token and schedule a chrome.alarms alarm 60s before expiry.
+ */
+function scheduleRefreshAlarm(accountId: string, accessToken: string): void {
+  try {
+    const payload = accessToken.split('.')[1];
+    if (!payload) return;
+    const decoded = JSON.parse(atob(payload)) as { exp?: number };
+    if (!decoded.exp) return;
+
+    const expiryMs = decoded.exp * 1000;
+    const fireAt = expiryMs - 60_000; // 60s before expiry
+    const delayMs = Math.max(fireAt - Date.now(), 5_000); // at least 5s
+
+    chrome.alarms.create(`token-refresh-${accountId}`, {
+      delayInMinutes: delayMs / 60_000,
+    });
+  } catch {
+    // If token parsing fails, fall back to the periodic alarm
+  }
+}
+
+/** Clear the error badge if no accounts have expired sessions. */
+async function clearBadgeIfNoExpired(): Promise<void> {
+  const accounts = await getAccounts();
+  const hasExpired = accounts.some((a) => a.sessionExpired);
+  if (!hasExpired) {
+    chrome.action.setBadgeText({ text: '' });
+  }
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────

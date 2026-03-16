@@ -338,3 +338,302 @@
   border-radius: 20px;
   margin-top: 4px;
 }
+
+/* ── Login Page ─── */
+
+.login-page,
+.mfa-page,
+.tenant-picker {
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  gap: 16px;
+}
+
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.login-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.login-header p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.login-page form,
+.mfa-page form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-full {
+  width: 100%;
+  text-align: center;
+  padding: 10px 20px;
+}
+
+/* ── Form (shared with options) ─── */
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 150ms;
+  box-sizing: border-box;
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
+.input-code {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.3em;
+  text-align: center;
+  font-family: monospace;
+}
+
+.form-error {
+  font-size: 12px;
+  color: var(--danger);
+  margin: 0;
+}
+
+.form-server-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: var(--raised);
+  border-radius: 6px;
+}
+
+.form-server-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 20px;
+  background: rgba(0, 229, 160, 0.12);
+  color: var(--accent);
+}
+
+.form-server-url {
+  flex: 1;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+}
+
+.btn-ghost:hover {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.btn-xs {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* ── MFA Method Tabs ─── */
+
+.mfa-method-tabs {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.mfa-method-tab {
+  flex: 1;
+  padding: 8px 4px;
+  background: var(--surface);
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+
+.mfa-method-tab:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.mfa-method-tab:hover {
+  color: var(--text-primary);
+}
+
+.mfa-method-tab.active {
+  background: var(--surface-light);
+  color: var(--accent);
+}
+
+.mfa-webauthn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mfa-webauthn-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+  margin: 0;
+}
+
+.mfa-cancel,
+.tenant-skip {
+  margin-top: 4px;
+}
+
+/* ── Tenant Picker ─── */
+
+.tenant-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tenant-list-item {
+  display: block;
+}
+
+.tenant-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 150ms, background 150ms;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-align: left;
+}
+
+.tenant-option:hover {
+  border-color: var(--accent-dim);
+  background: var(--surface-light);
+}
+
+.tenant-option.active {
+  border-color: var(--accent);
+}
+
+.tenant-option.selected {
+  opacity: 0.6;
+}
+
+.tenant-avatar {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.tenant-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tenant-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tenant-role {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-radius: 20px;
+}
+
+.badge-active {
+  background: rgba(0, 229, 160, 0.12);
+  color: var(--accent);
+}
+
+/* ── Session Expired Banner ─── */
+
+.session-expired-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(239, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.session-expired-banner button {
+  margin-left: auto;
+  font-size: 11px;
+}
