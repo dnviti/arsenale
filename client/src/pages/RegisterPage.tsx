@@ -97,26 +97,26 @@ export default function RegisterPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: '#08080a',
-        background: 'radial-gradient(ellipse at 50% 40%, rgba(0,229,160,0.04) 0%, #08080a 70%)',
+        bgcolor: 'background.default',
+        background: (theme) => `radial-gradient(ellipse at 50% 40%, ${theme.palette.primary.main}0A 0%, ${theme.palette.background.default} 70%)`,
       }}
     >
       <Box sx={{
         width: 400,
         maxWidth: '90vw',
-        bgcolor: '#0f0f12',
-        border: '1px solid rgba(35,35,40,0.6)',
+        bgcolor: 'background.paper',
+        border: 1, borderColor: 'divider',
         borderRadius: 4,
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         p: 3,
       }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
-            <Box sx={{ width: 24, height: 3, borderRadius: 1, bgcolor: '#00e5a0' }} />
+            <Box sx={{ width: 24, height: 3, borderRadius: 1, bgcolor: 'primary.main' }} />
           </Box>
           <Typography variant="h5" gutterBottom align="center" sx={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontFamily: (theme) => theme.typography.h5.fontFamily,
             fontSize: '2.25rem',
-            color: '#f4f4f5',
+            color: 'text.primary',
             fontWeight: 400,
           }}>
             Create Account
@@ -126,38 +126,38 @@ export default function RegisterPage() {
             <>
               <Alert severity="info" sx={{
                 mb: 2,
-                bgcolor: 'rgba(59,130,246,0.08)',
-                color: '#93c5fd',
-                border: '1px solid rgba(59,130,246,0.15)',
-                '& .MuiAlert-icon': { color: '#93c5fd' },
+                bgcolor: (theme) => `${theme.palette.info.main}14`,
+                color: 'info.light',
+                border: (theme) => `1px solid ${theme.palette.info.main}26`,
+                '& .MuiAlert-icon': { color: 'info.light' },
               }}>
                 Public registration is currently disabled. Please contact your organization administrator to get an account.
               </Alert>
-              <Typography variant="body2" align="center" sx={{ color: '#a1a1aa' }}>
+              <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>
                 Already have an account?{' '}
-                <Link component={RouterLink} to="/login" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>Sign in</Link>
+                <Link component={RouterLink} to="/login" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Sign in</Link>
               </Typography>
             </>
           ) : registered ? (
             <>
               <Alert severity="success" sx={{
                 mb: 2,
-                bgcolor: 'rgba(0,229,160,0.08)',
-                color: '#00e5a0',
-                border: '1px solid rgba(0,229,160,0.15)',
-                '& .MuiAlert-icon': { color: '#00e5a0' },
+                bgcolor: (theme) => `${theme.palette.primary.main}14`,
+                color: 'primary.main',
+                border: (theme) => `1px solid ${theme.palette.primary.main}26`,
+                '& .MuiAlert-icon': { color: 'primary.main' },
               }}>
                 {successMessage}
               </Alert>
               {recoveryKey && (
                 <Alert severity="warning" sx={{
                   mb: 2,
-                  bgcolor: 'rgba(234,179,8,0.08)',
-                  color: '#fde68a',
-                  border: '1px solid rgba(234,179,8,0.15)',
-                  '& .MuiAlert-icon': { color: '#fde68a' },
+                  bgcolor: (theme) => `${theme.palette.warning.main}14`,
+                  color: 'warning.light',
+                  border: (theme) => `1px solid ${theme.palette.warning.main}26`,
+                  '& .MuiAlert-icon': { color: 'warning.light' },
                 }}>
-                  <Typography variant="subtitle2" gutterBottom sx={{ color: '#fde68a' }}>
+                  <Typography variant="subtitle2" gutterBottom sx={{ color: 'warning.light' }}>
                     Save your vault recovery key:
                   </Typography>
                   <Typography
@@ -165,23 +165,23 @@ export default function RegisterPage() {
                     sx={{
                       fontFamily: 'monospace',
                       wordBreak: 'break-all',
-                      bgcolor: '#161619',
-                      color: '#f4f4f5',
+                      bgcolor: 'background.default',
+                      color: 'text.primary',
                       p: 1,
                       borderRadius: 1,
-                      border: '1px solid #232328',
+                      border: 1, borderColor: 'divider',
                       userSelect: 'all',
                     }}
                   >
                     {recoveryKey}
                   </Typography>
-                  <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#a1a1aa' }}>
+                  <Typography variant="caption" sx={{ display: 'block', mt: 1, color: 'text.secondary' }}>
                     This key allows you to recover your encrypted vault if you forget your password.
                     Store it in a safe place. It is shown only once.
                   </Typography>
                 </Alert>
               )}
-              <Typography variant="body2" align="center" sx={{ mb: 2, color: '#a1a1aa' }}>
+              <Typography variant="body2" align="center" sx={{ mb: 2, color: 'text.secondary' }}>
                 Didn't receive the email? Check your spam folder or resend it.
               </Typography>
               <Button
@@ -191,16 +191,16 @@ export default function RegisterPage() {
                 disabled={resendCountdown > 0}
                 sx={{
                   mb: 1,
-                  borderColor: '#232328',
-                  color: '#a1a1aa',
+                  borderColor: 'divider',
+                  color: 'text.secondary',
                   '&:hover': {
-                    borderColor: '#00e5a0',
-                    color: '#00e5a0',
-                    bgcolor: 'rgba(0,229,160,0.06)',
+                    borderColor: 'primary.main',
+                    color: 'primary.main',
+                    bgcolor: (theme) => `${theme.palette.primary.main}0F`,
                   },
                   '&.Mui-disabled': {
-                    borderColor: 'rgba(35,35,40,0.6)',
-                    color: '#52525b',
+                    borderColor: 'divider',
+                    color: 'text.disabled',
                   },
                 }}
               >
@@ -208,21 +208,21 @@ export default function RegisterPage() {
                   ? `Resend verification email (${resendCountdown}s)`
                   : 'Resend verification email'}
               </Button>
-              <Typography variant="body2" align="center" sx={{ color: '#a1a1aa' }}>
-                <Link component={RouterLink} to="/login" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>Go to Sign In</Link>
+              <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>
+                <Link component={RouterLink} to="/login" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Go to Sign In</Link>
               </Typography>
             </>
           ) : (
             <>
-              <Typography variant="body2" align="center" mb={3} sx={{ color: '#a1a1aa' }}>
+              <Typography variant="body2" align="center" mb={3} sx={{ color: 'text.secondary' }}>
                 Your password is also your vault key
               </Typography>
               {error && <Alert severity="error" sx={{
                 mb: 2,
-                bgcolor: 'rgba(239,68,68,0.08)',
-                color: '#fca5a5',
-                border: '1px solid rgba(239,68,68,0.15)',
-                '& .MuiAlert-icon': { color: '#fca5a5' },
+                bgcolor: (theme) => `${theme.palette.error.main}14`,
+                color: 'error.light',
+                border: (theme) => `1px solid ${theme.palette.error.main}26`,
+                '& .MuiAlert-icon': { color: 'error.light' },
               }}>{error}</Alert>}
               <Box component="form" onSubmit={handleSubmit}>
                 <OAuthButtons mode="register" />
@@ -263,23 +263,23 @@ export default function RegisterPage() {
                   sx={{
                     mt: 2,
                     mb: 1,
-                    bgcolor: '#00e5a0',
-                    color: '#08080a',
+                    bgcolor: 'primary.main',
+                    color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
                     fontWeight: 600,
                     '&:hover': {
-                      bgcolor: '#00cc8e',
+                      bgcolor: 'secondary.main',
                     },
                     '&.Mui-disabled': {
-                      bgcolor: 'rgba(0,229,160,0.3)',
-                      color: 'rgba(8,8,10,0.5)',
+                      bgcolor: (theme) => `${theme.palette.primary.main}4D`,
+                      color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
                     },
                   }}
                 >
                   {loading ? 'Creating account...' : 'Sign Up'}
                 </Button>
-                <Typography variant="body2" align="center" sx={{ color: '#a1a1aa' }}>
+                <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>
                   Already have an account?{' '}
-                  <Link component={RouterLink} to="/login" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>Sign in</Link>
+                  <Link component={RouterLink} to="/login" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Sign in</Link>
                 </Typography>
               </Box>
             </>

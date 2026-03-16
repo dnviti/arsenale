@@ -321,18 +321,18 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
           textTransform: 'uppercase',
           letterSpacing: '0.15em',
           fontSize: '0.6875rem',
-          color: '#52525b',
+          color: 'text.disabled',
           fontWeight: 600,
         }}>
           My Connections
         </Typography>
-        <IconButton size="small" onClick={() => togglePref('sidebarCompact')} title={compact ? 'Normal view' : 'Compact view'} sx={{ color: '#a1a1aa', '&:hover': { color: '#00e5a0', bgcolor: 'rgba(0,229,160,0.08)' } }}>
+        <IconButton size="small" onClick={() => togglePref('sidebarCompact')} title={compact ? 'Normal view' : 'Compact view'} sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main', bgcolor: (theme) => `${theme.palette.primary.main}14` } }}>
           {compact ? <ViewListIcon fontSize="small" /> : <ViewCompactIcon fontSize="small" />}
         </IconButton>
-        <IconButton size="small" onClick={() => onCreateConnection()} title="New Connection" sx={{ color: '#00e5a0', '&:hover': { bgcolor: 'rgba(0,229,160,0.12)' } }}>
+        <IconButton size="small" onClick={() => onCreateConnection()} title="New Connection" sx={{ color: 'primary.main', '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}1F` } }}>
           <AddIcon fontSize="small" />
         </IconButton>
-        <IconButton size="small" onClick={() => onCreateFolder()} title="New Folder" sx={{ color: '#00e5a0', '&:hover': { bgcolor: 'rgba(0,229,160,0.12)' } }}>
+        <IconButton size="small" onClick={() => onCreateFolder()} title="New Folder" sx={{ color: 'primary.main', '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}1F` } }}>
           <CreateNewFolderIcon fontSize="small" />
         </IconButton>
       </Box>
@@ -346,24 +346,24 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
           onKeyDown={(e) => { if (e.key === 'Escape') setSearchQuery(''); }}
           sx={{
             '& .MuiOutlinedInput-root': {
-              bgcolor: '#161619',
-              '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' },
-              '&:hover fieldset': { borderColor: 'rgba(0,229,160,0.3)' },
-              '&.Mui-focused fieldset': { borderColor: '#00e5a0' },
+              bgcolor: 'background.default',
+              '& fieldset': { borderColor: 'divider' },
+              '&:hover fieldset': { borderColor: 'primary.main' },
+              '&.Mui-focused fieldset': { borderColor: 'primary.main' },
             },
-            '& .MuiInputBase-input': { color: '#f4f4f5', fontSize: '0.8125rem' },
-            '& .MuiInputBase-input::placeholder': { color: '#52525b', opacity: 1 },
+            '& .MuiInputBase-input': { color: 'text.primary', fontSize: '0.8125rem' },
+            '& .MuiInputBase-input::placeholder': { color: 'text.disabled', opacity: 1 },
           }}
           slotProps={{
             input: {
               startAdornment: (
                 <InputAdornment position="start">
-                  <SearchIcon fontSize="small" sx={{ color: '#52525b' }} />
+                  <SearchIcon fontSize="small" sx={{ color: 'text.disabled' }} />
                 </InputAdornment>
               ),
               endAdornment: searchQuery ? (
                 <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => setSearchQuery('')} edge="end" sx={{ color: '#a1a1aa' }}>
+                  <IconButton size="small" onClick={() => setSearchQuery('')} edge="end" sx={{ color: 'text.secondary' }}>
                     <ClearIcon fontSize="small" />
                   </IconButton>
                 </InputAdornment>
@@ -380,13 +380,13 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
             sx={{ display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5, cursor: 'pointer', userSelect: 'none' }}
             onClick={() => togglePref('sidebarFavoritesOpen')}
           >
-            {favoritesOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: '#52525b' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: '#52525b' }} />}
-            <StarIcon fontSize="small" sx={{ mr: 1, color: '#00e5a0' }} />
+            {favoritesOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} />}
+            <StarIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
             <Typography variant="subtitle2" sx={{
               textTransform: 'uppercase',
               letterSpacing: '0.15em',
               fontSize: '0.6875rem',
-              color: '#52525b',
+              color: 'text.disabled',
               fontWeight: 600,
             }}>Favorites</Typography>
           </Box>
@@ -419,13 +419,13 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
             sx={{ display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5, cursor: 'pointer', userSelect: 'none' }}
             onClick={() => togglePref('sidebarRecentsOpen')}
           >
-            {recentsOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: '#52525b' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: '#52525b' }} />}
-            <RecentIcon fontSize="small" sx={{ mr: 1, color: '#52525b' }} />
+            {recentsOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} />}
+            <RecentIcon fontSize="small" sx={{ mr: 1, color: 'text.disabled' }} />
             <Typography variant="subtitle2" sx={{
               textTransform: 'uppercase',
               letterSpacing: '0.15em',
               fontSize: '0.6875rem',
-              color: '#52525b',
+              color: 'text.disabled',
               fontWeight: 600,
             }}>Recent</Typography>
           </Box>
@@ -453,7 +453,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
 
       {/* Divider between quick-access sections and main tree */}
       {!isSearching && (favoriteConnections.length > 0 || recentConnections.length > 0) && (
-        <Divider sx={{ my: 1, borderColor: 'rgba(35,35,40,0.6)' }} />
+        <Divider sx={{ my: 1, borderColor: 'divider' }} />
       )}
 
       <DndContext
@@ -466,7 +466,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
           ref={rootDropRef}
           sx={{
             ...(isOverRoot && {
-              bgcolor: 'rgba(0,229,160,0.04)',
+              bgcolor: (theme) => `${theme.palette.primary.main}0A`,
               transition: 'background-color 0.15s ease',
             }),
             minHeight: 40,
@@ -515,15 +515,15 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
             ))}
           </List>
           {isOverRoot && (
-            <Box sx={{ height: 2, bgcolor: '#00e5a0', mx: 2, borderRadius: 1 }} />
+            <Box sx={{ height: 2, bgcolor: 'primary.main', mx: 2, borderRadius: 1 }} />
           )}
         </Box>
 
         <DragOverlay dropAnimation={null}>
           {activeConnection && (
             <Box sx={{
-              bgcolor: '#161619',
-              border: '1px solid rgba(0,229,160,0.2)',
+              bgcolor: 'background.default',
+              border: (theme) => `1px solid ${theme.palette.primary.main}33`,
               boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
               borderRadius: 1,
               px: 2,
@@ -547,7 +547,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
       </DndContext>
 
       {/* Team sections */}
-      {teamGroups.length > 0 && <Divider sx={{ my: 1, borderColor: 'rgba(35,35,40,0.6)' }} />}
+      {teamGroups.length > 0 && <Divider sx={{ my: 1, borderColor: 'divider' }} />}
       {teamGroups.map((group) => (
         <TeamConnectionSection
           key={group.teamId}
@@ -578,7 +578,7 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
         const filtered = g.connections.filter((c) => matchesSearch(c, searchQuery));
         return filtered.length === 0;
       }) && (
-        <Typography variant="body2" sx={{ px: 2, py: 2, textAlign: 'center', color: '#52525b' }}>
+        <Typography variant="body2" sx={{ px: 2, py: 2, textAlign: 'center', color: 'text.disabled' }}>
           No connections match your search.
         </Typography>
       )}
@@ -586,18 +586,18 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
       {/* Shared with me section */}
       {filteredSharedConnections.length > 0 && (
         <>
-          <Divider sx={{ my: 1, borderColor: 'rgba(35,35,40,0.6)' }} />
+          <Divider sx={{ my: 1, borderColor: 'divider' }} />
           <Box
             sx={{ display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5, cursor: 'pointer', userSelect: 'none' }}
             onClick={() => togglePref('sidebarSharedOpen')}
           >
-            {sharedOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: '#52525b' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: '#52525b' }} />}
-            <ShareIcon fontSize="small" sx={{ mr: 1, color: '#52525b' }} />
+            {sharedOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} />}
+            <ShareIcon fontSize="small" sx={{ mr: 1, color: 'text.disabled' }} />
             <Typography variant="subtitle2" sx={{
               textTransform: 'uppercase',
               letterSpacing: '0.15em',
               fontSize: '0.6875rem',
-              color: '#52525b',
+              color: 'text.disabled',
               fontWeight: 600,
             }}>Shared with me</Typography>
           </Box>

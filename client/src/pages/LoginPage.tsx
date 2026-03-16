@@ -113,6 +113,12 @@ export default function LoginPage() {
     return () => clearInterval(countdownRef.current);
   }, [resendActive]);
 
+  // Build the post-login redirect path, preserving the autoconnect query param
+  const buildRedirect = () => {
+    const autoconnect = searchParams.get('autoconnect');
+    return autoconnect ? `/?autoconnect=${encodeURIComponent(autoconnect)}` : '/';
+  };
+
   const completeLogin = (data: AuthSuccessResponse) => {
     const memberships = data.tenantMemberships ?? [];
 
@@ -135,7 +141,7 @@ export default function LoginPage() {
     if (memberships.length === 1) {
       useUiPreferencesStore.getState().set('lastActiveTenantId', memberships[0].tenantId);
     }
-    navigate('/');
+    navigate(buildRedirect());
   };
 
   const handleTenantConfirm = async () => {
@@ -153,7 +159,7 @@ export default function LoginPage() {
       }
 
       useUiPreferencesStore.getState().set('lastActiveTenantId', selectedTenantId);
-      navigate('/');
+      navigate(buildRedirect());
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to select organization'));
     } finally {
@@ -357,35 +363,35 @@ export default function LoginPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: '#08080a',
-        background: 'radial-gradient(ellipse at 50% 40%, rgba(0,229,160,0.04) 0%, #08080a 70%)',
+        bgcolor: 'background.default',
+        background: (theme) => `radial-gradient(ellipse at 50% 40%, ${theme.palette.primary.main}0A 0%, ${theme.palette.background.default} 70%)`,
       }}
     >
       <Box sx={{
         width: 400,
         maxWidth: '90vw',
-        bgcolor: '#0f0f12',
-        border: '1px solid rgba(35,35,40,0.6)',
+        bgcolor: 'background.paper',
+        border: 1, borderColor: 'divider',
         borderRadius: 4,
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
         p: 3,
       }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
-            <Box sx={{ width: 24, height: 3, borderRadius: 1, bgcolor: '#00e5a0' }} />
+            <Box sx={{ width: 24, height: 3, borderRadius: 1, bgcolor: 'primary.main' }} />
           </Box>
           <Typography variant="h5" gutterBottom align="center" sx={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontFamily: (theme) => theme.typography.h5.fontFamily,
             fontSize: '2.25rem',
-            color: '#f4f4f5',
+            color: 'text.primary',
             fontWeight: 400,
           }}>
             Arsenale
           </Typography>
-          <Typography variant="body2" align="center" mb={3} sx={{ color: '#a1a1aa' }}>
+          <Typography variant="body2" align="center" mb={3} sx={{ color: 'text.secondary' }}>
             {subtitle}
           </Typography>
-          {success && <Alert severity="success" sx={{ mb: 2, bgcolor: 'rgba(0,229,160,0.08)', color: '#00e5a0', border: '1px solid rgba(0,229,160,0.15)', '& .MuiAlert-icon': { color: '#00e5a0' } }}>{success}</Alert>}
-          {error && <Alert severity="error" sx={{ mb: 2, bgcolor: 'rgba(239,68,68,0.08)', color: '#fca5a5', border: '1px solid rgba(239,68,68,0.15)', '& .MuiAlert-icon': { color: '#fca5a5' } }}>{error}</Alert>}
+          {success && <Alert severity="success" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}26`, '& .MuiAlert-icon': { color: 'primary.main' } }}>{success}</Alert>}
+          {error && <Alert severity="error" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.light', border: (theme) => `1px solid ${theme.palette.error.main}26`, '& .MuiAlert-icon': { color: 'error.light' } }}>{error}</Alert>}
           {showResend && (
             <Button
               fullWidth
@@ -393,7 +399,7 @@ export default function LoginPage() {
               size="small"
               onClick={handleResend}
               disabled={resendCountdown > 0}
-              sx={{ mb: 2, borderColor: 'rgba(35,35,40,0.6)', color: '#a1a1aa', '&:hover': { borderColor: 'rgba(0,229,160,0.3)', color: '#f4f4f5' } }}
+              sx={{ mb: 2, borderColor: 'divider', color: 'text.secondary', '&:hover': { borderColor: 'primary.main', color: 'text.primary' } }}
             >
               {resendCountdown > 0
                 ? `Resend verification email (${resendCountdown}s)`
@@ -412,7 +418,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 margin="normal"
                 required
-                sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#161619', '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' }, '&:hover fieldset': { borderColor: 'rgba(0,229,160,0.3)' }, '&.Mui-focused fieldset': { borderColor: '#00e5a0' } }, '& .MuiInputLabel-root': { color: '#a1a1aa' }, '& .MuiOutlinedInput-input': { color: '#f4f4f5' } }}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
               />
               <TextField
                 fullWidth
@@ -422,10 +428,10 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 margin="normal"
                 required
-                sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#161619', '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' }, '&:hover fieldset': { borderColor: 'rgba(0,229,160,0.3)' }, '&.Mui-focused fieldset': { borderColor: '#00e5a0' } }, '& .MuiInputLabel-root': { color: '#a1a1aa' }, '& .MuiOutlinedInput-input': { color: '#f4f4f5' } }}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
               />
               <Box sx={{ textAlign: 'right', mt: -0.5 }}>
-                <Link component={RouterLink} to="/forgot-password" variant="body2" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>
+                <Link component={RouterLink} to="/forgot-password" variant="body2" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>
                   Forgot password?
                 </Link>
               </Box>
@@ -434,18 +440,18 @@ export default function LoginPage() {
                 type="submit"
                 variant="contained"
                 disabled={loading}
-                sx={{ mt: 2, mb: 1, bgcolor: '#00e5a0', color: '#08080a', fontWeight: 600, '&:hover': { bgcolor: '#00cc8e' }, '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: '#08080a' } }}
+                sx={{ mt: 2, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
               >
                 {loading ? 'Signing in...' : 'Sign In'}
               </Button>
               {ldapEnabled && (
-                <Typography variant="caption" align="center" display="block" sx={{ mb: 0.5, color: '#52525b' }}>
+                <Typography variant="caption" align="center" display="block" sx={{ mb: 0.5, color: 'text.disabled' }}>
                   {ldapProviderName} directory login is available. Use your directory credentials above.
                 </Typography>
               )}
-              <Typography variant="body2" align="center" sx={{ color: '#a1a1aa' }}>
+              <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>
                 Don't have an account?{' '}
-                <Link component={RouterLink} to="/register" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>Sign up</Link>
+                <Link component={RouterLink} to="/register" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Sign up</Link>
               </Typography>
             </Box>
           )}
@@ -454,7 +460,7 @@ export default function LoginPage() {
             <Box>
               <Stack spacing={1}>
                 {mfaMethods.includes('totp') && (
-                  <Button fullWidth variant="outlined" onClick={() => handleChooseMethod('totp')} sx={{ borderColor: 'rgba(35,35,40,0.6)', color: '#a1a1aa', '&:hover': { borderColor: 'rgba(0,229,160,0.3)', color: '#f4f4f5' } }}>
+                  <Button fullWidth variant="outlined" onClick={() => handleChooseMethod('totp')} sx={{ borderColor: 'divider', color: 'text.secondary', '&:hover': { borderColor: 'primary.main', color: 'text.primary' } }}>
                     Authenticator App
                   </Button>
                 )}
@@ -464,7 +470,7 @@ export default function LoginPage() {
                     variant="outlined"
                     onClick={() => handleChooseMethod('sms')}
                     disabled={smsSending}
-                    sx={{ borderColor: 'rgba(35,35,40,0.6)', color: '#a1a1aa', '&:hover': { borderColor: 'rgba(0,229,160,0.3)', color: '#f4f4f5' } }}
+                    sx={{ borderColor: 'divider', color: 'text.secondary', '&:hover': { borderColor: 'primary.main', color: 'text.primary' } }}
                   >
                     {smsSending ? 'Sending...' : 'SMS Code'}
                   </Button>
@@ -475,13 +481,13 @@ export default function LoginPage() {
                     variant="outlined"
                     onClick={() => handleChooseMethod('webauthn')}
                     disabled={loading}
-                    sx={{ borderColor: 'rgba(35,35,40,0.6)', color: '#a1a1aa', '&:hover': { borderColor: 'rgba(0,229,160,0.3)', color: '#f4f4f5' } }}
+                    sx={{ borderColor: 'divider', color: 'text.secondary', '&:hover': { borderColor: 'primary.main', color: 'text.primary' } }}
                   >
                     Security Key / Passkey
                   </Button>
                 )}
               </Stack>
-              <Button fullWidth variant="text" onClick={handleBackToCredentials} sx={{ mt: 1, color: '#a1a1aa', '&:hover': { color: '#f4f4f5' } }}>
+              <Button fullWidth variant="text" onClick={handleBackToCredentials} sx={{ mt: 1, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
                 Back
               </Button>
             </Box>
@@ -501,14 +507,14 @@ export default function LoginPage() {
                 autoFocus
                 placeholder="000000"
                 slotProps={{ htmlInput: { maxLength: 6 } }}
-                sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#161619', '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' }, '&:hover fieldset': { borderColor: 'rgba(0,229,160,0.3)' }, '&.Mui-focused fieldset': { borderColor: '#00e5a0' } }, '& .MuiInputLabel-root': { color: '#a1a1aa' }, '& .MuiOutlinedInput-input': { color: '#f4f4f5' } }}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
               />
               <Button
                 fullWidth
                 type="submit"
                 variant="contained"
                 disabled={loading || totpCode.length !== 6}
-                sx={{ mt: 2, mb: 1, bgcolor: '#00e5a0', color: '#08080a', fontWeight: 600, '&:hover': { bgcolor: '#00cc8e' }, '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: '#08080a' } }}
+                sx={{ mt: 2, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
               >
                 {loading ? 'Verifying...' : 'Verify'}
               </Button>
@@ -516,7 +522,7 @@ export default function LoginPage() {
                 fullWidth
                 variant="text"
                 onClick={canGoBackToChoice ? handleBackToChoice : handleBackToCredentials}
-                sx={{ mb: 1, color: '#a1a1aa', '&:hover': { color: '#f4f4f5' } }}
+                sx={{ mb: 1, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
               >
                 Back
               </Button>
@@ -525,7 +531,7 @@ export default function LoginPage() {
 
           {step === 'sms' && (
             <Box component="form" onSubmit={handleSmsSubmit}>
-              <Alert severity="info" sx={{ mb: 2, bgcolor: 'rgba(0,229,160,0.06)', color: '#00e5a0', border: '1px solid rgba(0,229,160,0.12)', '& .MuiAlert-icon': { color: '#00e5a0' } }}>
+              <Alert severity="info" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}0F`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}1F`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
                 A verification code has been sent to your phone.
               </Alert>
               <TextField
@@ -540,14 +546,14 @@ export default function LoginPage() {
                 autoFocus
                 placeholder="000000"
                 slotProps={{ htmlInput: { maxLength: 6 } }}
-                sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#161619', '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' }, '&:hover fieldset': { borderColor: 'rgba(0,229,160,0.3)' }, '&.Mui-focused fieldset': { borderColor: '#00e5a0' } }, '& .MuiInputLabel-root': { color: '#a1a1aa' }, '& .MuiOutlinedInput-input': { color: '#f4f4f5' } }}
+                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
               />
               <Button
                 fullWidth
                 type="submit"
                 variant="contained"
                 disabled={loading || smsCode.length !== 6}
-                sx={{ mt: 2, mb: 1, bgcolor: '#00e5a0', color: '#08080a', fontWeight: 600, '&:hover': { bgcolor: '#00cc8e' }, '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: '#08080a' } }}
+                sx={{ mt: 2, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
               >
                 {loading ? 'Verifying...' : 'Verify'}
               </Button>
@@ -555,7 +561,7 @@ export default function LoginPage() {
                 fullWidth
                 variant="text"
                 onClick={canGoBackToChoice ? handleBackToChoice : handleBackToCredentials}
-                sx={{ mb: 1, color: '#a1a1aa', '&:hover': { color: '#f4f4f5' } }}
+                sx={{ mb: 1, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
               >
                 Back
               </Button>
@@ -564,14 +570,14 @@ export default function LoginPage() {
 
           {step === 'webauthn' && (
             <Box>
-              <Alert severity="info" sx={{ mb: 2, bgcolor: 'rgba(0,229,160,0.06)', color: '#00e5a0', border: '1px solid rgba(0,229,160,0.12)', '& .MuiAlert-icon': { color: '#00e5a0' } }}>
+              <Alert severity="info" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}0F`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}1F`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
                 {loading
                   ? 'Please interact with your security key or approve the passkey prompt...'
                   : 'Click below to authenticate with your security key or passkey.'}
               </Alert>
               {loading && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-                  <CircularProgress sx={{ color: '#00e5a0' }} />
+                  <CircularProgress sx={{ color: 'primary.main' }} />
                 </Box>
               )}
               {!loading && (
@@ -579,7 +585,7 @@ export default function LoginPage() {
                   fullWidth
                   variant="contained"
                   onClick={() => handleWebAuthnAuth()}
-                  sx={{ mb: 1, bgcolor: '#00e5a0', color: '#08080a', fontWeight: 600, '&:hover': { bgcolor: '#00cc8e' } }}
+                  sx={{ mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' } }}
                 >
                   Retry Authentication
                 </Button>
@@ -588,7 +594,7 @@ export default function LoginPage() {
                 fullWidth
                 variant="text"
                 onClick={canGoBackToChoice ? handleBackToChoice : handleBackToCredentials}
-                sx={{ mb: 1, color: '#a1a1aa', '&:hover': { color: '#f4f4f5' } }}
+                sx={{ mb: 1, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}
               >
                 Back
               </Button>
@@ -599,20 +605,20 @@ export default function LoginPage() {
             <Box>
               {!mfaSetupData ? (
                 <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                  <CircularProgress sx={{ color: '#00e5a0' }} />
+                  <CircularProgress sx={{ color: 'primary.main' }} />
                 </Box>
               ) : (
                 <Box component="form" onSubmit={handleMfaSetupSubmit}>
-                  <Alert severity="warning" sx={{ mb: 2, bgcolor: 'rgba(234,179,8,0.08)', color: '#fbbf24', border: '1px solid rgba(234,179,8,0.15)', '& .MuiAlert-icon': { color: '#fbbf24' } }}>
+                  <Alert severity="warning" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.warning.main}14`, color: 'warning.light', border: (theme) => `1px solid ${theme.palette.warning.main}26`, '& .MuiAlert-icon': { color: 'warning.light' } }}>
                     Your organization requires MFA. Set up an authenticator app to continue signing in.
                   </Alert>
-                  <Typography variant="body2" sx={{ mb: 1, color: '#f4f4f5' }}>
+                  <Typography variant="body2" sx={{ mb: 1, color: 'text.primary' }}>
                     1. Scan this QR code with your authenticator app:
                   </Typography>
                   <Box sx={{ p: 2, bgcolor: '#ffffff', borderRadius: 1, display: 'flex', justifyContent: 'center', mb: 2 }}>
                     <QRCodeSVG value={mfaSetupData.otpauthUri} size={180} />
                   </Box>
-                  <Typography variant="body2" sx={{ mb: 1, color: '#f4f4f5' }}>
+                  <Typography variant="body2" sx={{ mb: 1, color: 'text.primary' }}>
                     2. Or enter this code manually:
                   </Typography>
                   <TextField
@@ -620,9 +626,9 @@ export default function LoginPage() {
                     value={mfaSetupData.secret}
                     size="small"
                     slotProps={{ input: { readOnly: true } }}
-                    sx={{ mb: 2, '& .MuiOutlinedInput-root': { bgcolor: '#161619', fontFamily: "'JetBrains Mono', monospace", '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' } }, '& .MuiOutlinedInput-input': { color: '#f4f4f5' } }}
+                    sx={{ mb: 2, '& .MuiOutlinedInput-root': { bgcolor: 'background.default', fontFamily: "'JetBrains Mono', monospace", '& fieldset': { borderColor: 'divider' } }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
                   />
-                  <Typography variant="body2" sx={{ mb: 1, color: '#f4f4f5' }}>
+                  <Typography variant="body2" sx={{ mb: 1, color: 'text.primary' }}>
                     3. Enter the 6-digit code from your app:
                   </Typography>
                   <TextField
@@ -637,18 +643,18 @@ export default function LoginPage() {
                     autoFocus
                     placeholder="000000"
                     slotProps={{ htmlInput: { maxLength: 6 } }}
-                    sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#161619', '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' }, '&:hover fieldset': { borderColor: 'rgba(0,229,160,0.3)' }, '&.Mui-focused fieldset': { borderColor: '#00e5a0' } }, '& .MuiInputLabel-root': { color: '#a1a1aa' }, '& .MuiOutlinedInput-input': { color: '#f4f4f5' } }}
+                    sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
                   />
                   <Button
                     fullWidth
                     type="submit"
                     variant="contained"
                     disabled={loading || mfaSetupCode.length !== 6}
-                    sx={{ mt: 2, mb: 1, bgcolor: '#00e5a0', color: '#08080a', fontWeight: 600, '&:hover': { bgcolor: '#00cc8e' }, '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: '#08080a' } }}
+                    sx={{ mt: 2, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
                   >
                     {loading ? 'Verifying...' : 'Enable MFA & Sign In'}
                   </Button>
-                  <Button fullWidth variant="text" onClick={handleBackToCredentials} sx={{ mb: 1, color: '#a1a1aa', '&:hover': { color: '#f4f4f5' } }}>
+                  <Button fullWidth variant="text" onClick={handleBackToCredentials} sx={{ mb: 1, color: 'text.secondary', '&:hover': { color: 'text.primary' } }}>
                     Back
                   </Button>
                 </Box>
@@ -669,16 +675,16 @@ export default function LoginPage() {
                       mb: 0.5,
                       bgcolor: 'transparent',
                       border: '1px solid transparent',
-                      '&:hover': { bgcolor: '#161619', borderColor: 'rgba(35,35,40,0.6)' },
-                      '&.Mui-selected': { bgcolor: 'rgba(0,229,160,0.06)', borderColor: 'rgba(0,229,160,0.2)', '&:hover': { bgcolor: 'rgba(0,229,160,0.1)' } },
+                      '&:hover': { bgcolor: 'background.default', borderColor: 'divider' },
+                      '&.Mui-selected': { bgcolor: (theme) => `${theme.palette.primary.main}0F`, borderColor: (theme) => `${theme.palette.primary.main}33`, '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}1A` } },
                     }}
                   >
                     <ListItemIcon sx={{ minWidth: 40 }}>
-                      <Business sx={{ color: '#a1a1aa' }} />
+                      <Business sx={{ color: 'text.secondary' }} />
                     </ListItemIcon>
-                    <ListItemText primary={m.name} secondary={m.role} sx={{ '& .MuiListItemText-primary': { color: '#f4f4f5' }, '& .MuiListItemText-secondary': { color: '#52525b' } }} />
+                    <ListItemText primary={m.name} secondary={m.role} sx={{ '& .MuiListItemText-primary': { color: 'text.primary' }, '& .MuiListItemText-secondary': { color: 'text.disabled' } }} />
                     {m.tenantId === selectedTenantId && (
-                      <CheckCircle fontSize="small" sx={{ color: '#00e5a0' }} />
+                      <CheckCircle fontSize="small" sx={{ color: 'primary.main' }} />
                     )}
                   </ListItemButton>
                 ))}
@@ -688,7 +694,7 @@ export default function LoginPage() {
                 variant="contained"
                 onClick={handleTenantConfirm}
                 disabled={loading || !selectedTenantId}
-                sx={{ mt: 2, mb: 1, bgcolor: '#00e5a0', color: '#08080a', fontWeight: 600, '&:hover': { bgcolor: '#00cc8e' }, '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: '#08080a' } }}
+                sx={{ mt: 2, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
               >
                 {loading ? 'Selecting...' : 'Continue'}
               </Button>
