@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -11,6 +11,7 @@ import OAuthCallbackPage from './pages/OAuthCallbackPage';
 import VaultSetupPage from './pages/VaultSetupPage';
 import PublicSharePage from './pages/PublicSharePage';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
+import PwaUpdateNotification from './components/common/PwaUpdateNotification';
 import { useAuth } from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
 import { useVaultStore } from './store/vaultStore';
@@ -29,6 +30,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const checkStatus = useVaultStore((s) => s.checkStatus);
   const startPolling = useVaultStore((s) => s.startPolling);
   const stopPolling = useVaultStore((s) => s.stopPolling);
+  const location = useLocation();
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken) return;
@@ -38,7 +40,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, accessToken, checkStatus, startPolling, stopPolling]);
 
   if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    // Preserve query params (e.g. autoconnect) when redirecting to login
+    const loginTarget = location.search ? `/login${location.search}` : '/login';
+    return <Navigate to={loginTarget} replace />;
+  }
   if (user?.vaultSetupComplete === false) return <Navigate to="/oauth/vault-setup" replace />;
 
   return (
@@ -51,45 +57,48 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
-      <Route
-        path="/oauth/vault-setup"
-        element={
-          <AuthRoute>
-            <VaultSetupPage />
-          </AuthRoute>
-        }
-      />
-      <Route
-        path="/connection/:id"
-        element={
-          <ProtectedRoute>
-            <ConnectionViewerPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/recording/:id"
-        element={
-          <ProtectedRoute>
-            <RecordingPlayerPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="/share/:token" element={<PublicSharePage />} />
-      <Route
-        path="/*"
-        element={
-          <ProtectedRoute>
-            <DashboardPage />
-          </ProtectedRoute>
-        }
-      />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+        <Route
+          path="/oauth/vault-setup"
+          element={
+            <AuthRoute>
+              <VaultSetupPage />
+            </AuthRoute>
+          }
+        />
+        <Route
+          path="/connection/:id"
+          element={
+            <ProtectedRoute>
+              <ConnectionViewerPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/recording/:id"
+          element={
+            <ProtectedRoute>
+              <RecordingPlayerPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/share/:token" element={<PublicSharePage />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+      <PwaUpdateNotification />
+    </>
   );
 }

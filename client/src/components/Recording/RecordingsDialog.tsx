@@ -203,7 +203,7 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
                             <DownloadIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        {rec.format === 'guac' && (
+                        {(rec.format === 'guac' || rec.format === 'asciicast') && (
                           <Tooltip title="Download MP4">
                             <span>
                               <IconButton

@@ -1,12 +1,17 @@
-"""Async HTTP microservice for converting .guac recordings to .m4v video via guacenc.
+"""Async HTTP microservice for converting recordings to video.
+
+Supports two conversion pipelines:
+  1. .guac → .m4v via guacenc (RDP/VNC recordings)
+  2. .cast → .mp4 via agg + ffmpeg (SSH asciicast recordings)
 
 Endpoints:
-  GET  /health        — Enhanced health check with uptime and job stats
-  POST /convert       — Submit async conversion job (returns 202 with jobId)
-  GET  /status/<id>   — Poll job status (pending → converting → complete/error)
-  GET  /conversions   — List all in-memory jobs
-  DELETE /cache       — Delete a specific cached .m4v file
-  POST /cleanup       — Bulk-delete old .m4v files from /recordings/
+  GET  /health            — Enhanced health check with uptime and job stats
+  POST /convert           — Submit async guac→m4v conversion job (returns 202 with jobId)
+  POST /convert-asciicast — Submit async cast→mp4 conversion job (returns 202 with jobId)
+  GET  /status/<id>       — Poll job status (pending → converting → complete/error)
+  GET  /conversions       — List all in-memory jobs
+  DELETE /cache           — Delete a specific cached video file (.m4v or .mp4)
+  POST /cleanup           — Bulk-delete old video files from /recordings/
 """
 
 import json
@@ -24,6 +29,9 @@ ALLOWED_PREFIX = "/recordings/"
 GUACENC_TIMEOUT = int(os.environ.get("GUACENC_TIMEOUT", "300"))
 JOB_EXPIRY_SECONDS = int(os.environ.get("JOB_EXPIRY_SECONDS", "3600"))
 MAX_CONCURRENT_JOBS = int(os.environ.get("MAX_CONCURRENT_JOBS", "4"))
+ASCIICAST_TIMEOUT = int(os.environ.get("ASCIICAST_TIMEOUT", "300"))
+AGG_FONT_SIZE = int(os.environ.get("AGG_FONT_SIZE", "14"))
+AGG_THEME = os.environ.get("AGG_THEME", "monokai")
 CLEANUP_DEFAULT_MAX_AGE_DAYS = 90
 
 START_TIME = time.monotonic()
@@ -146,18 +154,113 @@ def run_conversion(job_store: JobStore, job_id: str, file_path: str, resolution:
         )
 
 
+# ── Asciicast Conversion Worker ──────────────────────────────────────
+
+def run_asciicast_conversion(job_store: JobStore, job_id: str, file_path: str, resolution: str):
+    """Convert an asciicast (.cast) file to MP4 via agg (GIF) then ffmpeg (MP4).
+
+    Pipeline: .cast → agg → .gif → ffmpeg → .mp4
+    agg renders the terminal session as an animated GIF, then ffmpeg converts to MP4.
+    """
+    job_store.update_status(job_id, "converting")
+    output_path = file_path + ".mp4"
+    gif_path = file_path + ".gif"
+
+    try:
+        # Step 1: Render asciicast to GIF using agg
+        agg_cmd = [
+            "agg",
+            "--font-size", str(AGG_FONT_SIZE),
+            "--theme", AGG_THEME,
+            file_path,
+            gif_path,
+        ]
+        agg_result = subprocess.run(
+            agg_cmd, capture_output=True, text=True, timeout=ASCIICAST_TIMEOUT,
+        )
+        if agg_result.returncode != 0 or not os.path.isfile(gif_path):
+            stderr = agg_result.stderr.strip() if agg_result.stderr else "unknown error"
+            job_store.update_status(
+                job_id, "error",
+                error="agg rendering failed",
+                detail=stderr,
+                returncode=agg_result.returncode,
+            )
+            return
+
+        # Step 2: Convert GIF to MP4 using ffmpeg
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-i", gif_path,
+            "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            output_path,
+        ]
+        ffmpeg_result = subprocess.run(
+            ffmpeg_cmd, capture_output=True, text=True, timeout=ASCIICAST_TIMEOUT,
+        )
+
+        # Clean up intermediate GIF
+        try:
+            os.unlink(gif_path)
+        except OSError:
+            pass
+
+        if ffmpeg_result.returncode != 0 or not os.path.isfile(output_path):
+            stderr = ffmpeg_result.stderr.strip() if ffmpeg_result.stderr else "unknown error"
+            job_store.update_status(
+                job_id, "error",
+                error="ffmpeg conversion failed",
+                detail=stderr,
+                returncode=ffmpeg_result.returncode,
+            )
+        else:
+            file_size = os.path.getsize(output_path)
+            job_store.update_status(
+                job_id, "complete",
+                outputPath=output_path,
+                fileSize=file_size,
+            )
+    except subprocess.TimeoutExpired:
+        # Clean up intermediate GIF on timeout
+        try:
+            os.unlink(gif_path)
+        except OSError:
+            pass
+        job_store.update_status(
+            job_id, "error",
+            error=f"asciicast conversion timed out after {ASCIICAST_TIMEOUT}s",
+            detail="",
+            returncode=-1,
+        )
+    except Exception as e:
+        # Clean up intermediate GIF on unexpected error
+        try:
+            os.unlink(gif_path)
+        except OSError:
+            pass
+        job_store.update_status(
+            job_id, "error",
+            error="unexpected error",
+            detail=str(e),
+            returncode=-1,
+        )
+
+
 # ── Cleanup Utility ──────────────────────────────────────────────────
 
-def cleanup_m4v_files(max_age_days: int) -> dict:
-    """Walk /recordings/ and delete .m4v files older than max_age_days."""
+def cleanup_video_files(max_age_days: int) -> dict:
+    """Walk /recordings/ and delete .m4v and .mp4 video cache files older than max_age_days."""
     cutoff = time.time() - (max_age_days * 86400)
     deleted = 0
     errors = 0
     freed_bytes = 0
 
+    video_extensions = (".m4v", ".mp4")
     for root, _dirs, files in os.walk(ALLOWED_PREFIX):
         for f in files:
-            if not f.endswith(".m4v"):
+            if not f.endswith(video_extensions):
                 continue
             full_path = os.path.join(root, f)
             try:
@@ -193,6 +296,8 @@ class GuacencHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/convert":
             self._handle_convert()
+        elif self.path == "/convert-asciicast":
+            self._handle_convert_asciicast()
         elif self.path == "/cleanup":
             self._handle_cleanup()
         else:
@@ -252,6 +357,42 @@ class GuacencHandler(BaseHTTPRequestHandler):
 
         self._json_response(202, {"jobId": job_id, "status": "pending"})
 
+    def _handle_convert_asciicast(self):
+        body = self._read_json_body()
+        if body is None:
+            return
+
+        file_path = body.get("filePath", "")
+
+        if not file_path or not file_path.startswith(ALLOWED_PREFIX):
+            self._json_response(400, {"error": "filePath must start with /recordings/"})
+            return
+
+        if not os.path.isfile(file_path):
+            self._json_response(404, {"error": f"source file not found: {file_path}"})
+            return
+
+        # Resolution not used by agg (it auto-detects from terminal size), but kept for API consistency
+        resolution = "auto"
+
+        try:
+            job_id = self.job_store.create_job(file_path, resolution)
+        except ValueError as e:
+            self._json_response(503, {
+                "error": str(e),
+                "activeJobs": self.job_store.active_count(),
+            })
+            return
+
+        t = threading.Thread(
+            target=run_asciicast_conversion,
+            args=(self.job_store, job_id, file_path, resolution),
+            daemon=True,
+        )
+        t.start()
+
+        self._json_response(202, {"jobId": job_id, "status": "pending"})
+
     def _handle_status(self, job_id: str):
         job = self.job_store.get_job(job_id)
         if not job:
@@ -293,14 +434,21 @@ class GuacencHandler(BaseHTTPRequestHandler):
             self._json_response(400, {"error": "filePath must start with /recordings/"})
             return
 
-        m4v_path = file_path + ".m4v"
-        if not os.path.isfile(m4v_path):
-            self._json_response(404, {"error": f"cached file not found: {m4v_path}"})
+        # Try .m4v (guac) first, then .mp4 (asciicast)
+        video_path = None
+        for ext in (".m4v", ".mp4"):
+            candidate = file_path + ext
+            if os.path.isfile(candidate):
+                video_path = candidate
+                break
+
+        if not video_path:
+            self._json_response(404, {"error": f"cached file not found for: {file_path}"})
             return
 
         try:
-            os.unlink(m4v_path)
-            self._json_response(200, {"deleted": True, "path": m4v_path})
+            os.unlink(video_path)
+            self._json_response(200, {"deleted": True, "path": video_path})
         except OSError as e:
             self._json_response(500, {"error": f"failed to delete: {e}"})
 
@@ -314,7 +462,7 @@ class GuacencHandler(BaseHTTPRequestHandler):
             self._json_response(400, {"error": "maxAgeDays must be a positive integer"})
             return
 
-        result = cleanup_m4v_files(max_age_days)
+        result = cleanup_video_files(max_age_days)
         self._json_response(200, result)
 
     # ── Helpers ──────────────────────────────────────────────────────

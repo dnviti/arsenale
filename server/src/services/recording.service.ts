@@ -232,11 +232,15 @@ export async function deleteRecording(recordingId: string, userId: string): Prom
     logger.warn(`Recording file not found on disk: ${recording.filePath}`);
   }
 
-  // Also delete the converted .m4v file if it exists
+  // Also delete the converted video sidecar if it exists (.m4v for guac, .mp4 for asciicast)
   if (recording.format === 'guac') {
     const m4vPath = recording.filePath + '.m4v';
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     try { await fsp.unlink(m4vPath); } catch { /* may not exist */ }
+  } else if (recording.format === 'asciicast') {
+    const mp4Path = recording.filePath + '.mp4';
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    try { await fsp.unlink(mp4Path); } catch { /* may not exist */ }
   }
 
   await prisma.sessionRecording.delete({ where: { id: recordingId } });
@@ -297,15 +301,19 @@ export async function convertToVideo(
   const recording = await getRecording(recordingId, userId);
   if (!recording) throw new AppError('Recording not found', 404);
   if (recording.status !== 'COMPLETE') throw new AppError('Recording is not complete', 400);
-  if (recording.format !== 'guac') throw new AppError('Video export is only available for RDP/VNC recordings', 400);
+  if (recording.format !== 'guac' && recording.format !== 'asciicast') {
+    throw new AppError('Video export is only available for RDP/VNC/SSH recordings', 400);
+  }
 
-  const m4vPath = recording.filePath + '.m4v';
+  const isAsciicast = recording.format === 'asciicast';
+  const videoExt = isAsciicast ? '.mp4' : '.m4v';
+  const videoPath = recording.filePath + videoExt;
 
   // Return cached file if it already exists
   try {
     // eslint-disable-next-line security/detect-non-literal-fs-filename
-    const stat = await fsp.stat(m4vPath);
-    return { videoPath: m4vPath, fileSize: stat.size };
+    const stat = await fsp.stat(videoPath);
+    return { videoPath, fileSize: stat.size };
   } catch { /* not cached — proceed with conversion */ }
 
   // Deduplicate concurrent conversion requests for the same recording
@@ -313,23 +321,35 @@ export async function convertToVideo(
   if (existing) return existing;
 
   const conversionPromise = (async () => {
-    const width = recording.width || DEFAULT_VIDEO_WIDTH;
-    const height = recording.height || DEFAULT_VIDEO_HEIGHT;
     const deadline = Date.now() + config.guacencTimeoutMs;
+
+    // Select endpoint and service URL based on recording format
+    const serviceUrl = isAsciicast ? config.asciicastConverterUrl : config.guacencServiceUrl;
+    const endpoint = isAsciicast ? '/convert-asciicast' : '/convert';
 
     // Step 1: Submit async conversion job
     let jobId: string;
     try {
-      const res = await fetch(`${config.guacencServiceUrl}/convert`, {
+      const body: Record<string, unknown> = {
+        filePath: toContainerPath(recording.filePath),
+      };
+
+      // Only include width/height for guac recordings (asciicast auto-detects from terminal size)
+      if (!isAsciicast) {
+        body.width = recording.width || DEFAULT_VIDEO_WIDTH;
+        body.height = recording.height || DEFAULT_VIDEO_HEIGHT;
+      }
+
+      const res = await fetch(`${serviceUrl}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filePath: toContainerPath(recording.filePath), width, height }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(GUACENC_SUBMIT_TIMEOUT_MS),
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as Record<string, unknown>;
-        const detail = (body.error as string) || `HTTP ${res.status}`;
+        const resBody = await res.json().catch(() => ({})) as Record<string, unknown>;
+        const detail = (resBody.error as string) || `HTTP ${res.status}`;
         throw new AppError(`Video conversion failed: ${detail}`, res.status === 503 ? 503 : 500);
       }
 
@@ -347,7 +367,7 @@ export async function convertToVideo(
       if (Date.now() >= deadline) break;
 
       try {
-        const res = await fetch(`${config.guacencServiceUrl}/status/${jobId}`, {
+        const res = await fetch(`${serviceUrl}/status/${jobId}`, {
           signal: AbortSignal.timeout(GUACENC_STATUS_TIMEOUT_MS),
         });
 
@@ -429,10 +449,13 @@ export async function cleanupExpiredRecordings(): Promise<number> {
   for (const rec of expired) {
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     try { await fsp.unlink(rec.filePath); } catch { /* file may already be gone */ }
-    // Also delete the converted .m4v file if it exists
+    // Also delete converted video sidecars if they exist (.m4v for guac, .mp4 for asciicast)
     const m4vPath = rec.filePath + '.m4v';
     // eslint-disable-next-line security/detect-non-literal-fs-filename
     try { await fsp.unlink(m4vPath); } catch { /* may not exist */ }
+    const mp4Path = rec.filePath + '.mp4';
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    try { await fsp.unlink(mp4Path); } catch { /* may not exist */ }
   }
 
   if (expired.length > 0) {

@@ -18,16 +18,33 @@ RUN autoreconf -fi \
     && make -j$(nproc) \
     && cp src/guacenc/.libs/guacenc /usr/local/bin/guacenc
 
+# ── agg (asciicast-to-GIF renderer) build stage ──────────────────────
+FROM --platform=$BUILDPLATFORM alpine:3.18 AS agg-builder
+
+ARG AGG_VERSION=1.5.0
+ARG TARGETARCH
+
+RUN apk add --no-cache curl tar && \
+    case "${TARGETARCH}" in \
+      amd64) AGG_ARCH="x86_64-unknown-linux-musl" ;; \
+      arm64) AGG_ARCH="aarch64-unknown-linux-musl" ;; \
+      *) echo "Unsupported arch: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    curl -fsSL "https://github.com/asciinema/agg/releases/download/v${AGG_VERSION}/agg-${AGG_ARCH}.tar.gz" \
+    | tar xz -C /usr/local/bin
+
 # ── Runtime stage ─────────────────────────────────────────────────────
 FROM alpine:3.18
 
 RUN apk update && apk upgrade --no-cache
 
-RUN apk add --no-cache python3 ffmpeg-libs libpng cairo libjpeg-turbo libuuid
+RUN apk add --no-cache python3 ffmpeg-libs ffmpeg libpng cairo libjpeg-turbo libuuid
 
 COPY --from=builder /usr/local/bin/guacenc /usr/local/bin/guacenc
 COPY --from=builder /tmp/guacamole-server-1.6.0/src/libguac/.libs/libguac.so* /usr/local/lib/
 RUN ldconfig /usr/local/lib
+
+COPY --from=agg-builder /usr/local/bin/agg /usr/local/bin/agg
 
 COPY server.py /opt/guacenc/server.py
 

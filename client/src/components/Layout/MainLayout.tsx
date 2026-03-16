@@ -94,7 +94,15 @@ export default function MainLayout() {
     }
   }, [vaultUnlocked, fetchExpiringCount]);
 
-  const [connectionDialogOpen, setConnectionDialogOpen] = useState(false);
+  // PWA app shortcut deep-link: read ?action= query param to pre-open a dialog on mount (PWA-003)
+  const [pwaAction] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get('action');
+    if (action) window.history.replaceState({}, '', '/');
+    return action;
+  });
+
+  const [connectionDialogOpen, setConnectionDialogOpen] = useState(() => pwaAction === 'new-connection');
   const [editingConnection, setEditingConnection] = useState<ConnectionData | null>(null);
   const [connectionFolderId, setConnectionFolderId] = useState<string | null>(null);
   const [connectionTeamId, setConnectionTeamId] = useState<string | null>(null);
@@ -110,13 +118,13 @@ export default function MainLayout() {
   // Settings & Audit Log modals
   // OAuth link redirect: server redirects to /?linked=google after linking
   const [settingsOpen, setSettingsOpen] = useState(
-    () => Boolean(new URLSearchParams(window.location.search).get('linked')),
+    () => pwaAction === 'open-settings' || Boolean(new URLSearchParams(window.location.search).get('linked')),
   );
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(
     () => new URLSearchParams(window.location.search).get('linked') ? 'security' : undefined,
   );
   const [auditLogOpen, setAuditLogOpen] = useState(false);
-  const [keychainOpen, setKeychainOpen] = useState(false);
+  const [keychainOpen, setKeychainOpen] = useState(() => pwaAction === 'open-keychain');
   const [recordingsOpen, setRecordingsOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);

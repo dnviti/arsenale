@@ -113,6 +113,12 @@ export default function LoginPage() {
     return () => clearInterval(countdownRef.current);
   }, [resendActive]);
 
+  // Build the post-login redirect path, preserving the autoconnect query param
+  const buildRedirect = () => {
+    const autoconnect = searchParams.get('autoconnect');
+    return autoconnect ? `/?autoconnect=${encodeURIComponent(autoconnect)}` : '/';
+  };
+
   const completeLogin = (data: AuthSuccessResponse) => {
     const memberships = data.tenantMemberships ?? [];
 
@@ -135,7 +141,7 @@ export default function LoginPage() {
     if (memberships.length === 1) {
       useUiPreferencesStore.getState().set('lastActiveTenantId', memberships[0].tenantId);
     }
-    navigate('/');
+    navigate(buildRedirect());
   };
 
   const handleTenantConfirm = async () => {
@@ -153,7 +159,7 @@ export default function LoginPage() {
       }
 
       useUiPreferencesStore.getState().set('lastActiveTenantId', selectedTenantId);
-      navigate('/');
+      navigate(buildRedirect());
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to select organization'));
     } finally {
