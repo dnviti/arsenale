@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -30,6 +30,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const checkStatus = useVaultStore((s) => s.checkStatus);
   const startPolling = useVaultStore((s) => s.startPolling);
   const stopPolling = useVaultStore((s) => s.stopPolling);
+  const location = useLocation();
 
   useEffect(() => {
     if (!isAuthenticated || !accessToken) return;
@@ -39,7 +40,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }, [isAuthenticated, accessToken, checkStatus, startPolling, stopPolling]);
 
   if (loading) return null;
-  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAuthenticated) {
+    // Preserve query params (e.g. autoconnect) when redirecting to login
+    const loginTarget = location.search ? `/login${location.search}` : '/login';
+    return <Navigate to={loginTarget} replace />;
+  }
   if (user?.vaultSetupComplete === false) return <Navigate to="/oauth/vault-setup" replace />;
 
   return (

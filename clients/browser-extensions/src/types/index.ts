@@ -36,7 +36,7 @@ export interface StorageSchema {
 
 /** Messages sent from popup/options to the service worker. */
 export type BackgroundMessage =
-  | { type: 'API_REQUEST'; accountId: string; method: 'GET' | 'POST' | 'PUT' | 'DELETE'; path: string; body?: unknown }
+  | { type: 'API_REQUEST'; accountId: string; method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; path: string; body?: unknown }
   | { type: 'HEALTH_CHECK'; serverUrl: string }
   | { type: 'LOGIN'; serverUrl: string; email: string; password: string }
   | { type: 'VERIFY_TOTP'; serverUrl: string; tempToken: string; code: string; pendingAccount: PendingAccount }

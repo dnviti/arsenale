@@ -28,7 +28,7 @@ export function sendMessage<T = unknown>(
  */
 export function apiRequest<T = unknown>(
   accountId: string,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<BackgroundResponse<T>> {
