@@ -17,6 +17,8 @@ interface UseKeyboardCaptureOptions {
   onFullscreenChange?: (isFullscreen: boolean) => void;
   /** Whether to suppress browser key defaults at capture phase (true for RDP/VNC, false for SSH) */
   suppressBrowserKeys?: boolean;
+  /** Custom focus handler — when provided, called instead of el.focus() (e.g. xterm.js needs its internal textarea focused) */
+  onRequestFocus?: () => void;
 }
 
 interface UseKeyboardCaptureReturn {
@@ -36,6 +38,7 @@ export function useKeyboardCapture({
   onMouseDown,
   onFullscreenChange,
   suppressBrowserKeys = false,
+  onRequestFocus,
 }: UseKeyboardCaptureOptions): UseKeyboardCaptureReturn {
   const [isFocused, setIsFocused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -49,6 +52,7 @@ export function useKeyboardCapture({
   const onMouseDownRef = useRef(onMouseDown);
   const onFullscreenChangeRef = useRef(onFullscreenChange);
   const isActiveRef = useRef(isActive);
+  const onRequestFocusRef = useRef(onRequestFocus);
 
   useEffect(() => {
     onBlurRef.current = onBlur;
@@ -56,6 +60,7 @@ export function useKeyboardCapture({
     onMouseDownRef.current = onMouseDown;
     onFullscreenChangeRef.current = onFullscreenChange;
     isActiveRef.current = isActive;
+    onRequestFocusRef.current = onRequestFocus;
   });
 
   // Handle isActive changes — blur and reset when tab becomes inactive
@@ -72,7 +77,9 @@ export function useKeyboardCapture({
     if (!el) return;
 
     const handleMouseEnter = () => {
-      if (isActiveRef.current) el.focus();
+      if (isActiveRef.current) {
+        if (onRequestFocusRef.current) onRequestFocusRef.current(); else el.focus();
+      }
     };
     const handleMouseLeave = () => {
       onBlurRef.current?.();
@@ -87,7 +94,9 @@ export function useKeyboardCapture({
       setIsFocused(true);
     };
     const handleMouseDown = () => {
-      if (isActiveRef.current) el.focus();
+      if (isActiveRef.current) {
+        if (onRequestFocusRef.current) onRequestFocusRef.current(); else el.focus();
+      }
       onMouseDownRef.current?.();
     };
 

@@ -137,6 +137,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
       }, 100);
     },
     suppressBrowserKeys: false,
+    onRequestFocus: () => terminalRef.current?.focus(),
   });
 
   const toolbarActions = useMemo<ToolbarAction[]>(() => {
