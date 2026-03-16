@@ -170,6 +170,8 @@ Email verification supports multiple providers including SMTP, SendGrid, Amazon 
 
 Connection import and export supports CSV, JSON, mRemoteNG configuration files, and RDP files for easy migration from other tools.
 
+Arsenale is a Progressive Web App (PWA) that can be installed on desktop and mobile devices for a native app-like experience. The PWA uses a service worker with an online-first caching strategy: navigation requests use NetworkFirst with a 3-second timeout fallback, static assets (JS, CSS, images, fonts) use StaleWhileRevalidate, and Google Fonts are cached for offline resilience. API calls (`/api/*`), WebSocket connections (`/socket.io/*`), and Guacamole tunnels (`/guacamole/*`) are never cached by the service worker. The web app manifest configures standalone display mode with the dark theme background color, and includes both standard and maskable icons in 192px and 512px sizes.
+
 ## Deployment
 
 Arsenale deploys with a single Docker Compose command that starts all required services: PostgreSQL database, Guacamole daemon, the server API, and the Nginx-based web client. Database migrations run automatically on startup. The entire stack runs on an internal Docker network with only the web port exposed to the host.
