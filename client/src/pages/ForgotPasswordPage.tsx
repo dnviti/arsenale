@@ -33,43 +33,43 @@ export default function ForgotPasswordPage() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        bgcolor: '#08080a',
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(0,229,160,0.04) 0%, #08080a 70%)',
+        bgcolor: 'background.default',
+        background: (theme) => `radial-gradient(ellipse at 50% 0%, ${theme.palette.primary.main}0A 0%, ${theme.palette.background.default} 70%)`,
       }}
     >
       <Card sx={{
         width: 400,
         maxWidth: '90vw',
-        bgcolor: '#0f0f12',
-        border: '1px solid rgba(35,35,40,0.6)',
+        bgcolor: 'background.paper',
+        border: 1, borderColor: 'divider',
         borderRadius: 4,
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
       }}>
         <CardContent sx={{ p: 4 }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-            <Box sx={{ width: 32, height: 3, borderRadius: 1, bgcolor: '#00e5a0' }} />
+            <Box sx={{ width: 32, height: 3, borderRadius: 1, bgcolor: 'primary.main' }} />
           </Box>
           <Typography variant="h5" gutterBottom align="center" sx={{
-            fontFamily: '"Instrument Serif", serif',
+            fontFamily: (theme) => theme.typography.h5.fontFamily,
             fontSize: '1.75rem',
-            color: '#f4f4f5',
+            color: 'text.primary',
           }}>
             Reset Password
           </Typography>
 
           {sent ? (
             <>
-              <Alert severity="success" sx={{ mb: 2, bgcolor: 'rgba(0,229,160,0.08)', color: '#00e5a0', '& .MuiAlert-icon': { color: '#00e5a0' } }}>
+              <Alert severity="success" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', '& .MuiAlert-icon': { color: 'primary.main' } }}>
                 If an account exists with that email, a password reset link has been sent.
                 Check your inbox and spam folder.
               </Alert>
               <Typography variant="body2" align="center">
-                <Link component={RouterLink} to="/login" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>Back to Sign In</Link>
+                <Link component={RouterLink} to="/login" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Back to Sign In</Link>
               </Typography>
             </>
           ) : (
             <>
-              <Typography variant="body2" align="center" mb={3} sx={{ color: '#a1a1aa' }}>
+              <Typography variant="body2" align="center" mb={3} sx={{ color: 'text.secondary' }}>
                 Enter your email address and we'll send you a link to reset your password.
               </Typography>
               {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
@@ -85,14 +85,14 @@ export default function ForgotPasswordPage() {
                   autoFocus
                   sx={{
                     '& .MuiOutlinedInput-root': {
-                      bgcolor: '#161619',
-                      color: '#f4f4f5',
-                      '& fieldset': { borderColor: 'rgba(35,35,40,0.6)' },
-                      '&:hover fieldset': { borderColor: 'rgba(55,55,60,0.8)' },
-                      '&.Mui-focused fieldset': { borderColor: '#00e5a0' },
+                      bgcolor: 'background.default',
+                      color: 'text.primary',
+                      '& fieldset': { borderColor: 'divider' },
+                      '&:hover fieldset': { borderColor: 'text.disabled' },
+                      '&.Mui-focused fieldset': { borderColor: 'primary.main' },
                     },
-                    '& .MuiInputLabel-root': { color: '#a1a1aa' },
-                    '& .MuiInputLabel-root.Mui-focused': { color: '#00e5a0' },
+                    '& .MuiInputLabel-root': { color: 'text.secondary' },
+                    '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
                   }}
                 />
                 <Button
@@ -103,17 +103,17 @@ export default function ForgotPasswordPage() {
                   sx={{
                     mt: 2,
                     mb: 1,
-                    bgcolor: '#00e5a0',
-                    color: '#08080a',
+                    bgcolor: 'primary.main',
+                    color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
                     fontWeight: 600,
-                    '&:hover': { bgcolor: '#00cc8e' },
-                    '&.Mui-disabled': { bgcolor: 'rgba(0,229,160,0.3)', color: 'rgba(8,8,10,0.5)' },
+                    '&:hover': { bgcolor: 'secondary.main' },
+                    '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) },
                   }}
                 >
                   {loading ? 'Sending...' : 'Send Reset Link'}
                 </Button>
                 <Typography variant="body2" align="center">
-                  <Link component={RouterLink} to="/login" sx={{ color: '#00e5a0', '&:hover': { color: '#00cc8e' } }}>Back to Sign In</Link>
+                  <Link component={RouterLink} to="/login" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Back to Sign In</Link>
                 </Typography>
               </Box>
             </>

@@ -5,14 +5,15 @@ import { BrowserRouter } from 'react-router-dom';
 import { ThemeProvider, CssBaseline } from '@mui/material';
 import App from './App';
 import { useThemeStore } from './store/themeStore';
-import { themes } from './theme';
+import { themes } from './theme/index';
 import './global.css';
 
 function Root() {
+  const themeName = useThemeStore((s) => s.themeName);
   const mode = useThemeStore((s) => s.mode);
 
   return (
-    <ThemeProvider theme={themes[mode]}>
+    <ThemeProvider theme={themes[themeName][mode]}>
       <CssBaseline />
       <BrowserRouter>
         <App />

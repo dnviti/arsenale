@@ -236,9 +236,9 @@ export default function MainLayout() {
           transition: 'filter 0.3s ease',
         }}
       >
-      <AppBar position="static" elevation={0} sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: 'rgba(8,8,10,0.8)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(35,35,40,0.6)' }}>
+      <AppBar position="static" elevation={0} sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(8,8,10,0.8)' : 'rgba(255,255,255,0.9)', backdropFilter: 'blur(20px)', borderBottom: 1, borderColor: 'divider' }}>
         <Toolbar variant="dense">
-          <Typography variant="h6" sx={{ flexGrow: 0, mr: 2, fontFamily: "'Instrument Serif', Georgia, serif", fontSize: '1.4rem', color: '#f4f4f5' }}>
+          <Typography variant="h6" sx={{ flexGrow: 0, mr: 2, fontFamily: (theme) => theme.typography.h5.fontFamily, fontSize: '1.4rem', color: 'text.primary' }}>
             Arsenale
           </Typography>
           <TenantSwitcher onCreateOrg={() => handleOpenSettings('organization')} />
@@ -251,15 +251,15 @@ export default function MainLayout() {
             sx={{
               mr: 1,
               ...(vaultUnlocked
-                ? { bgcolor: 'rgba(0,229,160,0.08)', color: '#00e5a0', borderColor: 'rgba(0,229,160,0.15)', '& .MuiChip-icon': { color: '#00e5a0' } }
-                : { bgcolor: 'rgba(239,68,68,0.08)', color: '#ef4444', borderColor: 'rgba(239,68,68,0.15)', '& .MuiChip-icon': { color: '#ef4444' } }),
+                ? { bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', borderColor: (theme) => `${theme.palette.primary.main}26`, '& .MuiChip-icon': { color: 'primary.main' } }
+                : { bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.main', borderColor: (theme) => `${theme.palette.error.main}26`, '& .MuiChip-icon': { color: 'error.main' } }),
             }}
           />
           <IconButton
             color="inherit"
             onClick={() => setKeychainOpen(true)}
             title="Keychain"
-            sx={{ mr: 1, '&:hover': { bgcolor: 'rgba(0,229,160,0.08)' } }}
+            sx={{ mr: 1, '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
           >
             <Badge badgeContent={expiringCount} color="error" max={99}>
               <KeychainIcon />
@@ -271,14 +271,14 @@ export default function MainLayout() {
             color="inherit"
             onClick={toggleTheme}
             title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            sx={{ '&:hover': { bgcolor: 'rgba(0,229,160,0.08)' } }}
+            sx={{ '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
           >
             {themeMode === 'dark' ? <LightMode /> : <DarkMode />}
           </IconButton>
           <IconButton
             color="inherit"
             onClick={(e) => setAnchorEl(e.currentTarget)}
-            sx={{ '&:hover': { bgcolor: 'rgba(0,229,160,0.08)' } }}
+            sx={{ '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
           >
             {user?.avatarData ? (
               <Avatar src={user.avatarData} sx={{ width: 28, height: 28 }} />
@@ -318,10 +318,10 @@ export default function MainLayout() {
           sx={{
             width: SIDEBAR_WIDTH,
             minWidth: SIDEBAR_WIDTH,
-            borderRight: '1px solid rgba(35,35,40,0.6)',
+            borderRight: 1, borderColor: 'divider',
             display: 'flex',
             flexDirection: 'column',
-            bgcolor: '#0f0f12',
+            bgcolor: 'background.paper',
             userSelect: 'none',
           }}
         >

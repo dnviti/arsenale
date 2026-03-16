@@ -154,15 +154,15 @@ export default function VaultLockedOverlay() {
       disableEscapeKeyDown
       sx={{ zIndex: 1400 }}
       slotProps={{
-        backdrop: { sx: { bgcolor: 'rgba(8,8,10,0.7)' } },
-        paper: { elevation: 8, sx: { p: 4, maxWidth: 400, width: '100%', textAlign: 'center', bgcolor: '#0f0f12', border: '1px solid rgba(35,35,40,0.6)', borderRadius: 4 } },
+        backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(8,8,10,0.7)' : 'rgba(0,0,0,0.4)' } },
+        paper: { elevation: 8, sx: { p: 4, maxWidth: 400, width: '100%', textAlign: 'center', bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 4 } },
       }}
     >
-        <LockIcon sx={{ fontSize: 48, color: '#00e5a0', mb: 2 }} />
-        <Typography variant="h6" gutterBottom sx={{ fontFamily: "'Instrument Serif', Georgia, serif", color: '#f4f4f5' }}>
+        <LockIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+        <Typography variant="h6" gutterBottom sx={{ fontFamily: (theme) => theme.typography.h5.fontFamily, color: 'text.primary' }}>
           Vault Locked
         </Typography>
-        <Typography variant="body2" sx={{ mb: 3, color: '#a1a1aa' }}>
+        <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
           {activeMethod !== 'password'
             ? 'Your vault was locked. Verify your identity to unlock.'
             : 'Your vault was locked due to inactivity timeout. Enter your password to unlock and resume.'}
@@ -180,7 +180,7 @@ export default function VaultLockedOverlay() {
             {loading ? (
               <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
                 <CircularProgress size={32} />
-                <Typography variant="body2" sx={{ color: '#a1a1aa' }}>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
                   Waiting for your security key or passkey...
                 </Typography>
               </Box>
@@ -190,7 +190,7 @@ export default function VaultLockedOverlay() {
                 variant="contained"
                 fullWidth
                 startIcon={<FingerprintIcon />}
-                sx={{ bgcolor: '#00e5a0', color: '#08080a', '&:hover': { bgcolor: '#00cc8e' } }}
+                sx={{ bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
               >
                 Retry Passkey
               </Button>
@@ -216,7 +216,7 @@ export default function VaultLockedOverlay() {
               variant="contained"
               fullWidth
               disabled={loading || code.length < 6}
-              sx={{ mt: 1, bgcolor: '#00e5a0', color: '#08080a', '&:hover': { bgcolor: '#00cc8e' } }}
+              sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
             >
               {loading ? 'Verifying...' : 'Verify Code'}
             </Button>
@@ -233,7 +233,7 @@ export default function VaultLockedOverlay() {
                 fullWidth
                 disabled={loading}
                 startIcon={<SmsIcon />}
-                sx={{ mt: 1, bgcolor: '#00e5a0', color: '#08080a', '&:hover': { bgcolor: '#00cc8e' } }}
+                sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
               >
                 {loading ? 'Sending...' : 'Send SMS Code'}
               </Button>
@@ -254,7 +254,7 @@ export default function VaultLockedOverlay() {
                   variant="contained"
                   fullWidth
                   disabled={loading || code.length < 6}
-                  sx={{ mt: 1, bgcolor: '#00e5a0', color: '#08080a', '&:hover': { bgcolor: '#00cc8e' } }}
+                  sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
                 >
                   {loading ? 'Verifying...' : 'Verify Code'}
                 </Button>
@@ -281,7 +281,7 @@ export default function VaultLockedOverlay() {
               variant="contained"
               fullWidth
               disabled={loading}
-              sx={{ mt: 1, bgcolor: '#00e5a0', color: '#08080a', '&:hover': { bgcolor: '#00cc8e' } }}
+              sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
             >
               {loading ? 'Unlocking...' : 'Unlock Vault'}
             </Button>
@@ -291,7 +291,7 @@ export default function VaultLockedOverlay() {
         {/* Method switcher */}
         {otherMethods.length > 0 && (
           <>
-            <Divider sx={{ my: 2, borderColor: 'rgba(35,35,40,0.6)' }} />
+            <Divider sx={{ my: 2, borderColor: 'divider' }} />
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
               {otherMethods.map((method) => (
                 <Link
@@ -299,7 +299,7 @@ export default function VaultLockedOverlay() {
                   component="button"
                   variant="body2"
                   onClick={() => setActiveMethod(method)}
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, justifyContent: 'center', color: '#00e5a0' }}
+                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, justifyContent: 'center', color: 'primary.main' }}
                 >
                   {getMethodIcon(method)}
                   Use {getMethodLabel(method)} instead
@@ -314,7 +314,7 @@ export default function VaultLockedOverlay() {
           variant="text"
           fullWidth
           color="inherit"
-          sx={{ mt: 2, color: '#a1a1aa' }}
+          sx={{ mt: 2, color: 'text.secondary' }}
         >
           Logout
         </Button>
