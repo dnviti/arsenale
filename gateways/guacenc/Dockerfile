@@ -41,6 +41,8 @@ RUN apk update && apk upgrade --no-cache
 
 RUN apk add --no-cache python3 ffmpeg-libs ffmpeg libpng cairo libjpeg-turbo libuuid
 
+RUN addgroup -S guacenc && adduser -S -G guacenc guacenc
+
 COPY --from=builder /usr/local/bin/guacenc /usr/local/bin/guacenc
 COPY --from=builder /tmp/guacamole-server-1.6.0/src/libguac/.libs/libguac.so* /usr/local/lib/
 RUN ldconfig /usr/local/lib
@@ -48,6 +50,10 @@ RUN ldconfig /usr/local/lib
 COPY --from=agg-builder /usr/local/bin/agg /usr/local/bin/agg
 
 COPY server.py /opt/guacenc/server.py
+
+RUN mkdir -p /recordings && chown guacenc:guacenc /recordings
+
+USER guacenc
 
 EXPOSE 3003
 
