@@ -15,12 +15,18 @@ export function useDesktopNotifications() {
   useEffect(() => {
     if (!('Notification' in window)) return;
 
+    let status: PermissionStatus | null = null;
+    const sync = () => setPermission(Notification.permission);
+
     // permissions API provides real-time updates
-    navigator.permissions?.query({ name: 'notifications' }).then((status) => {
-      const sync = () => setPermission(Notification.permission);
+    navigator.permissions?.query({ name: 'notifications' }).then((s) => {
+      status = s;
       status.addEventListener('change', sync);
-      return () => status.removeEventListener('change', sync);
     });
+
+    return () => {
+      status?.removeEventListener('change', sync);
+    };
   }, []);
 
   const requestPermission = useCallback(async (): Promise<NotificationPermission | 'unsupported'> => {
@@ -32,9 +38,16 @@ export function useDesktopNotifications() {
 
   const onClickRef = useRef<(() => void) | null>(null);
 
+  // Use refs so sendDesktopNotification identity stays stable and does not
+  // cause Socket.IO reconnections when preferences or permission change.
+  const enabledRef = useRef(enabled);
+  const permissionRef = useRef(permission);
+  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
+  useEffect(() => { permissionRef.current = permission; }, [permission]);
+
   const sendDesktopNotification = useCallback(
     (title: string, options?: { body?: string; tag?: string }) => {
-      if (!enabled || permission !== 'granted' || !('Notification' in window)) return;
+      if (!enabledRef.current || permissionRef.current !== 'granted' || !('Notification' in window)) return;
       if (document.hasFocus()) return;
 
       const n = new Notification(title, {
@@ -49,7 +62,7 @@ export function useDesktopNotifications() {
         n.close();
       };
     },
-    [enabled, permission],
+    [],
   );
 
   const setEnabled = useCallback(
@@ -63,6 +76,11 @@ export function useDesktopNotifications() {
     [permission, requestPermission, setPreference],
   );
 
+  /** Set callback invoked when user clicks a native notification */
+  const setOnClick = useCallback((cb: () => void) => {
+    onClickRef.current = cb;
+  }, []);
+
   return {
     supported: permission !== 'unsupported',
     permission,
@@ -70,7 +88,6 @@ export function useDesktopNotifications() {
     setEnabled,
     requestPermission,
     sendDesktopNotification,
-    /** Set callback invoked when user clicks a native notification */
-    setOnClick: (cb: () => void) => { onClickRef.current = cb; },
+    setOnClick,
   };
 }
