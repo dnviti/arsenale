@@ -7,12 +7,7 @@ import { computeBindingHash, getSocketUserAgent } from '../utils/tokenBinding';
 import * as auditService from '../services/audit.service';
 import type { NotificationEntry } from '../services/notification.service';
 import { logger } from '../utils/logger';
-import { isInQuietHours, NotificationType } from '../services/notification.service';
-
-/** Notification types that always bypass DND / quiet hours. */
-const SECURITY_CRITICAL_TYPES = new Set<NotificationType>([
-  NotificationType.IMPOSSIBLE_TRAVEL_DETECTED,
-]);
+import { isInQuietHours, SECURITY_CRITICAL_TYPES, NotificationType } from '../services/notification.service';
 
 let notificationNamespace: ReturnType<Server['of']> | null = null;
 

@@ -1,4 +1,4 @@
-import prisma, { NotificationType } from '../lib/prisma';
+import prisma, { NotificationType, Prisma } from '../lib/prisma';
 import { logger } from '../utils/logger';
 import { shouldDeliver } from './notificationPreference.service';
 import { sendEmail } from './email';
@@ -7,7 +7,7 @@ import { buildNotificationEmail } from './email/templates/notification';
 export { NotificationType };
 
 /** Notification types that always bypass DND / quiet hours. */
-const SECURITY_CRITICAL_TYPES = new Set<NotificationType>([
+export const SECURITY_CRITICAL_TYPES = new Set<NotificationType>([
   NotificationType.IMPOSSIBLE_TRAVEL_DETECTED,
 ]);
 
@@ -156,7 +156,7 @@ export async function updateNotificationSchedule(
   userId: string,
   data: Partial<NotificationSchedule>,
 ): Promise<NotificationSchedule> {
-  const updateData: Record<string, unknown> = {};
+  const updateData: Prisma.UserUpdateInput = {};
   if (data.dndEnabled !== undefined) updateData.notifDndEnabled = data.dndEnabled;
   if (data.quietHoursStart !== undefined) updateData.notifQuietHoursStart = data.quietHoursStart;
   if (data.quietHoursEnd !== undefined) updateData.notifQuietHoursEnd = data.quietHoursEnd;

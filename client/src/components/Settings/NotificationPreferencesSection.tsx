@@ -152,6 +152,8 @@ export default function NotificationPreferencesSection() {
 
   const handleScheduleChange = useCallback(
     async (update: Partial<NotificationSchedule>) => {
+      // Capture previous state for rollback on error
+      const previous = { ...schedule };
       // Optimistic update
       setSchedule((prev) => ({ ...prev, ...update }));
       setScheduleSaving(true);
@@ -159,12 +161,14 @@ export default function NotificationPreferencesSection() {
         const updated = await updateNotificationSchedule(update);
         setSchedule(updated);
       } catch (err) {
+        // Revert to previous state on failure
+        setSchedule(previous);
         setError(extractApiError(err, 'Failed to update notification schedule'));
       } finally {
         setScheduleSaving(false);
       }
     },
-    []
+    [schedule]
   );
 
   if (loading) {

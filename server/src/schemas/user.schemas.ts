@@ -68,10 +68,23 @@ export type UpdateDomainProfileInput = z.infer<typeof updateDomainProfileSchema>
 
 const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** Validate an IANA timezone string via the Intl API (returns false for invalid). */
+function isValidTimezone(tz: string): boolean {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const updateNotificationScheduleSchema = z.object({
   dndEnabled: z.boolean().optional(),
   quietHoursStart: z.string().regex(hhmmRegex, 'Must be HH:mm format').nullable().optional(),
   quietHoursEnd: z.string().regex(hhmmRegex, 'Must be HH:mm format').nullable().optional(),
-  quietHoursTimezone: z.string().max(100).nullable().optional(),
+  quietHoursTimezone: z.string().max(100).refine(
+    (val) => isValidTimezone(val),
+    { message: 'Must be a valid IANA timezone identifier' },
+  ).nullable().optional(),
 });
 export type UpdateNotificationScheduleInput = z.infer<typeof updateNotificationScheduleSchema>;
