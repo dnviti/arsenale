@@ -9,6 +9,7 @@ import * as auditService from './audit.service';
 let rotationTask: ScheduledTask | null = null;
 let ldapSyncTask: ScheduledTask | null = null;
 let membershipExpiryTask: ScheduledTask | null = null;
+let checkoutExpiryTask: ScheduledTask | null = null;
 
 export function startKeyRotationJob(): void {
   const cronExpr = config.keyRotationCron;
@@ -162,6 +163,26 @@ export function startLdapSyncJob(): void {
   logger.info(`[scheduler] LDAP sync job scheduled: "${cronExpr}" (UTC)`);
 }
 
+const CHECKOUT_EXPIRY_CRON = '* * * * *'; // Every minute
+
+export function startCheckoutExpiryJob(): void {
+  checkoutExpiryTask = cron.schedule(
+    CHECKOUT_EXPIRY_CRON,
+    () => {
+      import('./checkout.service').then((svc) =>
+        svc.processExpiredCheckouts().catch((err) => {
+          logger.error('[scheduler] Unhandled error in processExpiredCheckouts:', err);
+        }),
+      );
+    },
+    { timezone: 'UTC' },
+  );
+
+  logger.info(
+    `[scheduler] Checkout expiry job scheduled: "${CHECKOUT_EXPIRY_CRON}" (UTC)`,
+  );
+}
+
 const MEMBERSHIP_EXPIRY_CRON = '*/5 * * * *';
 
 export function startMembershipExpiryJob(): void {
@@ -299,6 +320,10 @@ export function stopAllJobs(): void {
   if (membershipExpiryTask) {
     membershipExpiryTask.stop();
     membershipExpiryTask = null;
+  }
+  if (checkoutExpiryTask) {
+    checkoutExpiryTask.stop();
+    checkoutExpiryTask = null;
   }
   logger.info('[scheduler] All scheduled jobs stopped.');
 }
