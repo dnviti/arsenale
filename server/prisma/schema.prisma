@@ -156,7 +156,8 @@ model User {
   refreshTokens RefreshToken[]
   oauthAccounts OAuthAccount[]
   auditLogs     AuditLog[]
-  notifications Notification[]
+  notifications            Notification[]
+  notificationPreferences NotificationPreference[]
   teamMembers            TeamMember[]
   gatewaysCreated        Gateway[]              @relation("GatewayCreator")
   gatewayTemplatesCreated GatewayTemplate[]     @relation("GatewayTemplateCreator")
@@ -699,6 +700,21 @@ model Notification {
 
   @@index([userId, read])
   @@index([userId, createdAt])
+}
+
+model NotificationPreference {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  inApp     Boolean          @default(true)
+  email     Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+  @@index([userId])
 }
 
 model OpenTab {

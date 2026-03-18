@@ -1,6 +1,6 @@
 {
   "name": "arsenale",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "description": "Web-based remote desktop manager for SSH and RDP connections with encrypted vault, team sharing, and multi-tenant support",
   "author": "Daniele Viti <daniele@dnviti.dev>",
   "license": "BUSL-1.1",
@@ -31,7 +31,6 @@
     "extra-clients/browser-extensions"
   ],
   "scripts": {
-    "postinstall": "node scripts/patch-serialize-javascript.js",
     "predev": "$(./scripts/container-runtime.sh) compose -f compose.dev.yml up -d postgres && npm run db:generate",
     "db:push": "npm run db:push -w server",
     "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client:wait\"",
@@ -71,7 +70,6 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "eslint-plugin-security": "^4.0.0",
-    "serialize-javascript": "7.0.4",
     "typescript-eslint": "^8.56.1",
     "wait-on": "^9.0.4"
   }

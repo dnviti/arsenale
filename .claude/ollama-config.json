@@ -1,0 +1,32 @@
+{
+  "enabled": true,
+  "model": "qwen3.5:latest",
+  "api_base": "http://localhost:11434",
+  "hardware": {
+    "ram_gb": 31.0,
+    "vram_gb": 6.0,
+    "gpu_vendor": "nvidia",
+    "cpu_cores": 20
+  },
+  "offloading": {
+    "enabled": true,
+    "auto_route": true,
+    "offloadable_tasks": [
+      "generate-boilerplate",
+      "format-code",
+      "write-docstrings",
+      "simple-refactor",
+      "generate-tests-simple",
+      "explain-code",
+      "variable-naming",
+      "bash-tool",
+      "github-tool"
+    ],
+    "max_tokens": 4096,
+    "temperature": 0.1
+  },
+  "installation": {
+    "auto_start": true,
+    "pull_on_setup": true
+  }
+}
