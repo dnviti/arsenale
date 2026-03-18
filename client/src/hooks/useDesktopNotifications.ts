@@ -18,12 +18,10 @@ export function useDesktopNotifications() {
     let status: PermissionStatus | null = null;
     const sync = () => setPermission(Notification.permission);
 
-    // permissions API provides real-time updates when available
+    // permissions API provides real-time updates
     navigator.permissions?.query({ name: 'notifications' }).then((s) => {
       status = s;
       status.addEventListener('change', sync);
-    }).catch(() => {
-      // Permissions API unavailable or unsupported — fall back to Notification.permission
     });
 
     return () => {
