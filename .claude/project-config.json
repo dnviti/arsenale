@@ -1,0 +1,64 @@
+{
+  "dev_ports": "3000,3001,3002",
+  "start_command": "npm run dev",
+  "predev_command": "npm run predev",
+  "verify_command": "npm run verify",
+  "test_framework": "vitest",
+  "test_command": "",
+  "test_file_pattern": "**/*.test.ts",
+  "ci_runtime_setup": "",
+  "tech_detail_layers": "",
+  "idea_categories": "",
+  "doc_categories": "",
+  "project_context": "",
+  "scout_categories": "",
+  "package_json_paths": "package.json client/package.json server/package.json gateways/tunnel-agent/package.json extra-clients/browser-extensions/package.json",
+  "changelog_file": "CHANGELOG.md",
+  "tag_prefix": "v",
+  "github_repo_url": "https://github.com/dnviti/arsenale",
+  "release_branch": "main",
+  "show_generated_footer": true,
+  "python_command": "",
+  "memory_consistency": {
+    "gc_ttl_days": 30,
+    "max_index_size_mb": 500,
+    "conflict_strategy": "auto",
+    "enable_versioned_reads": false
+  },
+  "vector_memory": {
+    "enabled": true,
+    "auto_index": true,
+    "embedding_provider": "local",
+    "embedding_model": "all-MiniLM-L6-v2",
+    "embedding_api_key_env": "",
+    "chunk_size": 2000,
+    "index_path": ".claude/memory/vectors",
+    "batch_size": 64,
+    "include_patterns": [],
+    "exclude_patterns": []
+  },
+  "mcp_server": {
+    "enabled": true,
+    "transport": "stdio",
+    "auto_start": true
+  },
+  "social_announce": {
+    "platforms": {
+      "bluesky": { "enabled": false },
+      "mastodon": { "enabled": false },
+      "discord": { "enabled": false },
+      "slack": { "enabled": false }
+    },
+    "clipboard_platforms": [
+      { "name": "twitter", "enabled": true, "max_length": 280, "post_url": "https://twitter.com/compose/tweet" },
+      { "name": "linkedin", "enabled": true, "max_length": 3000, "post_url": "https://www.linkedin.com/feed/" },
+      { "name": "reddit", "enabled": true, "max_length": 10000, "post_url": "" },
+      { "name": "hackernews", "enabled": true, "max_length": 2000, "post_url": "https://news.ycombinator.com/submit" }
+    ]
+  },
+  "ollama": {
+    "enabled": true,
+    "model": "qwen3.5:latest",
+    "offloading": true
+  }
+}

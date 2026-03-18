@@ -17,6 +17,7 @@ import {
   VpnLock as TunnelIcon,
   CloudUpload as CloudUploadIcon,
   CloudDownload as CloudDownloadIcon,
+  Notifications as NotificationsIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { getProfile } from '../../api/user.api';
@@ -45,6 +46,7 @@ import SamlConfigSection from '../Settings/SamlConfigSection';
 import OAuthProvidersAdminSection from '../Settings/OAuthProvidersAdminSection';
 import AccessPolicySection from '../Settings/AccessPolicySection';
 import AppearanceSection from '../Settings/AppearanceSection';
+import NotificationPreferencesSection from '../Settings/NotificationPreferencesSection';
 import { SlideUp } from '../common/SlideUp';
 import { isAdminOrAbove } from '../../utils/roles';
 
@@ -59,6 +61,7 @@ const BASE_TABS: TabDef[] = [
   { id: 'appearance', label: 'Appearance', icon: <PaletteIcon /> },
   { id: 'connections', label: 'Connections', icon: <TerminalIcon /> },
   { id: 'security', label: 'Security', icon: <ShieldIcon /> },
+  { id: 'notifications', label: 'Notifications', icon: <NotificationsIcon /> },
   { id: 'organization', label: 'Organization', icon: <BusinessIcon /> },
 ];
 
@@ -250,6 +253,9 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
               <DomainProfileSection />
               <LinkedAccountsSection hasPassword={hasPassword} />
             </Stack>
+          )}
+          {resolvedTab === 'notifications' && (
+            <NotificationPreferencesSection />
           )}
           {resolvedTab === 'organization' && (
             <Stack spacing={3}>

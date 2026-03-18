@@ -27,6 +27,12 @@ export interface NotificationsResponse {
   unreadCount: number;
 }
 
+export interface NotificationPreference {
+  type: NotificationType;
+  inApp: boolean;
+  email: boolean;
+}
+
 export async function getNotifications(
   params: { limit?: number; offset?: number } = {}
 ): Promise<NotificationsResponse> {
@@ -44,4 +50,24 @@ export async function markAllAsRead(): Promise<void> {
 
 export async function deleteNotification(id: string): Promise<void> {
   await api.delete(`/notifications/${id}`);
+}
+
+export async function getPreferences(): Promise<NotificationPreference[]> {
+  const { data } = await api.get('/notifications/preferences');
+  return data;
+}
+
+export async function updatePreference(
+  type: NotificationType,
+  update: { inApp?: boolean; email?: boolean }
+): Promise<NotificationPreference> {
+  const { data } = await api.put(`/notifications/preferences/${type}`, update);
+  return data;
+}
+
+export async function bulkUpdatePreferences(
+  preferences: Array<{ type: NotificationType; inApp?: boolean; email?: boolean }>
+): Promise<NotificationPreference[]> {
+  const { data } = await api.put('/notifications/preferences', { preferences });
+  return data;
 }

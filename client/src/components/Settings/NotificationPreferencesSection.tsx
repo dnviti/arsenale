@@ -1,0 +1,212 @@
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Card, CardContent, Typography, Box, Switch, FormControlLabel,
+  CircularProgress, Alert, Table, TableBody, TableCell, TableHead,
+  TableRow, Tooltip,
+} from '@mui/material';
+import {
+  Notifications as NotificationsIcon,
+  Email as EmailIcon,
+} from '@mui/icons-material';
+import {
+  getPreferences,
+  updatePreference,
+  type NotificationType,
+  type NotificationPreference,
+} from '../../api/notifications.api';
+import { extractApiError } from '../../utils/apiError';
+
+interface NotificationCategory {
+  label: string;
+  types: NotificationType[];
+}
+
+const CATEGORIES: NotificationCategory[] = [
+  {
+    label: 'Sharing',
+    types: ['CONNECTION_SHARED', 'SHARE_PERMISSION_UPDATED', 'SHARE_REVOKED'],
+  },
+  {
+    label: 'Secrets',
+    types: ['SECRET_SHARED', 'SECRET_SHARE_REVOKED', 'SECRET_EXPIRING', 'SECRET_EXPIRED'],
+  },
+  {
+    label: 'Security',
+    types: ['IMPOSSIBLE_TRAVEL_DETECTED'],
+  },
+  {
+    label: 'Organization',
+    types: ['TENANT_INVITATION'],
+  },
+  {
+    label: 'Sessions',
+    types: ['RECORDING_READY'],
+  },
+];
+
+const TYPE_LABELS: Record<NotificationType, string> = {
+  CONNECTION_SHARED: 'Connection Shared With You',
+  SHARE_PERMISSION_UPDATED: 'Share Permission Updated',
+  SHARE_REVOKED: 'Share Revoked',
+  SECRET_SHARED: 'Secret Shared With You',
+  SECRET_SHARE_REVOKED: 'Secret Share Revoked',
+  SECRET_EXPIRING: 'Secret Expiring Soon',
+  SECRET_EXPIRED: 'Secret Expired',
+  IMPOSSIBLE_TRAVEL_DETECTED: 'Impossible Travel Detected',
+  TENANT_INVITATION: 'Organization Invitation',
+  RECORDING_READY: 'Session Recording Ready',
+};
+
+export default function NotificationPreferencesSection() {
+  const [prefs, setPrefs] = useState<Map<NotificationType, NotificationPreference>>(new Map());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState<Set<NotificationType>>(new Set());
+
+  useEffect(() => {
+    getPreferences()
+      .then((list) => {
+        const map = new Map(list.map((p) => [p.type, p]));
+        setPrefs(map);
+      })
+      .catch((err) => setError(extractApiError(err, 'Failed to load preferences')))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleToggle = useCallback(
+    async (type: NotificationType, channel: 'inApp' | 'email', value: boolean) => {
+      // Optimistic update
+      setPrefs((prev) => {
+        const next = new Map(prev);
+        const current = next.get(type);
+        if (current) next.set(type, { ...current, [channel]: value });
+        return next;
+      });
+      setSaving((prev) => new Set([...prev, type]));
+
+      try {
+        const updated = await updatePreference(type, { [channel]: value });
+        setPrefs((prev) => {
+          const next = new Map(prev);
+          next.set(type, updated);
+          return next;
+        });
+      } catch (err) {
+        // Revert on error
+        setPrefs((prev) => {
+          const next = new Map(prev);
+          const current = next.get(type);
+          if (current) next.set(type, { ...current, [channel]: !value });
+          return next;
+        });
+        setError(extractApiError(err, 'Failed to update preference'));
+      } finally {
+        setSaving((prev) => {
+          const next = new Set(prev);
+          next.delete(type);
+          return next;
+        });
+      }
+    },
+    []
+  );
+
+  if (loading) {
+    return (
+      <Card variant="outlined">
+        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress size={24} />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+          Notification Preferences
+        </Typography>
+        <Typography variant="body2" color="text.secondary" gutterBottom>
+          Choose which events trigger in-app or email notifications.
+        </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
+            {error}
+          </Alert>
+        )}
+
+        {CATEGORIES.map((category) => (
+          <Box key={category.label} sx={{ mb: 3 }}>
+            <Typography variant="body2" fontWeight="medium" color="text.secondary" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '0.7rem' }}>
+              {category.label}
+            </Typography>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ pl: 0 }}>Event</TableCell>
+                  <TableCell align="center" sx={{ width: 80 }}>
+                    <Tooltip title="In-app notifications">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                        <NotificationsIcon sx={{ fontSize: 16 }} />
+                      </Box>
+                    </Tooltip>
+                  </TableCell>
+                  <TableCell align="center" sx={{ width: 80 }}>
+                    <Tooltip title="Email notifications">
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                        <EmailIcon sx={{ fontSize: 16 }} />
+                      </Box>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {category.types.map((type) => {
+                  const pref = prefs.get(type);
+                  const isSaving = saving.has(type);
+                  return (
+                    <TableRow key={type} sx={{ '&:last-child td': { border: 0 } }}>
+                      <TableCell sx={{ pl: 0 }}>
+                        <Typography variant="body2">{TYPE_LABELS[type]}</Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              size="small"
+                              checked={pref?.inApp ?? true}
+                              disabled={isSaving}
+                              onChange={(e) => handleToggle(type, 'inApp', e.target.checked)}
+                            />
+                          }
+                          label=""
+                          sx={{ m: 0 }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              size="small"
+                              checked={pref?.email ?? false}
+                              disabled={isSaving}
+                              onChange={(e) => handleToggle(type, 'email', e.target.checked)}
+                            />
+                          }
+                          label=""
+                          sx={{ m: 0 }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </Box>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
