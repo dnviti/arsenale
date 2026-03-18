@@ -12,6 +12,7 @@ export interface NotificationPreferenceEntry {
 const EMAIL_DEFAULT_TRUE = new Set<NotificationType>([
   NotificationType.IMPOSSIBLE_TRAVEL_DETECTED,
   NotificationType.SECRET_EXPIRING,
+  NotificationType.SESSION_TERMINATED_POLICY_VIOLATION,
 ]);
 
 const ALL_TYPES = Object.values(NotificationType) as NotificationType[];
