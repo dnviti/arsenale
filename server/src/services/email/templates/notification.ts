@@ -18,6 +18,7 @@ const SUBJECT_MAP: Record<NotificationType, string> = {
   [NotificationType.RECORDING_READY]: 'Session recording is ready — Arsenale',
   [NotificationType.IMPOSSIBLE_TRAVEL_DETECTED]: 'Security Alert: Impossible Travel Detected — Arsenale',
   [NotificationType.LATERAL_MOVEMENT_ALERT]: 'Security Alert: Lateral Movement Anomaly Detected — Arsenale',
+  [NotificationType.SESSION_TERMINATED_POLICY_VIOLATION]: 'Security Alert: SSH Session Terminated by Policy — Arsenale',
 };
 
 function buildHtml(subject: string, message: string): string {

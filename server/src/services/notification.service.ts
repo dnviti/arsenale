@@ -10,6 +10,7 @@ export { NotificationType };
 export const SECURITY_CRITICAL_TYPES = new Set<NotificationType>([
   NotificationType.IMPOSSIBLE_TRAVEL_DETECTED,
   NotificationType.LATERAL_MOVEMENT_ALERT,
+  NotificationType.SESSION_TERMINATED_POLICY_VIOLATION,
 ]);
 
 export interface CreateNotificationInput {

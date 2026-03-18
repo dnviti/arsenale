@@ -40,6 +40,7 @@ import dbProxyRoutes from './routes/dbProxy.routes';
 import dbAuditRoutes from './routes/dbAudit.routes';
 import passwordRotationRoutes from './routes/passwordRotation.routes';
 import dbTunnelRoutes from './routes/dbTunnel.routes';
+import keystrokePolicyRoutes from './routes/keystrokePolicy.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
@@ -134,6 +135,7 @@ app.use('/api/cli', cliRoutes);
 app.use('/api/sessions/database', dbProxyRoutes);
 app.use('/api/db-audit', dbAuditRoutes);
 app.use('/api/secrets', passwordRotationRoutes);
+app.use('/api/keystroke-policies', keystrokePolicyRoutes);
 
 // Health & readiness probes
 app.use('/api', healthRoutes);
