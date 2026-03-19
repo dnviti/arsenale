@@ -655,6 +655,8 @@ enum AuditAction {
   TUNNEL_TOKEN_ROTATE
   SESSION_DENIED_ABAC
   ANOMALOUS_LATERAL_MOVEMENT
+  PASSWORD_ROTATION_SUCCESS
+  PASSWORD_ROTATION_FAILED
 }
 
 model AuditLog {
@@ -761,6 +763,9 @@ model VaultSecret {
   pwnedCount     Int         @default(0)
   expiresAt      DateTime?
   currentVersion Int         @default(1)
+  targetRotationEnabled  Boolean   @default(false)
+  rotationIntervalDays   Int       @default(30)
+  lastRotatedAt          DateTime?
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -772,12 +777,14 @@ model VaultSecret {
   shares         SharedSecret[]
   externalShares ExternalSecretShare[]
   connections    Connection[]
+  rotationLogs   PasswordRotationLog[]
 
   @@index([userId, scope])
   @@index([teamId])
   @@index([tenantId, scope])
   @@index([expiresAt])
   @@index([expiresAt, userId])
+  @@index([targetRotationEnabled, lastRotatedAt])
 }
 
 model VaultSecretVersion {
@@ -1123,4 +1130,41 @@ model AccessPolicy {
   updatedAt           DateTime @updatedAt
 
   @@index([targetType, targetId])
+}
+
+enum RotationStatus {
+  SUCCESS
+  FAILED
+  PENDING
+}
+
+enum RotationTrigger {
+  SCHEDULED
+  CHECKIN
+  MANUAL
+}
+
+enum RotationTargetOS {
+  LINUX
+  WINDOWS
+}
+
+/// Tracks every password rotation attempt on a target system.
+model PasswordRotationLog {
+  id          String          @id @default(uuid())
+  secretId    String
+  status      RotationStatus
+  trigger     RotationTrigger
+  targetOS    RotationTargetOS
+  targetHost  String
+  targetUser  String
+  errorMessage String?
+  durationMs  Int?
+  initiatedBy String?
+  createdAt   DateTime        @default(now())
+
+  secret VaultSecret @relation(fields: [secretId], references: [id], onDelete: Cascade)
+
+  @@index([secretId, createdAt])
+  @@index([status])
 }

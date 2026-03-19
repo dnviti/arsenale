@@ -327,6 +327,66 @@ export async function revokeExternalShare(shareId: string): Promise<{ revoked: t
   return data;
 }
 
+// --- Password rotation API ---
+
+export interface RotationStatusResult {
+  enabled: boolean;
+  intervalDays: number;
+  lastRotatedAt: string | null;
+  nextRotationAt: string | null;
+}
+
+export interface RotationHistoryEntry {
+  id: string;
+  status: 'SUCCESS' | 'FAILED' | 'PENDING';
+  trigger: 'SCHEDULED' | 'CHECKIN' | 'MANUAL';
+  targetOS: 'LINUX' | 'WINDOWS';
+  targetHost: string;
+  targetUser: string;
+  errorMessage: string | null;
+  durationMs: number | null;
+  createdAt: string;
+}
+
+export interface RotationResult {
+  success: boolean;
+  secretId: string;
+  logId: string;
+  error?: string;
+}
+
+export async function enableRotation(
+  secretId: string,
+  intervalDays?: number,
+): Promise<{ enabled: true; intervalDays: number }> {
+  const { data } = await api.post(`/secrets/${secretId}/rotation/enable`, { intervalDays });
+  return data;
+}
+
+export async function disableRotation(secretId: string): Promise<{ enabled: false }> {
+  const { data } = await api.post(`/secrets/${secretId}/rotation/disable`);
+  return data;
+}
+
+export async function triggerRotation(secretId: string): Promise<RotationResult> {
+  const { data } = await api.post(`/secrets/${secretId}/rotation/trigger`);
+  return data;
+}
+
+export async function getRotationStatus(secretId: string): Promise<RotationStatusResult> {
+  const { data } = await api.get(`/secrets/${secretId}/rotation/status`);
+  return data;
+}
+
+export async function getRotationHistory(
+  secretId: string,
+  limit?: number,
+): Promise<RotationHistoryEntry[]> {
+  const params = limit ? { limit: String(limit) } : {};
+  const { data } = await api.get(`/secrets/${secretId}/rotation/history`, { params });
+  return data;
+}
+
 // --- External share API (public, no auth) ---
 
 const publicApi = axios.create({
