@@ -86,6 +86,7 @@ When bumping the app version, update all four `package.json` files and regenerat
 | `extra-clients/browser-extensions/manifest.json` | `"version"` |
 | `server/src/cli.ts` | `.version('X.Y.Z')` |
 | `LICENSE` | `Licensed Work: Arsenale X.Y.Z` |
+| `docs/index.md` | `Version:` line at bottom |
 
 After editing the package.json files, run `npm install --package-lock-only` to update `package-lock.json`. All versions must always be kept in sync.
 
