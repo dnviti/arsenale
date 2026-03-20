@@ -163,7 +163,7 @@ export function startLdapSyncJob(): void {
   logger.info(`[scheduler] LDAP sync job scheduled: "${cronExpr}" (UTC)`);
 }
 
-const CHECKOUT_EXPIRY_CRON = '* * * * *'; // Every minute
+const CHECKOUT_EXPIRY_CRON = '*/5 * * * *'; // Every 5 minutes
 
 export function startCheckoutExpiryJob(): void {
   checkoutExpiryTask = cron.schedule(

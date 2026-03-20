@@ -64,6 +64,42 @@ function displayName(u: { username: string | null; email: string }): string {
 }
 
 /**
+ * Resolve the display name of a secret or connection by ID.
+ * Returns a fallback if the record no longer exists.
+ */
+async function resolveTargetName(secretId?: string | null, connectionId?: string | null): Promise<string> {
+  if (secretId) {
+    const secret = await prisma.vaultSecret.findUnique({ where: { id: secretId }, select: { name: true } });
+    return secret?.name ?? 'a secret';
+  }
+  if (connectionId) {
+    const conn = await prisma.connection.findUnique({ where: { id: connectionId }, select: { name: true } });
+    return conn?.name ?? 'a connection';
+  }
+  return 'a resource';
+}
+
+/**
+ * Send a checkout notification to a user (persisted + real-time).
+ */
+function sendCheckoutNotification(
+  userId: string,
+  type: 'SECRET_CHECKOUT_REQUESTED' | 'SECRET_CHECKOUT_APPROVED' | 'SECRET_CHECKOUT_DENIED' | 'SECRET_CHECKOUT_EXPIRED',
+  message: string,
+  relatedId: string,
+): void {
+  createNotificationAsync({ userId, type, message, relatedId });
+  emitNotification(userId, {
+    id: '',
+    type,
+    message,
+    read: false,
+    relatedId,
+    createdAt: new Date(),
+  });
+}
+
+/**
  * Find OWNER/ADMIN users who can approve checkout requests for a given
  * secret or connection. Returns the owner of the secret/connection,
  * plus any tenant OWNER/ADMIN members.
@@ -107,6 +143,38 @@ async function findApprovers(secretId?: string | null, connectionId?: string | n
   }
 
   return Array.from(approverIds);
+}
+
+/**
+ * Batch-resolve secret and connection names for a list of checkout requests.
+ * Returns a map of resourceId -> name.
+ */
+async function batchResolveResourceNames(
+  items: Array<{ secretId: string | null; connectionId: string | null }>,
+): Promise<{ secretNames: Map<string, string>; connectionNames: Map<string, string> }> {
+  const secretIds = [...new Set(items.map((i) => i.secretId).filter((id): id is string => id !== null))];
+  const connectionIds = [...new Set(items.map((i) => i.connectionId).filter((id): id is string => id !== null))];
+
+  const secretNames = new Map<string, string>();
+  const connectionNames = new Map<string, string>();
+
+  if (secretIds.length > 0) {
+    const secrets = await prisma.vaultSecret.findMany({
+      where: { id: { in: secretIds } },
+      select: { id: true, name: true },
+    });
+    for (const s of secrets) secretNames.set(s.id, s.name);
+  }
+
+  if (connectionIds.length > 0) {
+    const connections = await prisma.connection.findMany({
+      where: { id: { in: connectionIds } },
+      select: { id: true, name: true },
+    });
+    for (const c of connections) connectionNames.set(c.id, c.name);
+  }
+
+  return { secretNames, connectionNames };
 }
 
 // ---------------------------------------------------------------------------
@@ -202,20 +270,7 @@ export async function requestCheckout(
   for (const approverId of approverIds) {
     if (approverId === requesterId) continue;
     const msg = `${requesterName} requests temporary access to ${resourceType} "${targetName}" for ${input.durationMinutes} minutes`;
-    createNotificationAsync({
-      userId: approverId,
-      type: 'SECRET_CHECKOUT_REQUESTED',
-      message: msg,
-      relatedId: request.id,
-    });
-    emitNotification(approverId, {
-      id: '',
-      type: 'SECRET_CHECKOUT_REQUESTED',
-      message: msg,
-      read: false,
-      relatedId: request.id,
-      createdAt: new Date(),
-    });
+    sendCheckoutNotification(approverId, 'SECRET_CHECKOUT_REQUESTED', msg, request.id);
   }
 
   return {
@@ -227,6 +282,7 @@ export async function requestCheckout(
 
 /**
  * Approve a pending checkout request. Creates a time-limited share.
+ * Uses an atomic status transition to prevent TOCTOU race conditions.
  */
 export async function approveCheckout(
   approverId: string,
@@ -235,7 +291,7 @@ export async function approveCheckout(
 ): Promise<CheckoutRequestEntry> {
   const request = await prisma.secretCheckoutRequest.findUnique({
     where: { id: requestId },
-    select: { ...checkoutSelect, secretId: true, connectionId: true, requesterId: true, durationMinutes: true, status: true },
+    select: checkoutSelect,
   });
   if (!request) throw new AppError('Checkout request not found', 404);
   if (request.status !== 'PENDING') {
@@ -250,15 +306,32 @@ export async function approveCheckout(
 
   const expiresAt = new Date(Date.now() + request.durationMinutes * 60 * 1000);
 
-  const updated = await prisma.secretCheckoutRequest.update({
+  // Atomic status transition: only update if still PENDING (prevents TOCTOU race)
+  let updated: Awaited<ReturnType<typeof prisma.secretCheckoutRequest.updateMany>>;
+  try {
+    updated = await prisma.secretCheckoutRequest.updateMany({
+      where: { id: requestId, status: 'PENDING' },
+      data: {
+        status: 'APPROVED',
+        approverId,
+        expiresAt,
+      },
+    });
+  } catch (err) {
+    logger.error(`[checkout] Failed to approve checkout ${requestId}:`, (err as Error).message);
+    throw new AppError('Failed to approve checkout request', 500);
+  }
+
+  if (updated.count === 0) {
+    throw new AppError('Request was already processed by another user', 409);
+  }
+
+  // Re-fetch the updated record for the response
+  const result = await prisma.secretCheckoutRequest.findUnique({
     where: { id: requestId },
-    data: {
-      status: 'APPROVED',
-      approverId,
-      expiresAt,
-    },
     select: checkoutSelect,
   });
+  if (!result) throw new AppError('Checkout request not found after update', 500);
 
   // Audit log
   auditService.log({
@@ -281,38 +354,17 @@ export async function approveCheckout(
     select: { username: true, email: true },
   });
   const approverName = approverUser ? displayName(approverUser) : 'An administrator';
-  let targetName = '';
-
-  if (request.secretId) {
-    const secret = await prisma.vaultSecret.findUnique({ where: { id: request.secretId }, select: { name: true } });
-    targetName = secret?.name ?? 'a secret';
-  } else if (request.connectionId) {
-    const conn = await prisma.connection.findUnique({ where: { id: request.connectionId }, select: { name: true } });
-    targetName = conn?.name ?? 'a connection';
-  }
-
+  const targetName = await resolveTargetName(request.secretId, request.connectionId);
   const resourceType = request.secretId ? 'secret' : 'connection';
   const msg = `${approverName} approved your checkout of ${resourceType} "${targetName}" for ${request.durationMinutes} minutes`;
-  createNotificationAsync({
-    userId: request.requesterId,
-    type: 'SECRET_CHECKOUT_APPROVED',
-    message: msg,
-    relatedId: requestId,
-  });
-  emitNotification(request.requesterId, {
-    id: '',
-    type: 'SECRET_CHECKOUT_APPROVED',
-    message: msg,
-    read: false,
-    relatedId: requestId,
-    createdAt: new Date(),
-  });
+  sendCheckoutNotification(request.requesterId, 'SECRET_CHECKOUT_APPROVED', msg, requestId);
 
-  return updated;
+  return result;
 }
 
 /**
  * Reject a pending checkout request.
+ * Uses an atomic status transition to prevent TOCTOU race conditions.
  */
 export async function rejectCheckout(
   approverId: string,
@@ -321,7 +373,7 @@ export async function rejectCheckout(
 ): Promise<CheckoutRequestEntry> {
   const request = await prisma.secretCheckoutRequest.findUnique({
     where: { id: requestId },
-    select: { ...checkoutSelect, secretId: true, connectionId: true, requesterId: true, status: true },
+    select: checkoutSelect,
   });
   if (!request) throw new AppError('Checkout request not found', 404);
   if (request.status !== 'PENDING') {
@@ -334,14 +386,25 @@ export async function rejectCheckout(
     throw new AppError('You are not authorized to reject this request', 403);
   }
 
-  const updated = await prisma.secretCheckoutRequest.update({
-    where: { id: requestId },
+  // Atomic status transition: only update if still PENDING (prevents TOCTOU race)
+  const atomicUpdate = await prisma.secretCheckoutRequest.updateMany({
+    where: { id: requestId, status: 'PENDING' },
     data: {
       status: 'REJECTED',
       approverId,
     },
+  });
+
+  if (atomicUpdate.count === 0) {
+    throw new AppError('Request was already processed by another user', 409);
+  }
+
+  // Re-fetch the updated record for the response
+  const updated = await prisma.secretCheckoutRequest.findUnique({
+    where: { id: requestId },
     select: checkoutSelect,
   });
+  if (!updated) throw new AppError('Checkout request not found after update', 500);
 
   // Audit log
   auditService.log({
@@ -362,32 +425,10 @@ export async function rejectCheckout(
     select: { username: true, email: true },
   });
   const approverName = approverUser ? displayName(approverUser) : 'An administrator';
-  let targetName = '';
-
-  if (request.secretId) {
-    const secret = await prisma.vaultSecret.findUnique({ where: { id: request.secretId }, select: { name: true } });
-    targetName = secret?.name ?? 'a secret';
-  } else if (request.connectionId) {
-    const conn = await prisma.connection.findUnique({ where: { id: request.connectionId }, select: { name: true } });
-    targetName = conn?.name ?? 'a connection';
-  }
-
+  const targetName = await resolveTargetName(request.secretId, request.connectionId);
   const resourceType = request.secretId ? 'secret' : 'connection';
   const msg = `${approverName} denied your checkout of ${resourceType} "${targetName}"`;
-  createNotificationAsync({
-    userId: request.requesterId,
-    type: 'SECRET_CHECKOUT_DENIED',
-    message: msg,
-    relatedId: requestId,
-  });
-  emitNotification(request.requesterId, {
-    id: '',
-    type: 'SECRET_CHECKOUT_DENIED',
-    message: msg,
-    read: false,
-    relatedId: requestId,
-    createdAt: new Date(),
-  });
+  sendCheckoutNotification(request.requesterId, 'SECRET_CHECKOUT_DENIED', msg, requestId);
 
   return updated;
 }
@@ -450,13 +491,61 @@ export async function listCheckoutRequests(
   if (role === 'requester') {
     where.requesterId = userId;
   } else if (role === 'approver') {
-    // Show requests where this user could be an approver
-    // (owns the secret/connection, or is admin)
-    where.OR = [
-      { secretId: { not: null }, requester: { id: { not: userId } } },
-      { connectionId: { not: null }, requester: { id: { not: userId } } },
-    ];
-    // Filtered further below
+    // Find resources this user can approve (owns or administers)
+    // 1. Secrets the user owns or is tenant admin for
+    const ownedSecrets = await prisma.vaultSecret.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    const adminTenants = await prisma.tenantMember.findMany({
+      where: { userId, role: { in: ['OWNER', 'ADMIN'] } },
+      select: { tenantId: true },
+    });
+    const tenantSecrets = adminTenants.length > 0
+      ? await prisma.vaultSecret.findMany({
+          where: { tenantId: { in: adminTenants.map((t: { tenantId: string }) => t.tenantId) } },
+          select: { id: true },
+        })
+      : [];
+    const approvableSecretIds = [...new Set([
+      ...ownedSecrets.map((s: { id: string }) => s.id),
+      ...tenantSecrets.map((s: { id: string }) => s.id),
+    ])];
+
+    // 2. Connections the user owns or is team admin for
+    const ownedConnections = await prisma.connection.findMany({
+      where: { userId },
+      select: { id: true },
+    });
+    const adminTeams = await prisma.teamMember.findMany({
+      where: { userId, role: 'TEAM_ADMIN' },
+      select: { teamId: true },
+    });
+    const teamConnections = adminTeams.length > 0
+      ? await prisma.connection.findMany({
+          where: { teamId: { in: adminTeams.map((t: { teamId: string }) => t.teamId) } },
+          select: { id: true },
+        })
+      : [];
+    const approvableConnectionIds = [...new Set([
+      ...ownedConnections.map((c: { id: string }) => c.id),
+      ...teamConnections.map((c: { id: string }) => c.id),
+    ])];
+
+    // Build filter: only requests for resources this user can approve, excluding own requests
+    const orConditions: Prisma.SecretCheckoutRequestWhereInput[] = [];
+    if (approvableSecretIds.length > 0) {
+      orConditions.push({ secretId: { in: approvableSecretIds }, requesterId: { not: userId } });
+    }
+    if (approvableConnectionIds.length > 0) {
+      orConditions.push({ connectionId: { in: approvableConnectionIds }, requesterId: { not: userId } });
+    }
+
+    if (orConditions.length === 0) {
+      // User has no resources to approve -- return empty
+      return { data: [], total: 0 };
+    }
+    where.OR = orConditions;
   } else {
     where.OR = [
       { requesterId: userId },
@@ -479,30 +568,25 @@ export async function listCheckoutRequests(
     prisma.secretCheckoutRequest.count({ where }),
   ]);
 
-  // Enrich with resource names
-  const enriched: CheckoutRequestEntry[] = [];
-  for (const item of data) {
-    let secretName: string | null = null;
-    let connectionName: string | null = null;
-    if (item.secretId) {
-      const s = await prisma.vaultSecret.findUnique({ where: { id: item.secretId }, select: { name: true } });
-      secretName = s?.name ?? null;
-    }
-    if (item.connectionId) {
-      const c = await prisma.connection.findUnique({ where: { id: item.connectionId }, select: { name: true } });
-      connectionName = c?.name ?? null;
-    }
-    enriched.push({ ...item, secretName, connectionName });
-  }
+  // Batch-resolve resource names (fixes N+1 query)
+  const { secretNames, connectionNames } = await batchResolveResourceNames(data);
+
+  const enriched: CheckoutRequestEntry[] = data.map((item: typeof data[number]) => ({
+    ...item,
+    secretName: item.secretId ? (secretNames.get(item.secretId) ?? null) : null,
+    connectionName: item.connectionId ? (connectionNames.get(item.connectionId) ?? null) : null,
+  }));
 
   return { data: enriched, total };
 }
 
 /**
  * Get a single checkout request by ID.
+ * Verifies the requesting user has access (requester, approver, or resource owner/admin).
  */
 export async function getCheckoutRequest(
   requestId: string,
+  userId: string,
 ): Promise<CheckoutRequestEntry | null> {
   const request = await prisma.secretCheckoutRequest.findUnique({
     where: { id: requestId },
@@ -510,31 +594,49 @@ export async function getCheckoutRequest(
   });
   if (!request) return null;
 
-  let secretName: string | null = null;
-  let connectionName: string | null = null;
-  if (request.secretId) {
-    const s = await prisma.vaultSecret.findUnique({ where: { id: request.secretId }, select: { name: true } });
-    secretName = s?.name ?? null;
-  }
-  if (request.connectionId) {
-    const c = await prisma.connection.findUnique({ where: { id: request.connectionId }, select: { name: true } });
-    connectionName = c?.name ?? null;
+  // Authorization: only requester, approver, or resource owner/admin can view
+  if (request.requesterId !== userId && request.approverId !== userId) {
+    const authorizedIds = await findApprovers(request.secretId, request.connectionId);
+    if (!authorizedIds.includes(userId)) {
+      throw new AppError('You are not authorized to view this checkout request', 403);
+    }
   }
 
-  return { ...request, secretName, connectionName };
+  const targetName = await resolveTargetName(request.secretId, request.connectionId);
+
+  return {
+    ...request,
+    secretName: request.secretId ? targetName : null,
+    connectionName: request.connectionId ? targetName : null,
+  };
 }
 
 /**
  * Process expired checkout requests (called by scheduler).
  * Marks APPROVED requests whose expiresAt has passed as EXPIRED.
+ * Uses an atomic updateMany to prevent race conditions in multi-instance deployments.
  */
 export async function processExpiredCheckouts(): Promise<number> {
   const now = new Date();
 
-  const expired = await prisma.secretCheckoutRequest.findMany({
+  // Atomically mark all expired checkouts in a single query
+  const updateResult = await prisma.secretCheckoutRequest.updateMany({
     where: {
       status: 'APPROVED',
       expiresAt: { not: null, lte: now },
+    },
+    data: { status: 'EXPIRED' },
+  });
+
+  if (updateResult.count === 0) return 0;
+
+  // Fetch the just-expired records for audit logging and notifications
+  // Use a small time window to catch records we just updated
+  const expired = await prisma.secretCheckoutRequest.findMany({
+    where: {
+      status: 'EXPIRED',
+      // Records updated in the last 10 minutes (generous window for the scheduler interval)
+      updatedAt: { gte: new Date(now.getTime() - 10 * 60 * 1000), lte: now },
     },
     select: {
       id: true,
@@ -545,53 +647,25 @@ export async function processExpiredCheckouts(): Promise<number> {
     },
   });
 
-  if (expired.length === 0) return 0;
+  // Batch-resolve resource names for notifications
+  const { secretNames, connectionNames } = await batchResolveResourceNames(expired);
 
   for (const item of expired) {
-    try {
-      await prisma.secretCheckoutRequest.update({
-        where: { id: item.id },
-        data: { status: 'EXPIRED' },
-      });
+    auditService.log({
+      action: 'SECRET_CHECKOUT_EXPIRED',
+      targetType: item.secretId ? 'VaultSecret' : 'Connection',
+      targetId: item.secretId ?? item.connectionId ?? undefined,
+      details: { checkoutId: item.id, requesterId: item.requesterId },
+    });
 
-      auditService.log({
-        action: 'SECRET_CHECKOUT_EXPIRED',
-        targetType: item.secretId ? 'VaultSecret' : 'Connection',
-        targetId: item.secretId ?? item.connectionId ?? undefined,
-        details: { checkoutId: item.id, requesterId: item.requesterId },
-      });
-
-      // Resolve target name for notification
-      let targetName = '';
-      const resourceType = item.secretId ? 'secret' : 'connection';
-      if (item.secretId) {
-        const s = await prisma.vaultSecret.findUnique({ where: { id: item.secretId }, select: { name: true } });
-        targetName = s?.name ?? 'a secret';
-      } else if (item.connectionId) {
-        const c = await prisma.connection.findUnique({ where: { id: item.connectionId }, select: { name: true } });
-        targetName = c?.name ?? 'a connection';
-      }
-
-      const msg = `Your temporary access to ${resourceType} "${targetName}" has expired (auto check-in)`;
-      createNotificationAsync({
-        userId: item.requesterId,
-        type: 'SECRET_CHECKOUT_EXPIRED',
-        message: msg,
-        relatedId: item.id,
-      });
-      emitNotification(item.requesterId, {
-        id: '',
-        type: 'SECRET_CHECKOUT_EXPIRED',
-        message: msg,
-        read: false,
-        relatedId: item.id,
-        createdAt: new Date(),
-      });
-    } catch (err) {
-      logger.error(`[checkout] Failed to expire checkout ${item.id}:`, (err as Error).message);
-    }
+    const resourceType = item.secretId ? 'secret' : 'connection';
+    const targetName = item.secretId
+      ? (secretNames.get(item.secretId) ?? 'a secret')
+      : (connectionNames.get(item.connectionId!) ?? 'a connection');
+    const msg = `Your temporary access to ${resourceType} "${targetName}" has expired (auto check-in)`;
+    sendCheckoutNotification(item.requesterId, 'SECRET_CHECKOUT_EXPIRED', msg, item.id);
   }
 
-  logger.info(`[checkout] Expired ${expired.length} checkout(s)`);
-  return expired.length;
+  logger.info(`[checkout] Expired ${updateResult.count} checkout(s)`);
+  return updateResult.count;
 }

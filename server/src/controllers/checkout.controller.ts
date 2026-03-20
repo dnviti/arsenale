@@ -67,7 +67,7 @@ export async function listCheckouts(req: AuthRequest, res: Response) {
 
 export async function getCheckout(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
-  const result = await checkoutService.getCheckoutRequest(req.params.id as string);
+  const result = await checkoutService.getCheckoutRequest(req.params.id as string, req.user.userId);
   if (!result) {
     res.status(404).json({ error: 'Checkout request not found' });
     return;
