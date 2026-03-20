@@ -692,6 +692,10 @@ enum AuditAction {
   DB_MASKING_POLICY_CREATE
   DB_MASKING_POLICY_UPDATE
   DB_MASKING_POLICY_DELETE
+  SESSION_TERMINATED_POLICY_VIOLATION
+  KEYSTROKE_POLICY_CREATE
+  KEYSTROKE_POLICY_UPDATE
+  KEYSTROKE_POLICY_DELETE
 }
 
 model AuditLog {
@@ -736,6 +740,7 @@ enum NotificationType {
   SECRET_CHECKOUT_DENIED
   SECRET_CHECKOUT_EXPIRED
   LATERAL_MOVEMENT_ALERT
+  SESSION_TERMINATED_POLICY_VIOLATION
 }
 
 model Notification {
@@ -1342,4 +1347,24 @@ model PasswordRotationLog {
 
   @@index([secretId, createdAt])
   @@index([status])
+}
+
+enum KeystrokePolicyAction {
+  BLOCK_AND_TERMINATE
+  ALERT_ONLY
+}
+
+model KeystrokePolicy {
+  id            String                @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  action        KeystrokePolicyAction
+  regexPatterns String[]
+  enabled       Boolean               @default(true)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, enabled])
 }
