@@ -177,6 +177,8 @@ model User {
   webauthnCredentials    WebAuthnCredential[]
   sessionRecordings      SessionRecording[]
   syncProfilesCreated    SyncProfile[]          @relation("SyncProfileCreator")
+  checkoutRequests       SecretCheckoutRequest[] @relation("CheckoutRequester")
+  checkoutApprovals      SecretCheckoutRequest[] @relation("CheckoutApprover")
   dbAuditLogs            DbAuditLog[]
 }
 
@@ -665,6 +667,11 @@ enum AuditAction {
   TUNNEL_TOKEN_GENERATE
   TUNNEL_TOKEN_ROTATE
   SESSION_DENIED_ABAC
+  SECRET_CHECKOUT_REQUESTED
+  SECRET_CHECKOUT_APPROVED
+  SECRET_CHECKOUT_DENIED
+  SECRET_CHECKOUT_EXPIRED
+  SECRET_CHECKOUT_CHECKED_IN
   SSH_PROXY_SESSION_START
   SSH_PROXY_SESSION_END
   SSH_PROXY_AUTH_FAILURE
@@ -685,6 +692,10 @@ enum AuditAction {
   DB_MASKING_POLICY_CREATE
   DB_MASKING_POLICY_UPDATE
   DB_MASKING_POLICY_DELETE
+  SESSION_TERMINATED_POLICY_VIOLATION
+  KEYSTROKE_POLICY_CREATE
+  KEYSTROKE_POLICY_UPDATE
+  KEYSTROKE_POLICY_DELETE
 }
 
 model AuditLog {
@@ -724,7 +735,12 @@ enum NotificationType {
   TENANT_INVITATION
   RECORDING_READY
   IMPOSSIBLE_TRAVEL_DETECTED
+  SECRET_CHECKOUT_REQUESTED
+  SECRET_CHECKOUT_APPROVED
+  SECRET_CHECKOUT_DENIED
+  SECRET_CHECKOUT_EXPIRED
   LATERAL_MOVEMENT_ALERT
+  SESSION_TERMINATED_POLICY_VIOLATION
 }
 
 model Notification {
@@ -1160,6 +1176,40 @@ model AccessPolicy {
   @@index([targetType, targetId])
 }
 
+enum CheckoutStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CHECKED_IN
+}
+
+/// Temporary credential check-out request (JIT access).
+/// A user requests time-limited access to a secret or connection.
+/// Once approved the system auto-creates a SharedSecret / SharedConnection
+/// record that is automatically revoked (check-in) when expiresAt passes.
+model SecretCheckoutRequest {
+  id              String         @id @default(uuid())
+  secretId        String?
+  connectionId    String?
+  requesterId     String
+  approverId      String?
+  status          CheckoutStatus @default(PENDING)
+  durationMinutes Int
+  reason          String?
+  expiresAt       DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  requester  User @relation("CheckoutRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  approver   User? @relation("CheckoutApprover", fields: [approverId], references: [id], onDelete: SetNull)
+
+  @@index([requesterId, status])
+  @@index([status, expiresAt])
+  @@index([secretId])
+  @@index([connectionId])
+}
+
 // ---- Database Query Auditing & SQL Firewall ----
 
 enum DbQueryType {
@@ -1297,4 +1347,24 @@ model PasswordRotationLog {
 
   @@index([secretId, createdAt])
   @@index([status])
+}
+
+enum KeystrokePolicyAction {
+  BLOCK_AND_TERMINATE
+  ALERT_ONLY
+}
+
+model KeystrokePolicy {
+  id            String                @id @default(uuid())
+  tenantId      String
+  name          String
+  description   String?
+  action        KeystrokePolicyAction
+  regexPatterns String[]
+  enabled       Boolean               @default(true)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, enabled])
 }
