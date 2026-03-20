@@ -34,6 +34,13 @@ import syncRoutes from './routes/sync.routes';
 import externalVaultRoutes from './routes/externalVault.routes';
 import accessPolicyRoutes from './routes/accessPolicy.routes';
 import checkoutRoutes from './routes/checkout.routes';
+import sshProxyRoutes from './routes/sshProxy.routes';
+import rdGatewayRoutes from './routes/rdGateway.routes';
+import cliRoutes from './routes/cli.routes';
+import dbProxyRoutes from './routes/dbProxy.routes';
+import dbAuditRoutes from './routes/dbAudit.routes';
+import passwordRotationRoutes from './routes/passwordRotation.routes';
+import dbTunnelRoutes from './routes/dbTunnel.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
@@ -83,7 +90,7 @@ if (config.logHttpRequests) app.use(requestLogger);
 // Global CSRF validation for all state-changing requests (after CORS, before routes)
 app.use('/api', (req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  const csrfExemptPaths = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email', '/auth/verify-totp', '/auth/request-sms-code', '/auth/verify-sms', '/auth/request-webauthn-options', '/auth/verify-webauthn', '/auth/mfa-setup/', '/auth/resend-verification', '/auth/saml', '/auth/config', '/share'];
+  const csrfExemptPaths = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email', '/auth/verify-totp', '/auth/request-sms-code', '/auth/verify-sms', '/auth/request-webauthn-options', '/auth/verify-webauthn', '/auth/mfa-setup/', '/auth/resend-verification', '/auth/saml', '/auth/config', '/share', '/cli/auth/device'];
   // Use exact match or subpath match (path + '/') to prevent prefix collisions
   // e.g., '/auth/login' must not exempt '/auth/login-history'
   if (csrfExemptPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
@@ -98,6 +105,7 @@ app.use('/api/vault', vaultRoutes);
 app.use('/api/connections', connectionsRoutes);
 app.use('/api/folders', foldersRoutes);
 app.use('/api/connections', sharingRoutes);
+app.use('/api/sessions/db-tunnel', dbTunnelRoutes);
 app.use('/api/sessions', sessionsRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/user/2fa', twofaRoutes);
@@ -122,6 +130,12 @@ app.use('/api/sync-profiles', syncRoutes);
 app.use('/api/vault-providers', externalVaultRoutes);
 app.use('/api/access-policies', accessPolicyRoutes);
 app.use('/api/checkouts', checkoutRoutes);
+app.use('/api/sessions/ssh-proxy', sshProxyRoutes);
+app.use('/api/rdgw', rdGatewayRoutes);
+app.use('/api/cli', cliRoutes);
+app.use('/api/sessions/database', dbProxyRoutes);
+app.use('/api/db-audit', dbAuditRoutes);
+app.use('/api/secrets', passwordRotationRoutes);
 
 // Health & readiness probes
 app.use('/api', healthRoutes);

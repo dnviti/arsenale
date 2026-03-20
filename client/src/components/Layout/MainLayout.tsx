@@ -73,6 +73,8 @@ export default function MainLayout() {
 
   const expiringCount = useSecretStore((s) => s.expiringCount);
   const fetchExpiringCount = useSecretStore((s) => s.fetchExpiringCount);
+  const pwnedCount = useSecretStore((s) => s.pwnedCount);
+  const fetchPwnedCount = useSecretStore((s) => s.fetchPwnedCount);
 
   useGatewayMonitor();
   useShareSync();
@@ -94,8 +96,9 @@ export default function MainLayout() {
   useEffect(() => {
     if (vaultUnlocked) {
       fetchExpiringCount();
+      fetchPwnedCount();
     }
-  }, [vaultUnlocked, fetchExpiringCount]);
+  }, [vaultUnlocked, fetchExpiringCount, fetchPwnedCount]);
 
   // PWA app shortcut deep-link: read ?action= query param to pre-open a dialog on mount (PWA-003)
   const [pwaAction] = useState(() => {
@@ -266,7 +269,7 @@ export default function MainLayout() {
             title="Keychain"
             sx={{ mr: 1, '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
           >
-            <Badge badgeContent={expiringCount} color="error" max={99}>
+            <Badge badgeContent={expiringCount + pwnedCount} color="error" max={99}>
               <KeychainIcon />
             </Badge>
           </IconButton>

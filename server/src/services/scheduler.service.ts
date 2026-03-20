@@ -10,6 +10,7 @@ let rotationTask: ScheduledTask | null = null;
 let ldapSyncTask: ScheduledTask | null = null;
 let membershipExpiryTask: ScheduledTask | null = null;
 let checkoutExpiryTask: ScheduledTask | null = null;
+let passwordRotationTask: ScheduledTask | null = null;
 
 export function startKeyRotationJob(): void {
   const cronExpr = config.keyRotationCron;
@@ -308,6 +309,27 @@ export async function processExpiredMemberships(): Promise<void> {
   }
 }
 
+// Password rotation job: runs daily at 3 AM UTC
+const PASSWORD_ROTATION_CRON = '0 3 * * *';
+
+export function startPasswordRotationJob(): void {
+  passwordRotationTask = cron.schedule(
+    PASSWORD_ROTATION_CRON,
+    () => {
+      import('./passwordRotation.service').then((svc) =>
+        svc.processScheduledRotations().catch((err) => {
+          logger.error('[scheduler] Unhandled error in processScheduledRotations:', err);
+        }),
+      );
+    },
+    { timezone: 'UTC' },
+  );
+
+  logger.info(
+    `[scheduler] Password rotation job scheduled: "${PASSWORD_ROTATION_CRON}" (UTC)`,
+  );
+}
+
 export function stopAllJobs(): void {
   if (rotationTask) {
     rotationTask.stop();
@@ -324,6 +346,10 @@ export function stopAllJobs(): void {
   if (checkoutExpiryTask) {
     checkoutExpiryTask.stop();
     checkoutExpiryTask = null;
+  }
+  if (passwordRotationTask) {
+    passwordRotationTask.stop();
+    passwordRotationTask = null;
   }
   logger.info('[scheduler] All scheduled jobs stopped.');
 }

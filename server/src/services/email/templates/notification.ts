@@ -21,6 +21,7 @@ const SUBJECT_MAP: Record<NotificationType, string> = {
   [NotificationType.SECRET_CHECKOUT_APPROVED]: 'Credential check-out approved — Arsenale',
   [NotificationType.SECRET_CHECKOUT_DENIED]: 'Credential check-out denied — Arsenale',
   [NotificationType.SECRET_CHECKOUT_EXPIRED]: 'Credential check-out expired — Arsenale',
+  [NotificationType.LATERAL_MOVEMENT_ALERT]: 'Security Alert: Lateral Movement Anomaly Detected — Arsenale',
 };
 
 function buildHtml(subject: string, message: string): string {
