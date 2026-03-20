@@ -20,6 +20,7 @@ import { getSocketClientIp } from '../utils/ip';
 import { computeBindingHash, getSocketUserAgent } from '../utils/tokenBinding';
 import prisma from '../lib/prisma';
 import { resolveDlpPolicy } from '../utils/dlp';
+import { checkLateralMovement } from '../services/lateralMovement.service';
 import type { EnforcedConnectionSettings } from '../schemas/tenant.schemas';
 import { KeystrokeBuffer, inspect as inspectKeystroke } from '../services/keystrokeInspection.service';
 import { createNotificationAsync } from '../services/notification.service';
@@ -39,28 +40,37 @@ const activeSessions = new Map<string, SshSession>();
  * Notify all ADMIN+ members of a tenant about a keystroke policy violation.
  */
 function notifyTenantAdmins(tenantId: string, message: string, connectionId?: string | null) {
-  prisma.tenantMember
-    .findMany({
-      where: {
-        tenantId,
-        role: { in: ['OWNER', 'ADMIN'] },
-        isActive: true,
-      },
-      select: { userId: true },
-    })
-    .then((members) => {
-      for (const member of members) {
-        createNotificationAsync({
-          userId: member.userId,
-          type: NotificationType.SESSION_TERMINATED_POLICY_VIOLATION,
-          message,
-          relatedId: connectionId ?? undefined,
-        });
-      }
-    })
-    .catch((err) => {
-      logger.error('Failed to notify tenant admins about policy violation:', err);
-    });
+  const attempt = (retryCount: number) => {
+    prisma.tenantMember
+      .findMany({
+        where: {
+          tenantId,
+          role: { in: ['OWNER', 'ADMIN'] },
+          isActive: true,
+        },
+        select: { userId: true },
+      })
+      .then((members) => {
+        for (const member of members) {
+          createNotificationAsync({
+            userId: member.userId,
+            type: NotificationType.SESSION_TERMINATED_POLICY_VIOLATION,
+            message,
+            relatedId: connectionId ?? undefined,
+          });
+        }
+      })
+      .catch((err) => {
+        if (retryCount < 2) {
+          const delayMs = 1000 * (retryCount + 1);
+          logger.warn(`Notification delivery failed (attempt ${retryCount + 1}/3), retrying in ${delayMs}ms:`, err);
+          setTimeout(() => attempt(retryCount + 1), delayMs);
+        } else {
+          logger.error('Failed to notify tenant admins about policy violation after 3 attempts:', err);
+        }
+      });
+  };
+  attempt(0);
 }
 
 function sanitizePath(p: string): string {
@@ -176,6 +186,18 @@ export function setupSshHandler(io: Server) {
       try {
         if ((data.username && !data.password) || (!data.username && data.password)) {
           const msg = 'Both username and password must be provided together';
+          logSessionError(msg);
+          socket.emit('session:error', { message: msg });
+          return;
+        }
+
+        // Lateral movement anomaly detection (MITRE T1021)
+        const lmResult = await checkLateralMovement(user.userId, data.connectionId, clientIp);
+        if (!lmResult.allowed) {
+          const msg =
+            `Session denied: anomalous lateral movement detected. ` +
+            `${lmResult.distinctTargets} distinct targets in ${lmResult.windowMinutes} min ` +
+            `(threshold: ${lmResult.threshold}). Your account has been temporarily suspended.`;
           logSessionError(msg);
           socket.emit('session:error', { message: msg });
           return;
@@ -429,24 +451,36 @@ export function setupSshHandler(io: Server) {
     });
 
     socket.on('data', (data: string) => {
-      if (currentSession?.stream.writable) {
-        // Keystroke inspection: feed data into the buffer and inspect on newlines
-        if (user.tenantId) {
-          keystrokeBuffer.feed(data);
+      if (!currentSession?.stream.writable) return;
 
-          if (keystrokeBuffer.hasNewline(data)) {
-            const inputLine = keystrokeBuffer.current();
-            keystrokeBuffer.reset();
+      const writeAndRecord = () => {
+        currentSession!.stream.write(data);
+        if (recordingWriter) recordingWriter.writeInput(data);
+        // Throttled implicit heartbeat (at most once per 30s)
+        const now = Date.now();
+        if (now - lastActivityUpdate > 30000) {
+          lastActivityUpdate = now;
+          sessionService.heartbeatBySocketId(socket.id).catch(() => {});
+        }
+      };
 
-            if (inputLine.trim()) {
-              // Fire-and-forget async inspection
-              inspectKeystroke(user.tenantId, inputLine)
-                .then((match) => {
-                  if (!match) return;
+      // Keystroke inspection: buffer input and inspect on newlines.
+      // When a newline is detected, we await inspection BEFORE writing to the
+      // SSH stream so that BLOCK_AND_TERMINATE can prevent the command from
+      // reaching the remote host.
+      if (user.tenantId) {
+        keystrokeBuffer.feed(data);
 
+        if (keystrokeBuffer.sawNewline()) {
+          const inputLine = keystrokeBuffer.current();
+          keystrokeBuffer.reset();
+
+          if (inputLine.trim()) {
+            inspectKeystroke(user.tenantId, inputLine)
+              .then((match) => {
+                if (match) {
                   const sessionId = `${user.userId}:${socket.id}`;
 
-                  // Log the policy violation
                   auditService.log({
                     userId: user.userId,
                     action: 'SESSION_TERMINATED_POLICY_VIOLATION',
@@ -462,10 +496,9 @@ export function setupSshHandler(io: Server) {
                     ipAddress: clientIp,
                   });
 
-                  // Notify tenant admins
                   notifyTenantAdmins(
                     user.tenantId!,
-                    `SSH session terminated: user ${user.email} triggered keystroke policy "${match.policyName}" (pattern: ${match.matchedPattern})`,
+                    `SSH session terminated: user (ID: ${user.userId}) triggered keystroke policy "${match.policyName}"`,
                     currentConnectionId,
                   );
 
@@ -474,24 +507,25 @@ export function setupSshHandler(io: Server) {
                       message: 'Session terminated: input matched a security policy rule.',
                     });
                     cleanup(sessionId);
+                    return; // Do NOT forward the blocked command to the remote host
                   }
-                })
-                .catch((err) => {
-                  logger.error('Keystroke inspection error:', err);
-                });
-            }
+                }
+
+                // No block — forward data to the SSH stream
+                writeAndRecord();
+              })
+              .catch((err) => {
+                logger.error('Keystroke inspection error:', err);
+                // On inspection failure, still forward data to avoid freezing the session
+                writeAndRecord();
+              });
+            return; // Exit early — writeAndRecord is called from the async callback
           }
         }
-
-        currentSession.stream.write(data);
-        if (recordingWriter) recordingWriter.writeInput(data);
-        // Throttled implicit heartbeat (at most once per 30s)
-        const now = Date.now();
-        if (now - lastActivityUpdate > 30000) {
-          lastActivityUpdate = now;
-          sessionService.heartbeatBySocketId(socket.id).catch(() => {});
-        }
       }
+
+      // No newline or no tenant — write immediately (interactive typing)
+      writeAndRecord();
     });
 
     // Explicit heartbeat from client

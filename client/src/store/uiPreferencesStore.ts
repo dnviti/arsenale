@@ -39,6 +39,7 @@ interface UiPreferences {
   connAuditLogSortBy: string;
   connAuditLogSortOrder: string;
   auditLogAutoRefreshPaused: boolean;
+  auditLogDialogTab: string;
   lastActiveTenantId: string;
   keychainTreeOpen: boolean;
   keychainFolderExpandState: Record<string, boolean>;
@@ -49,6 +50,7 @@ interface UiPreferences {
   tunnelDeployGuidesOpen: boolean;
   tunnelMetricsOpen: boolean;
   desktopNotificationsEnabled: boolean;
+  dbSchemaBrowserOpen: boolean;
 }
 
 interface UiPreferencesState extends UiPreferences {
@@ -96,6 +98,7 @@ const defaults: UiPreferences = {
   connAuditLogSortBy: 'createdAt',
   connAuditLogSortOrder: 'desc',
   auditLogAutoRefreshPaused: false,
+  auditLogDialogTab: 'general',
   lastActiveTenantId: '',
   keychainTreeOpen: true,
   keychainFolderExpandState: {},
@@ -106,6 +109,7 @@ const defaults: UiPreferences = {
   tunnelDeployGuidesOpen: false,
   tunnelMetricsOpen: true,
   desktopNotificationsEnabled: false,
+  dbSchemaBrowserOpen: false,
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(

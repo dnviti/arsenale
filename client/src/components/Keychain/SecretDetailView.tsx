@@ -13,6 +13,7 @@ import {
 } from '@mui/icons-material';
 import type { SecretDetail, SecretPayload, SecretType, SecretScope } from '../../api/secrets.api';
 import SecretVersionHistory from './SecretVersionHistory';
+import PasswordRotationPanel from './PasswordRotationPanel';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 const TYPE_ICONS: Record<SecretType, React.ReactNode> = {
@@ -341,6 +342,18 @@ export default function SecretDetailView({
           color={daysUntilExpiry <= 0 ? 'error' : daysUntilExpiry <= 7 ? 'error' : daysUntilExpiry <= 30 ? 'warning' : 'default'}
           sx={{ mt: 1 }}
         />
+      )}
+
+      {/* Password Rotation (LOGIN secrets only) */}
+      {secret.type === 'LOGIN' && (
+        <Accordion sx={{ mt: 2 }} disableGutters elevation={0} variant="outlined">
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle2">Password Rotation</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <PasswordRotationPanel secretId={secret.id} isReadOnly={isReadOnly} />
+          </AccordionDetails>
+        </Accordion>
       )}
 
       {/* Version history */}
