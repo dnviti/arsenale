@@ -5,11 +5,11 @@ on:
     tags: ["v*"]
     branches: [main, staging]
     paths:
-      - "gateways/**"
+      - 'gateways/**'
   pull_request:
     branches: [main, staging]
     paths:
-      - "gateways/**"
+      - 'gateways/**'
   workflow_dispatch:
 
 env:
