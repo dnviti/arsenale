@@ -105,12 +105,14 @@ export const config = {
       clientId: process.env.GOOGLE_CLIENT_ID || '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/google/callback',
+      hd: process.env.GOOGLE_HD || '',
     },
     microsoft: {
       enabled: !!process.env.MICROSOFT_CLIENT_ID,
       clientId: process.env.MICROSOFT_CLIENT_ID || '',
       clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
       callbackUrl: process.env.MICROSOFT_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/microsoft/callback',
+      tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
     },
     github: {
       enabled: !!process.env.GITHUB_CLIENT_ID,
