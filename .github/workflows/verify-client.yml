@@ -8,9 +8,16 @@ concurrency:
   group: verify-client-${{ github.event_name == 'workflow_call' && 'call' || 'standalone' }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name != 'workflow_call' }}
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
