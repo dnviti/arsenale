@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma';
 import type { KeystrokePolicyAction } from '../lib/prisma';
 import { logger } from '../utils/logger';
+import { compileRegex } from '../utils/safeRegex';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -322,14 +323,7 @@ export async function createPolicy(
       err.statusCode = 400;
       throw err;
     }
-    try {
-      // eslint-disable-next-line security/detect-non-literal-regexp -- Validating admin-supplied regex before persisting to DB
-      new RegExp(pattern);
-    } catch {
-      const err = new Error(`Invalid regex pattern at index ${i}`) as Error & { statusCode: number };
-      err.statusCode = 400;
-      throw err;
-    }
+    compileRegex(pattern, undefined, `pattern at index ${i}`);
   }
 
   const policy = await prisma.keystrokePolicy.create({

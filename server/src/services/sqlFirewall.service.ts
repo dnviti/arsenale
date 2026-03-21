@@ -1,5 +1,6 @@
 import prisma, { FirewallAction, Prisma } from '../lib/prisma';
 import { logger } from '../utils/logger';
+import { compileRegex } from '../utils/safeRegex';
 
 const log = logger.child('sql-firewall');
 
@@ -156,13 +157,8 @@ export async function getRule(tenantId: string, ruleId: string): Promise<Firewal
 }
 
 export async function createRule(input: FirewallRuleInput): Promise<FirewallRule> {
-  // Validate regex pattern
-  try {
-    // eslint-disable-next-line security/detect-non-literal-regexp -- Validating admin-supplied regex before persisting to DB
-    new RegExp(input.pattern, 'i');
-  } catch {
-    throw new Error(`Invalid regex pattern: ${input.pattern}`);
-  }
+  // Validate regex pattern (safety + syntax check)
+  compileRegex(input.pattern, 'i', 'firewall rule');
 
   return prisma.dbFirewallRule.create({
     data: {
@@ -183,14 +179,9 @@ export async function updateRule(
   ruleId: string,
   updates: Partial<Omit<FirewallRuleInput, 'tenantId'>>,
 ): Promise<FirewallRule> {
-  // Validate regex pattern if provided
+  // Validate regex pattern if provided (safety + syntax check)
   if (updates.pattern) {
-    try {
-      // eslint-disable-next-line security/detect-non-literal-regexp -- Validating admin-supplied regex before persisting to DB
-      new RegExp(updates.pattern, 'i');
-    } catch {
-      throw new Error(`Invalid regex pattern: ${updates.pattern}`);
-    }
+    compileRegex(updates.pattern, 'i', 'firewall rule');
   }
 
   const data: Prisma.DbFirewallRuleUpdateInput = {};
