@@ -15,9 +15,17 @@ const HIBP_USER_AGENT = 'Arsenale-PasswordCheck';
  *
  * @returns The number of times the password has been seen in breaches (0 = not found).
  */
+/**
+ * Compute the SHA-1 fingerprint of a string for the HIBP k-Anonymity lookup.
+ * This is NOT used for password storage — HIBP requires SHA-1 prefix matching.
+ */
+function hibpFingerprint(input: string): string {
+  return crypto.createHash('sha1').update(input).digest('hex').toUpperCase();
+}
+
 export async function checkPwnedPassword(password: string): Promise<number> {
   try {
-    const sha1 = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
+    const sha1 = hibpFingerprint(password);
     const prefix = sha1.substring(0, 5);
     const suffix = sha1.substring(5);
 
