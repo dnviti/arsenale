@@ -47,6 +47,7 @@ import { errorHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
 import { validateCsrf } from './middleware/csrf.middleware';
 import { globalRateLimit } from './middleware/globalRateLimit.middleware';
+import { peekAuth } from './middleware/peekAuth.middleware';
 import { config } from './config';
 
 const app = express();
@@ -98,6 +99,10 @@ app.use('/api', (req, res, next) => {
   if (csrfExemptPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
   return validateCsrf(req, res, next);
 });
+
+// Peek at Authorization header to populate req.user for rate-limit keying.
+// This does NOT enforce auth — per-route authenticate() still handles that.
+app.use('/api', peekAuth);
 
 // Global rate limit for all API routes (per-route limiters still apply on top)
 app.use('/api', globalRateLimit);
