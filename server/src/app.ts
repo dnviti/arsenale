@@ -49,7 +49,6 @@ import { errorHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
 import { validateCsrf } from './middleware/csrf.middleware';
 import { globalRateLimit } from './middleware/globalRateLimit.middleware';
-import { peekAuth } from './middleware/peekAuth.middleware';
 import { config } from './config';
 
 const app = express();
@@ -102,11 +101,9 @@ app.use('/api', (req, res, next) => {
   return validateCsrf(req, res, next);
 });
 
-// Peek at Authorization header to populate req.user for rate-limit keying,
-// then apply the global rate limit. Chained in one registration so that
-// CodeQL sees rate limiting on the same handler that inspects the JWT.
-// peekAuth does NOT enforce auth — per-route authenticate() still handles that.
-app.use('/api', peekAuth, globalRateLimit);
+// Global rate limit for all /api routes. JWT peek is inlined in the rate
+// limiter's keyGenerator so CodeQL sees auth + rate limiting in one handler.
+app.use('/api', globalRateLimit);
 
 // Routes
 app.use('/api/setup', setupRoutes);
