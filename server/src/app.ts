@@ -99,8 +99,7 @@ app.use('/api', (req, res, next) => {
   return validateCsrf(req, res, next);
 });
 
-// Global rate limit for all /api routes. JWT peek is inlined in the rate
-// limiter's keyGenerator so CodeQL sees auth + rate limiting in one handler.
+// Global rate limit for all API routes (per-route limiters still apply on top)
 app.use('/api', globalRateLimit);
 
 // Routes
