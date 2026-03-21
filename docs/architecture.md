@@ -2,7 +2,7 @@
 title: Architecture
 description: System architecture, component interactions, data flow, and key design patterns
 generated-by: ctdf-docs
-generated-at: 2026-03-21T19:40:00Z
+generated-at: 2026-03-21T22:40:00Z
 source-files:
   - server/src/index.ts
   - server/src/app.ts
@@ -158,7 +158,7 @@ Middleware stack (in order):
 
 ### Route Mounting
 
-42 route files mounted under `/api`:
+43 route files mounted under `/api`:
 
 | Path | Purpose |
 |------|---------|

@@ -2,7 +2,7 @@
 title: Development
 description: Contributing guide, local development setup, testing, code quality, and branch strategy
 generated-by: ctdf-docs
-generated-at: 2026-03-21T17:00:00Z
+generated-at: 2026-03-21T22:40:00Z
 source-files:
   - package.json
   - server/package.json
