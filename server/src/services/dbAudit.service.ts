@@ -205,8 +205,10 @@ export async function getDbAuditLogs(query: DbAuditLogQuery): Promise<PaginatedD
     ];
   }
 
-  const sortBy = query.sortBy ?? 'createdAt';
-  const sortOrder = query.sortOrder ?? 'desc';
+  const ALLOWED_SORT_FIELDS = new Set(['createdAt', 'queryType', 'blocked', 'executionTimeMs', 'rowsAffected']);
+  const rawSort = query.sortBy ?? '';
+  const sortBy = ALLOWED_SORT_FIELDS.has(rawSort) ? rawSort : 'createdAt';
+  const sortOrder = query.sortOrder === 'asc' ? 'asc' : 'desc';
   const orderBy: Prisma.DbAuditLogOrderByWithRelationInput = { [sortBy]: sortOrder };
 
   const [rows, total] = await Promise.all([
