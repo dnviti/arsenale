@@ -6,6 +6,47 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Always respond and work in English, even if the user's prompt is written in another language.
 
+## Workflow & Principles
+
+### Core Principles
+
+- **Simplicity First:** Make every change as simple as possible. Impact minimal code.
+- **No Laziness:** Find root causes. No temporary fixes. Senior developer standards.
+- **Minimal Impact:** Only touch what's necessary. No side effects introducing new bugs.
+
+### Plan Mode Default
+
+Enter plan mode for ANY non-trivial task (3+ steps or architectural decisions). If something goes sideways, STOP and re-plan immediately. Use plan mode for verification steps, not just building. Write detailed specs upfront to reduce ambiguity.
+
+### Subagent Strategy
+
+Use subagents liberally to keep the main context window clean. Offload research, exploration, and parallel analysis to subagents. For complex problems, throw more compute at it via subagents. One task per subagent for focused execution.
+
+### Self-Improvement Loop
+
+After ANY correction from the user: update `tasks/lessons.md` with the pattern. Write rules that prevent the same mistake. Ruthlessly iterate on these lessons until the mistake rate drops. Review lessons at session start for the relevant project.
+
+### Verification Before Done
+
+Never mark a task complete without proving it works. Diff behavior between `main` and your changes when relevant. Ask yourself: "Would a staff engineer approve this?" Run tests, check logs, demonstrate correctness. `npm run verify` must pass before closing any task.
+
+### Demand Elegance (Balanced)
+
+For non-trivial changes: pause and ask "is there a more elegant way?" If a fix feels hacky: "Knowing everything I know now, implement the elegant solution." Skip this for simple, obvious fixes — don't over-engineer. Challenge your own work before presenting it.
+
+### Autonomous Bug Fixing
+
+When given a bug report: just fix it. Don't ask for hand-holding. Point at logs, errors, failing tests — then resolve them. Zero context switching required from the user. Go fix failing CI tests without being told how.
+
+### Task Execution Workflow
+
+1. **Plan First:** Write plan to `tasks/todo.md` with checkable items
+2. **Verify Plan:** Check in with the user before starting implementation
+3. **Track Progress:** Mark items complete as you go
+4. **Explain Changes:** High-level summary at each step
+5. **Document Results:** Add review section to `tasks/todo.md`
+6. **Capture Lessons:** Update `tasks/lessons.md` after corrections
+
 ## Development Commands
 
 ```bash
@@ -133,6 +174,16 @@ Layered architecture: **Routes → Controllers → Services → Prisma ORM**
 - `extra-clients/browser-extensions/src/lib/` — Shared utilities: account storage, API client, auth, vault/secrets/connections API wrappers
 
 ## Key Patterns
+
+### Configuration Strategy
+
+All application configuration **must** use environment variables as the primary source of truth. The UI Settings panel provides a user-friendly way to view and adjust settings, but environment variables always take precedence:
+
+- **Env var set** → value is used as-is and the corresponding UI field shows it as a preset/override (read-only or visually distinguished).
+- **Env var unset** → the UI setting is editable and its value is persisted to the database.
+- **New features** must define their configuration as env vars in `server/src/config.ts` first, with sensible defaults. If the setting should also be adjustable at runtime via the UI, add a corresponding tenant/system setting that the env var overrides.
+
+This ensures deployments can be fully configured via `.env` / Docker Compose / Kubernetes ConfigMaps without requiring UI interaction, while still allowing runtime tuning through the Settings panel.
 
 ### Real-Time Connections
 

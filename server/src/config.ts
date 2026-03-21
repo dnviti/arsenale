@@ -105,12 +105,14 @@ export const config = {
       clientId: process.env.GOOGLE_CLIENT_ID || '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/google/callback',
+      hd: process.env.GOOGLE_HD || '',
     },
     microsoft: {
       enabled: !!process.env.MICROSOFT_CLIENT_ID,
       clientId: process.env.MICROSOFT_CLIENT_ID || '',
       clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
       callbackUrl: process.env.MICROSOFT_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/microsoft/callback',
+      tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
     },
     github: {
       enabled: !!process.env.GITHUB_CLIENT_ID,
@@ -163,6 +165,14 @@ export const config = {
   oauthAccountRateLimitMaxAttempts: parseInt(process.env.OAUTH_ACCOUNT_RATE_LIMIT_MAX_ATTEMPTS || '15', 10),
   oauthLinkRateLimitWindowMs: parseInt(process.env.OAUTH_LINK_RATE_LIMIT_WINDOW_MS || String(15 * 60 * 1000), 10),
   oauthLinkRateLimitMaxAttempts: parseInt(process.env.OAUTH_LINK_RATE_LIMIT_MAX_ATTEMPTS || '10', 10),
+  // IP-based whitelist for global rate limiter bypass (loopback + RFC 1918 by default)
+  rateLimitWhitelistCidrs: (() => {
+    const val = process.env.RATE_LIMIT_WHITELIST_CIDRS;
+    if (val !== undefined) {
+      return val.trim() === '' ? [] : val.split(',').map(s => s.trim()).filter(Boolean);
+    }
+    return ['127.0.0.1/8', '::1/128', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'];
+  })(),
   sessionHeartbeatIntervalMs: parseInt(process.env.SESSION_HEARTBEAT_INTERVAL_MS || String(30 * 1000), 10),
   sessionIdleThresholdMinutes: parseInt(process.env.SESSION_IDLE_THRESHOLD_MINUTES || '5', 10),
   sessionCleanupRetentionDays: parseInt(process.env.SESSION_CLEANUP_RETENTION_DAYS || '30', 10),

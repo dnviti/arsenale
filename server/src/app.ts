@@ -42,11 +42,14 @@ import dbAuditRoutes from './routes/dbAudit.routes';
 import passwordRotationRoutes from './routes/passwordRotation.routes';
 import dbTunnelRoutes from './routes/dbTunnel.routes';
 import keystrokePolicyRoutes from './routes/keystrokePolicy.routes';
+import systemSettingsRoutes from './routes/systemSettings.routes';
+import setupRoutes from './routes/setup.routes';
 import healthRoutes from './routes/health.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { requestLogger } from './middleware/requestLogger.middleware';
 import { validateCsrf } from './middleware/csrf.middleware';
 import { globalRateLimit } from './middleware/globalRateLimit.middleware';
+import { peekAuth } from './middleware/peekAuth.middleware';
 import { config } from './config';
 
 const app = express();
@@ -92,17 +95,22 @@ if (config.logHttpRequests) app.use(requestLogger);
 // Global CSRF validation for all state-changing requests (after CORS, before routes)
 app.use('/api', (req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
-  const csrfExemptPaths = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email', '/auth/verify-totp', '/auth/request-sms-code', '/auth/verify-sms', '/auth/request-webauthn-options', '/auth/verify-webauthn', '/auth/mfa-setup/', '/auth/resend-verification', '/auth/saml', '/auth/config', '/share', '/cli/auth/device'];
+  const csrfExemptPaths = ['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password', '/auth/verify-email', '/auth/verify-totp', '/auth/request-sms-code', '/auth/verify-sms', '/auth/request-webauthn-options', '/auth/verify-webauthn', '/auth/mfa-setup/', '/auth/resend-verification', '/auth/saml', '/auth/config', '/share', '/cli/auth/device', '/setup'];
   // Use exact match or subpath match (path + '/') to prevent prefix collisions
   // e.g., '/auth/login' must not exempt '/auth/login-history'
   if (csrfExemptPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) return next();
   return validateCsrf(req, res, next);
 });
 
+// Peek at Authorization header to populate req.user for rate-limit keying.
+// This does NOT enforce auth — per-route authenticate() still handles that.
+app.use('/api', peekAuth);
+
 // Global rate limit for all API routes (per-route limiters still apply on top)
 app.use('/api', globalRateLimit);
 
 // Routes
+app.use('/api/setup', setupRoutes);
 app.use('/api/auth/saml', samlRoutes);
 app.use('/api/auth', oauthRoutes);
 app.use('/api/auth', authRoutes);
@@ -142,6 +150,7 @@ app.use('/api/sessions/database', dbProxyRoutes);
 app.use('/api/db-audit', dbAuditRoutes);
 app.use('/api/secrets', passwordRotationRoutes);
 app.use('/api/keystroke-policies', keystrokePolicyRoutes);
+app.use('/api/admin/system-settings', systemSettingsRoutes);
 
 // Health & readiness probes
 app.use('/api', healthRoutes);
