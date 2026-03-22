@@ -120,11 +120,12 @@ function isForbiddenIP(ip: string, localAddresses: Set<string>): boolean {
     if (parts[0] === 169 && parts[1] === 254) return true; // Link-local + metadata (always blocked)
   }
 
-  // IPv6 checks
+  // IPv6 checks — case-insensitive prefix comparison to prevent uppercase bypass
   if (net.isIPv6(ip)) {
-    if (ip.startsWith('fe80:') || ip.startsWith('fe80::')) return true; // Link-local (always blocked)
+    const lower = ip.toLowerCase();
+    if (lower.startsWith('fe80:') || lower.startsWith('fe80::')) return true; // Link-local (always blocked)
     if (!config.allowLocalNetwork) {
-      if (ip.startsWith('fc') || ip.startsWith('fd')) return true; // ULA
+      if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA
     }
   }
 
@@ -138,7 +139,12 @@ function isForbiddenIP(ip: string, localAddresses: Set<string>): boolean {
 }
 
 export async function validateHost(host: string): Promise<void> {
-  const normalized = host.trim().toLowerCase();
+  let normalized = host.trim().toLowerCase();
+
+  // Strip brackets from bracketed IPv6 literals (e.g. [::1] → ::1)
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.slice(1, -1);
+  }
 
   // Reject "localhost" string — unless allowLoopback is enabled
   if (normalized === 'localhost' && !config.allowLoopback) {
@@ -148,8 +154,8 @@ export async function validateHost(host: string): Promise<void> {
   const localAddresses = getLocalAddresses();
 
   // If it's already an IP, check directly
-  if (net.isIP(host)) {
-    if (isForbiddenIP(host, localAddresses)) {
+  if (net.isIP(normalized)) {
+    if (isForbiddenIP(normalized, localAddresses)) {
       throw new AppError(getBlockedMessage(), 400);
     }
     return;
@@ -157,13 +163,13 @@ export async function validateHost(host: string): Promise<void> {
 
   // Resolve hostname and check all resolved IPs
   try {
-    const results = await dns.promises.resolve4(host).catch(() => [] as string[]);
-    const results6 = await dns.promises.resolve6(host).catch(() => [] as string[]);
+    const results = await dns.promises.resolve4(normalized).catch(() => [] as string[]);
+    const results6 = await dns.promises.resolve6(normalized).catch(() => [] as string[]);
     const allIPs = [...results, ...results6];
 
     // Also try lookup for names that only resolve via /etc/hosts
     try {
-      const lookupResult = await dns.promises.lookup(host, { all: true });
+      const lookupResult = await dns.promises.lookup(normalized, { all: true });
       for (const entry of lookupResult) {
         if (!allIPs.includes(entry.address)) {
           allIPs.push(entry.address);

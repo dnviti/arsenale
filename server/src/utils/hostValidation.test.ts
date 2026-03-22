@@ -121,6 +121,22 @@ describe('hostValidation (ALLOW_LOCAL_NETWORK=false)', () => {
     );
   });
 
+  it('rejects [::1] (bracketed IPv6 loopback)', async () => {
+    await expect(validateHost('[::1]')).rejects.toThrow();
+    await expect(validateHost('[::1]')).rejects.toHaveProperty(
+      'statusCode',
+      400
+    );
+  });
+
+  it('rejects 0:0:0:0:0:0:0:1 (expanded IPv6 loopback)', async () => {
+    await expect(validateHost('0:0:0:0:0:0:0:1')).rejects.toThrow();
+    await expect(validateHost('0:0:0:0:0:0:0:1')).rejects.toHaveProperty(
+      'statusCode',
+      400
+    );
+  });
+
   it('rejects 0.0.0.0 (wildcard)', async () => {
     await expect(validateHost('0.0.0.0')).rejects.toThrow();
     await expect(validateHost('0.0.0.0')).rejects.toHaveProperty(
@@ -169,9 +185,25 @@ describe('hostValidation (ALLOW_LOCAL_NETWORK=false)', () => {
     );
   });
 
+  it('rejects FE80::1 (uppercase IPv6 link-local)', async () => {
+    await expect(validateHost('FE80::1')).rejects.toThrow();
+    await expect(validateHost('FE80::1')).rejects.toHaveProperty(
+      'statusCode',
+      400
+    );
+  });
+
   it('rejects fd00::1 (IPv6 ULA)', async () => {
     await expect(validateHost('fd00::1')).rejects.toThrow();
     await expect(validateHost('fd00::1')).rejects.toHaveProperty(
+      'statusCode',
+      400
+    );
+  });
+
+  it('rejects FD00::1 (uppercase IPv6 ULA)', async () => {
+    await expect(validateHost('FD00::1')).rejects.toThrow();
+    await expect(validateHost('FD00::1')).rejects.toHaveProperty(
       'statusCode',
       400
     );
@@ -271,6 +303,10 @@ describe('hostValidation (ALLOW_LOCAL_NETWORK=true)', () => {
     await expect(validateHost('fe80::1')).rejects.toThrow();
   });
 
+  it('still rejects FE80::1 (uppercase IPv6 link-local always blocked)', async () => {
+    await expect(validateHost('FE80::1')).rejects.toThrow();
+  });
+
   it('allows 10.0.0.1 (private ranges permitted)', async () => {
     await expect(validateHost('10.0.0.1')).resolves.toBeUndefined();
   });
@@ -318,6 +354,14 @@ describe('hostValidation (ALLOW_LOOPBACK=true, ALLOW_LOCAL_NETWORK=true)', () =>
     await expect(validateHost('::1')).resolves.toBeUndefined();
   });
 
+  it('allows [::1] (bracketed IPv6 loopback)', async () => {
+    await expect(validateHost('[::1]')).resolves.toBeUndefined();
+  });
+
+  it('allows 0:0:0:0:0:0:0:1 (expanded IPv6 loopback)', async () => {
+    await expect(validateHost('0:0:0:0:0:0:0:1')).resolves.toBeUndefined();
+  });
+
   it('allows 10.0.0.1 (private range)', async () => {
     await expect(validateHost('10.0.0.1')).resolves.toBeUndefined();
   });
@@ -340,6 +384,10 @@ describe('hostValidation (ALLOW_LOOPBACK=true, ALLOW_LOCAL_NETWORK=true)', () =>
 
   it('still rejects fe80::1 (IPv6 link-local always blocked)', async () => {
     await expect(validateHost('fe80::1')).rejects.toThrow();
+  });
+
+  it('still rejects FE80::1 (uppercase IPv6 link-local always blocked)', async () => {
+    await expect(validateHost('FE80::1')).rejects.toThrow();
   });
 
   it('allows public IPs', async () => {
