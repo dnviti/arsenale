@@ -36,6 +36,9 @@ function getSendFn(): SendFn | null {
   return cachedSendFn;
 }
 
+/** Reset cached provider so the next sendEmail() re-creates it from current config. */
+export function resetEmailProvider(): void { cachedSendFn = undefined; }
+
 export async function sendEmail(msg: EmailMessage): Promise<void> {
   const send = getSendFn();
   if (!send) {
@@ -118,7 +121,7 @@ export async function sendWelcomeEmail(
     logger.info('========================================');
     logger.info('WELCOME EMAIL (dev mode):');
     logger.info(`  To: ${to}`);
-    logger.info(`  Temporary password: ${temporaryPassword}`);
+    logger.info(`  Temporary password: ${temporaryPassword.slice(0, 2)}${'*'.repeat(temporaryPassword.length - 2)}`);
     logger.info(`  Login URL: ${loginUrl}`);
     logger.info('========================================');
     return;
@@ -149,7 +152,7 @@ export async function sendIdentityVerificationCode(
     logger.info('========================================');
     logger.info('IDENTITY VERIFICATION CODE (dev mode):');
     logger.info(`  To: ${to}`);
-    logger.info(`  Code: ${code}`);
+    logger.info(`  Code: ${code.slice(0, 2)}${'*'.repeat(code.length - 2)}`);
     logger.info(`  Purpose: ${purpose}`);
     logger.info('========================================');
     return;
@@ -183,7 +186,7 @@ export async function sendEmailChangeCode(
     logger.info('========================================');
     logger.info(`EMAIL CHANGE CODE (dev mode — ${isOldEmail ? 'old' : 'new'} email):`);
     logger.info(`  To: ${to}`);
-    logger.info(`  Code: ${code}`);
+    logger.info(`  Code: ${code.slice(0, 2)}${'*'.repeat(code.length - 2)}`);
     logger.info('========================================');
     return;
   }
