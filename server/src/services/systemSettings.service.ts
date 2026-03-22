@@ -323,14 +323,14 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
   { key: 'VAULT_MFA_RATE_LIMIT_MAX_ATTEMPTS', envVar: 'VAULT_MFA_RATE_LIMIT_MAX_ATTEMPTS', configPath: 'vaultMfaRateLimitMaxAttempts', type: 'number', default: 10, group: 'vault', label: 'Vault MFA Max Attempts', description: 'Maximum MFA attempts per vault unlock window.', minEditRole: 'OWNER', restartRequired: true },
 
   // ── JWT & Tokens ─────────────────────────────────────────────────────────
-  { key: 'JWT_EXPIRES_IN', envVar: 'JWT_EXPIRES_IN', configPath: 'jwtExpiresIn', type: 'string', default: '15m', group: 'jwt', label: 'Access Token Expiration', description: 'JWT access token lifetime (e.g., 15m, 1h, 2d).', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'JWT_REFRESH_EXPIRES_IN', envVar: 'JWT_REFRESH_EXPIRES_IN', configPath: 'jwtRefreshExpiresIn', type: 'string', default: '7d', group: 'jwt', label: 'Refresh Token Expiration', description: 'Refresh token lifetime (e.g., 7d, 30d).', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'JWT_EXPIRES_IN', envVar: 'JWT_EXPIRES_IN', configPath: 'jwtExpiresIn', type: 'string', default: '15m', group: 'jwt', label: 'Access Token Expiration', description: 'JWT access token lifetime (e.g., 15m, 1h, 2d).', minEditRole: 'OWNER' },
+  { key: 'JWT_REFRESH_EXPIRES_IN', envVar: 'JWT_REFRESH_EXPIRES_IN', configPath: 'jwtRefreshExpiresIn', type: 'string', default: '7d', group: 'jwt', label: 'Refresh Token Expiration', description: 'Refresh token lifetime (e.g., 7d, 30d).', minEditRole: 'OWNER' },
 
   // ── Recording ────────────────────────────────────────────────────────────
   { key: 'RECORDING_ENABLED', envVar: 'RECORDING_ENABLED', configPath: 'recordingEnabled', type: 'boolean', default: false, group: 'recording', label: 'Session Recording', description: 'Enable automatic recording of SSH/RDP/VNC sessions.', minEditRole: 'ADMIN' },
   { key: 'RECORDING_RETENTION_DAYS', envVar: 'RECORDING_RETENTION_DAYS', configPath: 'recordingRetentionDays', type: 'number', default: 90, group: 'recording', label: 'Recording Retention (days)', description: 'How many days to keep recordings before auto-cleanup.', minEditRole: 'ADMIN' },
-  { key: 'GUACENC_SERVICE_URL', envVar: 'GUACENC_SERVICE_URL', configPath: 'guacencServiceUrl', type: 'string', default: 'http://guacenc:3003', group: 'recording', label: 'Guacenc Service URL', description: 'URL of the guacenc video conversion sidecar.', minEditRole: 'ADMIN', restartRequired: true },
-  { key: 'GUACENC_TIMEOUT_MS', envVar: 'GUACENC_TIMEOUT_MS', configPath: 'guacencTimeoutMs', type: 'number', default: 120000, group: 'recording', label: 'Guacenc Timeout (ms)', description: 'Timeout for guacenc video conversion requests.', minEditRole: 'ADMIN', restartRequired: true },
+  { key: 'GUACENC_SERVICE_URL', envVar: 'GUACENC_SERVICE_URL', configPath: 'guacencServiceUrl', type: 'string', default: 'http://guacenc:3003', group: 'recording', label: 'Guacenc Service URL', description: 'URL of the guacenc video conversion sidecar.', minEditRole: 'ADMIN' },
+  { key: 'GUACENC_TIMEOUT_MS', envVar: 'GUACENC_TIMEOUT_MS', configPath: 'guacencTimeoutMs', type: 'number', default: 120000, group: 'recording', label: 'Guacenc Timeout (ms)', description: 'Timeout for guacenc video conversion requests.', minEditRole: 'ADMIN' },
 
   // ── Key Rotation ─────────────────────────────────────────────────────────
   { key: 'KEY_ROTATION_CRON', envVar: 'KEY_ROTATION_CRON', configPath: 'keyRotationCron', type: 'string', default: '0 2 * * *', group: 'key-rotation', label: 'Key Rotation Schedule (cron)', description: 'Cron expression for the SSH key rotation check job.', minEditRole: 'OWNER', restartRequired: true },
@@ -343,31 +343,31 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
 
   // ── Email Provider ───────────────────────────────────────────────────────
   { key: 'EMAIL_PROVIDER', envVar: 'EMAIL_PROVIDER', configPath: 'emailProvider', type: 'select', default: 'smtp', options: ['smtp', 'sendgrid', 'ses', 'resend', 'mailgun'], group: 'email', label: 'Email Provider', description: 'Email delivery provider.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'SMTP_HOST', envVar: 'SMTP_HOST', configPath: 'smtpHost', type: 'string', default: '', group: 'email', label: 'SMTP Host', description: 'SMTP server hostname.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'SMTP_PORT', envVar: 'SMTP_PORT', configPath: 'smtpPort', type: 'number', default: 587, group: 'email', label: 'SMTP Port', description: 'SMTP server port.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'SMTP_USER', envVar: 'SMTP_USER', configPath: 'smtpUser', type: 'string', default: '', group: 'email', label: 'SMTP User', description: 'SMTP authentication username.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'SMTP_PASS', envVar: 'SMTP_PASS', configPath: 'smtpPass', type: 'string', default: '', group: 'email', label: 'SMTP Password', description: 'SMTP authentication password.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'SMTP_FROM', envVar: 'SMTP_FROM', configPath: 'smtpFrom', type: 'string', default: 'noreply@example.com', group: 'email', label: 'SMTP From Address', description: 'Default sender email address.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'SENDGRID_API_KEY', envVar: 'SENDGRID_API_KEY', configPath: 'sendgridApiKey', type: 'string', default: '', group: 'email', label: 'SendGrid API Key', description: 'SendGrid API key (requires EMAIL_PROVIDER=sendgrid).', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'AWS_SES_REGION', envVar: 'AWS_SES_REGION', configPath: 'sesRegion', type: 'string', default: 'us-east-1', group: 'email', label: 'AWS SES Region', description: 'AWS region for SES email delivery.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'AWS_SES_ACCESS_KEY_ID', envVar: 'AWS_SES_ACCESS_KEY_ID', configPath: 'sesAccessKeyId', type: 'string', default: '', group: 'email', label: 'AWS SES Access Key ID', description: 'IAM access key for SES. Leave empty to use IAM roles.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'AWS_SES_SECRET_ACCESS_KEY', envVar: 'AWS_SES_SECRET_ACCESS_KEY', configPath: 'sesSecretAccessKey', type: 'string', default: '', group: 'email', label: 'AWS SES Secret Access Key', description: 'IAM secret key for SES.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'RESEND_API_KEY', envVar: 'RESEND_API_KEY', configPath: 'resendApiKey', type: 'string', default: '', group: 'email', label: 'Resend API Key', description: 'Resend API key (requires EMAIL_PROVIDER=resend).', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'MAILGUN_API_KEY', envVar: 'MAILGUN_API_KEY', configPath: 'mailgunApiKey', type: 'string', default: '', group: 'email', label: 'Mailgun API Key', description: 'Mailgun API key (requires EMAIL_PROVIDER=mailgun).', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'MAILGUN_DOMAIN', envVar: 'MAILGUN_DOMAIN', configPath: 'mailgunDomain', type: 'string', default: '', group: 'email', label: 'Mailgun Domain', description: 'Mailgun sending domain.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'MAILGUN_REGION', envVar: 'MAILGUN_REGION', configPath: 'mailgunRegion', type: 'select', default: 'us', options: ['us', 'eu'], group: 'email', label: 'Mailgun Region', description: 'Mailgun API region.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'SMTP_HOST', envVar: 'SMTP_HOST', configPath: 'smtpHost', type: 'string', default: '', group: 'email', label: 'SMTP Host', description: 'SMTP server hostname.', minEditRole: 'OWNER' },
+  { key: 'SMTP_PORT', envVar: 'SMTP_PORT', configPath: 'smtpPort', type: 'number', default: 587, group: 'email', label: 'SMTP Port', description: 'SMTP server port.', minEditRole: 'OWNER' },
+  { key: 'SMTP_USER', envVar: 'SMTP_USER', configPath: 'smtpUser', type: 'string', default: '', group: 'email', label: 'SMTP User', description: 'SMTP authentication username.', minEditRole: 'OWNER' },
+  { key: 'SMTP_PASS', envVar: 'SMTP_PASS', configPath: 'smtpPass', type: 'string', default: '', group: 'email', label: 'SMTP Password', description: 'SMTP authentication password.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'SMTP_FROM', envVar: 'SMTP_FROM', configPath: 'smtpFrom', type: 'string', default: 'noreply@example.com', group: 'email', label: 'SMTP From Address', description: 'Default sender email address.', minEditRole: 'OWNER' },
+  { key: 'SENDGRID_API_KEY', envVar: 'SENDGRID_API_KEY', configPath: 'sendgridApiKey', type: 'string', default: '', group: 'email', label: 'SendGrid API Key', description: 'SendGrid API key (requires EMAIL_PROVIDER=sendgrid).', minEditRole: 'OWNER', sensitive: true },
+  { key: 'AWS_SES_REGION', envVar: 'AWS_SES_REGION', configPath: 'sesRegion', type: 'string', default: 'us-east-1', group: 'email', label: 'AWS SES Region', description: 'AWS region for SES email delivery.', minEditRole: 'OWNER' },
+  { key: 'AWS_SES_ACCESS_KEY_ID', envVar: 'AWS_SES_ACCESS_KEY_ID', configPath: 'sesAccessKeyId', type: 'string', default: '', group: 'email', label: 'AWS SES Access Key ID', description: 'IAM access key for SES. Leave empty to use IAM roles.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'AWS_SES_SECRET_ACCESS_KEY', envVar: 'AWS_SES_SECRET_ACCESS_KEY', configPath: 'sesSecretAccessKey', type: 'string', default: '', group: 'email', label: 'AWS SES Secret Access Key', description: 'IAM secret key for SES.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'RESEND_API_KEY', envVar: 'RESEND_API_KEY', configPath: 'resendApiKey', type: 'string', default: '', group: 'email', label: 'Resend API Key', description: 'Resend API key (requires EMAIL_PROVIDER=resend).', minEditRole: 'OWNER', sensitive: true },
+  { key: 'MAILGUN_API_KEY', envVar: 'MAILGUN_API_KEY', configPath: 'mailgunApiKey', type: 'string', default: '', group: 'email', label: 'Mailgun API Key', description: 'Mailgun API key (requires EMAIL_PROVIDER=mailgun).', minEditRole: 'OWNER', sensitive: true },
+  { key: 'MAILGUN_DOMAIN', envVar: 'MAILGUN_DOMAIN', configPath: 'mailgunDomain', type: 'string', default: '', group: 'email', label: 'Mailgun Domain', description: 'Mailgun sending domain.', minEditRole: 'OWNER' },
+  { key: 'MAILGUN_REGION', envVar: 'MAILGUN_REGION', configPath: 'mailgunRegion', type: 'select', default: 'us', options: ['us', 'eu'], group: 'email', label: 'Mailgun Region', description: 'Mailgun API region.', minEditRole: 'OWNER' },
 
   // ── SMS Provider ───────────────────────────────────────────────────────
   { key: 'SMS_PROVIDER', envVar: 'SMS_PROVIDER', configPath: 'smsProvider', type: 'select', default: '', options: ['', 'twilio', 'sns', 'vonage'], group: 'sms', label: 'SMS Provider', description: 'SMS delivery provider (empty = disabled, dev mode logs OTP to console).', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'TWILIO_ACCOUNT_SID', envVar: 'TWILIO_ACCOUNT_SID', configPath: 'twilioAccountSid', type: 'string', default: '', group: 'sms', label: 'Twilio Account SID', description: 'Twilio account identifier (not a secret).', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'TWILIO_AUTH_TOKEN', envVar: 'TWILIO_AUTH_TOKEN', configPath: 'twilioAuthToken', type: 'string', default: '', group: 'sms', label: 'Twilio Auth Token', description: 'Twilio authentication token.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'TWILIO_FROM_NUMBER', envVar: 'TWILIO_FROM_NUMBER', configPath: 'twilioFromNumber', type: 'string', default: '', group: 'sms', label: 'Twilio From Number', description: 'Phone number to send SMS from (e.g., +1234567890).', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'AWS_SNS_REGION', envVar: 'AWS_SNS_REGION', configPath: 'snsRegion', type: 'string', default: 'us-east-1', group: 'sms', label: 'AWS SNS Region', description: 'AWS region for SNS SMS delivery.', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'AWS_SNS_ACCESS_KEY_ID', envVar: 'AWS_SNS_ACCESS_KEY_ID', configPath: 'snsAccessKeyId', type: 'string', default: '', group: 'sms', label: 'AWS SNS Access Key ID', description: 'IAM access key for SNS. Leave empty to use IAM roles.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'AWS_SNS_SECRET_ACCESS_KEY', envVar: 'AWS_SNS_SECRET_ACCESS_KEY', configPath: 'snsSecretAccessKey', type: 'string', default: '', group: 'sms', label: 'AWS SNS Secret Access Key', description: 'IAM secret key for SNS.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'VONAGE_API_KEY', envVar: 'VONAGE_API_KEY', configPath: 'vonageApiKey', type: 'string', default: '', group: 'sms', label: 'Vonage API Key', description: 'Vonage API key (public identifier, not the secret).', minEditRole: 'OWNER', restartRequired: true },
-  { key: 'VONAGE_API_SECRET', envVar: 'VONAGE_API_SECRET', configPath: 'vonageApiSecret', type: 'string', default: '', group: 'sms', label: 'Vonage API Secret', description: 'Vonage API secret.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
-  { key: 'VONAGE_FROM_NUMBER', envVar: 'VONAGE_FROM_NUMBER', configPath: 'vonageFromNumber', type: 'string', default: '', group: 'sms', label: 'Vonage From Number', description: 'Phone number or sender ID for Vonage SMS.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'TWILIO_ACCOUNT_SID', envVar: 'TWILIO_ACCOUNT_SID', configPath: 'twilioAccountSid', type: 'string', default: '', group: 'sms', label: 'Twilio Account SID', description: 'Twilio account identifier (not a secret).', minEditRole: 'OWNER' },
+  { key: 'TWILIO_AUTH_TOKEN', envVar: 'TWILIO_AUTH_TOKEN', configPath: 'twilioAuthToken', type: 'string', default: '', group: 'sms', label: 'Twilio Auth Token', description: 'Twilio authentication token.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'TWILIO_FROM_NUMBER', envVar: 'TWILIO_FROM_NUMBER', configPath: 'twilioFromNumber', type: 'string', default: '', group: 'sms', label: 'Twilio From Number', description: 'Phone number to send SMS from (e.g., +1234567890).', minEditRole: 'OWNER' },
+  { key: 'AWS_SNS_REGION', envVar: 'AWS_SNS_REGION', configPath: 'snsRegion', type: 'string', default: 'us-east-1', group: 'sms', label: 'AWS SNS Region', description: 'AWS region for SNS SMS delivery.', minEditRole: 'OWNER' },
+  { key: 'AWS_SNS_ACCESS_KEY_ID', envVar: 'AWS_SNS_ACCESS_KEY_ID', configPath: 'snsAccessKeyId', type: 'string', default: '', group: 'sms', label: 'AWS SNS Access Key ID', description: 'IAM access key for SNS. Leave empty to use IAM roles.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'AWS_SNS_SECRET_ACCESS_KEY', envVar: 'AWS_SNS_SECRET_ACCESS_KEY', configPath: 'snsSecretAccessKey', type: 'string', default: '', group: 'sms', label: 'AWS SNS Secret Access Key', description: 'IAM secret key for SNS.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'VONAGE_API_KEY', envVar: 'VONAGE_API_KEY', configPath: 'vonageApiKey', type: 'string', default: '', group: 'sms', label: 'Vonage API Key', description: 'Vonage API key (public identifier, not the secret).', minEditRole: 'OWNER' },
+  { key: 'VONAGE_API_SECRET', envVar: 'VONAGE_API_SECRET', configPath: 'vonageApiSecret', type: 'string', default: '', group: 'sms', label: 'Vonage API Secret', description: 'Vonage API secret.', minEditRole: 'OWNER', sensitive: true },
+  { key: 'VONAGE_FROM_NUMBER', envVar: 'VONAGE_FROM_NUMBER', configPath: 'vonageFromNumber', type: 'string', default: '', group: 'sms', label: 'Vonage From Number', description: 'Phone number or sender ID for Vonage SMS.', minEditRole: 'OWNER' },
 
   // ── SSH Proxy ────────────────────────────────────────────────────────────
   { key: 'SSH_PROXY_ENABLED', envVar: 'SSH_PROXY_ENABLED', configPath: 'sshProxy.enabled', type: 'boolean', default: false, group: 'ssh-proxy', label: 'SSH Proxy Enabled', description: 'Enable the native SSH protocol proxy.', minEditRole: 'ADMIN', restartRequired: true },
@@ -599,6 +599,24 @@ export async function setSetting(
     update: { value: serialized },
     create: { key, value: serialized },
   });
+
+  // Hot-patch the in-memory config so settings take effect without restart
+  if (def.configPath) {
+    const parsed = parseValue(serialized, def.type, def.default);
+    setNestedValue(config, def.configPath, parsed);
+
+    // Special handling for derived fields
+    if (def.configPath.startsWith('oauth.')) {
+      config.oauth.google.enabled = !!config.oauth.google.clientId;
+      config.oauth.microsoft.enabled = !!config.oauth.microsoft.clientId;
+      config.oauth.github.enabled = !!config.oauth.github.clientId;
+      config.oauth.oidc.enabled = !!config.oauth.oidc.clientId;
+      config.oauth.saml.enabled = !!config.oauth.saml.entryPoint;
+    }
+    if (def.key === 'LDAP_ALLOWED_GROUPS' && typeof parsed === 'string') {
+      config.ldap.allowedGroups = parsed.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
 
   invalidateCache(key);
   return { key, value, source: 'db' };
