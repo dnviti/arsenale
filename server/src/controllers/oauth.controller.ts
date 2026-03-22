@@ -29,12 +29,14 @@ function isProviderEnabled(provider: OAuthProvider): boolean {
   return config.oauth[provider].enabled;
 }
 
-const SCOPE_MAP: Record<OAuthProvider, string[]> = {
-  google: ['profile', 'email'],
-  microsoft: ['user.read'],
-  github: ['user:email'],
-  oidc: config.oauth.oidc.scopes.split(/\s+/).filter(Boolean),
-};
+function getScopes(provider: OAuthProvider): string[] {
+  switch (provider) {
+    case 'google': return ['profile', 'email'];
+    case 'microsoft': return ['user.read'];
+    case 'github': return ['user:email'];
+    case 'oidc': return config.oauth.oidc.scopes.split(/\s+/).filter(Boolean);
+  }
+}
 
 export function initiateOAuth(req: Request, res: Response, next: NextFunction) {
   const provider = req.params.provider as string;
@@ -44,7 +46,7 @@ export function initiateOAuth(req: Request, res: Response, next: NextFunction) {
   }
 
   passport.authenticate(provider, {
-    scope: SCOPE_MAP[provider],
+    scope: getScopes(provider),
     session: false,
   })(req, res, next);
 }
@@ -178,7 +180,7 @@ export function initiateLinkOAuth(req: Request, res: Response, next: NextFunctio
   })).toString('base64url');
 
   passport.authenticate(provider, {
-    scope: SCOPE_MAP[provider],
+    scope: getScopes(provider),
     session: false,
     state,
   })(req, res, next);

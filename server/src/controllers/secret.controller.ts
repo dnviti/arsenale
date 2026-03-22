@@ -252,6 +252,17 @@ export async function listShares(req: AuthRequest, res: Response) {
   res.json(result);
 }
 
+// --- Counts handler ---
+
+export async function counts(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const result = await secretService.getSecretCounts(
+    req.user.userId,
+    req.user.tenantId
+  );
+  res.json(result);
+}
+
 // --- Breach check handlers ---
 
 export async function checkBreach(req: AuthRequest, res: Response) {

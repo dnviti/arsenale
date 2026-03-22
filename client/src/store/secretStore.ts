@@ -9,6 +9,7 @@ import {
   initTenantVault as apiInitTenantVault,
   checkSecretBreach as apiCheckSecretBreach,
   checkAllSecretBreaches as apiCheckAllBreaches,
+  getSecretCounts,
 } from '../api/secrets.api';
 import type {
   SecretListItem,
@@ -48,8 +49,7 @@ interface SecretState {
   clearSelectedSecret: () => void;
   fetchTenantVaultStatus: () => Promise<void>;
   initTenantVault: () => Promise<void>;
-  fetchExpiringCount: () => Promise<void>;
-  fetchPwnedCount: () => Promise<void>;
+  fetchCounts: () => Promise<void>;
   checkSecretBreach: (secretId: string) => Promise<number>;
   checkAllBreaches: () => Promise<BatchBreachCheckResult>;
 
@@ -160,27 +160,10 @@ export const useSecretStore = create<SecretState>((set, get) => ({
     await get().fetchTenantVaultStatus();
   },
 
-  fetchExpiringCount: async () => {
+  fetchCounts: async () => {
     try {
-      const allSecrets = await listSecrets({});
-      const sevenDays = 7 * 24 * 60 * 60 * 1000;
-      const now = Date.now();
-      const count = allSecrets.filter((s) => {
-        if (!s.expiresAt) return false;
-        const diff = new Date(s.expiresAt).getTime() - now;
-        return diff <= sevenDays;
-      }).length;
-      set({ expiringCount: count });
-    } catch {
-      // ignore — vault may be locked
-    }
-  },
-
-  fetchPwnedCount: async () => {
-    try {
-      const allSecrets = await listSecrets({});
-      const count = allSecrets.filter((s) => s.pwnedCount > 0).length;
-      set({ pwnedCount: count });
+      const counts = await getSecretCounts();
+      set({ pwnedCount: counts.pwnedCount, expiringCount: counts.expiringCount });
     } catch {
       // ignore — vault may be locked
     }

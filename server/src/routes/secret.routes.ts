@@ -16,6 +16,9 @@ router.post('/tenant-vault/init', asyncHandler(secretController.initTenantVault)
 router.post('/tenant-vault/distribute', validate(distributeTenantKeySchema), asyncHandler(secretController.distributeTenantKey));
 router.get('/tenant-vault/status', asyncHandler(secretController.tenantVaultStatus));
 
+// Lightweight counts (before /:id to avoid param collision)
+router.get('/counts', asyncHandler(secretController.counts));
+
 // Breach check — batch (before /:id to avoid param collision)
 router.post('/breach-check', asyncHandler(secretController.checkAllBreaches));
 
