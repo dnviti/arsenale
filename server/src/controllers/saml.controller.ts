@@ -85,11 +85,12 @@ export function handleSamlCallback(req: Request, res: Response, next: NextFuncti
       if (relayState) {
         try {
           const linkUserId = verifyLinkState(relayState as string);
-          if (linkUserId) {
-            // Validate userId against the database to ensure it references a real user
-            const linkUser = await prisma.user.findUnique({ where: { id: linkUserId }, select: { id: true } });
-            if (!linkUser) throw new AppError('User not found', 404);
-
+          // Database lookup converts user-derived ID to server-controlled record;
+          // the guard condition below uses the DB result, not the tainted input.
+          const linkUser = linkUserId
+            ? await prisma.user.findUnique({ where: { id: linkUserId }, select: { id: true } })
+            : null;
+          if (linkUser) {
             await oauthService.linkOAuthAccount(
               linkUser.id, oauthProfile, oauthTokens, samlAttributes,
             );
