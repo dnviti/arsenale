@@ -409,6 +409,8 @@ export async function convertToVideo(
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
+const SAFE_PATH_COMPONENT = /^[a-zA-Z0-9._-]+$/;
+
 export function buildRecordingPath(
   userId: string,
   connectionId: string,
@@ -416,10 +418,21 @@ export function buildRecordingPath(
   ext: string,
   gatewayDir?: string,
 ): string {
-  const timestamp = Date.now();
   const subdir = gatewayDir || 'default';
+  // Validate all user-influenced path components to prevent directory traversal
+  for (const [label, value] of [['userId', userId], ['connectionId', connectionId], ['protocol', protocol], ['ext', ext], ['gatewayDir', subdir]] as const) {
+    if (!SAFE_PATH_COMPONENT.test(value)) {
+      throw new AppError(`Invalid recording path component (${label})`, 400);
+    }
+  }
+  const timestamp = Date.now();
   const dir = path.join(config.recordingPath, subdir, userId);
-  return path.join(dir, `${connectionId}-${protocol.toLowerCase()}-${timestamp}.${ext}`);
+  const result = path.join(dir, `${connectionId}-${protocol.toLowerCase()}-${timestamp}.${ext}`);
+  // Belt-and-suspenders: ensure resolved path stays within recording root
+  if (!path.resolve(result).startsWith(path.resolve(config.recordingPath))) {
+    throw new AppError('Recording path escapes allowed directory', 400);
+  }
+  return result;
 }
 
 export async function cleanupExpiredRecordings(): Promise<number> {

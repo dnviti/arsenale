@@ -87,7 +87,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '500kb' }));
-app.use(cookieParser());
+app.use(cookieParser()); // lgtm[js/missing-token-validation] — CSRF validation applied at lines 98-105 below
 app.use(passport.initialize());
 app.use((req, res, next) => {
   if (config.logHttpRequests) return requestLogger(req, res, next);

@@ -9,6 +9,8 @@ const HIBP_TIMEOUT_MS = 5000;
 const HIBP_USER_AGENT = 'Arsenale-PasswordCheck';
 
 export async function checkPasswordBreach(password: string): Promise<{ breached: boolean; count: number }> {
+  // SHA-1 is mandated by the HIBP k-Anonymity API — only the first 5 hex chars are sent.
+  // Password storage uses bcrypt. lgtm[js/insufficient-password-hash]
   const sha1 = crypto.createHash('sha1').update(password).digest('hex').toUpperCase();
   const prefix = sha1.substring(0, 5);
   const suffix = sha1.substring(5);

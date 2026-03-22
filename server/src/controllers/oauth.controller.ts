@@ -15,6 +15,7 @@ import { enforceIpAllowlist } from '../utils/ipAllowlist';
 import { getRequestBinding } from '../utils/tokenBinding';
 import { generateAuthCode, consumeAuthCode } from '../utils/authCodeStore';
 import { generateLinkCode, consumeLinkCode } from '../utils/linkCodeStore';
+import { signState, verifyState } from '../utils/signedState';
 import type { VaultSetupInput } from '../schemas/oauth.schemas';
 
 type OAuthProvider = 'google' | 'microsoft' | 'github' | 'oidc';
@@ -70,13 +71,11 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
 
       const { oauthProfile, oauthTokens } = data;
 
-      // Check if this is a link operation (state contains action: 'link')
+      // Check if this is a link operation (HMAC-signed state prevents tampering)
       if (req.query.state) {
         try {
-          const stateData = JSON.parse(
-            Buffer.from(req.query.state as string, 'base64url').toString()
-          );
-          if (stateData.action === 'link' && stateData.userId) {
+          const stateData = verifyState<{ action: string; userId: string }>(req.query.state as string);
+          if (stateData && stateData.action === 'link' && stateData.userId) {
             await oauthService.linkOAuthAccount(stateData.userId, oauthProfile, oauthTokens);
             auditService.log({
               userId: stateData.userId, action: 'OAUTH_LINK',
@@ -174,10 +173,7 @@ export function initiateLinkOAuth(req: Request, res: Response, next: NextFunctio
     return next(new AppError('OAuth provider not available', 400));
   }
 
-  const state = Buffer.from(JSON.stringify({
-    action: 'link',
-    userId,
-  })).toString('base64url');
+  const state = signState({ action: 'link', userId });
 
   passport.authenticate(provider, {
     scope: getScopes(provider),

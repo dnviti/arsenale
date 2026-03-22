@@ -260,20 +260,20 @@ export async function importConnectionsFromCsv(
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
-    const rowData: Record<string, string> = {};
+    const rowData = new Map<string, string>();
     headers.forEach((header, index) => {
-      rowData[header] = row[index] || '';
+      rowData.set(header, row[index] || '');
     });
 
     try {
-      const name = rowData[columnMapping.name || ''] || '';
-      const host = rowData[columnMapping.host || ''] || '';
-      const portStr = rowData[columnMapping.port || ''] || '22';
-      const typeStr = rowData[columnMapping.type || ''] || 'SSH';
-      const username = rowData[columnMapping.username || ''];
-      const password = rowData[columnMapping.password || ''];
-      const folderName = rowData[columnMapping.folder || ''];
-      const description = rowData[columnMapping.description || ''];
+      const name = rowData.get(columnMapping.name || '') || '';
+      const host = rowData.get(columnMapping.host || '') || '';
+      const portStr = rowData.get(columnMapping.port || '') || '22';
+      const typeStr = rowData.get(columnMapping.type || '') || 'SSH';
+      const username = rowData.get(columnMapping.username || '');
+      const password = rowData.get(columnMapping.password || '');
+      const folderName = rowData.get(columnMapping.folder || '');
+      const description = rowData.get(columnMapping.description || '');
 
       if (!name || !host) {
         result.failed++;
@@ -317,7 +317,7 @@ export async function importConnectionsFromCsv(
           newName = `${baseName} (${counter})`;
           counter++;
         }
-        rowData[columnMapping.name || ''] = newName;
+        rowData.set(columnMapping.name || '', newName);
       }
 
       const input: CreateConnectionInput = {

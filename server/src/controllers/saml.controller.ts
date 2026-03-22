@@ -16,6 +16,7 @@ import { enforceIpAllowlist } from '../utils/ipAllowlist';
 import { getRequestBinding } from '../utils/tokenBinding';
 import { generateAuthCode } from '../utils/authCodeStore';
 import { consumeLinkCode } from '../utils/linkCodeStore';
+import { signState, verifyState } from '../utils/signedState';
 
 export function initiateSaml(req: Request, res: Response, next: NextFunction) {
   if (!config.oauth.saml.enabled) {
@@ -53,10 +54,7 @@ export function initiateSamlLink(req: Request, res: Response, next: NextFunction
     return next(new AppError('SAML provider not available', 400));
   }
 
-  const relayState = Buffer.from(JSON.stringify({
-    action: 'link',
-    userId,
-  })).toString('base64url');
+  const relayState = signState({ action: 'link', userId });
 
   passport.authenticate('saml', {
     session: false,
@@ -82,14 +80,12 @@ export function handleSamlCallback(req: Request, res: Response, next: NextFuncti
       const { oauthProfile, oauthTokens, samlAttributes: rawSamlAttrs } = data;
       const samlAttributes = rawSamlAttrs as Prisma.InputJsonValue | undefined;
 
-      // Check for link operation via RelayState
+      // Check for link operation via RelayState (HMAC-signed to prevent tampering)
       const relayState = req.body?.RelayState;
       if (relayState) {
         try {
-          const stateData = JSON.parse(
-            Buffer.from(relayState as string, 'base64url').toString(),
-          );
-          if (stateData.action === 'link' && stateData.userId) {
+          const stateData = verifyState<{ action: string; userId: string }>(relayState as string);
+          if (stateData && stateData.action === 'link' && stateData.userId) {
             await oauthService.linkOAuthAccount(
               stateData.userId, oauthProfile, oauthTokens, samlAttributes,
             );

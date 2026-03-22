@@ -45,6 +45,7 @@ export async function list(req: AuthRequest, res: Response) {
 
 // --- Public handlers (no auth) ---
 
+// lgtm[js/sensitive-get-query] — Share tokens in URL paths are by design: rate-limited, short-lived, optionally PIN-protected
 export async function getInfo(req: Request, res: Response) {
   const token = req.params.token as string;
   const info = await externalShareService.getExternalShareInfo(token);

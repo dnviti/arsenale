@@ -33,7 +33,7 @@ export function compileRegex(pattern: string, flags?: string, label = 'pattern')
   }
   try {
     // eslint-disable-next-line security/detect-non-literal-regexp -- Pattern validated by isRegexSafe() above
-    return new RegExp(pattern, flags);
+    return new RegExp(pattern, flags); // lgtm[js/regex-injection] — validated by isRegexSafe()
   } catch {
     throw new Error(`Invalid regex ${label}: ${pattern}`);
   }
