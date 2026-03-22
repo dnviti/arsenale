@@ -5,6 +5,7 @@ import { AuthPayload, AuthRequest, assertAuthenticated } from '../types';
 import { verifyJwt } from '../utils/jwt';
 import { AppError } from '../middleware/error.middleware';
 import { OAuthCallbackData } from '../config/passport';
+import prisma from '../lib/prisma';
 import * as oauthService from '../services/oauth.service';
 import * as auditService from '../services/audit.service';
 import { issueTokens } from '../services/auth.service';
@@ -14,7 +15,7 @@ import { getClientIp } from '../utils/ip';
 import { enforceIpAllowlist } from '../utils/ipAllowlist';
 import { getRequestBinding } from '../utils/tokenBinding';
 import { generateAuthCode, consumeAuthCode } from '../utils/authCodeStore';
-import { generateLinkCode, consumeLinkCode } from '../utils/linkCodeStore';
+import { generateLinkCode, consumeLinkCode, generateRelayCode, consumeRelayCode } from '../utils/linkCodeStore';
 import type { VaultSetupInput } from '../schemas/oauth.schemas';
 
 type OAuthProvider = 'google' | 'microsoft' | 'github' | 'oidc';
@@ -70,23 +71,21 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
 
       const { oauthProfile, oauthTokens } = data;
 
-      // Check if this is a link operation (state contains action: 'link')
-      if (req.query.state) {
-        try {
-          const stateData = JSON.parse(
-            Buffer.from(req.query.state as string, 'base64url').toString()
-          );
-          if (stateData.action === 'link' && stateData.userId) {
-            await oauthService.linkOAuthAccount(stateData.userId, oauthProfile, oauthTokens);
-            auditService.log({
-              userId: stateData.userId, action: 'OAUTH_LINK',
-              details: { provider },
-              ipAddress: getClientIp(req),
-            });
-            return res.redirect(`${config.clientUrl}/settings?linked=${provider}`);
-          }
-        } catch {
-          // Not a link state — proceed with login flow
+      // Account-link check: unconditionally attempt relay code lookup.
+      // consumeRelayCode() does a server-side Map lookup keyed by the opaque token;
+      // returns null for empty/invalid/expired codes. The returned userId is server-stored,
+      // never derived from user input. No user-controlled condition guards the action.
+      const linkUserId = consumeRelayCode(String(req.query.state ?? ''));
+      if (linkUserId) {
+        const linkUser = await prisma.user.findUnique({ where: { id: linkUserId }, select: { id: true } });
+        if (linkUser) {
+          await oauthService.linkOAuthAccount(linkUser.id, oauthProfile, oauthTokens);
+          auditService.log({
+            userId: linkUser.id, action: 'OAUTH_LINK',
+            details: { provider },
+            ipAddress: getClientIp(req),
+          });
+          return res.redirect(`${config.clientUrl}/settings?linked=${provider}`);
         }
       }
 
@@ -124,7 +123,7 @@ export function handleCallback(req: Request, res: Response, next: NextFunction) 
 
       res.redirect(`${config.clientUrl}/oauth/callback?code=${code}`);
     } catch (error) {
-      logger.error('OAuth callback error:', error);
+      logger.error('OAuth callback error:', error instanceof Error ? error.message : 'Unknown error');
       let errorCode = 'authentication_failed';
       if (error instanceof AppError && error.statusCode === 403) {
         errorCode = error.message.includes('disabled') ? 'account_disabled' : 'registration_disabled';
@@ -174,10 +173,7 @@ export function initiateLinkOAuth(req: Request, res: Response, next: NextFunctio
     return next(new AppError('OAuth provider not available', 400));
   }
 
-  const state = Buffer.from(JSON.stringify({
-    action: 'link',
-    userId,
-  })).toString('base64url');
+  const state = generateRelayCode(userId);
 
   passport.authenticate(provider, {
     scope: getScopes(provider),

@@ -1,4 +1,5 @@
 import net from 'net';
+import { validateHost } from './hostValidation';
 
 export interface TcpProbeResult {
   reachable: boolean;
@@ -6,7 +7,21 @@ export interface TcpProbeResult {
   error: string | null;
 }
 
-export function tcpProbe(host: string, port: number, timeoutMs = 5000): Promise<TcpProbeResult> {
+export async function tcpProbe(host: string, port: number, timeoutMs = 5000): Promise<TcpProbeResult> {
+  // Validate host against SSRF (blocks loopback, link-local, metadata IPs)
+  try {
+    await validateHost(host);
+  } catch (err) {
+    // Return a failed probe result instead of rejecting the promise,
+    // so callers (probeAndPersist, testGatewayConnectivity) can persist
+    // the UNREACHABLE status and error message to the database.
+    return {
+      reachable: false,
+      latencyMs: null,
+      error: err instanceof Error ? err.message : 'Host validation failed',
+    };
+  }
+
   const start = Date.now();
 
   return new Promise((resolve) => {

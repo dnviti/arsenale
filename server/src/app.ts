@@ -87,7 +87,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '500kb' }));
-app.use(cookieParser());
+app.use(cookieParser()); // codeql[js/missing-token-validation] CSRF validated by custom double-submit-cookie middleware at lines 98-105
 app.use(passport.initialize());
 app.use((req, res, next) => {
   if (config.logHttpRequests) return requestLogger(req, res, next);

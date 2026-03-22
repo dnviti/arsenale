@@ -32,8 +32,11 @@ export function compileRegex(pattern: string, flags?: string, label = 'pattern')
     throw new Error(`Regex ${label} rejected: pattern too long or contains nested quantifiers`);
   }
   try {
-    // eslint-disable-next-line security/detect-non-literal-regexp -- Pattern validated by isRegexSafe() above
-    return new RegExp(pattern, flags);
+    // isRegexSafe() validates length and rejects nested quantifiers (ReDoS).
+    // This function is used for admin-supplied patterns (firewall rules, masking policies)
+    // where dynamic regex is intentional — not end-user input.
+    // eslint-disable-next-line security/detect-non-literal-regexp
+    return new RegExp(pattern, flags); // codeql[js/regex-injection] — validated by isRegexSafe() above; admin-only patterns
   } catch {
     throw new Error(`Invalid regex ${label}: ${pattern}`);
   }

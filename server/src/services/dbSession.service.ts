@@ -3,8 +3,13 @@ import { AppError } from '../middleware/error.middleware';
 import { getConnectionCredentials } from './connection.service';
 import { createDbProxySession, endDbProxySession } from './dbProxy.service';
 import * as auditService from './audit.service';
+import * as sqlFirewall from './sqlFirewall.service';
+import * as dbAudit from './dbAudit.service';
+import * as dataMasking from './dataMasking.service';
+import * as dbQueryExecutor from './dbQueryExecutor.service';
+import { config } from '../config';
 import { logger } from '../utils/logger';
-import type { DbSettings } from '../types';
+import type { DbSettings, TenantRoleType } from '../types';
 
 const log = logger.child('db-session');
 
@@ -26,6 +31,7 @@ export interface QueryResult {
   rows: Record<string, unknown>[];
   rowCount: number;
   durationMs: number;
+  truncated: boolean;
 }
 
 export interface SchemaInfo {
@@ -134,18 +140,21 @@ export async function heartbeat(sessionId: string, userId: string): Promise<void
 /**
  * Execute a SQL query against the database connection.
  *
- * In this initial implementation, the server logs the query for audit purposes
- * and returns the query metadata. The actual query execution happens through
- * the DB proxy gateway, so this endpoint validates the session and records
- * query-level audit events.
+ * Validates the session, evaluates SQL firewall rules, and records
+ * query-level audit events. The actual query execution happens through
+ * the DB proxy gateway — this endpoint enforces security policy and
+ * provides the audit trail. If a firewall rule blocks the query, it is
+ * rejected with a 403 before reaching the proxy.
  */
 export async function executeQuery(params: {
   userId: string;
+  tenantId: string;
+  tenantRole?: TenantRoleType;
   sessionId: string;
   sql: string;
   ipAddress?: string;
 }): Promise<QueryResult> {
-  const { userId, sessionId, sql, ipAddress } = params;
+  const { userId, tenantId, tenantRole, sessionId, sql, ipAddress } = params;
 
   const session = await prisma.activeSession.findUnique({
     where: { id: sessionId },
@@ -159,18 +168,158 @@ export async function executeQuery(params: {
   }
 
   const startTime = Date.now();
+  const dbSettings = (session.connection.dbSettings as DbSettings | null) ?? undefined;
+  const databaseName = dbSettings?.databaseName;
+  const tablesAccessed = dbAudit.extractTables(sql);
+  const queryType = dbAudit.classifyQuery(sql);
 
-  // Audit log the query execution
+  // --- Role-based query restriction ---
+  // Non-operator users (MEMBER, CONSULTANT, AUDITOR, GUEST) are restricted to SELECT-only.
+  const WRITE_ROLES = new Set(['OPERATOR', 'ADMIN', 'OWNER']);
+  if (queryType !== 'SELECT' && (!tenantRole || !WRITE_ROLES.has(tenantRole))) {
+    const blockReason = `${queryType} queries require OPERATOR role or above`;
+
+    dbAudit.interceptQuery({
+      userId,
+      connectionId: session.connectionId,
+      tenantId,
+      queryText: sql,
+      blocked: true,
+      blockReason,
+    });
+
+    auditService.log({
+      userId,
+      action: 'DB_QUERY_BLOCKED',
+      targetType: 'DatabaseQuery',
+      targetId: session.connectionId,
+      details: { sessionId, protocol: 'DATABASE', queryType, blockReason },
+      ipAddress,
+    });
+
+    throw new AppError(blockReason, 403);
+  }
+
+  // --- SQL Firewall enforcement ---
+  const firewallResult = await sqlFirewall.evaluateQuery(
+    tenantId,
+    sql,
+    databaseName,
+    tablesAccessed[0], // primary table for scope matching
+  );
+
+  if (!firewallResult.allowed) {
+    const blockReason = firewallResult.matchedRule
+      ? `Blocked by firewall rule: ${firewallResult.matchedRule.name}`
+      : 'Blocked by SQL firewall';
+
+    // Audit the blocked query
+    dbAudit.interceptQuery({
+      userId,
+      connectionId: session.connectionId,
+      tenantId,
+      queryText: sql,
+      blocked: true,
+      blockReason,
+    });
+
+    auditService.log({
+      userId,
+      action: 'DB_QUERY_BLOCKED',
+      targetType: 'DatabaseQuery',
+      targetId: session.connectionId,
+      details: {
+        sessionId,
+        protocol: 'DATABASE',
+        queryType,
+        blockReason,
+        firewallRule: firewallResult.matchedRule?.name,
+      },
+      ipAddress,
+    });
+
+    throw new AppError(blockReason, 403);
+  }
+
+  // --- Audit firewall ALERT/LOG matches (query allowed but rule triggered) ---
+  const firewallNote = firewallResult.matchedRule
+    ? `Firewall ${firewallResult.action}: ${firewallResult.matchedRule.name}`
+    : undefined;
+
+  if (firewallResult.matchedRule && firewallResult.action !== 'BLOCK') {
+    auditService.log({
+      userId,
+      action: 'DB_QUERY_FIREWALL_ALERT',
+      targetType: 'DatabaseQuery',
+      targetId: session.connectionId,
+      details: {
+        sessionId,
+        protocol: 'DATABASE',
+        queryType,
+        tablesAccessed,
+        firewallAction: firewallResult.action,
+        firewallRule: firewallResult.matchedRule.name,
+      },
+      ipAddress,
+    });
+  }
+
+  // --- Execute query against target database ---
+  const pool = await dbQueryExecutor.getOrCreatePool({
+    sessionId,
+    connectionId: session.connectionId,
+    userId,
+    tenantId,
+    metadata: (session.metadata as Record<string, unknown>) ?? {},
+  });
+
+  const rawResult = await dbQueryExecutor.runQuery(
+    pool,
+    sql,
+    config.dbQueryMaxRows,
+    config.dbQueryTimeoutMs,
+  );
+
+  const durationMs = Date.now() - startTime;
+
+  // --- Data masking ---
+  const maskingPolicies = await dataMasking.getActivePolicies(tenantId);
+  const maskedColumns = dataMasking.findMaskedColumns(
+    maskingPolicies,
+    rawResult.columns,
+    tenantRole,
+    databaseName,
+    tablesAccessed[0],
+  );
+  const rows = maskedColumns.length > 0
+    ? rawResult.rows.map((row) => dataMasking.maskRow(row, maskedColumns))
+    : rawResult.rows;
+
+  // --- Audit the executed query (includes firewall match info) ---
+  dbAudit.interceptQuery({
+    userId,
+    connectionId: session.connectionId,
+    tenantId,
+    queryText: sql,
+    blocked: false,
+    blockReason: firewallNote,
+    rowsAffected: rawResult.rowCount,
+    executionTimeMs: durationMs,
+  });
+
   auditService.log({
     userId,
-    action: 'SESSION_START',
+    action: 'DB_QUERY_EXECUTED',
     targetType: 'DatabaseQuery',
     targetId: session.connectionId,
     details: {
       sessionId,
       protocol: 'DATABASE',
-      queryPreview: sql.substring(0, 200),
-      queryLength: sql.length,
+      queryType,
+      tablesAccessed,
+      rowsAffected: rawResult.rowCount,
+      firewallAction: firewallResult.action ?? undefined,
+      firewallRule: firewallResult.matchedRule?.name,
     },
     ipAddress,
   });
@@ -181,16 +330,12 @@ export async function executeQuery(params: {
     data: { lastActivityAt: new Date() },
   });
 
-  const durationMs = Date.now() - startTime;
-
-  // Return empty result set — actual query execution is handled client-side
-  // via direct connection to the DB proxy. This endpoint provides audit trail
-  // and session validation.
   return {
-    columns: [],
-    rows: [],
-    rowCount: 0,
+    columns: rawResult.columns,
+    rows,
+    rowCount: rawResult.rowCount,
     durationMs,
+    truncated: rawResult.truncated,
   };
 }
 
@@ -198,9 +343,10 @@ export async function executeQuery(params: {
  * Fetch schema information for a database session.
  * Returns table and column metadata for the schema browser.
  */
-export async function getSchema(userId: string, sessionId: string): Promise<SchemaInfo> {
+export async function getSchema(userId: string, sessionId: string, tenantId: string): Promise<SchemaInfo> {
   const session = await prisma.activeSession.findUnique({
     where: { id: sessionId },
+    include: { connection: { select: { id: true } } },
   });
   if (!session || session.userId !== userId) {
     throw new AppError('Session not found', 404);
@@ -209,7 +355,13 @@ export async function getSchema(userId: string, sessionId: string): Promise<Sche
     throw new AppError('Session already closed', 410);
   }
 
-  // Schema information is fetched client-side via direct proxy connection.
-  // This endpoint validates session access.
-  return { tables: [] };
+  const pool = await dbQueryExecutor.getOrCreatePool({
+    sessionId,
+    connectionId: session.connectionId,
+    userId,
+    tenantId,
+    metadata: (session.metadata as Record<string, unknown>) ?? {},
+  });
+
+  return dbQueryExecutor.fetchSchema(pool);
 }
