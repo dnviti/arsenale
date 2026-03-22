@@ -1,0 +1,10 @@
+name: "Arsenale CodeQL Config"
+
+# js/missing-token-validation is a false positive: the app implements CSRF
+# protection via a custom double-submit-cookie middleware (server/src/middleware/csrf.middleware.ts)
+# applied globally to all state-changing /api routes in app.ts lines 98-105.
+# CodeQL only recognises session-based libraries (lusca, csurf) which are
+# incompatible with JWT-based authentication.
+query-filters:
+  - exclude:
+      id: js/missing-token-validation
