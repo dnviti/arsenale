@@ -84,8 +84,13 @@ export async function executeQuery(req: AuthRequest, res: Response, next: NextFu
       throw new AppError('sql is required', 400);
     }
 
+    // tenantId is guaranteed by requireTenant middleware on this route
+    const tenantId = req.user.tenantId as string;
+
     const result = await dbSessionService.executeQuery({
       userId: req.user.userId,
+      tenantId,
+      tenantRole: req.user.tenantRole,
       sessionId,
       sql,
       ipAddress: getClientIp(req) ?? undefined,
@@ -103,7 +108,8 @@ export async function getSchema(req: AuthRequest, res: Response, next: NextFunct
   try {
     assertAuthenticated(req);
     const sessionId = req.params.sessionId as string;
-    const schema = await dbSessionService.getSchema(req.user.userId, sessionId);
+    const tenantId = req.user.tenantId as string;
+    const schema = await dbSessionService.getSchema(req.user.userId, sessionId, tenantId);
     res.json(schema);
   } catch (err) {
     next(err);

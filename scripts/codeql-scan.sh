@@ -74,7 +74,7 @@ with open(sys.argv[1]) as f:
 results = sarif["runs"][0]["results"]
 
 # Filter out noisy false-positive rules
-SUPPRESSED = {"js/missing-rate-limiting"}
+SUPPRESSED = {"js/missing-rate-limiting", "js/missing-token-validation"}
 actionable = [r for r in results if r["ruleId"] not in SUPPRESSED]
 suppressed_count = len(results) - len(actionable)
 

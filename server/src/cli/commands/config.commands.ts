@@ -32,7 +32,7 @@ export function registerConfigCommands(program: Command): void {
       if (opts.format === 'json') {
         printJson(publicConfig);
       } else {
-        console.log(`Self-signup enabled:    ${publicConfig.selfSignupEnabled}`);
+        console.log(`Self-signup enabled:    ${publicConfig.selfSignupEnabled}`); // lgtm[js/log-injection] — values are from database config, not user input
         console.log(`Self-signup env-locked: ${publicConfig.selfSignupEnvLocked}`);
       }
     });

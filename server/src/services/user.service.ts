@@ -57,8 +57,7 @@ export async function updateProfile(
 // ---------------------------------------------------------------------------
 
 function generateOtp(): string {
-  const buffer = crypto.randomBytes(4);
-  const num = buffer.readUInt32BE(0) % 1_000_000;
+  const num = crypto.randomInt(0, 1_000_000);
   return num.toString().padStart(6, '0');
 }
 
