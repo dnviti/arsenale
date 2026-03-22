@@ -32,6 +32,10 @@ import { reloadPassportStrategies } from './config/passport';
 import { reloadKeyRotationJob, reloadLdapSyncJob } from './services/scheduler.service';
 import { resetEmailProvider } from './services/email';
 import { resetSmsProvider } from './services/sms';
+import { rebuildLoginRateLimiter } from './middleware/loginRateLimit.middleware';
+import { rebuildOauthRateLimiters } from './middleware/oauthRateLimit.middleware';
+import { rebuildVaultRateLimiters } from './middleware/vaultRateLimit.middleware';
+import { rebuildSessionRateLimiter } from './middleware/sessionRateLimit.middleware';
 
 function freePort(port: number): void {
   try {
@@ -133,6 +137,10 @@ async function main() {
   registerReload('ssh-proxy', restartSshProxy);
   registerReload('email', resetEmailProvider);
   registerReload('sms', resetSmsProvider);
+  registerReload('rate-limiting', rebuildLoginRateLimiter);
+  registerReload('rate-limiting-advanced', rebuildOauthRateLimiters);
+  registerReload('rate-limiting-advanced', rebuildSessionRateLimiter);
+  registerReload('vault', rebuildVaultRateLimiters);
 
   // Start gateway health monitors
   startAllMonitors();
