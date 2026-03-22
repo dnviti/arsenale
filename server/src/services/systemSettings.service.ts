@@ -33,6 +33,7 @@ export interface SettingDef {
   description: string;
   minEditRole: 'ADMIN' | 'OWNER';
   restartRequired?: boolean;
+  sensitive?: boolean;
 }
 
 export interface SettingValue {
@@ -48,7 +49,10 @@ export interface SettingValue {
   label: string;
   description: string;
   restartRequired: boolean;
+  sensitive: boolean;
 }
+
+export const SENSITIVE_MASK = '••••••••';
 
 // ---------------------------------------------------------------------------
 // Settings Registry — single source of truth for all UI-configurable settings
@@ -360,6 +364,40 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
   { key: 'ORCHESTRATOR_SSH_GATEWAY_IMAGE', envVar: 'ORCHESTRATOR_SSH_GATEWAY_IMAGE', configPath: 'orchestratorSshGatewayImage', type: 'string', default: 'ghcr.io/dnviti/arsenale/ssh-gateway:latest', group: 'orchestration', label: 'SSH Gateway Image', description: 'Container image for managed SSH gateways.', minEditRole: 'ADMIN', restartRequired: true },
   { key: 'ORCHESTRATOR_GUACD_IMAGE', envVar: 'ORCHESTRATOR_GUACD_IMAGE', configPath: 'orchestratorGuacdImage', type: 'string', default: 'guacamole/guacd:1.6.0', group: 'orchestration', label: 'Guacd Image', description: 'Container image for Guacamole daemon.', minEditRole: 'ADMIN', restartRequired: true },
   { key: 'ORCHESTRATOR_DB_PROXY_IMAGE', envVar: 'ORCHESTRATOR_DB_PROXY_IMAGE', configPath: 'orchestratorDbProxyImage', type: 'string', default: 'ghcr.io/dnviti/arsenale/db-proxy:latest', group: 'orchestration', label: 'DB Proxy Image', description: 'Container image for database proxy.', minEditRole: 'ADMIN', restartRequired: true },
+
+  // ── OAuth: Google ──────────────────────────────────────────────────────
+  { key: 'GOOGLE_CLIENT_ID', envVar: 'GOOGLE_CLIENT_ID', configPath: 'oauth.google.clientId', type: 'string', default: '', group: 'oauth-google', label: 'Client ID', description: 'OAuth client ID from Google Cloud Console. Setting this enables Google login.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'GOOGLE_CLIENT_SECRET', envVar: 'GOOGLE_CLIENT_SECRET', configPath: 'oauth.google.clientSecret', type: 'string', default: '', group: 'oauth-google', label: 'Client Secret', description: 'OAuth client secret from Google Cloud Console.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
+  { key: 'GOOGLE_CALLBACK_URL', envVar: 'GOOGLE_CALLBACK_URL', configPath: 'oauth.google.callbackUrl', type: 'string', default: 'http://localhost:3001/api/auth/oauth/google/callback', group: 'oauth-google', label: 'Callback URL', description: 'OAuth redirect URI (must match Google Console).', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'GOOGLE_HD', envVar: 'GOOGLE_HD', configPath: 'oauth.google.hd', type: 'string', default: '', group: 'oauth-google', label: 'Hosted Domain (hd)', description: 'Restrict login to a specific Google Workspace domain (e.g., example.com). Leave empty for any domain.', minEditRole: 'OWNER', restartRequired: true },
+
+  // ── OAuth: Microsoft ───────────────────────────────────────────────────
+  { key: 'MICROSOFT_CLIENT_ID', envVar: 'MICROSOFT_CLIENT_ID', configPath: 'oauth.microsoft.clientId', type: 'string', default: '', group: 'oauth-microsoft', label: 'Client ID', description: 'Application (client) ID from Azure AD. Setting this enables Microsoft login.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'MICROSOFT_CLIENT_SECRET', envVar: 'MICROSOFT_CLIENT_SECRET', configPath: 'oauth.microsoft.clientSecret', type: 'string', default: '', group: 'oauth-microsoft', label: 'Client Secret', description: 'Client secret from Azure AD.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
+  { key: 'MICROSOFT_CALLBACK_URL', envVar: 'MICROSOFT_CALLBACK_URL', configPath: 'oauth.microsoft.callbackUrl', type: 'string', default: 'http://localhost:3001/api/auth/oauth/microsoft/callback', group: 'oauth-microsoft', label: 'Callback URL', description: 'OAuth redirect URI (must match Azure AD app registration).', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'MICROSOFT_TENANT_ID', envVar: 'MICROSOFT_TENANT_ID', configPath: 'oauth.microsoft.tenantId', type: 'string', default: 'common', group: 'oauth-microsoft', label: 'Tenant ID', description: 'Azure AD tenant ID. Use "common" for multi-tenant, or a specific tenant UUID.', minEditRole: 'OWNER', restartRequired: true },
+
+  // ── OAuth: GitHub ──────────────────────────────────────────────────────
+  { key: 'GITHUB_CLIENT_ID', envVar: 'GITHUB_CLIENT_ID', configPath: 'oauth.github.clientId', type: 'string', default: '', group: 'oauth-github', label: 'Client ID', description: 'OAuth App client ID from GitHub. Setting this enables GitHub login.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'GITHUB_CLIENT_SECRET', envVar: 'GITHUB_CLIENT_SECRET', configPath: 'oauth.github.clientSecret', type: 'string', default: '', group: 'oauth-github', label: 'Client Secret', description: 'OAuth App client secret from GitHub.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
+  { key: 'GITHUB_CALLBACK_URL', envVar: 'GITHUB_CALLBACK_URL', configPath: 'oauth.github.callbackUrl', type: 'string', default: 'http://localhost:3001/api/auth/oauth/github/callback', group: 'oauth-github', label: 'Callback URL', description: 'OAuth redirect URI (must match GitHub app settings).', minEditRole: 'OWNER', restartRequired: true },
+
+  // ── OAuth: OIDC ────────────────────────────────────────────────────────
+  { key: 'OIDC_PROVIDER_NAME', envVar: 'OIDC_PROVIDER_NAME', configPath: 'oauth.oidc.providerName', type: 'string', default: 'SSO', group: 'oauth-oidc', label: 'Provider Name', description: 'Human-readable label shown on the login button (e.g., "Authentik", "Keycloak").', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'OIDC_ISSUER_URL', envVar: 'OIDC_ISSUER_URL', configPath: 'oauth.oidc.issuerUrl', type: 'string', default: '', group: 'oauth-oidc', label: 'Issuer URL', description: 'OIDC issuer base URL for discovery (e.g., https://auth.example.com/realms/main).', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'OIDC_CLIENT_ID', envVar: 'OIDC_CLIENT_ID', configPath: 'oauth.oidc.clientId', type: 'string', default: '', group: 'oauth-oidc', label: 'Client ID', description: 'OIDC client identifier. Setting this enables OIDC login.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'OIDC_CLIENT_SECRET', envVar: 'OIDC_CLIENT_SECRET', configPath: 'oauth.oidc.clientSecret', type: 'string', default: '', group: 'oauth-oidc', label: 'Client Secret', description: 'OIDC client secret.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
+  { key: 'OIDC_CALLBACK_URL', envVar: 'OIDC_CALLBACK_URL', configPath: 'oauth.oidc.callbackUrl', type: 'string', default: 'http://localhost:3001/api/auth/oauth/oidc/callback', group: 'oauth-oidc', label: 'Callback URL', description: 'OIDC redirect URI (must match IdP client configuration).', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'OIDC_SCOPES', envVar: 'OIDC_SCOPES', configPath: 'oauth.oidc.scopes', type: 'string', default: 'openid profile email', group: 'oauth-oidc', label: 'Scopes', description: 'Space-separated OIDC scopes to request.', minEditRole: 'OWNER', restartRequired: true },
+
+  // ── OAuth: SAML ────────────────────────────────────────────────────────
+  { key: 'SAML_PROVIDER_NAME', envVar: 'SAML_PROVIDER_NAME', configPath: 'oauth.saml.providerName', type: 'string', default: 'SAML SSO', group: 'oauth-saml', label: 'Provider Name', description: 'Human-readable label shown on the login button.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'SAML_ENTRY_POINT', envVar: 'SAML_ENTRY_POINT', configPath: 'oauth.saml.entryPoint', type: 'string', default: '', group: 'oauth-saml', label: 'Entry Point URL', description: 'IdP SSO URL. Setting this enables SAML login.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'SAML_ISSUER', envVar: 'SAML_ISSUER', configPath: 'oauth.saml.issuer', type: 'string', default: 'arsenale', group: 'oauth-saml', label: 'Issuer / Entity ID', description: 'Service Provider entity ID sent to the IdP.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'SAML_CALLBACK_URL', envVar: 'SAML_CALLBACK_URL', configPath: 'oauth.saml.callbackUrl', type: 'string', default: 'http://localhost:3001/api/auth/saml/callback', group: 'oauth-saml', label: 'Callback URL (ACS)', description: 'Assertion Consumer Service URL (must match IdP config).', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'SAML_CERT', envVar: 'SAML_CERT', configPath: 'oauth.saml.cert', type: 'string', default: '', group: 'oauth-saml', label: 'IdP Certificate', description: 'PEM-encoded X.509 certificate of the IdP for signature verification.', minEditRole: 'OWNER', restartRequired: true, sensitive: true },
+  { key: 'SAML_METADATA_URL', envVar: 'SAML_METADATA_URL', configPath: 'oauth.saml.metadataUrl', type: 'string', default: '', group: 'oauth-saml', label: 'Metadata URL', description: 'IdP metadata URL for automatic configuration.', minEditRole: 'OWNER', restartRequired: true },
+  { key: 'SAML_WANT_AUTHN_RESPONSE_SIGNED', envVar: 'SAML_WANT_AUTHN_RESPONSE_SIGNED', configPath: 'oauth.saml.wantAuthnResponseSigned', type: 'boolean', default: true, group: 'oauth-saml', label: 'Require Signed Response', description: 'Require the IdP to sign the SAML response.', minEditRole: 'OWNER', restartRequired: true },
 ];
 
 // Group metadata for UI display ordering and labels
@@ -379,6 +417,11 @@ export const SETTING_GROUPS: { key: string; label: string; order: number }[] = [
   { key: 'sms', label: 'SMS Provider', order: 12 },
   { key: 'ssh-proxy', label: 'SSH Proxy', order: 13 },
   { key: 'orchestration', label: 'Orchestration', order: 14 },
+  { key: 'oauth-google', label: 'OAuth: Google', order: 15 },
+  { key: 'oauth-microsoft', label: 'OAuth: Microsoft', order: 16 },
+  { key: 'oauth-github', label: 'OAuth: GitHub', order: 17 },
+  { key: 'oauth-oidc', label: 'OAuth: OIDC', order: 18 },
+  { key: 'oauth-saml', label: 'OAuth: SAML', order: 19 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -466,9 +509,14 @@ export async function getAllSettings(callerRole: TenantRoleType): Promise<Settin
       }
     }
 
+    const isSensitive = def.sensitive === true;
+    const maskedValue = isSensitive && value !== '' && value !== undefined && value !== null
+      ? SENSITIVE_MASK
+      : value;
+
     results.push({
       key: def.key,
-      value,
+      value: maskedValue,
       source,
       envLocked,
       canEdit: !envLocked && callerLevel >= roleLevel(def.minEditRole),
@@ -479,6 +527,7 @@ export async function getAllSettings(callerRole: TenantRoleType): Promise<Settin
       label: def.label,
       description: def.description,
       restartRequired: def.restartRequired ?? false,
+      sensitive: isSensitive,
     });
   }
 
@@ -492,6 +541,11 @@ export async function setSetting(
 ): Promise<{ key: string; value: unknown; source: 'db' }> {
   const def = SETTINGS_REGISTRY.find(d => d.key === key);
   if (!def) throw new AppError('Unknown setting key.', 400);
+
+  // Skip update when the client sends back the mask placeholder unchanged
+  if (def.sensitive && String(value) === SENSITIVE_MASK) {
+    return { key, value: SENSITIVE_MASK, source: 'db' as const };
+  }
 
   if (roleLevel(callerRole) < roleLevel(def.minEditRole)) {
     throw new AppError('Insufficient role to modify this setting.', 403);
@@ -552,6 +606,13 @@ export async function applySystemSettings(): Promise<void> {
       const parsed = parseValue(dbVal, def.type, def.default);
       setNestedValue(config, def.configPath, parsed);
     }
+
+    // Re-derive OAuth enabled flags from the (now potentially DB-patched) config values
+    config.oauth.google.enabled = !!config.oauth.google.clientId;
+    config.oauth.microsoft.enabled = !!config.oauth.microsoft.clientId;
+    config.oauth.github.enabled = !!config.oauth.github.clientId;
+    config.oauth.oidc.enabled = !!config.oauth.oidc.clientId;
+    config.oauth.saml.enabled = !!config.oauth.saml.entryPoint;
 
     logger.info(`System settings loaded: ${rows.length} keys from database.`);
   } catch (err) {

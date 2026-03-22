@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import {
   Box, Switch, TextField, Select, MenuItem, FormControlLabel,
-  Typography, Chip, Tooltip, IconButton, CircularProgress,
+  Typography, Chip, Tooltip, IconButton, CircularProgress, InputAdornment,
 } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import SaveIcon from '@mui/icons-material/Save';
+import Visibility from '@mui/icons-material/Visibility';
+import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import type { SettingValue } from '../../api/systemSettings.api';
 import { updateSystemSetting } from '../../api/systemSettings.api';
 import { extractApiError } from '../../utils/apiError';
@@ -30,6 +32,7 @@ export default function SettingField({ setting, onUpdated }: Props) {
   const [localValue, setLocalValue] = useState<unknown>(setting.value);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const dirty = String(localValue) !== String(setting.value);
   const disabled = !setting.canEdit || setting.envLocked || saving;
 
@@ -151,7 +154,7 @@ export default function SettingField({ setting, onUpdated }: Props) {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <TextField
           size="small"
-          type={setting.type === 'number' ? 'number' : 'text'}
+          type={setting.sensitive && !showPassword ? 'password' : setting.type === 'number' ? 'number' : 'text'}
           value={String(localValue ?? '')}
           onChange={(e) => {
             const val = setting.type === 'number' ? Number(e.target.value) : e.target.value;
@@ -165,6 +168,16 @@ export default function SettingField({ setting, onUpdated }: Props) {
                 <Tooltip title="Set via environment variable">
                   <LockIcon fontSize="small" color="action" />
                 </Tooltip>
+              ) : setting.sensitive ? (
+                <InputAdornment position="end">
+                  <IconButton
+                    size="small"
+                    onClick={() => setShowPassword(!showPassword)}
+                    edge="end"
+                  >
+                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
+                  </IconButton>
+                </InputAdornment>
               ) : undefined,
             },
           }}

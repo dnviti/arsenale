@@ -293,10 +293,6 @@ export async function createSecret(
   const plaintext = JSON.stringify(input.data);
   const encrypted = encrypt(plaintext, encryptionKey);
 
-  // Check password against HIBP (k-Anonymity — only a hash prefix is sent)
-  const passwordToCheck = extractPasswordFromPayload(input.data);
-  const pwnedCount = passwordToCheck ? await checkPwnedPassword(passwordToCheck) : 0;
-
   const secret = await prisma.$transaction(async (tx) => {
     const s = await tx.vaultSecret.create({
       data: {
@@ -318,7 +314,7 @@ export async function createSecret(
         dataTag: encrypted.tag,
         metadata: (input.metadata as Prisma.InputJsonValue) ?? undefined,
         tags: input.tags ?? [],
-        pwnedCount,
+        pwnedCount: 0,
         expiresAt: input.expiresAt || null,
       },
     });
@@ -338,6 +334,21 @@ export async function createSecret(
 
     return s;
   });
+
+  // Check password against HIBP in the background (fire-and-forget)
+  const passwordToCheck = extractPasswordFromPayload(input.data);
+  if (passwordToCheck) {
+    checkPwnedPassword(passwordToCheck)
+      .then((pwnedCount) => {
+        if (pwnedCount > 0) {
+          return prisma.vaultSecret.update({
+            where: { id: secret.id },
+            data: { pwnedCount },
+          });
+        }
+      })
+      .catch(() => { /* fail open — logged inside checkPwnedPassword */ });
+  }
 
   return secretSummary(secret);
 }
@@ -426,14 +437,10 @@ export async function updateSecret(
     const plaintext = JSON.stringify(input.data);
     const encrypted = encrypt(plaintext, encryptionKey);
 
-    // Re-check password against HIBP on update
-    const passwordToCheck = extractPasswordFromPayload(input.data);
-    const pwnedCount = passwordToCheck ? await checkPwnedPassword(passwordToCheck) : 0;
-
     data.encryptedData = encrypted.ciphertext;
     data.dataIV = encrypted.iv;
     data.dataTag = encrypted.tag;
-    data.pwnedCount = pwnedCount;
+    data.pwnedCount = 0;
     data.currentVersion = secret.currentVersion + 1;
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -456,6 +463,21 @@ export async function updateSecret(
 
       return s;
     });
+
+    // Re-check password against HIBP in the background (fire-and-forget)
+    const passwordToCheck = extractPasswordFromPayload(input.data);
+    if (passwordToCheck) {
+      checkPwnedPassword(passwordToCheck)
+        .then((pwnedCount) => {
+          if (pwnedCount > 0) {
+            return prisma.vaultSecret.update({
+              where: { id: secretId },
+              data: { pwnedCount },
+            });
+          }
+        })
+        .catch(() => { /* fail open — logged inside checkPwnedPassword */ });
+    }
 
     return secretSummary(updated);
   }
@@ -486,11 +508,12 @@ export async function deleteSecret(
   return { deleted: true };
 }
 
-export async function listSecrets(
+async function buildAccessWhere(
   userId: string,
   filters: SecretListFilters,
   tenantId?: string | null
-) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = {};
 
@@ -545,6 +568,16 @@ export async function listSecrets(
     where.name = { contains: filters.search, mode: 'insensitive' };
   }
 
+  return where;
+}
+
+export async function listSecrets(
+  userId: string,
+  filters: SecretListFilters,
+  tenantId?: string | null
+) {
+  const where = await buildAccessWhere(userId, filters, tenantId);
+
   const secrets = await prisma.vaultSecret.findMany({
     where,
     select: {
@@ -569,6 +602,23 @@ export async function listSecrets(
   });
 
   return secrets;
+}
+
+export async function getSecretCounts(
+  userId: string,
+  tenantId?: string | null
+) {
+  const where = await buildAccessWhere(userId, {}, tenantId);
+  const sevenDaysFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+  const [pwnedCount, expiringCount] = await Promise.all([
+    prisma.vaultSecret.count({ where: { ...where, pwnedCount: { gt: 0 } } }),
+    prisma.vaultSecret.count({
+      where: { ...where, expiresAt: { not: null, lte: sevenDaysFromNow } },
+    }),
+  ]);
+
+  return { pwnedCount, expiringCount };
 }
 
 // --- Versioning ---

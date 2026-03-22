@@ -2,6 +2,7 @@ import type { Response, NextFunction } from 'express';
 import type { AuthRequest } from '../types';
 import { assertTenantAuthenticated } from '../types';
 import * as systemSettingsService from '../services/systemSettings.service';
+import { SETTINGS_REGISTRY } from '../services/systemSettings.service';
 import * as auditService from '../services/audit.service';
 import { getClientIp } from '../utils/ip';
 
@@ -19,12 +20,13 @@ export async function updateSetting(req: AuthRequest, res: Response, _next: Next
 
   const result = await systemSettingsService.setSetting(key, value, req.user.tenantRole);
 
+  const def = SETTINGS_REGISTRY.find(d => d.key === key);
   auditService.log({
     userId: req.user.userId,
     action: 'APP_CONFIG_UPDATE',
     targetType: 'system_setting',
     targetId: key,
-    details: { key, value },
+    details: { key, value: def?.sensitive ? '[REDACTED]' : value },
     ipAddress: getClientIp(req),
   });
 
@@ -40,12 +42,13 @@ export async function bulkUpdateSettings(req: AuthRequest, res: Response, _next:
   for (const r of results) {
     if (r.success) {
       const update = updates.find((u: { key: string }) => u.key === r.key);
+      const def = SETTINGS_REGISTRY.find(d => d.key === r.key);
       auditService.log({
         userId: req.user.userId,
         action: 'APP_CONFIG_UPDATE',
         targetType: 'system_setting',
         targetId: r.key,
-        details: { key: r.key, value: update?.value },
+        details: { key: r.key, value: def?.sensitive ? '[REDACTED]' : update?.value },
         ipAddress: getClientIp(req),
       });
     }

@@ -72,9 +72,8 @@ export default function MainLayout() {
   const terminalDefaultsLoaded = useTerminalSettingsStore((s) => s.loaded);
 
   const expiringCount = useSecretStore((s) => s.expiringCount);
-  const fetchExpiringCount = useSecretStore((s) => s.fetchExpiringCount);
   const pwnedCount = useSecretStore((s) => s.pwnedCount);
-  const fetchPwnedCount = useSecretStore((s) => s.fetchPwnedCount);
+  const fetchCounts = useSecretStore((s) => s.fetchCounts);
 
   useGatewayMonitor();
   useShareSync();
@@ -95,10 +94,9 @@ export default function MainLayout() {
 
   useEffect(() => {
     if (vaultUnlocked) {
-      fetchExpiringCount();
-      fetchPwnedCount();
+      fetchCounts();
     }
-  }, [vaultUnlocked, fetchExpiringCount, fetchPwnedCount]);
+  }, [vaultUnlocked, fetchCounts]);
 
   // PWA app shortcut deep-link: read ?action= query param to pre-open a dialog on mount (PWA-003)
   const [pwaAction] = useState(() => {

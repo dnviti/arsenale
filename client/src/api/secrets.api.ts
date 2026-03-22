@@ -238,6 +238,18 @@ export async function getTenantVaultStatus(): Promise<TenantVaultStatus> {
   return data;
 }
 
+// --- Counts ---
+
+export interface SecretCounts {
+  pwnedCount: number;
+  expiringCount: number;
+}
+
+export async function getSecretCounts(): Promise<SecretCounts> {
+  const { data } = await api.get('/secrets/counts');
+  return data;
+}
+
 // --- Breach check types ---
 
 export interface BreachCheckResult {

@@ -15,6 +15,7 @@ export interface SettingValue {
   label: string;
   description: string;
   restartRequired: boolean;
+  sensitive: boolean;
 }
 
 export interface SettingGroup {
