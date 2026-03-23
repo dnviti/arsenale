@@ -132,6 +132,7 @@ export async function getExecutionPlan(req: AuthRequest, res: Response, next: Ne
     const result = await dbSessionService.getExecutionPlan({
       userId: req.user.userId,
       tenantId,
+      tenantRole: req.user.tenantRole,
       sessionId,
       sql,
       ipAddress: getClientIp(req) ?? undefined,
@@ -145,26 +146,36 @@ export async function getExecutionPlan(req: AuthRequest, res: Response, next: Ne
 
 // ---- Database introspection ----
 
+const VALID_INTROSPECTION_TYPES = new Set([
+  'indexes', 'statistics', 'foreign_keys', 'table_schema', 'row_count', 'database_version',
+]);
+
 export async function introspectDatabase(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     assertAuthenticated(req);
     const sessionId = req.params.sessionId as string;
-    const { type, target } = req.body as { type: string; target: string };
+    const { type, target } = req.body as { type: string; target?: string };
 
     if (!type || typeof type !== 'string') {
       throw new AppError('type is required', 400);
     }
-    if (!target || typeof target !== 'string') {
-      throw new AppError('target is required', 400);
+    if (!VALID_INTROSPECTION_TYPES.has(type)) {
+      throw new AppError(`Invalid introspection type: ${type}`, 400);
+    }
+    // target is required for all types except database_version
+    if (type !== 'database_version' && (!target || typeof target !== 'string')) {
+      throw new AppError('target is required for this introspection type', 400);
     }
 
     const tenantId = req.user.tenantId as string;
     const result = await dbSessionService.introspectDatabase({
       userId: req.user.userId,
       tenantId,
+      tenantRole: req.user.tenantRole,
       sessionId,
       type: type as Parameters<typeof dbSessionService.introspectDatabase>[0]['type'],
-      target,
+      target: target ?? '',
+      ipAddress: getClientIp(req) ?? undefined,
     });
 
     res.json(result);

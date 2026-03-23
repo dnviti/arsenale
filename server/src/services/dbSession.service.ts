@@ -375,21 +375,65 @@ export async function getSchema(userId: string, sessionId: string, tenantId: str
 export async function getExecutionPlan(params: {
   userId: string;
   tenantId: string;
+  tenantRole?: TenantRoleType;
   sessionId: string;
   sql: string;
   ipAddress?: string;
 }): Promise<ExplainResult> {
-  const { userId, tenantId, sessionId, sql, ipAddress } = params;
+  const { userId, tenantId, tenantRole, sessionId, sql, ipAddress } = params;
 
   const session = await prisma.activeSession.findUnique({
     where: { id: sessionId },
-    include: { connection: { select: { id: true } } },
+    include: { connection: { select: { id: true, dbSettings: true } } },
   });
   if (!session || session.userId !== userId) {
     throw new AppError('Session not found', 404);
   }
   if (session.status === 'CLOSED') {
     throw new AppError('Session already closed', 410);
+  }
+
+  const dbSettings = (session.connection.dbSettings as DbSettings | null) ?? undefined;
+  const databaseName = dbSettings?.databaseName;
+  const queryType = dbAudit.classifyQuery(sql);
+  const tablesAccessed = dbAudit.extractTables(sql);
+
+  // --- Role-based query restriction (same as executeQuery) ---
+  const WRITE_ROLES = new Set(['OPERATOR', 'ADMIN', 'OWNER']);
+  if (queryType !== 'SELECT' && (!tenantRole || !WRITE_ROLES.has(tenantRole))) {
+    const blockReason = `EXPLAIN for ${queryType} queries requires OPERATOR role or above`;
+    auditService.log({
+      userId,
+      action: 'DB_QUERY_BLOCKED',
+      targetType: 'DatabaseQuery',
+      targetId: session.connectionId,
+      details: { sessionId, protocol: 'DATABASE', queryType, blockReason, context: 'explain' },
+      ipAddress,
+    });
+    throw new AppError(blockReason, 403);
+  }
+
+  // --- SQL Firewall enforcement ---
+  const firewallResult = await sqlFirewall.evaluateQuery(
+    tenantId,
+    sql,
+    databaseName,
+    tablesAccessed[0],
+  );
+
+  if (!firewallResult.allowed) {
+    const blockReason = firewallResult.matchedRule
+      ? `Blocked by firewall rule: ${firewallResult.matchedRule.name}`
+      : 'Blocked by SQL firewall';
+    auditService.log({
+      userId,
+      action: 'DB_QUERY_BLOCKED',
+      targetType: 'DatabaseQuery',
+      targetId: session.connectionId,
+      details: { sessionId, protocol: 'DATABASE', queryType, blockReason, context: 'explain' },
+      ipAddress,
+    });
+    throw new AppError(blockReason, 403);
   }
 
   const pool = await dbQueryExecutor.getOrCreatePool({
@@ -408,7 +452,7 @@ export async function getExecutionPlan(params: {
     action: 'DB_QUERY_PLAN_REQUESTED',
     targetType: 'DatabaseQuery',
     targetId: session.connectionId,
-    details: { sessionId, protocol: pool.protocol, supported: result.supported },
+    details: { sessionId, protocol: pool.protocol, supported: result.supported, queryType },
     ipAddress,
   });
 
@@ -422,11 +466,19 @@ export async function getExecutionPlan(params: {
 export async function introspectDatabase(params: {
   userId: string;
   tenantId: string;
+  tenantRole?: TenantRoleType;
   sessionId: string;
   type: IntrospectionType;
-  target: string;
+  target?: string;
+  ipAddress?: string;
 }): Promise<IntrospectionResult> {
-  const { userId, tenantId, sessionId, type, target } = params;
+  const { userId, tenantId, tenantRole, sessionId, type, target, ipAddress } = params;
+
+  // --- Role-based restriction: introspection is limited to OPERATOR/ADMIN/OWNER ---
+  const INTROSPECTION_ROLES = new Set(['OPERATOR', 'ADMIN', 'OWNER']);
+  if (!tenantRole || !INTROSPECTION_ROLES.has(tenantRole)) {
+    throw new AppError('Database introspection requires OPERATOR role or above', 403);
+  }
 
   const session = await prisma.activeSession.findUnique({
     where: { id: sessionId },
@@ -447,7 +499,19 @@ export async function introspectDatabase(params: {
     metadata: (session.metadata as Record<string, unknown>) ?? {},
   });
 
-  return dbIntrospection.introspect(pool, type, target);
+  const result = await dbIntrospection.introspect(pool, type, target ?? '');
+
+  // Audit the introspection request
+  auditService.log({
+    userId,
+    action: 'DB_INTROSPECTION_REQUESTED',
+    targetType: 'DatabaseQuery',
+    targetId: session.connectionId,
+    details: { sessionId, protocol: pool.protocol, introspectionType: type, target: target ?? '' },
+    ipAddress,
+  });
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------

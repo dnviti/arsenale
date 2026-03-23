@@ -71,7 +71,13 @@ const DELETE_KEYWORDS = /^\s*DELETE\b/i;
 export function classifyQuery(queryText: string): DbQueryType {
   // Strip leading comments (-- and /* */) and whitespace
   let trimmed = queryText.trim();
-  trimmed = trimmed.replace(/^(--[^\n]*\n\s*|\/\*[\s\S]*?\*\/\s*)*/g, '').trim();
+  // Strip leading SQL comments iteratively (avoids polynomial regex backtracking)
+  let prev = '';
+  while (trimmed !== prev) {
+    prev = trimmed;
+    trimmed = trimmed.replace(/^--[^\n]*\n\s*/, '');
+    trimmed = trimmed.replace(/^\/\*[\s\S]*?\*\/\s*/, '');
+  }
 
   if (DDL_KEYWORDS.test(trimmed)) return 'DDL';
   if (SELECT_KEYWORDS.test(trimmed)) return 'SELECT';

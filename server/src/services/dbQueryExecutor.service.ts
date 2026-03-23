@@ -24,7 +24,7 @@ interface PoolParams {
   metadata: Record<string, unknown>;
 }
 
-type DriverPool =
+export type DriverPool =
   | { type: 'postgresql'; pool: pg.Pool }
   | { type: 'mysql'; pool: mysql.Pool }
   | { type: 'mongodb'; client: MongoClient; dbName: string }
@@ -32,7 +32,7 @@ type DriverPool =
   | { type: 'oracle'; pool: oracledb.Pool }
   | { type: 'db2'; conn: unknown; dbName: string };
 
-interface ManagedPool {
+export interface ManagedPool {
   sessionId: string;
   protocol: DbProtocol;
   driver: DriverPool;
@@ -502,33 +502,53 @@ async function runMysqlExplain(pool: mysql.Pool, sql: string): Promise<ExplainRe
 }
 
 async function runMssqlExplain(pool: mssql.ConnectionPool, sql: string): Promise<ExplainResult> {
-  // codeql[js/sql-injection] — sql is validated upstream before reaching this function.
-  const request = pool.request();
-  await request.query('SET SHOWPLAN_XML ON');
+  // Use a transaction to pin a single pooled connection for SHOWPLAN_XML.
+  // SHOWPLAN settings are connection-scoped; without pinning, the SET and
+  // the query could run on different connections, executing the SQL for real.
+  const transaction = new mssql.Transaction(pool);
+  await transaction.begin();
   try {
-    const result = await pool.request().query(sql);
-    const rows = (result.recordset ?? []) as Record<string, unknown>[];
-    const raw = rows.length > 0 ? String(Object.values(rows[0])[0] ?? '') : '';
-    return { supported: true, plan: raw, format: 'xml', raw };
-  } finally {
-    await pool.request().query('SET SHOWPLAN_XML OFF');
+    await new mssql.Request(transaction).query('SET SHOWPLAN_XML ON');
+    try {
+      // codeql[js/sql-injection] — sql is validated upstream before reaching this function.
+      const result = await new mssql.Request(transaction).query(sql);
+      const rows = (result.recordset ?? []) as Record<string, unknown>[];
+      const raw = rows.length > 0 ? String(Object.values(rows[0])[0] ?? '') : '';
+      return { supported: true, plan: raw, format: 'xml', raw };
+    } finally {
+      try { await new mssql.Request(transaction).query('SET SHOWPLAN_XML OFF'); } catch { /* best-effort cleanup */ }
+      try { await transaction.rollback(); } catch { /* best-effort cleanup */ }
+    }
+  } catch (err) {
+    try { await transaction.rollback(); } catch { /* best-effort cleanup */ }
+    throw err;
   }
 }
 
 async function runOracleExplain(pool: oracledb.Pool, sql: string): Promise<ExplainResult> {
   const conn = await pool.getConnection();
+  // Use a unique statement ID to isolate concurrent explain requests.
+  // Oracle stores plans in a shared PLAN_TABLE per schema; without scoping,
+  // concurrent requests can overwrite each other and return the wrong plan.
+  const statementId = `EXPL_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   try {
     // codeql[js/sql-injection] — sql is validated upstream before reaching this function.
-    await conn.execute(`EXPLAIN PLAN FOR ${sql}`);
+    await conn.execute(
+      `EXPLAIN PLAN SET STATEMENT_ID = :id FOR ${sql}`,
+      { id: statementId },
+    );
     const result = await conn.execute<Record<string, unknown>>(
-      `SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY)`,
-      [],
+      `SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY(NULL, :id))`,
+      { id: statementId },
       { outFormat: oracledb.OUT_FORMAT_OBJECT },
     );
     const rows = result.rows ?? [];
-    const raw = rows.map((r) => String(r.PLAN_TABLE_OUTPUT ?? '')).join('\n');
+    const raw = rows.map((r) => String((r as Record<string, unknown>).PLAN_TABLE_OUTPUT ?? '')).join('\n');
     return { supported: true, plan: rows, format: 'text', raw };
   } finally {
+    try {
+      await conn.execute(`DELETE FROM PLAN_TABLE WHERE STATEMENT_ID = :id`, { id: statementId });
+    } catch { /* best-effort cleanup */ }
     await conn.close();
   }
 }

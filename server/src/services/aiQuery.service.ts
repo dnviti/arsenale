@@ -38,6 +38,8 @@ export interface OptimizeQueryResult {
 
 interface ConversationState {
   id: string;
+  userId: string;
+  tenantId: string;
   input: OptimizeQueryInput;
   rounds: number;
   approvedData: Record<string, unknown>;
@@ -45,7 +47,9 @@ interface ConversationState {
   createdAt: Date;
 }
 
-// In-memory conversation store (TTL managed by cleanup)
+// In-memory conversation store (TTL managed by cleanup).
+// NOTE: This does not survive server restarts or scale across multiple instances.
+// For production multi-instance deployments, consider a shared store (Redis/DB).
 const conversations = new Map<string, ConversationState>();
 
 // ---------------------------------------------------------------------------
@@ -134,6 +138,8 @@ export async function optimizeQuery(
   // Store conversation for multi-turn
   conversations.set(conversationId, {
     id: conversationId,
+    userId,
+    tenantId,
     input,
     rounds: 0,
     approvedData: {},
@@ -146,7 +152,13 @@ export async function optimizeQuery(
     action: 'DB_QUERY_AI_OPTIMIZED',
     targetType: 'DatabaseQuery',
     targetId: input.sessionId,
-    details: { conversationId, phase: 'initial', provider: llm.getProviderName() },
+    details: {
+      conversationId,
+      phase: 'initial',
+      provider: llm.getProviderName(),
+      dataRequestCount: parsed.data_requests?.length ?? 0,
+      dataRequestTypes: parsed.data_requests?.map((r) => `${r.type}:${r.target}`) ?? [],
+    },
     ipAddress,
   });
 
@@ -186,6 +198,11 @@ export async function continueOptimization(
     throw new AppError('Conversation not found or expired.', 404);
   }
 
+  // Prevent one user from continuing another user's conversation
+  if (convo.userId !== userId || convo.tenantId !== tenantId) {
+    throw new AppError('Conversation not found or expired.', 404);
+  }
+
   convo.rounds += 1;
   Object.assign(convo.approvedData, approvedData);
 
@@ -218,7 +235,13 @@ export async function continueOptimization(
     action: 'DB_QUERY_AI_OPTIMIZED',
     targetType: 'DatabaseQuery',
     targetId: convo.input.sessionId,
-    details: { conversationId, phase: 'continue', round: convo.rounds, provider: llm.getProviderName() },
+    details: {
+      conversationId,
+      phase: 'continue',
+      round: convo.rounds,
+      provider: llm.getProviderName(),
+      approvedDataKeys: Object.keys(approvedData),
+    },
     ipAddress,
   });
 

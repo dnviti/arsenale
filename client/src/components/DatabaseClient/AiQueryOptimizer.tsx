@@ -65,9 +65,9 @@ export default function AiQueryOptimizer({
       if (res.status === 'needs_data' && res.dataRequests) {
         setResult(res);
         setDataRequests(res.dataRequests);
-        // Default all permissions to approved
+        // Default all permissions to denied; user must explicitly approve
         const defaultApprovals: Record<number, boolean> = {};
-        res.dataRequests.forEach((_, i) => { defaultApprovals[i] = true; });
+        res.dataRequests.forEach((_, i) => { defaultApprovals[i] = false; });
         setApprovals(defaultApprovals);
         setStep('permissions');
       } else {
@@ -88,26 +88,34 @@ export default function AiQueryOptimizer({
     setError('');
 
     try {
-      // Fetch approved introspection data
+      // Fetch approved introspection data with bounded concurrency
       const approvedData: Record<string, unknown> = {};
 
+      const tasks: Array<() => Promise<void>> = [];
       for (let i = 0; i < dataRequests.length; i++) {
         if (!approvals[i]) continue;
         const req = dataRequests[i];
+        if (req.type === 'custom_query') continue;
 
-        if (req.type !== 'custom_query') {
+        const key = `${req.type}_${req.target}`;
+        tasks.push(async () => {
           try {
             const introspectionResult = await introspectDatabase(
               sessionId,
               req.type as IntrospectionType,
               req.target,
             );
-            approvedData[`${req.type}_${req.target}`] = introspectionResult.data;
+            approvedData[key] = introspectionResult.data;
           } catch {
-            // Skip failed introspection — don't block optimization
-            approvedData[`${req.type}_${req.target}`] = { error: 'fetch_failed' };
+            approvedData[key] = { error: 'fetch_failed' };
           }
-        }
+        });
+      }
+
+      // Run with bounded concurrency (max 3 parallel requests)
+      const concurrency = 3;
+      for (let start = 0; start < tasks.length; start += concurrency) {
+        await Promise.all(tasks.slice(start, start + concurrency).map((t) => t()));
       }
 
       const res = await continueOptimization(result.conversationId, approvedData);

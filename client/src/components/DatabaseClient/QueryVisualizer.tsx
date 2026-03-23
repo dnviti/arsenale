@@ -55,9 +55,15 @@ export default function QueryVisualizer({
   const canExplain = sessionId && dbProtocol && !unsupportedProtocols.includes(dbProtocol) && !blocked;
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(queryText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(queryText);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
+    } catch {
+      // Clipboard write can fail (non-secure context, permissions, etc.)
+    }
   }, [queryText]);
 
   const lastFetchedSql = useRef<string>('');
@@ -84,13 +90,24 @@ export default function QueryVisualizer({
     }
   }, [open, canExplain, planResult, planLoading, queryText, handleGetPlan]);
 
-  // Reset plan when SQL changes
+  // Reset all state when SQL changes or drawer reopens for a different entry
   useEffect(() => {
     if (queryText !== lastFetchedSql.current) {
       setPlanResult(null);
       setPlanError('');
+      setShowAiOptimizer(false);
     }
   }, [queryText]);
+
+  // Reset state when drawer closes
+  useEffect(() => {
+    if (!open) {
+      setPlanResult(null);
+      setPlanError('');
+      setShowAiOptimizer(false);
+      lastFetchedSql.current = '';
+    }
+  }, [open]);
 
   const durationColor = executionTimeMs == null
     ? 'default'

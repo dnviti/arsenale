@@ -1,31 +1,10 @@
-import pg from 'pg';
-import mysql from 'mysql2/promise';
 import mssql from 'mssql';
 import oracledb from 'oracledb';
 import { AppError } from '../middleware/error.middleware';
 import { logger } from '../utils/logger';
+import type { DriverPool, ManagedPool } from './dbQueryExecutor.service';
 
 const log = logger.child('db-introspection');
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type DriverPool =
-  | { type: 'postgresql'; pool: pg.Pool }
-  | { type: 'mysql'; pool: mysql.Pool }
-  | { type: 'mongodb'; client: unknown; dbName: string }
-  | { type: 'mssql'; pool: mssql.ConnectionPool }
-  | { type: 'oracle'; pool: oracledb.Pool }
-  | { type: 'db2'; conn: unknown; dbName: string };
-
-interface ManagedPool {
-  sessionId: string;
-  protocol: string;
-  driver: DriverPool;
-  createdAt: Date;
-  lastUsedAt: Date;
-}
 
 export interface IntrospectionResult {
   supported: boolean;
