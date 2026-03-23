@@ -1323,7 +1323,7 @@ model DbRateLimitPolicy {
   updatedAt    DateTime         @updatedAt
 
   @@index([tenantId, enabled])
-  @@unique([tenantId, queryType, scope])
+  @@index([tenantId, queryType, scope])
 }
 
 /// OAuth 2.0 Device Authorization Grant (RFC 8628).

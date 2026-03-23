@@ -190,7 +190,7 @@ export interface RateLimitPolicyInput {
   maxQueries?: number;
   burstMax?: number;
   exemptRoles?: string[];
-  scope?: string;
+  scope?: string | null;
   action?: RateLimitAction;
   enabled?: boolean;
   priority?: number;

@@ -271,6 +271,7 @@ export async function executeQuery(params: {
     tenantId,
     queryType,
     tenantRole,
+    databaseName,
   );
 
   if (!rateLimitResult.allowed && rateLimitResult.policy) {
@@ -305,8 +306,8 @@ export async function executeQuery(params: {
     throw err;
   }
 
-  // Log rate limit trigger for LOG_ONLY policies (query is allowed but was over-limit)
-  if (rateLimitResult.policy && rateLimitResult.remaining <= 0) {
+  // Log rate limit trigger for LOG_ONLY policies (query is allowed but was actually over-limit)
+  if (rateLimitResult.policy && rateLimitResult.retryAfterMs > 0) {
     auditService.log({
       userId,
       action: 'DB_QUERY_RATE_LIMITED',

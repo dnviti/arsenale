@@ -1,6 +1,7 @@
 import prisma, { DbQueryType, RateLimitAction, Prisma } from '../lib/prisma';
 import { config } from '../config';
 import { logger } from '../utils/logger';
+import { AppError } from '../middleware/error.middleware';
 
 const log = logger.child('db-rate-limit');
 
@@ -78,6 +79,14 @@ function getOrCreateBucket(key: string, policy: RateLimitPolicy): TokenBucket {
     const refillAmount = elapsed * existing.refillRate;
     existing.tokens = Math.min(existing.maxTokens, existing.tokens + refillAmount);
     existing.lastRefillTime = now;
+
+    // Ensure bucket parameters reflect the latest policy so changes take effect immediately
+    existing.windowMs = policy.windowMs;
+    existing.maxTokens = policy.burstMax;
+    existing.refillRate = policy.maxQueries / policy.windowMs;
+    if (existing.tokens > existing.maxTokens) {
+      existing.tokens = existing.maxTokens;
+    }
     return existing;
   }
 
@@ -90,6 +99,14 @@ function getOrCreateBucket(key: string, policy: RateLimitPolicy): TokenBucket {
   };
   buckets.set(key, bucket);
   return bucket;
+}
+
+function clearBucketsForPolicy(policyId: string): void {
+  for (const key of buckets.keys()) {
+    if (key.endsWith(`:${policyId}`)) {
+      buckets.delete(key);
+    }
+  }
 }
 
 function consumeToken(bucket: TokenBucket): boolean {
@@ -156,6 +173,7 @@ export async function evaluateRateLimit(
   tenantId: string,
   queryType: DbQueryType,
   tenantRole?: string,
+  scopeContext?: string,
 ): Promise<RateLimitEvaluation> {
   try {
     const policies = await prisma.dbRateLimitPolicy.findMany({
@@ -166,6 +184,11 @@ export async function evaluateRateLimit(
     for (const policy of policies) {
       // Check if policy applies to this query type
       if (policy.queryType !== null && policy.queryType !== queryType) {
+        continue;
+      }
+
+      // Check scope matching: a scoped policy only applies when the context matches
+      if (policy.scope && policy.scope !== scopeContext) {
         continue;
       }
 
@@ -220,7 +243,33 @@ export async function getPolicy(tenantId: string, policyId: string): Promise<Rat
   });
 }
 
+function validatePolicyValues(windowMs?: number, maxQueries?: number, burstMax?: number): void {
+  if (windowMs !== undefined && windowMs < 1) {
+    throw new AppError('windowMs must be at least 1', 400);
+  }
+  if (maxQueries !== undefined && maxQueries < 1) {
+    throw new AppError('maxQueries must be at least 1', 400);
+  }
+  if (burstMax !== undefined && burstMax < 1) {
+    throw new AppError('burstMax must be at least 1', 400);
+  }
+}
+
 export async function createPolicy(input: RateLimitPolicyInput): Promise<RateLimitPolicy> {
+  validatePolicyValues(input.windowMs, input.maxQueries, input.burstMax);
+
+  // Application-level uniqueness check (@@unique doesn't work with NULLs in Postgres)
+  const duplicate = await prisma.dbRateLimitPolicy.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      queryType: input.queryType ?? null,
+      scope: input.scope ?? null,
+    },
+  });
+  if (duplicate) {
+    throw new AppError('A rate limit policy already exists for this tenant/queryType/scope combination', 409);
+  }
+
   return prisma.dbRateLimitPolicy.create({
     data: {
       tenantId: input.tenantId,
@@ -244,7 +293,9 @@ export async function updatePolicy(
   updates: Partial<Omit<RateLimitPolicyInput, 'tenantId'>>,
 ): Promise<RateLimitPolicy> {
   const existing = await prisma.dbRateLimitPolicy.findFirst({ where: { id: policyId, tenantId } });
-  if (!existing) throw new Error('Rate limit policy not found');
+  if (!existing) throw new AppError('Rate limit policy not found', 404);
+
+  validatePolicyValues(updates.windowMs, updates.maxQueries, updates.burstMax);
 
   const data: Prisma.DbRateLimitPolicyUpdateInput = {};
   if (updates.name !== undefined) data.name = updates.name;
@@ -266,7 +317,10 @@ export async function updatePolicy(
 
 export async function deletePolicy(tenantId: string, policyId: string): Promise<void> {
   const existing = await prisma.dbRateLimitPolicy.findFirst({ where: { id: policyId, tenantId } });
-  if (!existing) throw new Error('Rate limit policy not found');
+  if (!existing) throw new AppError('Rate limit policy not found', 404);
 
   await prisma.dbRateLimitPolicy.delete({ where: { id: policyId } });
+
+  // Clear in-memory buckets for this policy so stale state doesn't linger
+  clearBucketsForPolicy(policyId);
 }

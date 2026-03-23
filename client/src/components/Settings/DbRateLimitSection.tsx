@@ -129,7 +129,7 @@ export default function DbRateLimitSection() {
     const payload: RateLimitPolicyInput = {
       ...formData,
       queryType: formData.queryType || null,
-      scope: formData.scope || undefined,
+      scope: formData.scope && formData.scope.trim() !== '' ? formData.scope : null,
     };
 
     const ok = await run(async () => {
@@ -274,8 +274,9 @@ export default function DbRateLimitSection() {
               type="number"
               fullWidth
               value={formData.maxQueries ?? 100}
-              onChange={(e) => setFormData({ ...formData, maxQueries: parseInt(e.target.value, 10) || 1 })}
-              helperText="Maximum number of queries allowed within the time window"
+              onChange={(e) => setFormData({ ...formData, maxQueries: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+              slotProps={{ htmlInput: { min: 1 } }}
+              helperText="Maximum number of queries allowed within the time window (min: 1)"
             />
             <TextField
               label="Burst Max"
@@ -283,8 +284,9 @@ export default function DbRateLimitSection() {
               type="number"
               fullWidth
               value={formData.burstMax ?? 10}
-              onChange={(e) => setFormData({ ...formData, burstMax: parseInt(e.target.value, 10) || 1 })}
-              helperText="Token bucket capacity — allows short bursts above the steady rate"
+              onChange={(e) => setFormData({ ...formData, burstMax: Math.max(1, parseInt(e.target.value, 10) || 1) })}
+              slotProps={{ htmlInput: { min: 1 } }}
+              helperText="Token bucket capacity — allows short bursts above the steady rate (min: 1)"
             />
             <FormControl size="small" fullWidth>
               <InputLabel>Exempt Roles</InputLabel>
@@ -324,8 +326,9 @@ export default function DbRateLimitSection() {
               size="small"
               type="number"
               value={formData.priority ?? 0}
-              onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value, 10) || 0 })}
-              helperText="Higher priority policies are evaluated first"
+              onChange={(e) => setFormData({ ...formData, priority: Math.max(0, parseInt(e.target.value, 10) || 0) })}
+              slotProps={{ htmlInput: { min: 0 } }}
+              helperText="Higher priority policies are evaluated first (min: 0)"
             />
             <FormControlLabel
               control={
