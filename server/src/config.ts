@@ -182,6 +182,10 @@ export const config = {
   // Database query execution
   dbQueryTimeoutMs: parseInt(process.env.DB_QUERY_TIMEOUT_MS || '30000', 10),
   dbQueryMaxRows: parseInt(process.env.DB_QUERY_MAX_ROWS || '10000', 10),
+  // Database query rate limiting (token bucket)
+  dbRateLimitDefaultWindowMs: parseInt(process.env.DB_RATE_LIMIT_DEFAULT_WINDOW_MS || '60000', 10),
+  dbRateLimitDefaultMaxQueries: parseInt(process.env.DB_RATE_LIMIT_DEFAULT_MAX_QUERIES || '100', 10),
+  dbRateLimitCleanupIntervalMs: parseInt(process.env.DB_RATE_LIMIT_CLEANUP_INTERVAL_MS || '300000', 10),
   dbPoolMaxConnections: parseInt(process.env.DB_POOL_MAX_CONNECTIONS || '3', 10),
   dbPoolIdleTimeoutMs: parseInt(process.env.DB_POOL_IDLE_TIMEOUT_MS || '60000', 10),
   // Container orchestrator
@@ -285,5 +289,15 @@ export const config = {
     tokenTtlSeconds: parseInt(process.env.SSH_PROXY_TOKEN_TTL_SECONDS || '300', 10),
     caPublicKeyPath: process.env.SSH_PROXY_CA_PUBLIC_KEY || '',
     keystrokeRecording: process.env.SSH_PROXY_KEYSTROKE_RECORDING === 'true',
+  },
+  // AI / LLM Integration (SQL Query Optimizer)
+  ai: {
+    provider: (process.env.AI_PROVIDER || '') as '' | 'anthropic' | 'openai' | 'ollama' | 'openai-compatible',
+    apiKey: process.env.AI_API_KEY || '',
+    model: process.env.AI_MODEL || '',
+    baseUrl: process.env.AI_BASE_URL || '',
+    maxTokens: parseInt(process.env.AI_MAX_TOKENS || '4096', 10),
+    temperature: parseFloat(process.env.AI_TEMPERATURE || '0.2'),
+    timeoutMs: parseInt(process.env.AI_TIMEOUT_MS || '60000', 10),
   },
 };

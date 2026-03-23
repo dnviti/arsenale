@@ -29,4 +29,10 @@ router.post(
   asyncHandler(aiQueryController.generateQuery),
 );
 
+// POST /api/ai/optimize-query — AI query optimization (initial analysis).
+router.post('/optimize-query', asyncHandler(aiQueryController.optimizeQuery));
+
+// POST /api/ai/optimize-query/continue — Continue optimization with approved data.
+router.post('/optimize-query/continue', asyncHandler(aiQueryController.continueOptimization));
+
 export default router;

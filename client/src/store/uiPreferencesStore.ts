@@ -52,6 +52,15 @@ interface UiPreferences {
   desktopNotificationsEnabled: boolean;
   dbSchemaBrowserOpen: boolean;
   dbAiPanelOpen: boolean;
+  dbQueryHistoryOpen: boolean;
+  queryVisualizerOpen: boolean;
+  dbQuerySubTabs: Record<string, { tabs: Array<{ id: string; label: string; sql: string }>; activeId: string }>;
+  dbSessionConfigs: Record<string, { activeDatabase?: string; timezone?: string; searchPath?: string; encoding?: string; initCommands?: string[] }>;
+  dbEditorSplitRatio: number;
+  sqlEditorTheme: string;
+  sqlEditorFontSize: number;
+  sqlEditorFontFamily: string;
+  sqlEditorMinimap: boolean;
 }
 
 interface UiPreferencesState extends UiPreferences {
@@ -112,6 +121,15 @@ const defaults: UiPreferences = {
   desktopNotificationsEnabled: false,
   dbSchemaBrowserOpen: false,
   dbAiPanelOpen: false,
+  dbQueryHistoryOpen: false,
+  queryVisualizerOpen: false,
+  dbQuerySubTabs: {},
+  dbSessionConfigs: {},
+  dbEditorSplitRatio: 0.3,
+  sqlEditorTheme: 'auto',
+  sqlEditorFontSize: 14,
+  sqlEditorFontFamily: 'Cascadia Code, Fira Code, JetBrains Mono, monospace',
+  sqlEditorMinimap: false,
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(

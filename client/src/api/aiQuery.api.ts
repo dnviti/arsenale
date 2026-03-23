@@ -1,5 +1,9 @@
 import api from './client';
 
+// ---------------------------------------------------------------------------
+// AI Query Generation Types (AISQL-2069)
+// ---------------------------------------------------------------------------
+
 export interface AiConfig {
   provider: string;
   hasApiKey: boolean;
@@ -46,5 +50,50 @@ export async function generateQuery(
     prompt,
     dbProtocol,
   });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// AI Query Optimization Types (SQLVIZ-2070)
+// ---------------------------------------------------------------------------
+
+export interface DataRequest {
+  type: string;
+  target: string;
+  reason: string;
+}
+
+export interface OptimizeQueryParams {
+  sql: string;
+  executionPlan: unknown;
+  sessionId: string;
+  dbProtocol: string;
+  dbVersion?: string;
+  schemaContext?: unknown;
+}
+
+export interface OptimizeQueryResult {
+  status: 'needs_data' | 'complete';
+  conversationId: string;
+  dataRequests?: DataRequest[];
+  optimizedSql?: string;
+  explanation?: string;
+  changes?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// AI Query Optimization API calls
+// ---------------------------------------------------------------------------
+
+export async function optimizeQuery(params: OptimizeQueryParams): Promise<OptimizeQueryResult> {
+  const { data } = await api.post('/ai/optimize-query', params);
+  return data;
+}
+
+export async function continueOptimization(
+  conversationId: string,
+  approvedData: Record<string, unknown>,
+): Promise<OptimizeQueryResult> {
+  const { data } = await api.post('/ai/optimize-query/continue', { conversationId, approvedData });
   return data;
 }
