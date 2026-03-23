@@ -2,6 +2,7 @@ import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/error.middleware';
+import prisma from '../lib/prisma';
 import * as auditService from './audit.service';
 import * as tenantAiConfigService from './tenantAiConfig.service';
 import * as sqlFirewall from './sqlFirewall.service';
@@ -17,37 +18,29 @@ const log = logger.child('aiQuery');
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-// Per-tenant daily request counters (resets at midnight UTC)
-// NOTE: In-memory — resets on server restart and is not shared across instances.
-// For production multi-instance deployments, use a shared store (Redis/DB).
+// Per-tenant daily request counters (persisted in DB via AiDailyUsage)
 // ---------------------------------------------------------------------------
-interface DailyCounter {
-  count: number;
-  resetAt: number;
-}
+async function incrementDailyCounter(tenantId: string, limit: number): Promise<void> {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
 
-const dailyCounters = new Map<string, DailyCounter>();
+  // Ensure the row exists
+  await prisma.aiDailyUsage.upsert({
+    where: { tenantId_date: { tenantId, date: today } },
+    create: { tenantId, date: today, count: 0 },
+    update: {},
+  });
 
-function getNextMidnight(): number {
-  const d = new Date();
-  d.setUTCHours(24, 0, 0, 0);
-  return d.getTime();
-}
+  // Atomic conditional increment: only increment if below limit
+  const updated = await prisma.$executeRaw`
+    UPDATE "AiDailyUsage"
+    SET count = count + 1, "updatedAt" = NOW()
+    WHERE "tenantId" = ${tenantId} AND date = ${today} AND count < ${limit}
+  `;
 
-function incrementDailyCounter(tenantId: string, limit: number): void {
-  const now = Date.now();
-  let counter = dailyCounters.get(tenantId);
-
-  if (!counter || now >= counter.resetAt) {
-    counter = { count: 0, resetAt: getNextMidnight() };
-    dailyCounters.set(tenantId, counter);
-  }
-
-  if (counter.count >= limit) {
+  if (updated === 0) {
     throw new AppError('Daily AI query generation limit reached for this tenant', 429);
   }
-
-  counter.count++;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,7 +306,7 @@ export async function analyzeQueryIntent(params: AnalyzeParams): Promise<Analyze
   }
 
   // 4. Rate-limit check
-  incrementDailyCounter(tenantId, dailyLimit);
+  await incrementDailyCounter(tenantId, dailyLimit);
 
   // 5. Ask LLM which tables are needed
   const systemPrompt = buildPlanningSystemPrompt();

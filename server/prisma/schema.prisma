@@ -61,6 +61,7 @@ model Tenant {
   syncProfiles       SyncProfile[]
   externalVaultProviders ExternalVaultProvider[]
   aiConfig           TenantAiConfig?
+  aiDailyUsage       AiDailyUsage[]
 }
 
 model Team {
@@ -459,6 +460,20 @@ model SshKeyPair {
   updatedAt            DateTime  @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model AiDailyUsage {
+  id        String   @id @default(uuid())
+  tenantId  String
+  date      DateTime @db.Date
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
+  @@index([date])
 }
 
 model SharedConnection {
