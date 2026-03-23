@@ -66,9 +66,7 @@
     "tar-fs": ">=2.1.4",
     "tar-stream": ">=2.2.0",
     "serialize-javascript": ">=7.0.3",
-    "monaco-editor": {
-      "dompurify": "3.3.3"
-    }
+    "dompurify": "$dompurify"
   },
   "devDependencies": {
     "concurrently": "^9.2.1",
@@ -78,5 +76,8 @@
     "eslint-plugin-security": "^4.0.0",
     "typescript-eslint": "^8.57.1",
     "wait-on": "^9.0.4"
+  },
+  "dependencies": {
+    "dompurify": "^3.3.3"
   }
 }
