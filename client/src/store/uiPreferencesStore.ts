@@ -51,6 +51,10 @@ interface UiPreferences {
   tunnelMetricsOpen: boolean;
   desktopNotificationsEnabled: boolean;
   dbSchemaBrowserOpen: boolean;
+  sqlEditorTheme: string;
+  sqlEditorFontSize: number;
+  sqlEditorFontFamily: string;
+  sqlEditorMinimap: boolean;
 }
 
 interface UiPreferencesState extends UiPreferences {
@@ -110,6 +114,10 @@ const defaults: UiPreferences = {
   tunnelMetricsOpen: true,
   desktopNotificationsEnabled: false,
   dbSchemaBrowserOpen: false,
+  sqlEditorTheme: 'auto',
+  sqlEditorFontSize: 14,
+  sqlEditorFontFamily: 'Cascadia Code, Fira Code, JetBrains Mono, monospace',
+  sqlEditorMinimap: false,
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(
