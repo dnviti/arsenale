@@ -53,6 +53,7 @@ export default function SqlEditorSection() {
               Font Size: {sqlEditorFontSize}px
             </Typography>
             <Slider
+              aria-label="Font Size"
               value={sqlEditorFontSize}
               onChange={(_, val) => setPref('sqlEditorFontSize', val as number)}
               min={10}

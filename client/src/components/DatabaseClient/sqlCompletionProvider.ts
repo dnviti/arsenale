@@ -41,7 +41,7 @@ const SQL_FUNCTIONS: Record<string, string[]> = {
 // These patterns match SQL context before the cursor position in small user-typed input
 const TABLE_CONTEXT_PATTERN = /\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+[\w,.\s]*$/i;
 const COLUMN_CONTEXT_PATTERN = /\b(?:SELECT|WHERE|ON|SET|BY|HAVING)\s+[\w,.\s]*$/i;
-const SCHEMA_PREFIX_PATTERN = /(\w+)\.$/;
+const SCHEMA_PREFIX_PATTERN = /\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+(\w+)\.$/i;
 
 /**
  * Extract table names referenced in the current query for column scoping.
@@ -80,7 +80,7 @@ export function createSqlCompletionProvider(
   schemaTables: DbTableInfo[],
 ): monacoNs.languages.CompletionItemProvider {
   return {
-    triggerCharacters: ['.', ' '],
+    triggerCharacters: ['.'],
 
     provideCompletionItems(
       model: monacoNs.editor.ITextModel,

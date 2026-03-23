@@ -66,8 +66,12 @@ function checkMismatchedParentheses(lines: string[]): ValidationMarker[] {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     for (let j = 0; j < line.length; j++) {
-      // Skip string contents
-      if (line[j] === "'" && (j === 0 || line[j - 1] !== "'")) {
+      // Skip string contents (handle escaped quotes '')
+      if (line[j] === "'") {
+        if (inString && j + 1 < line.length && line[j + 1] === "'") {
+          j++; // Skip escaped quote
+          continue;
+        }
         inString = !inString;
         continue;
       }
@@ -139,7 +143,8 @@ function checkCommonMistakes(lines: string[]): ValidationMarker[] {
     }
 
     // Warn about DELETE without WHERE
-    if (/\bDELETE\s+FROM\b/i.test(trimmed) && !/\bWHERE\b/i.test(trimmed)) {
+    const deleteMatch = line.match(/\bDELETE\s+FROM\b/i);
+    if (deleteMatch && !/\bWHERE\b/i.test(trimmed)) {
       // Check if WHERE is on subsequent lines before next semicolon
       let hasWhere = false;
       for (let k = i + 1; k < lines.length; k++) {
@@ -147,34 +152,35 @@ function checkCommonMistakes(lines: string[]): ValidationMarker[] {
         if (lines[k].includes(';')) break;
       }
       if (!hasWhere) {
-        const col = line.search(/\bDELETE/i);
+        const col = line.indexOf(deleteMatch[0]);
         markers.push({
           message: 'DELETE without WHERE clause will remove all rows',
           severity: 'warning',
           startLineNumber: i + 1,
           startColumn: col + 1,
           endLineNumber: i + 1,
-          endColumn: col + 12,
+          endColumn: col + deleteMatch[0].length + 1,
         });
       }
     }
 
     // Warn about UPDATE without WHERE
-    if (/\bUPDATE\b/i.test(trimmed) && /\bSET\b/i.test(trimmed) && !/\bWHERE\b/i.test(trimmed)) {
+    const updateMatch = line.match(/\bUPDATE\b/i);
+    if (updateMatch && /\bSET\b/i.test(trimmed) && !/\bWHERE\b/i.test(trimmed)) {
       let hasWhere = false;
       for (let k = i + 1; k < lines.length; k++) {
         if (/\bWHERE\b/i.test(lines[k])) { hasWhere = true; break; }
         if (lines[k].includes(';')) break;
       }
       if (!hasWhere) {
-        const col = line.search(/\bUPDATE\b/i);
+        const col = line.indexOf(updateMatch[0]);
         markers.push({
           message: 'UPDATE without WHERE clause will modify all rows',
           severity: 'warning',
           startLineNumber: i + 1,
           startColumn: col + 1,
           endLineNumber: i + 1,
-          endColumn: col + 7,
+          endColumn: col + updateMatch[0].length + 1,
         });
       }
     }
