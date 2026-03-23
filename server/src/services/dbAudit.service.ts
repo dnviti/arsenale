@@ -66,14 +66,42 @@ const DELETE_KEYWORDS = /^\s*DELETE\b/i;
 
 /**
  * Classify a SQL query text into a DbQueryType.
+ * Handles CTEs (WITH ... SELECT/INSERT/UPDATE/DELETE), EXPLAIN, SHOW, etc.
  */
 export function classifyQuery(queryText: string): DbQueryType {
-  const trimmed = queryText.trim();
+  // Strip leading comments (-- and /* */) and whitespace
+  let trimmed = queryText.trim();
+  trimmed = trimmed.replace(/^(--[^\n]*\n\s*|\/\*[\s\S]*?\*\/\s*)*/g, '').trim();
+
   if (DDL_KEYWORDS.test(trimmed)) return 'DDL';
   if (SELECT_KEYWORDS.test(trimmed)) return 'SELECT';
   if (INSERT_KEYWORDS.test(trimmed)) return 'INSERT';
   if (UPDATE_KEYWORDS.test(trimmed)) return 'UPDATE';
   if (DELETE_KEYWORDS.test(trimmed)) return 'DELETE';
+
+  // CTE: WITH name AS (...) SELECT/INSERT/UPDATE/DELETE
+  if (/^\s*WITH\b/i.test(trimmed)) {
+    // Look for the final statement after the CTE definitions
+    if (/\)\s*SELECT\b/i.test(trimmed)) return 'SELECT';
+    if (/\)\s*INSERT\b/i.test(trimmed)) return 'INSERT';
+    if (/\)\s*UPDATE\b/i.test(trimmed)) return 'UPDATE';
+    if (/\)\s*DELETE\b/i.test(trimmed)) return 'DELETE';
+    return 'SELECT'; // CTEs are overwhelmingly SELECT
+  }
+
+  // EXPLAIN/DESCRIBE wraps another statement
+  if (/^\s*(EXPLAIN|DESCRIBE|DESC)\b/i.test(trimmed)) return 'SELECT';
+  // SHOW (SHOW TABLES, SHOW COLUMNS, etc.)
+  if (/^\s*SHOW\b/i.test(trimmed)) return 'SELECT';
+  // SET is DDL-like
+  if (/^\s*SET\b/i.test(trimmed)) return 'DDL';
+  // GRANT/REVOKE
+  if (/^\s*(GRANT|REVOKE)\b/i.test(trimmed)) return 'DDL';
+  // MERGE (upsert)
+  if (/^\s*MERGE\b/i.test(trimmed)) return 'UPDATE';
+  // CALL / EXEC (stored procedures)
+  if (/^\s*(CALL|EXEC|EXECUTE)\b/i.test(trimmed)) return 'OTHER';
+
   return 'OTHER';
 }
 

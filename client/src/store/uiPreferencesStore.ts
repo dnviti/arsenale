@@ -51,6 +51,7 @@ interface UiPreferences {
   tunnelMetricsOpen: boolean;
   desktopNotificationsEnabled: boolean;
   dbSchemaBrowserOpen: boolean;
+  dbQueryHistoryOpen: boolean;
   queryVisualizerOpen: boolean;
 }
 
@@ -111,6 +112,7 @@ const defaults: UiPreferences = {
   tunnelMetricsOpen: true,
   desktopNotificationsEnabled: false,
   dbSchemaBrowserOpen: false,
+  dbQueryHistoryOpen: false,
   queryVisualizerOpen: false,
 };
 

@@ -18,5 +18,6 @@ router.post('/:sessionId/query', asyncHandler(dbProxyController.executeQuery));
 router.get('/:sessionId/schema', asyncHandler(dbProxyController.getSchema));
 router.post('/:sessionId/explain', asyncHandler(dbProxyController.getExecutionPlan));
 router.post('/:sessionId/introspect', asyncHandler(dbProxyController.introspectDatabase));
+router.get('/:sessionId/history', asyncHandler(dbProxyController.getQueryHistory));
 
 export default router;

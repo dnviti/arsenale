@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import {
   Box, Typography, Button, Card, CardContent, CardActions, Chip,
   CircularProgress, Alert, Switch, FormControlLabel, Divider, Paper,
+  Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
 } from '@mui/material';
 import {
   AutoFixHigh as OptimizeIcon,
@@ -10,6 +11,7 @@ import {
   Refresh as RetryIcon,
   Security as PermissionIcon,
   Send as SendIcon,
+  OpenInFull as ExpandIcon,
 } from '@mui/icons-material';
 import {
   optimizeQuery, continueOptimization,
@@ -48,6 +50,7 @@ export default function AiQueryOptimizer({
   const [result, setResult] = useState<OptimizeQueryResult | null>(null);
   const [dataRequests, setDataRequests] = useState<DataRequest[]>([]);
   const [approvals, setApprovals] = useState<Record<number, boolean>>({});
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   // ---- Step 1: Start optimization ----
 
@@ -253,7 +256,13 @@ export default function AiQueryOptimizer({
         {result.optimizedSql && result.optimizedSql !== sql && (
           <>
             <Divider sx={{ my: 1.5 }} />
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+            <Box
+              sx={{
+                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5,
+                cursor: 'pointer', '&:hover': { opacity: 0.9 },
+              }}
+              onClick={() => setReviewOpen(true)}
+            >
               <Box>
                 <Typography variant="caption" fontWeight={600} color="text.secondary">Original</Typography>
                 <Box
@@ -280,18 +289,25 @@ export default function AiQueryOptimizer({
                 </Box>
               </Box>
             </Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}
+            >
+              <ExpandIcon sx={{ fontSize: 14 }} /> Click to review and accept changes
+            </Typography>
           </>
         )}
 
         <CardActions sx={{ px: 0, pt: 1.5 }}>
-          {result.optimizedSql && onApply && (
+          {result.optimizedSql && result.optimizedSql !== sql && (
             <Button
               size="small"
               variant="contained"
               startIcon={<CheckIcon />}
-              onClick={() => onApply(result.optimizedSql ?? '')}
+              onClick={() => setReviewOpen(true)}
             >
-              Apply to Editor
+              Review & Apply
             </Button>
           )}
           <Button
@@ -310,6 +326,94 @@ export default function AiQueryOptimizer({
             Dismiss
           </Button>
         </CardActions>
+
+        {/* Review & Accept dialog */}
+        <Dialog
+          open={reviewOpen}
+          onClose={() => setReviewOpen(false)}
+          maxWidth="lg"
+          fullWidth
+          PaperProps={{ sx: { bgcolor: 'background.default', maxHeight: '85vh' } }}
+        >
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1.5 }}>
+            <OptimizeIcon color="primary" />
+            Review AI Optimization
+            <Box sx={{ flex: 1 }} />
+            <IconButton size="small" onClick={() => setReviewOpen(false)}>
+              <DismissIcon />
+            </IconButton>
+          </DialogTitle>
+
+          <DialogContent dividers sx={{ p: 0 }}>
+            {/* Changes summary */}
+            {result.changes && result.changes.length > 0 && (
+              <Box sx={{ px: 3, py: 1.5, bgcolor: 'action.hover' }}>
+                <Typography variant="caption" fontWeight={600} color="text.secondary">Changes:</Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                  {result.changes.map((change, i) => (
+                    <Chip key={i} label={change} size="small" />
+                  ))}
+                </Box>
+              </Box>
+            )}
+
+            {/* Side-by-side SQL */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 300 }}>
+              <Box sx={{ borderRight: 1, borderColor: 'divider' }}>
+                <Box sx={{ px: 2, py: 1, bgcolor: 'error.dark', color: 'error.contrastText' }}>
+                  <Typography variant="subtitle2">Original Query</Typography>
+                </Box>
+                <Box
+                  sx={{
+                    p: 2, fontFamily: 'monospace', fontSize: '0.85rem',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    overflow: 'auto', maxHeight: 'calc(85vh - 250px)',
+                    bgcolor: 'grey.900', color: 'grey.300',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {sql}
+                </Box>
+              </Box>
+              <Box>
+                <Box sx={{ px: 2, py: 1, bgcolor: 'success.dark', color: 'success.contrastText' }}>
+                  <Typography variant="subtitle2">Optimized Query</Typography>
+                </Box>
+                <Box
+                  sx={{
+                    p: 2, fontFamily: 'monospace', fontSize: '0.85rem',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+                    overflow: 'auto', maxHeight: 'calc(85vh - 250px)',
+                    bgcolor: 'grey.900', color: 'grey.100',
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {result.optimizedSql}
+                </Box>
+              </Box>
+            </Box>
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, py: 1.5 }}>
+            <Button
+              color="inherit"
+              onClick={() => setReviewOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<CheckIcon />}
+              onClick={() => {
+                onApply?.(result.optimizedSql ?? '');
+                setReviewOpen(false);
+              }}
+            >
+              Accept & Apply to Editor
+            </Button>
+          </DialogActions>
+        </Dialog>
       </Box>
     );
   }

@@ -85,33 +85,131 @@ function parsePgPlanNode(node: Record<string, unknown>): PlanNode {
 }
 
 function parseMysqlPlanNode(block: Record<string, unknown>): PlanNode {
-  const table = block.table as Record<string, unknown> | undefined;
-  const nestedLoop = block.nested_loop as Record<string, unknown>[] | undefined;
-
   const children: PlanNode[] = [];
-  if (Array.isArray(nestedLoop)) {
-    for (const item of nestedLoop) {
-      const t = item.table as Record<string, unknown> | undefined;
-      if (t) {
-        children.push({
-          operator: String(t.access_type ?? 'scan'),
-          table: String(t.table_name ?? ''),
-          rows: Number(t.rows_examined_per_scan ?? t.rows_produced_per_join ?? 0),
-          cost: Number(t.read_cost ?? t.eval_cost ?? 0),
-          scanType: String(t.access_type ?? ''),
-          indexName: t.key as string | undefined,
-          filter: t.attached_condition as string | undefined,
-          children: undefined,
-        });
+
+  // Parse top-level table (simple single-table query)
+  if (block.table) {
+    children.push(parseMysqlTableNode(block.table as Record<string, unknown>));
+  }
+
+  // Parse nested_loop (joins)
+  if (Array.isArray(block.nested_loop)) {
+    for (const item of block.nested_loop as Record<string, unknown>[]) {
+      if (item.table) {
+        children.push(parseMysqlTableNode(item.table as Record<string, unknown>));
       }
     }
   }
 
+  // Parse ordering_operation (ORDER BY)
+  if (block.ordering_operation) {
+    children.push(parseMysqlOperationNode('Order', block.ordering_operation as Record<string, unknown>));
+  }
+
+  // Parse grouping_operation (GROUP BY)
+  if (block.grouping_operation) {
+    children.push(parseMysqlOperationNode('Group', block.grouping_operation as Record<string, unknown>));
+  }
+
+  // Parse duplicates_removal
+  if (block.duplicates_removal) {
+    children.push(parseMysqlOperationNode('Distinct', block.duplicates_removal as Record<string, unknown>));
+  }
+
+  // Parse materialized_from_subquery
+  if (block.materialized_from_subquery) {
+    const sub = block.materialized_from_subquery as Record<string, unknown>;
+    const subBlock = sub.query_block as Record<string, unknown> | undefined;
+    if (subBlock) {
+      const subNode = parseMysqlPlanNode(subBlock);
+      subNode.operator = 'Materialized Subquery';
+      children.push(subNode);
+    }
+  }
+
+  // Parse attached_subqueries
+  if (Array.isArray(block.attached_subqueries)) {
+    for (const sub of block.attached_subqueries as Record<string, unknown>[]) {
+      const subBlock = sub.query_block as Record<string, unknown> | undefined;
+      if (subBlock) {
+        const subNode = parseMysqlPlanNode(subBlock);
+        subNode.operator = 'Subquery';
+        children.push(subNode);
+      }
+    }
+  }
+
+  const costInfo = block.cost_info as Record<string, unknown> | undefined;
+
   return {
     operator: 'Query Block',
-    table: table ? String(table.table_name ?? '') : undefined,
-    rows: Number(block.select_id ?? 0),
-    cost: Number((block.cost_info as Record<string, unknown>)?.query_cost ?? 0),
+    rows: undefined,
+    cost: Number(costInfo?.query_cost ?? 0),
+    children: children.length > 0 ? children : undefined,
+  };
+}
+
+function parseMysqlTableNode(t: Record<string, unknown>): PlanNode {
+  const costInfo = t.cost_info as Record<string, unknown> | undefined;
+  const readCost = Number(costInfo?.read_cost ?? 0);
+  const evalCost = Number(costInfo?.eval_cost ?? 0);
+
+  // Recursively handle materialized subqueries inside table nodes
+  const children: PlanNode[] = [];
+  if (t.materialized_from_subquery) {
+    const sub = t.materialized_from_subquery as Record<string, unknown>;
+    const subBlock = sub.query_block as Record<string, unknown> | undefined;
+    if (subBlock) {
+      const subNode = parseMysqlPlanNode(subBlock);
+      subNode.operator = 'Materialized Subquery';
+      children.push(subNode);
+    }
+  }
+
+  return {
+    operator: String(t.access_type ?? 'scan').toUpperCase(),
+    table: String(t.table_name ?? ''),
+    rows: Number(t.rows_examined_per_scan ?? t.rows_produced_per_join ?? 0),
+    cost: readCost + evalCost,
+    scanType: String(t.access_type ?? ''),
+    indexName: t.key as string | undefined,
+    filter: t.attached_condition as string | undefined,
+    children: children.length > 0 ? children : undefined,
+  };
+}
+
+function parseMysqlOperationNode(label: string, op: Record<string, unknown>): PlanNode {
+  const children: PlanNode[] = [];
+
+  // Operations can contain nested tables, nested_loop, or sub-operations
+  if (op.table) {
+    children.push(parseMysqlTableNode(op.table as Record<string, unknown>));
+  }
+  if (Array.isArray(op.nested_loop)) {
+    for (const item of op.nested_loop as Record<string, unknown>[]) {
+      if (item.table) {
+        children.push(parseMysqlTableNode(item.table as Record<string, unknown>));
+      }
+    }
+  }
+  if (op.ordering_operation) {
+    children.push(parseMysqlOperationNode('Order', op.ordering_operation as Record<string, unknown>));
+  }
+  if (op.grouping_operation) {
+    children.push(parseMysqlOperationNode('Group', op.grouping_operation as Record<string, unknown>));
+  }
+  if (op.duplicates_removal) {
+    children.push(parseMysqlOperationNode('Distinct', op.duplicates_removal as Record<string, unknown>));
+  }
+  if (op.query_block) {
+    children.push(parseMysqlPlanNode(op.query_block as Record<string, unknown>));
+  }
+
+  const costInfo = op.cost_info as Record<string, unknown> | undefined;
+  return {
+    operator: label,
+    cost: Number(costInfo?.query_cost ?? 0),
+    filter: op.using_filesort === true ? 'Using filesort' : undefined,
     children: children.length > 0 ? children : undefined,
   };
 }

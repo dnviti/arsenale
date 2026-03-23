@@ -172,3 +172,25 @@ export async function introspectDatabase(req: AuthRequest, res: Response, next: 
     next(err);
   }
 }
+
+// ---- Query history ----
+
+export async function getQueryHistory(req: AuthRequest, res: Response, next: NextFunction) {
+  try {
+    assertAuthenticated(req);
+    const sessionId = req.params.sessionId as string;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+    const search = (req.query.search as string) || undefined;
+
+    const history = await dbSessionService.getQueryHistory({
+      userId: req.user.userId,
+      sessionId,
+      limit,
+      search,
+    });
+
+    res.json(history);
+  } catch (err) {
+    next(err);
+  }
+}

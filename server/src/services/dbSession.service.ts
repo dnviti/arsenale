@@ -449,3 +449,62 @@ export async function introspectDatabase(params: {
 
   return dbIntrospection.introspect(pool, type, target);
 }
+
+// ---------------------------------------------------------------------------
+// Query history — user-scoped, reads from DbAuditLog
+// ---------------------------------------------------------------------------
+
+export interface QueryHistoryEntry {
+  id: string;
+  queryText: string;
+  queryType: string;
+  executionTimeMs: number | null;
+  rowsAffected: number | null;
+  blocked: boolean;
+  createdAt: Date;
+}
+
+export async function getQueryHistory(params: {
+  userId: string;
+  sessionId: string;
+  limit?: number;
+  search?: string;
+}): Promise<QueryHistoryEntry[]> {
+  const { userId, sessionId, search } = params;
+  const limit = Math.min(params.limit ?? 50, 200);
+
+  // Validate session ownership
+  const session = await prisma.activeSession.findUnique({
+    where: { id: sessionId },
+    select: { userId: true, connectionId: true },
+  });
+  if (!session || session.userId !== userId) {
+    throw new AppError('Session not found', 404);
+  }
+
+  const where: Record<string, unknown> = {
+    userId,
+    connectionId: session.connectionId,
+  };
+
+  if (search) {
+    where.queryText = { contains: search, mode: 'insensitive' };
+  }
+
+  const rows = await prisma.dbAuditLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      queryText: true,
+      queryType: true,
+      executionTimeMs: true,
+      rowsAffected: true,
+      blocked: true,
+      createdAt: true,
+    },
+  });
+
+  return rows;
+}

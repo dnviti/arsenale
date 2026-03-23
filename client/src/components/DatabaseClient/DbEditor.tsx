@@ -7,6 +7,12 @@ import {
   IconButton,
   Tooltip,
   Divider,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
 } from '@mui/material';
 import {
   PlayArrow as RunIcon,
@@ -17,6 +23,9 @@ import {
   Code as FormatIcon,
   PowerSettingsNew as DisconnectIcon,
   Download as ExportIcon,
+  AccountTree as VisualizerIcon,
+  History as HistoryIcon,
+  SaveAlt as SaveIcon,
 } from '@mui/icons-material';
 import api from '../../api/client';
 import type { CredentialOverride } from '../../store/tabsStore';
@@ -28,12 +37,34 @@ import DockedToolbar, { ToolbarAction } from '../shared/DockedToolbar';
 import DbConnectionStatus, { DbConnectionState } from './DbConnectionStatus';
 import DbResultsTable from './DbResultsTable';
 import DbSchemaBrowser from './DbSchemaBrowser';
+import QueryVisualizer from './QueryVisualizer';
+import DbQueryHistory, { addSavedQuery, deriveQueryLabel } from './DbQueryHistory';
 
 interface DbEditorProps {
   connectionId: string;
   tabId: string;
   isActive?: boolean;
   credentials?: CredentialOverride;
+}
+
+function classifyQueryType(sql: string): string {
+  const t = sql.trim().replace(/^(--[^\n]*\n\s*|\/\*[\s\S]*?\*\/\s*)*/g, '').trim();
+  if (/^SELECT\b/i.test(t)) return 'SELECT';
+  if (/^INSERT\b/i.test(t)) return 'INSERT';
+  if (/^UPDATE\b/i.test(t)) return 'UPDATE';
+  if (/^DELETE\b/i.test(t)) return 'DELETE';
+  if (/^(CREATE|ALTER|DROP|TRUNCATE)\b/i.test(t)) return 'DDL';
+  if (/^WITH\b/i.test(t)) {
+    if (/\)\s*INSERT\b/i.test(t)) return 'INSERT';
+    if (/\)\s*UPDATE\b/i.test(t)) return 'UPDATE';
+    if (/\)\s*DELETE\b/i.test(t)) return 'DELETE';
+    return 'SELECT';
+  }
+  if (/^(EXPLAIN|DESCRIBE|DESC|SHOW)\b/i.test(t)) return 'SELECT';
+  if (/^(GRANT|REVOKE|SET)\b/i.test(t)) return 'DDL';
+  if (/^MERGE\b/i.test(t)) return 'UPDATE';
+  if (/^(CALL|EXEC|EXECUTE)\b/i.test(t)) return 'EXEC';
+  return 'OTHER';
 }
 
 export default function DbEditor({
@@ -57,9 +88,15 @@ export default function DbEditor({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [schemaTables, setSchemaTables] = useState<DbTableInfo[]>([]);
   const [schemaLoading, setSchemaLoading] = useState(false);
+  const [visualizerOpen, setVisualizerOpen] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveName, setSaveName] = useState('');
 
   const schemaBrowserOpen = useUiPreferencesStore((s) => s.dbSchemaBrowserOpen);
+  const historyOpen = useUiPreferencesStore((s) => s.dbQueryHistoryOpen);
   const setPref = useUiPreferencesStore((s) => s.set);
+
+  const [historyRefresh, setHistoryRefresh] = useState(0);
 
   // Connect to database session on mount
   useEffect(() => {
@@ -138,6 +175,8 @@ export default function DbEditor({
         sql: sqlValue.trim(),
       });
       setQueryResult(result.data as DbQueryResult);
+      // Trigger history panel refresh
+      setHistoryRefresh((n) => n + 1);
     } catch (err) {
       setQueryResult({
         columns: [],
@@ -175,15 +214,33 @@ export default function DbEditor({
     });
   }, []);
 
-  // Keyboard shortcut: Ctrl+Enter or F5 to run
+  const openSaveDialog = useCallback(() => {
+    if (!sqlValue.trim()) return;
+    setSaveName(deriveQueryLabel(sqlValue));
+    setSaveDialogOpen(true);
+  }, [sqlValue]);
+
+  const handleSaveQuery = useCallback(() => {
+    if (!saveName.trim() || !sqlValue.trim()) return;
+    addSavedQuery(connectionId, saveName.trim(), sqlValue.trim());
+    setSaveDialogOpen(false);
+    setSaveName('');
+    setHistoryRefresh((n) => n + 1);
+  }, [saveName, sqlValue, connectionId]);
+
+  // Keyboard shortcut: Ctrl+Enter or F5 to run, Ctrl+S to save
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if ((e.ctrlKey && e.key === 'Enter') || e.key === 'F5') {
         e.preventDefault();
         handleRunQuery();
       }
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        openSaveDialog();
+      }
     },
-    [handleRunQuery],
+    [handleRunQuery, openSaveDialog],
   );
 
   // Format SQL (basic)
@@ -278,6 +335,13 @@ export default function DbEditor({
       disabled: connectionState !== 'connected',
     },
     {
+      id: 'save-query',
+      icon: <SaveIcon />,
+      tooltip: 'Save query (Ctrl+S)',
+      onClick: openSaveDialog,
+      disabled: !sqlValue.trim(),
+    },
+    {
       id: 'schema-browser',
       icon: <SchemaIcon />,
       tooltip: schemaBrowserOpen ? 'Hide schema browser' : 'Show schema browser',
@@ -289,11 +353,26 @@ export default function DbEditor({
       active: schemaBrowserOpen,
     },
     {
+      id: 'query-history',
+      icon: <HistoryIcon />,
+      tooltip: historyOpen ? 'Hide query history' : 'Show query history',
+      onClick: () => setPref('dbQueryHistoryOpen', !historyOpen),
+      active: historyOpen,
+    },
+    {
       id: 'export-csv',
       icon: <ExportIcon />,
       tooltip: 'Export results as CSV',
       onClick: handleExportCsv,
       disabled: !queryResult || queryResult.columns.length === 0,
+    },
+    {
+      id: 'query-visualizer',
+      icon: <VisualizerIcon />,
+      tooltip: 'Query visualizer',
+      onClick: () => setVisualizerOpen(true),
+      disabled: !queryResult || !sqlValue.trim(),
+      active: visualizerOpen,
     },
     {
       id: 'fullscreen',
@@ -324,6 +403,8 @@ export default function DbEditor({
         flexDirection: 'column',
         position: 'relative',
         bgcolor: 'background.default',
+        minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       {/* Status bar */}
@@ -390,9 +471,9 @@ export default function DbEditor({
       )}
 
       {/* Main content area */}
-      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
         {/* Editor + Results */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
           {/* SQL editor area */}
           <Box
             sx={{
@@ -435,7 +516,7 @@ export default function DbEditor({
           <Divider />
 
           {/* Results area */}
-          <Box sx={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {executing && (
               <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CircularProgress size={16} />
@@ -474,12 +555,83 @@ export default function DbEditor({
           onTableClick={handleTableClick}
           loading={schemaLoading}
         />
+
+        {/* Query history sidebar */}
+        <DbQueryHistory
+          open={historyOpen}
+          onClose={() => setPref('dbQueryHistoryOpen', false)}
+          sessionId={sessionIdRef.current}
+          connectionId={connectionId}
+          onSelectQuery={(sql) => setSqlValue(sql)}
+          refreshTrigger={historyRefresh}
+        />
       </Box>
 
       {/* Docked toolbar */}
       {connectionState === 'connected' && (
         <DockedToolbar actions={toolbarActions} containerRef={containerRef} />
       )}
+
+      {/* Query visualizer drawer */}
+      <QueryVisualizer
+        open={visualizerOpen}
+        onClose={() => setVisualizerOpen(false)}
+        queryText={sqlValue}
+        queryType={classifyQueryType(sqlValue)}
+        executionTimeMs={queryResult?.durationMs ?? null}
+        rowsAffected={queryResult?.rowCount ?? null}
+        tablesAccessed={[]}
+        blocked={false}
+        sessionId={sessionIdRef.current ?? undefined}
+        dbProtocol={protocol}
+        onApplySql={(optimizedSql) => {
+          setSqlValue(optimizedSql);
+          setVisualizerOpen(false);
+        }}
+      />
+
+      {/* Save query dialog */}
+      <Dialog
+        open={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Save Query</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="Query name"
+            value={saveName}
+            onChange={(e) => setSaveName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveQuery(); } }}
+            sx={{ mt: 1 }}
+          />
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{
+              mt: 1,
+              display: 'block',
+              fontFamily: 'monospace',
+              fontSize: '0.7rem',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {sqlValue.replace(/\s+/g, ' ').trim().slice(0, 120)}
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSaveQuery} disabled={!saveName.trim()}>
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

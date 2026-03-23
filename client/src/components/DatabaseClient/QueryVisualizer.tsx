@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Box, Typography, Button, Drawer, IconButton, Chip, Divider,
   CircularProgress, Alert, Paper, Tooltip, AppBar, Toolbar,
@@ -34,6 +34,7 @@ interface QueryVisualizerProps {
   blockReason?: string | null;
   sessionId?: string;
   dbProtocol?: string;
+  onApplySql?: (sql: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ interface QueryVisualizerProps {
 
 export default function QueryVisualizer({
   open, onClose, queryText, queryType, executionTimeMs, rowsAffected,
-  tablesAccessed, blocked, blockReason, sessionId, dbProtocol,
+  tablesAccessed, blocked, blockReason, sessionId, dbProtocol, onApplySql,
 }: QueryVisualizerProps) {
   const [copied, setCopied] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
@@ -59,6 +60,8 @@ export default function QueryVisualizer({
     setTimeout(() => setCopied(false), 2000);
   }, [queryText]);
 
+  const lastFetchedSql = useRef<string>('');
+
   const handleGetPlan = useCallback(async () => {
     if (!sessionId) return;
     setPlanLoading(true);
@@ -66,12 +69,28 @@ export default function QueryVisualizer({
     try {
       const result = await getExecutionPlan(sessionId, queryText);
       setPlanResult(result);
+      lastFetchedSql.current = queryText;
     } catch (err) {
       setPlanError(extractApiError(err, 'Failed to fetch execution plan'));
     } finally {
       setPlanLoading(false);
     }
   }, [sessionId, queryText]);
+
+  // Auto-fetch execution plan when the drawer opens with a live session
+  useEffect(() => {
+    if (open && canExplain && !planResult && !planLoading && queryText.trim() && lastFetchedSql.current !== queryText) {
+      handleGetPlan();
+    }
+  }, [open, canExplain, planResult, planLoading, queryText, handleGetPlan]);
+
+  // Reset plan when SQL changes
+  useEffect(() => {
+    if (queryText !== lastFetchedSql.current) {
+      setPlanResult(null);
+      setPlanError('');
+    }
+  }, [queryText]);
 
   const durationColor = executionTimeMs == null
     ? 'default'
@@ -192,16 +211,10 @@ export default function QueryVisualizer({
           </Alert>
         )}
 
-        {canExplain && !planResult && !planLoading && (
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<PlanIcon />}
-            onClick={handleGetPlan}
-            sx={{ mb: 2 }}
-          >
-            Get Execution Plan
-          </Button>
+        {canExplain && !planResult && !planLoading && !planError && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Waiting for query execution...
+          </Typography>
         )}
 
         {planLoading && (
@@ -212,7 +225,17 @@ export default function QueryVisualizer({
         )}
 
         {planError && (
-          <Alert severity="error" sx={{ mb: 2 }}>{planError}</Alert>
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            action={
+              <Button size="small" color="inherit" onClick={handleGetPlan}>
+                Retry
+              </Button>
+            }
+          >
+            {planError}
+          </Alert>
         )}
 
         {planResult && (
@@ -252,6 +275,7 @@ export default function QueryVisualizer({
                 executionPlan={planResult?.plan ?? null}
                 sessionId={sessionId ?? ''}
                 dbProtocol={dbProtocol ?? ''}
+                onApply={onApplySql}
                 onDismiss={() => setShowAiOptimizer(false)}
               />
             )}

@@ -96,6 +96,32 @@ export interface IntrospectionResponse {
   data?: unknown;
 }
 
+// ---------------------------------------------------------------------------
+// Query history
+// ---------------------------------------------------------------------------
+
+export interface QueryHistoryEntry {
+  id: string;
+  queryText: string;
+  queryType: string;
+  executionTimeMs: number | null;
+  rowsAffected: number | null;
+  blocked: boolean;
+  createdAt: string;
+}
+
+export async function getQueryHistory(
+  sessionId: string,
+  limit?: number,
+  search?: string,
+): Promise<QueryHistoryEntry[]> {
+  const params: Record<string, string> = {};
+  if (limit) params.limit = String(limit);
+  if (search) params.search = search;
+  const { data } = await api.get(`/sessions/database/${sessionId}/history`, { params });
+  return data;
+}
+
 export async function introspectDatabase(
   sessionId: string,
   type: IntrospectionType,
