@@ -240,25 +240,32 @@ export async function runQuery(
   const startTime = Date.now();
   const { driver } = managed;
 
+  let result: QueryResult;
   try {
     switch (driver.type) {
       case 'postgresql':
-        return await runPostgresQuery(driver.pool, sql, maxRows);
+        result = await runPostgresQuery(driver.pool, sql, maxRows);
+        break;
 
       case 'mysql':
-        return await runMysqlQuery(driver.pool, sql, maxRows);
+        result = await runMysqlQuery(driver.pool, sql, maxRows);
+        break;
 
       case 'mongodb':
-        return await runMongoQuery(driver.client, driver.dbName, sql, maxRows);
+        result = await runMongoQuery(driver.client, driver.dbName, sql, maxRows);
+        break;
 
       case 'mssql':
-        return await runMssqlQuery(driver.pool, sql, maxRows);
+        result = await runMssqlQuery(driver.pool, sql, maxRows);
+        break;
 
       case 'oracle':
-        return await runOracleQuery(driver.pool, sql, maxRows, timeoutMs);
+        result = await runOracleQuery(driver.pool, sql, maxRows, timeoutMs);
+        break;
 
       case 'db2':
-        return await runDb2Query(driver.conn, sql, maxRows);
+        result = await runDb2Query(driver.conn, sql, maxRows);
+        break;
 
       default:
         throw new AppError('Unsupported protocol', 400);
@@ -267,10 +274,12 @@ export async function runQuery(
     if (err instanceof AppError) throw err;
     const message = err instanceof Error ? err.message : 'Query execution failed';
     throw new AppError(message, 400);
-  } finally {
-    const elapsed = Date.now() - startTime;
-    log.debug?.(`Query executed in ${elapsed}ms for session ${managed.sessionId}`);
   }
+
+  const elapsed = Date.now() - startTime;
+  log.debug?.(`Query executed in ${elapsed}ms for session ${managed.sessionId}`);
+  result.durationMs = elapsed;
+  return result;
 }
 
 // --- PostgreSQL ---
