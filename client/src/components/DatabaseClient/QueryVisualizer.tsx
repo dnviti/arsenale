@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  Box, Typography, Button, Drawer, IconButton, Chip, Divider,
+  Box, Typography, Button, Dialog, DialogContent, IconButton, Chip, Divider,
   CircularProgress, Alert, Paper, Tooltip, AppBar, Toolbar,
 } from '@mui/material';
 import {
@@ -83,14 +83,14 @@ export default function QueryVisualizer({
     }
   }, [sessionId, queryText]);
 
-  // Auto-fetch execution plan when the drawer opens with a live session
+  // Auto-fetch execution plan when the dialog opens with a live session
   useEffect(() => {
     if (open && canExplain && !planResult && !planLoading && queryText.trim() && lastFetchedSql.current !== queryText) {
       handleGetPlan();
     }
   }, [open, canExplain, planResult, planLoading, queryText, handleGetPlan]);
 
-  // Reset all state when SQL changes or drawer reopens for a different entry
+  // Reset all state when SQL changes or dialog reopens for a different entry
   useEffect(() => {
     if (queryText !== lastFetchedSql.current) {
       setPlanResult(null);
@@ -99,7 +99,7 @@ export default function QueryVisualizer({
     }
   }, [queryText]);
 
-  // Reset state when drawer closes
+  // Reset state when dialog closes
   useEffect(() => {
     if (!open) {
       setPlanResult(null);
@@ -118,11 +118,12 @@ export default function QueryVisualizer({
         : 'error';
 
   return (
-    <Drawer
-      anchor="right"
+    <Dialog
       open={open}
       onClose={onClose}
-      sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: 600, md: 720 } } }}
+      maxWidth="md"
+      fullWidth
+      PaperProps={{ sx: { maxHeight: '90vh' } }}
     >
       <AppBar position="static" color="default" elevation={0}>
         <Toolbar variant="dense">
@@ -139,7 +140,7 @@ export default function QueryVisualizer({
         </Toolbar>
       </AppBar>
 
-      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
+      <DialogContent sx={{ p: 2 }}>
         {/* Section 1: Syntax-highlighted SQL */}
         <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           SQL Query
@@ -298,7 +299,7 @@ export default function QueryVisualizer({
             )}
           </>
         )}
-      </Box>
-    </Drawer>
+      </DialogContent>
+    </Dialog>
   );
 }
