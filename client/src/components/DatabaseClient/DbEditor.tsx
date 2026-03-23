@@ -6,7 +6,6 @@ import {
   Alert,
   IconButton,
   Tooltip,
-  Divider,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -77,8 +76,22 @@ function createSubTab(): QuerySubTab {
   };
 }
 
+function stripLeadingComments(s: string): string {
+  let r = s.trim();
+  for (;;) {
+    if (r.startsWith('--')) {
+      const nl = r.indexOf('\n');
+      r = (nl === -1 ? '' : r.slice(nl + 1)).trimStart();
+    } else if (r.startsWith('/*')) {
+      const end = r.indexOf('*/');
+      r = (end === -1 ? '' : r.slice(end + 2)).trimStart();
+    } else break;
+  }
+  return r;
+}
+
 function classifyQueryType(sql: string): string {
-  const t = sql.trim().replace(/^(--[^\n]*\n\s*|\/\*[\s\S]*?\*\/\s*)*/g, '').trim();
+  const t = stripLeadingComments(sql);
   if (/^SELECT\b/i.test(t)) return 'SELECT';
   if (/^INSERT\b/i.test(t)) return 'INSERT';
   if (/^UPDATE\b/i.test(t)) return 'UPDATE';

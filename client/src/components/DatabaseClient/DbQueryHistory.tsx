@@ -120,9 +120,13 @@ export function deriveQueryLabel(sql: string): string {
   const deleteMatch = trimmed.match(/^DELETE\s+FROM\s+(?:["`])?(\w+)/i);
   if (deleteMatch) return `DELETE ${deleteMatch[1]}`;
 
-  // CREATE/ALTER/DROP
-  const ddlMatch = trimmed.match(/^(CREATE|ALTER|DROP)\s+(\w+)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:["`])?(\w+)/i);
-  if (ddlMatch) return `${ddlMatch[1].toUpperCase()} ${ddlMatch[2].toUpperCase()} ${ddlMatch[3]}`;
+  // CREATE/ALTER/DROP — strip optional IF [NOT] EXISTS before matching object name
+  const ddlHead = trimmed.match(/^(CREATE|ALTER|DROP)\s+(\w+)\s+/i);
+  if (ddlHead) {
+    const rest = trimmed.slice(ddlHead[0].length).replace(/^IF\s+NOT\s+EXISTS\s+/i, '').replace(/^IF\s+EXISTS\s+/i, '');
+    const objMatch = rest.match(/^(?:["`])?(\w+)/);
+    if (objMatch) return `${ddlHead[1].toUpperCase()} ${ddlHead[2].toUpperCase()} ${objMatch[1]}`;
+  }
 
   // SELECT ... FROM table [JOIN table2]
   const tables: string[] = [];
