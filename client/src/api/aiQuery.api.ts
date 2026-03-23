@@ -24,7 +24,20 @@ export interface AiConfigUpdate {
   enabled?: boolean;
 }
 
+export interface ObjectRequest {
+  name: string;
+  schema: string;
+  reason: string;
+}
+
+export interface AiAnalyzeResult {
+  status: 'pending_approval';
+  conversationId: string;
+  objectRequests: ObjectRequest[];
+}
+
 export interface AiGenerateResult {
+  status: 'complete';
   sql: string;
   explanation: string;
   firewallWarning?: string;
@@ -40,15 +53,26 @@ export async function updateAiConfig(update: AiConfigUpdate): Promise<AiConfig> 
   return data;
 }
 
-export async function generateQuery(
+export async function analyzeQuery(
   sessionId: string,
   prompt: string,
   dbProtocol?: string,
-): Promise<AiGenerateResult> {
+): Promise<AiAnalyzeResult> {
   const { data } = await api.post('/ai/generate-query', {
     sessionId,
     prompt,
     dbProtocol,
+  });
+  return data;
+}
+
+export async function confirmGeneration(
+  conversationId: string,
+  approvedObjects: string[],
+): Promise<AiGenerateResult> {
+  const { data } = await api.post('/ai/generate-query/confirm', {
+    conversationId,
+    approvedObjects,
   });
   return data;
 }

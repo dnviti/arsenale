@@ -14,7 +14,9 @@ import { useNotificationStore } from '../../store/notificationStore';
 const PROVIDERS = [
   { value: 'none', label: 'None (Disabled)' },
   { value: 'anthropic', label: 'Anthropic (Claude)' },
-  { value: 'openai', label: 'OpenAI / Compatible' },
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'ollama', label: 'Ollama (Local)' },
+  { value: 'openai-compatible', label: 'OpenAI-Compatible' },
 ];
 
 export default function AiQueryConfigSection() {
@@ -155,15 +157,15 @@ export default function AiQueryConfigSection() {
                 helperText="Leave empty for provider default."
               />
 
-              {provider === 'openai' && (
+              {(provider === 'openai' || provider === 'ollama' || provider === 'openai-compatible') && (
                 <TextField
                   label="Base URL"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   size="small"
                   fullWidth
-                  placeholder="https://api.openai.com/v1"
-                  helperText="For OpenAI-compatible APIs (e.g., Azure, local LLMs). Leave empty for default."
+                  placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
+                  helperText={provider === 'ollama' ? 'Required for Ollama.' : 'For OpenAI-compatible APIs. Leave empty for default.'}
                 />
               )}
 

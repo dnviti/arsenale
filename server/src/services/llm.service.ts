@@ -25,6 +25,16 @@ export interface LlmCompletionResult {
   usage?: { promptTokens: number; completionTokens: number };
 }
 
+export interface LlmOverrides {
+  provider?: string;
+  apiKey?: string;
+  model?: string;
+  baseUrl?: string;
+  maxTokens?: number;
+  temperature?: number;
+  timeoutMs?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Provider defaults
 // ---------------------------------------------------------------------------
@@ -56,15 +66,21 @@ export function getProviderName(): string {
 }
 
 /** Send a completion request to the configured LLM provider. */
-export async function complete(options: LlmCompletionOptions): Promise<LlmCompletionResult> {
-  const { provider, apiKey, baseUrl } = config.ai;
-  const model = config.ai.model || DEFAULT_MODELS[provider] || '';
-  const maxTokens = options.maxTokens ?? config.ai.maxTokens;
-  const temperature = options.temperature ?? config.ai.temperature;
+export async function complete(
+  options: LlmCompletionOptions,
+  overrides?: LlmOverrides,
+): Promise<LlmCompletionResult> {
+  const provider = overrides?.provider || config.ai.provider;
+  const apiKey = overrides?.apiKey || config.ai.apiKey;
+  const baseUrl = overrides?.baseUrl || config.ai.baseUrl;
+  const model = overrides?.model || config.ai.model || DEFAULT_MODELS[provider] || '';
+  const maxTokens = options.maxTokens ?? overrides?.maxTokens ?? config.ai.maxTokens;
+  const temperature = options.temperature ?? overrides?.temperature ?? config.ai.temperature;
+  const timeoutMs = overrides?.timeoutMs ?? config.ai.timeoutMs;
 
   if (!provider) {
     throw new AppError(
-      'AI query optimization is not available. An administrator must configure an AI/LLM provider in Settings.',
+      'AI is not available. An administrator must configure an AI/LLM provider in Settings.',
       503,
     );
   }
@@ -87,12 +103,12 @@ export async function complete(options: LlmCompletionOptions): Promise<LlmComple
     let result: LlmCompletionResult;
 
     if (provider === 'anthropic') {
-      result = await callAnthropic(options.messages, model, maxTokens, temperature, apiKey);
+      result = await callAnthropic(options.messages, model, maxTokens, temperature, apiKey, timeoutMs);
     } else {
       // openai, ollama, openai-compatible all use the OpenAI chat completions format
       const url = FIXED_BASE_URLS[provider] || baseUrl;
       const key = provider === 'ollama' ? undefined : apiKey;
-      result = await callOpenAiCompatible(options.messages, model, maxTokens, temperature, url, key);
+      result = await callOpenAiCompatible(options.messages, model, maxTokens, temperature, url, timeoutMs, key);
     }
 
     const elapsed = Date.now() - start;
@@ -121,6 +137,7 @@ async function callAnthropic(
   maxTokens: number,
   temperature: number,
   apiKey: string,
+  timeoutMs: number,
 ): Promise<LlmCompletionResult> {
   // Anthropic uses a top-level `system` field, not a system message in the array
   const systemMsg = messages.find((m) => m.role === 'system');
@@ -142,7 +159,7 @@ async function callAnthropic(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.ai.timeoutMs),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!resp.ok) {
@@ -176,6 +193,7 @@ async function callOpenAiCompatible(
   maxTokens: number,
   temperature: number,
   baseUrl: string,
+  timeoutMs: number,
   apiKey?: string,
 ): Promise<LlmCompletionResult> {
   const body = {
@@ -196,7 +214,7 @@ async function callOpenAiCompatible(
     method: 'POST',
     headers,
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(config.ai.timeoutMs),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   if (!resp.ok) {

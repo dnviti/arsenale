@@ -35,8 +35,8 @@ export async function updateConfig(req: AuthRequestType, res: Response): Promise
     enabled?: boolean;
   };
 
-  if (provider !== undefined && !['none', 'anthropic', 'openai'].includes(provider)) {
-    throw new AppError('Invalid provider. Must be "none", "anthropic", or "openai".', 400);
+  if (provider !== undefined && !['none', 'anthropic', 'openai', 'ollama', 'openai-compatible'].includes(provider)) {
+    throw new AppError('Invalid provider. Must be "none", "anthropic", "openai", "ollama", or "openai-compatible".', 400);
   }
 
   const cfg = await tenantAiConfigService.upsertConfig(tenantId, {
@@ -53,10 +53,10 @@ export async function updateConfig(req: AuthRequestType, res: Response): Promise
 }
 
 /**
- * POST /api/ai/generate-query — Generate SQL from natural language.
+ * POST /api/ai/generate-query — Analyze prompt and return needed tables for approval.
  * Requires authenticated user with a tenant (enforced by route middleware).
  */
-export async function generateQuery(req: AuthRequestType, res: Response): Promise<void> {
+export async function analyzeQuery(req: AuthRequestType, res: Response): Promise<void> {
   const { prompt, sessionId, dbProtocol: clientProtocol } = req.body as {
     prompt?: string;
     sessionId?: string;
@@ -92,7 +92,7 @@ export async function generateQuery(req: AuthRequestType, res: Response): Promis
 
   const dbProtocol = clientProtocol || 'postgresql';
 
-  const result = await aiQueryService.generateSqlFromPrompt({
+  const result = await aiQueryService.analyzeQueryIntent({
     tenantId,
     userId,
     prompt: prompt.trim(),
@@ -100,6 +100,41 @@ export async function generateQuery(req: AuthRequestType, res: Response): Promis
     dbProtocol,
     ipAddress: req.ip,
   });
+
+  res.json(result);
+}
+
+/**
+ * POST /api/ai/generate-query/confirm — Generate SQL with approved tables.
+ * Requires authenticated user with a tenant (enforced by route middleware).
+ */
+export async function confirmGeneration(req: AuthRequestType, res: Response): Promise<void> {
+  const { conversationId, approvedObjects } = req.body as {
+    conversationId?: string;
+    approvedObjects?: string[];
+  };
+
+  if (!conversationId || typeof conversationId !== 'string') {
+    throw new AppError('conversationId is required', 400);
+  }
+
+  if (!approvedObjects || !Array.isArray(approvedObjects) || approvedObjects.length === 0) {
+    throw new AppError('approvedObjects must be a non-empty array of table names', 400);
+  }
+
+  const userId = req.user!.userId;
+  const tenantId = req.user!.tenantId;
+  if (!tenantId) {
+    throw new AppError('Tenant membership required', 403);
+  }
+
+  const result = await aiQueryService.confirmAndGenerate(
+    conversationId,
+    approvedObjects,
+    userId,
+    tenantId,
+    req.ip,
+  );
 
   res.json(result);
 }

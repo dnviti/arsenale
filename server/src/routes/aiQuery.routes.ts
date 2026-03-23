@@ -23,10 +23,16 @@ router.put(
   asyncHandler(aiQueryController.updateConfig),
 );
 
-// POST /api/ai/generate-query — Generate SQL from natural language. Any authenticated tenant member.
+// POST /api/ai/generate-query — Analyze prompt and return needed tables for approval.
 router.post(
   '/generate-query',
-  asyncHandler(aiQueryController.generateQuery),
+  asyncHandler(aiQueryController.analyzeQuery),
+);
+
+// POST /api/ai/generate-query/confirm — Generate SQL with user-approved tables.
+router.post(
+  '/generate-query/confirm',
+  asyncHandler(aiQueryController.confirmGeneration),
 );
 
 // POST /api/ai/optimize-query — AI query optimization (initial analysis).
