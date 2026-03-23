@@ -18,6 +18,7 @@ export interface DbAuditLogEntry {
   executionTimeMs: number | null;
   blocked: boolean;
   blockReason: string | null;
+  executionPlan: Record<string, unknown> | null;
   createdAt: string;
   userName: string | null;
   userEmail: string | null;

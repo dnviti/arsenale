@@ -1260,6 +1260,7 @@ model DbAuditLog {
   executionTimeMs Int?
   blocked         Boolean     @default(false)
   blockReason     String?
+  executionPlan   Json?
   createdAt       DateTime    @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)

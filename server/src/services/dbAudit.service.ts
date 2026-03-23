@@ -16,6 +16,7 @@ export interface DbAuditLogInput {
   executionTimeMs?: number;
   blocked?: boolean;
   blockReason?: string;
+  executionPlan?: unknown;
 }
 
 export interface DbAuditLogEntry {
@@ -30,6 +31,7 @@ export interface DbAuditLogEntry {
   executionTimeMs: number | null;
   blocked: boolean;
   blockReason: string | null;
+  executionPlan: unknown | null;
   createdAt: Date;
 }
 
@@ -202,6 +204,7 @@ export function logQuery(input: DbAuditLogInput): void {
         executionTimeMs: input.executionTimeMs ?? null,
         blocked: input.blocked ?? false,
         blockReason: input.blockReason ?? null,
+        executionPlan: input.executionPlan ?? Prisma.DbNull,
       },
     })
     .catch((err) => {
@@ -222,6 +225,7 @@ export function interceptQuery(params: {
   executionTimeMs?: number;
   blocked?: boolean;
   blockReason?: string;
+  executionPlan?: unknown;
 }): void {
   const queryType = classifyQuery(params.queryText);
   const tablesAccessed = extractTables(params.queryText);
@@ -237,6 +241,7 @@ export function interceptQuery(params: {
     executionTimeMs: params.executionTimeMs,
     blocked: params.blocked,
     blockReason: params.blockReason,
+    executionPlan: params.executionPlan,
   });
 }
 
@@ -302,6 +307,7 @@ export async function getDbAuditLogs(query: DbAuditLogQuery): Promise<PaginatedD
     executionTimeMs: r.executionTimeMs,
     blocked: r.blocked,
     blockReason: r.blockReason,
+    executionPlan: r.executionPlan,
     createdAt: r.createdAt,
     userName: r.user?.username ?? null,
     userEmail: r.user?.email ?? null,
