@@ -21,10 +21,12 @@ export async function createPool(
   if (sessionConfig) {
     const initSql = buildSessionInitSql(sessionConfig);
     if (initSql.length > 0) {
-      // mysql2 emits 'connection' for each new pooled connection
-      pool.on('connection', (conn: mysql.PoolConnection) => {
+      // mysql2/promise pool emits 'connection' with raw callback-style connections,
+      // so use callback syntax instead of .catch() on a non-promise return value.
+      pool.on('connection', (conn: unknown) => {
+        const rawConn = conn as { query: (sql: string, cb?: (err: unknown) => void) => void };
         for (const stmt of initSql) {
-          conn.query(stmt).catch(() => {});
+          rawConn.query(stmt, () => {});
         }
       });
     }

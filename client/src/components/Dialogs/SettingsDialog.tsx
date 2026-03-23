@@ -51,6 +51,7 @@ import RdGatewayConfigSection from '../Settings/RdGatewayConfigSection';
 import DbFirewallSection from '../Settings/DbFirewallSection';
 import DbMaskingSection from '../Settings/DbMaskingSection';
 import AppearanceSection from '../Settings/AppearanceSection';
+import SqlEditorSection from '../Settings/SqlEditorSection';
 import NotificationPreferencesSection from '../Settings/NotificationPreferencesSection';
 import NotificationsSection from '../Settings/NotificationsSection';
 import { SlideUp } from '../common/SlideUp';
@@ -214,7 +215,10 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
             </Stack>
           )}
           {resolvedTab === 'appearance' && (
-            <AppearanceSection />
+            <Stack spacing={3}>
+              <AppearanceSection />
+              <SqlEditorSection />
+            </Stack>
           )}
           {resolvedTab === 'notifications' && (
             <Stack spacing={3}>

@@ -32,6 +32,8 @@ import {
   Refresh as ReconnectIcon,
   Tune as TuneIcon,
 } from '@mui/icons-material';
+import Editor, { type OnMount, type Monaco } from '@monaco-editor/react';
+import type * as monacoNs from 'monaco-editor';
 import api from '../../api/client';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { DbQueryResult, DbSchemaInfo, DbSessionConfig } from '../../api/database.api';
@@ -40,6 +42,7 @@ import { extractApiError } from '../../utils/apiError';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
+import { useThemeStore } from '../../store/themeStore';
 import DockedToolbar, { ToolbarAction } from '../shared/DockedToolbar';
 import DbConnectionStatus, { DbConnectionState } from './DbConnectionStatus';
 import DbResultsTable from './DbResultsTable';
@@ -47,6 +50,8 @@ import DbSchemaBrowser from './DbSchemaBrowser';
 import QueryVisualizer from './QueryVisualizer';
 import DbQueryHistory, { addSavedQuery, deriveQueryLabel } from './DbQueryHistory';
 import DbSessionConfigPopover from './DbSessionConfigPopover';
+import { createSqlCompletionProvider } from './sqlCompletionProvider';
+import { validateSql } from './sqlValidation';
 
 interface DbEditorProps {
   connectionId: string;
@@ -117,12 +122,18 @@ export default function DbEditor({
   credentials,
 }: DbEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<HTMLTextAreaElement>(null);
+  const monacoEditorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null);
+  const monacoRef = useRef<Monaco | null>(null);
+  const completionDisposableRef = useRef<monacoNs.IDisposable | null>(null);
+  const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
+  const handleRunQueryRef = useRef<() => void>(() => {});
+  const activeQueryTabIdRef = useRef<string>('');
+  const queryTabsRef = useRef<QuerySubTab[]>([]);
 
   // Store selectors — must be declared before any useState that depends on them
   const storedSubTabs = useUiPreferencesStore((s) => s.dbQuerySubTabs[connectionId]);
@@ -171,6 +182,12 @@ export default function DbEditor({
     return queryTabs[0].id;
   });
 
+  const sqlEditorTheme = useUiPreferencesStore((s) => s.sqlEditorTheme);
+  const sqlEditorFontSize = useUiPreferencesStore((s) => s.sqlEditorFontSize);
+  const sqlEditorFontFamily = useUiPreferencesStore((s) => s.sqlEditorFontFamily);
+  const sqlEditorMinimap = useUiPreferencesStore((s) => s.sqlEditorMinimap);
+  const themeMode = useThemeStore((s) => s.mode);
+
   const [historyRefresh, setHistoryRefresh] = useState(0);
   const wasConnectedRef = useRef(false);
   const mountedRef = useRef(true);
@@ -204,6 +221,10 @@ export default function DbEditor({
 
   // Derived active tab
   const activeTab = queryTabs.find((t) => t.id === activeQueryTabId) ?? queryTabs[0];
+
+  // Keep refs in sync so callbacks always read the latest state
+  activeQueryTabIdRef.current = activeQueryTabId;
+  queryTabsRef.current = queryTabs;
 
   // Helper to update a specific tab
   const updateTab = useCallback((targetTabId: string, patch: Partial<QuerySubTab>) => {
@@ -359,9 +380,11 @@ export default function DbEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId]);
 
-  // Execute query
+  // Execute query — reads from refs to avoid stale closures in Monaco keybinding
   const handleRunQuery = useCallback(async () => {
-    const tab = queryTabs.find((t) => t.id === activeQueryTabId);
+    const currentTabs = queryTabsRef.current;
+    const currentActiveId = activeQueryTabIdRef.current;
+    const tab = currentTabs.find((t) => t.id === currentActiveId);
     if (!sessionIdRef.current || !tab?.sql.trim() || tab.executing) return;
     const capturedTabId = tab.id;
     updateTab(capturedTabId, { executing: true, result: null });
@@ -386,7 +409,10 @@ export default function DbEditor({
       });
       setError(extractApiError(err, 'Query execution failed'));
     }
-  }, [queryTabs, activeQueryTabId, updateTab, triggerReconnect]);
+  }, [updateTab, triggerReconnect]);
+
+  // Keep ref in sync so Monaco keybinding always calls the latest handleRunQuery
+  handleRunQueryRef.current = handleRunQuery;
 
   // Refresh schema
   const handleRefreshSchema = useCallback(async () => {
@@ -406,6 +432,138 @@ export default function DbEditor({
   useEffect(() => {
     if (connectionState === 'connected') handleRefreshSchema();
   }, [connectionState, handleRefreshSchema]);
+
+  // Derive table list for SQL completion provider
+  const schemaTables = schemaData.tables;
+
+  // Resolve Monaco theme from user preference and WebUI mode
+  const resolvedMonacoTheme = sqlEditorTheme === 'auto'
+    ? (themeMode === 'dark' ? 'vs-dark' : 'vs')
+    : sqlEditorTheme;
+
+  // Register custom Monaco themes and completion provider on mount
+  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
+    monacoEditorRef.current = editor;
+    monacoRef.current = monaco;
+
+    // Define custom themes
+    monaco.editor.defineTheme('dracula', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: 'ff79c6', fontStyle: 'bold' },
+        { token: 'string', foreground: 'f1fa8c' },
+        { token: 'number', foreground: 'bd93f9' },
+        { token: 'comment', foreground: '6272a4', fontStyle: 'italic' },
+        { token: 'type', foreground: '8be9fd', fontStyle: 'italic' },
+        { token: 'operator', foreground: 'ff79c6' },
+      ],
+      colors: {
+        'editor.background': '#282a36',
+        'editor.foreground': '#f8f8f2',
+        'editor.selectionBackground': '#44475a',
+        'editor.lineHighlightBackground': '#44475a',
+        'editorCursor.foreground': '#f8f8f0',
+      },
+    });
+
+    monaco.editor.defineTheme('solarized', {
+      base: 'vs',
+      inherit: true,
+      rules: [
+        { token: 'keyword', foreground: '859900', fontStyle: 'bold' },
+        { token: 'string', foreground: '2aa198' },
+        { token: 'number', foreground: 'd33682' },
+        { token: 'comment', foreground: '93a1a1', fontStyle: 'italic' },
+        { token: 'type', foreground: 'b58900' },
+        { token: 'operator', foreground: '859900' },
+      ],
+      colors: {
+        'editor.background': '#fdf6e3',
+        'editor.foreground': '#657b83',
+        'editor.selectionBackground': '#eee8d5',
+        'editor.lineHighlightBackground': '#eee8d5',
+        'editorCursor.foreground': '#657b83',
+      },
+    });
+
+    // Register Ctrl+Enter keybinding for query execution
+    // Use ref to avoid stale closure — the action is registered once at mount,
+    // but handleRunQueryRef always points to the latest handleRunQuery.
+    editor.addAction({
+      id: 'run-sql-query',
+      label: 'Run SQL Query',
+      keybindings: [
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter,
+      ],
+      run: () => { handleRunQueryRef.current(); },
+    });
+
+    // Register F5 keybinding for query execution
+    editor.addAction({
+      id: 'run-sql-query-f5',
+      label: 'Run SQL Query (F5)',
+      keybindings: [
+        monaco.KeyCode.F5,
+      ],
+      run: () => { handleRunQueryRef.current(); },
+    });
+
+    // Register completion provider with current schema
+    completionDisposableRef.current = monaco.languages.registerCompletionItemProvider(
+      'sql',
+      createSqlCompletionProvider(monaco, schemaTables),
+    );
+
+    // Apply the resolved theme
+    monaco.editor.setTheme(resolvedMonacoTheme);
+  }, [schemaTables, resolvedMonacoTheme]) as OnMount;
+
+  // Re-register completion provider when schema changes
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+
+    // Dispose old provider and register updated one
+    completionDisposableRef.current?.dispose();
+    completionDisposableRef.current = monaco.languages.registerCompletionItemProvider(
+      'sql',
+      createSqlCompletionProvider(monaco, schemaTables),
+    );
+  }, [schemaTables]);
+
+  // Sync Monaco theme when preferences or WebUI mode change
+  useEffect(() => {
+    const monaco = monacoRef.current;
+    if (!monaco) return;
+    monaco.editor.setTheme(resolvedMonacoTheme);
+  }, [resolvedMonacoTheme]);
+
+  // Run SQL validation on debounced content change — reads activeQueryTabId from ref
+  const handleEditorChange = useCallback((value: string | undefined) => {
+    updateTab(activeQueryTabIdRef.current, { sql: value ?? '' });
+
+    // Debounced validation (300ms)
+    if (validationTimerRef.current) {
+      clearTimeout(validationTimerRef.current);
+    }
+    validationTimerRef.current = setTimeout(() => {
+      const monaco = monacoRef.current;
+      const editor = monacoEditorRef.current;
+      if (monaco && editor) {
+        const model = editor.getModel();
+        if (model) validateSql(monaco, model);
+      }
+    }, 300);
+  }, [updateTab]);
+
+  // Cleanup validation timer and completion provider on unmount
+  useEffect(() => {
+    return () => {
+      if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
+      completionDisposableRef.current?.dispose();
+    };
+  }, []);
 
   // Handle table click from schema browser — insert SELECT query
   const handleTableClick = useCallback((tableName: string, schemaName: string) => {
@@ -442,24 +600,18 @@ export default function DbEditor({
     setHistoryRefresh((n) => n + 1);
   }, [saveName, activeTab, connectionId, activeQueryTabId, updateTab]);
 
-  // Keyboard shortcut: Ctrl+Enter or F5 to run, Ctrl+S to save
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if ((e.ctrlKey && e.key === 'Enter') || e.key === 'F5') {
-        e.preventDefault();
-        handleRunQuery();
-      }
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault();
-        openSaveDialog();
-      }
-    },
-    [handleRunQuery, openSaveDialog],
-  );
-
-  // Format SQL (basic)
+  // Format SQL — uppercase keywords via Monaco or fallback
   const handleFormatSql = useCallback(() => {
-    // Basic formatting: uppercase keywords
+    const editor = monacoEditorRef.current;
+    if (editor) {
+      // Try Monaco's built-in format action first
+      const formatAction = editor.getAction('editor.action.formatDocument');
+      if (formatAction) {
+        formatAction.run();
+        return;
+      }
+    }
+    // Fallback: basic keyword uppercasing
     const keywords = [
       'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'ORDER BY', 'GROUP BY',
       'HAVING', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'OUTER JOIN',
@@ -789,31 +941,33 @@ export default function DbEditor({
               overflow: 'hidden',
             }}
           >
-            <Box
-              component="textarea"
-              ref={editorRef}
+            <Editor
+              language="sql"
+              theme={resolvedMonacoTheme}
               value={activeTab.sql}
-              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateTab(activeQueryTabId, { sql: e.target.value })}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter SQL query here... (Ctrl+Enter to execute)"
-              spellCheck={false}
-              sx={{
-                flex: 1,
-                width: '100%',
-                p: 1.5,
-                border: 'none',
-                outline: 'none',
-                resize: 'none',
-                fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", monospace',
-                fontSize: '0.875rem',
-                lineHeight: 1.5,
-                bgcolor: 'background.default',
-                color: 'text.primary',
-                minHeight: 0,
-                '&::placeholder': {
-                  color: 'text.disabled',
-                },
+              onChange={handleEditorChange}
+              onMount={handleEditorMount}
+              options={{
+                fontSize: sqlEditorFontSize,
+                fontFamily: sqlEditorFontFamily,
+                minimap: { enabled: sqlEditorMinimap },
+                lineNumbers: 'on',
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                automaticLayout: true,
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: true,
+                tabSize: 2,
+                renderLineHighlight: 'line',
+                scrollbar: { verticalScrollbarSize: 8, horizontalScrollbarSize: 8 },
+                padding: { top: 8, bottom: 8 },
+                placeholder: 'Enter SQL query here... (Ctrl+Enter to execute)',
               }}
+              loading={
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+                  <CircularProgress size={20} />
+                </Box>
+              }
             />
           </Box>
 
