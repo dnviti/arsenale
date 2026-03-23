@@ -173,7 +173,8 @@ export async function evaluateRateLimit(
   tenantId: string,
   queryType: DbQueryType,
   tenantRole?: string,
-  scopeContext?: string,
+  database?: string,
+  table?: string,
 ): Promise<RateLimitEvaluation> {
   try {
     const policies = await prisma.dbRateLimitPolicy.findMany({
@@ -187,9 +188,12 @@ export async function evaluateRateLimit(
         continue;
       }
 
-      // Check scope matching: a scoped policy only applies when the context matches
-      if (policy.scope && policy.scope !== scopeContext) {
-        continue;
+      // Check scope matching (mirrors sqlFirewall.matchesRule): match against database or table
+      if (policy.scope) {
+        const scopeLower = policy.scope.toLowerCase();
+        const dbMatch = database && database.toLowerCase() === scopeLower;
+        const tableMatch = table && table.toLowerCase() === scopeLower;
+        if (!dbMatch && !tableMatch) continue;
       }
 
       // Check role exemptions

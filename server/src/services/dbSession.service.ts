@@ -272,6 +272,7 @@ export async function executeQuery(params: {
     queryType,
     tenantRole,
     databaseName,
+    tablesAccessed[0], // primary table for scope matching
   );
 
   if (!rateLimitResult.allowed && rateLimitResult.policy) {
