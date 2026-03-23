@@ -33,6 +33,8 @@ import type { DbQueryResult, DbTableInfo } from '../../api/database.api';
 import { createDbSession, endDbSession, dbSessionHeartbeat } from '../../api/database.api';
 import { extractApiError } from '../../utils/apiError';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { useAutoReconnect } from '../../hooks/useAutoReconnect';
+import ReconnectOverlay from '../shared/ReconnectOverlay';
 import DockedToolbar, { ToolbarAction } from '../shared/DockedToolbar';
 import DbConnectionStatus, { DbConnectionState } from './DbConnectionStatus';
 import DbResultsTable from './DbResultsTable';
@@ -97,60 +99,95 @@ export default function DbEditor({
   const setPref = useUiPreferencesStore((s) => s.set);
 
   const [historyRefresh, setHistoryRefresh] = useState(0);
+  const wasConnectedRef = useRef(false);
+  const mountedRef = useRef(true);
 
-  // Connect to database session on mount
-  useEffect(() => {
-    let mounted = true;
-
-    async function connect() {
-      try {
-        const result = await createDbSession({
-          connectionId,
-          ...(credentials && {
-            username: credentials.username,
-            password: credentials.password,
-          }),
-        });
-
-        if (!mounted) {
-          // Component unmounted during connection — clean up
-          if (result.sessionId) {
-            endDbSession(result.sessionId).catch(() => {});
-          }
-          return;
-        }
-
-        sessionIdRef.current = result.sessionId;
-        setProtocol(result.protocol);
-        setDatabaseName(result.databaseName);
-        setConnectionState('connected');
-
-        // Start heartbeat
-        heartbeatRef.current = setInterval(() => {
-          if (sessionIdRef.current) {
-            dbSessionHeartbeat(sessionIdRef.current).catch((err) => {
-              if (err?.response?.status === 410) {
-                setConnectionState('error');
-                setError('Session expired due to inactivity.');
-                if (heartbeatRef.current) {
-                  clearInterval(heartbeatRef.current);
-                  heartbeatRef.current = null;
-                }
-              }
-            });
-          }
-        }, 15_000);
-      } catch (err) {
-        if (!mounted) return;
-        setConnectionState('error');
-        setError(extractApiError(err, 'Failed to connect to database'));
-      }
+  // --- Connection helper (used for initial connect + reconnect) ---
+  const connectSession = useCallback(async () => {
+    // Clean up any stale heartbeat / session before (re)connecting
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
     }
 
-    connect();
+    setConnectionState('connecting');
+    setError('');
+
+    const result = await createDbSession({
+      connectionId,
+      ...(credentials && {
+        username: credentials.username,
+        password: credentials.password,
+      }),
+    });
+
+    if (!mountedRef.current) {
+      endDbSession(result.sessionId).catch(() => {});
+      return;
+    }
+
+    sessionIdRef.current = result.sessionId;
+    setProtocol(result.protocol);
+    setDatabaseName(result.databaseName);
+    setConnectionState('connected');
+    wasConnectedRef.current = true;
+
+    // Start heartbeat
+    heartbeatRef.current = setInterval(() => {
+      if (sessionIdRef.current) {
+        dbSessionHeartbeat(sessionIdRef.current).catch((err) => {
+          if (err?.response?.status === 410) {
+            // Session expired — try to reconnect
+            if (heartbeatRef.current) {
+              clearInterval(heartbeatRef.current);
+              heartbeatRef.current = null;
+            }
+            sessionIdRef.current = null;
+            if (wasConnectedRef.current) {
+              triggerReconnect();
+            }
+          }
+        });
+      }
+    }, 15_000);
+  }, [connectionId, credentials]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Auto-reconnect hook ---
+  const {
+    reconnectState,
+    attempt: reconnectAttempt,
+    maxRetries: reconnectMaxRetries,
+    triggerReconnect,
+    cancelReconnect,
+    resetReconnect,
+  } = useAutoReconnect(connectSession);
+
+  // Reset reconnect state when connection succeeds
+  useEffect(() => {
+    if (connectionState === 'connected' && reconnectState === 'reconnecting') {
+      resetReconnect();
+    }
+  }, [connectionState, reconnectState, resetReconnect]);
+
+  // Mark failed reconnect as error state
+  useEffect(() => {
+    if (reconnectState === 'failed') {
+      setConnectionState('error');
+      setError('Reconnection failed. Click Retry or close the tab.');
+    }
+  }, [reconnectState]);
+
+  // Initial connection on mount
+  useEffect(() => {
+    mountedRef.current = true;
+    connectSession().catch((err) => {
+      if (!mountedRef.current) return;
+      setConnectionState('error');
+      setError(extractApiError(err, 'Failed to connect to database'));
+    });
 
     return () => {
-      mounted = false;
+      mountedRef.current = false;
       if (heartbeatRef.current) {
         clearInterval(heartbeatRef.current);
         heartbeatRef.current = null;
@@ -159,6 +196,7 @@ export default function DbEditor({
         endDbSession(sessionIdRef.current).catch(() => {});
         sessionIdRef.current = null;
       }
+      cancelReconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId]);
@@ -178,6 +216,13 @@ export default function DbEditor({
       // Trigger history panel refresh
       setHistoryRefresh((n) => n + 1);
     } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status;
+      if ((status === 404 || status === 410) && wasConnectedRef.current) {
+        // Session lost — trigger reconnect
+        sessionIdRef.current = null;
+        if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+        triggerReconnect();
+      }
       setQueryResult({
         columns: [],
         rows: [],
@@ -189,7 +234,7 @@ export default function DbEditor({
     } finally {
       setExecuting(false);
     }
-  }, [sqlValue, executing]);
+  }, [sqlValue, executing, triggerReconnect]);
 
   // Refresh schema
   const handleRefreshSchema = useCallback(async () => {
@@ -453,7 +498,7 @@ export default function DbEditor({
       </Box>
 
       {/* Connecting overlay */}
-      {connectionState === 'connecting' && (
+      {connectionState === 'connecting' && reconnectState === 'idle' && (
         <Box
           sx={{
             position: 'absolute',
@@ -471,6 +516,17 @@ export default function DbEditor({
           <CircularProgress size={24} sx={{ mr: 1 }} />
           <Typography>Connecting to database...</Typography>
         </Box>
+      )}
+
+      {/* Reconnect overlay */}
+      {(reconnectState === 'reconnecting' || reconnectState === 'failed') && (
+        <ReconnectOverlay
+          state={reconnectState}
+          attempt={reconnectAttempt}
+          maxRetries={reconnectMaxRetries}
+          protocol="DATABASE"
+          onRetry={triggerReconnect}
+        />
       )}
 
       {/* Error alert */}

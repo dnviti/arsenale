@@ -114,12 +114,16 @@ export async function runQuery(
 export async function runExplain(pool: OracleDb.Pool, sql: string): Promise<ExplainResult> {
   const oracledb = await getOracleDb();
   const conn = await pool.getConnection();
-  const statementId = `EXPL_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  // Oracle does not accept trailing semicolons inside EXPLAIN PLAN FOR
+  const cleanSql = sql.replace(/;\s*$/, '');
+  // Oracle STATEMENT_ID is limited to 30 bytes
+  const statementId = `E${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 30);
   try {
     // codeql[js/sql-injection] — sql is validated upstream before reaching this function.
+    // STATEMENT_ID must be a string literal — Oracle rejects bind variables here (ORA-01780).
+    // statementId is server-generated (no user input) so inline quoting is safe.
     await conn.execute(
-      `EXPLAIN PLAN SET STATEMENT_ID = :id FOR ${sql}`,
-      { id: statementId },
+      `EXPLAIN PLAN SET STATEMENT_ID = '${statementId}' FOR ${cleanSql}`,
     );
     const result = await conn.execute<Record<string, unknown>>(
       `SELECT * FROM TABLE(DBMS_XPLAN.DISPLAY(NULL, :id))`,
