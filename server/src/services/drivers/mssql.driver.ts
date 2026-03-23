@@ -322,7 +322,7 @@ export async function getRowCount(pool: mssql.ConnectionPool, table: string): Pr
       SELECT SUM(p.rows) AS approximate_count
       FROM sys.partitions p
       JOIN sys.tables t ON p.object_id = t.object_id
-      WHERE t.name = @table AND p.index_id IN (0, 1)
+      WHERE t.object_id = OBJECT_ID(@table) AND p.index_id IN (0, 1)
     `);
   return { supported: true, data: result.recordset?.[0] ?? { approximate_count: 0 } };
 }
