@@ -132,6 +132,8 @@ export default function DbEditor({
   const editorPaneRef = useRef<HTMLDivElement>(null);
   const resultsPaneRef = useRef<HTMLDivElement>(null);
   const handleRunQueryRef = useRef<() => void>(() => {});
+  const activeQueryTabIdRef = useRef<string>('');
+  const queryTabsRef = useRef<QuerySubTab[]>([]);
 
   // Store selectors — must be declared before any useState that depends on them
   const storedSubTabs = useUiPreferencesStore((s) => s.dbQuerySubTabs[connectionId]);
@@ -219,6 +221,10 @@ export default function DbEditor({
 
   // Derived active tab
   const activeTab = queryTabs.find((t) => t.id === activeQueryTabId) ?? queryTabs[0];
+
+  // Keep refs in sync so callbacks always read the latest state
+  activeQueryTabIdRef.current = activeQueryTabId;
+  queryTabsRef.current = queryTabs;
 
   // Helper to update a specific tab
   const updateTab = useCallback((targetTabId: string, patch: Partial<QuerySubTab>) => {
@@ -374,9 +380,11 @@ export default function DbEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId]);
 
-  // Execute query
+  // Execute query — reads from refs to avoid stale closures in Monaco keybinding
   const handleRunQuery = useCallback(async () => {
-    const tab = queryTabs.find((t) => t.id === activeQueryTabId);
+    const currentTabs = queryTabsRef.current;
+    const currentActiveId = activeQueryTabIdRef.current;
+    const tab = currentTabs.find((t) => t.id === currentActiveId);
     if (!sessionIdRef.current || !tab?.sql.trim() || tab.executing) return;
     const capturedTabId = tab.id;
     updateTab(capturedTabId, { executing: true, result: null });
@@ -401,7 +409,7 @@ export default function DbEditor({
       });
       setError(extractApiError(err, 'Query execution failed'));
     }
-  }, [queryTabs, activeQueryTabId, updateTab, triggerReconnect]);
+  }, [updateTab, triggerReconnect]);
 
   // Keep ref in sync so Monaco keybinding always calls the latest handleRunQuery
   handleRunQueryRef.current = handleRunQuery;
@@ -531,9 +539,9 @@ export default function DbEditor({
     monaco.editor.setTheme(resolvedMonacoTheme);
   }, [resolvedMonacoTheme]);
 
-  // Run SQL validation on debounced content change
+  // Run SQL validation on debounced content change — reads activeQueryTabId from ref
   const handleEditorChange = useCallback((value: string | undefined) => {
-    updateTab(activeQueryTabId, { sql: value ?? '' });
+    updateTab(activeQueryTabIdRef.current, { sql: value ?? '' });
 
     // Debounced validation (300ms)
     if (validationTimerRef.current) {
@@ -547,7 +555,7 @@ export default function DbEditor({
         if (model) validateSql(monaco, model);
       }
     }, 300);
-  }, [activeQueryTabId, updateTab]);
+  }, [updateTab]);
 
   // Cleanup validation timer and completion provider on unmount
   useEffect(() => {
