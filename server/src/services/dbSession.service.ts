@@ -280,7 +280,7 @@ export async function executeQuery(params: {
     config.dbQueryTimeoutMs,
   );
 
-  const durationMs = Date.now() - startTime;
+  const executionTimeMs = rawResult.durationMs;
 
   // --- Data masking ---
   const maskingPolicies = await dataMasking.getActivePolicies(tenantId);
@@ -304,8 +304,10 @@ export async function executeQuery(params: {
     blocked: false,
     blockReason: firewallNote,
     rowsAffected: rawResult.rowCount,
-    executionTimeMs: durationMs,
+    executionTimeMs,
   });
+
+  const totalDurationMs = Date.now() - startTime;
 
   auditService.log({
     userId,
@@ -318,6 +320,8 @@ export async function executeQuery(params: {
       queryType,
       tablesAccessed,
       rowsAffected: rawResult.rowCount,
+      executionTimeMs,
+      totalDurationMs,
       firewallAction: firewallResult.action ?? undefined,
       firewallRule: firewallResult.matchedRule?.name,
     },
@@ -334,7 +338,7 @@ export async function executeQuery(params: {
     columns: rawResult.columns,
     rows,
     rowCount: rawResult.rowCount,
-    durationMs,
+    durationMs: executionTimeMs,
     truncated: rawResult.truncated,
   };
 }
