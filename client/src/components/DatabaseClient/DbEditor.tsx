@@ -6,7 +6,6 @@ import {
   Alert,
   IconButton,
   Tooltip,
-  Divider,
   TextField,
   Button,
   Collapse,
@@ -714,11 +713,10 @@ export default function DbEditor({
   // AI: Insert generated SQL into editor
   const handleAiInsert = useCallback(() => {
     if (!aiResult?.sql) return;
-    setSqlValue((prev) => {
-      if (prev.trim()) return prev + '\n\n' + aiResult.sql;
-      return aiResult.sql;
-    });
-  }, [aiResult]);
+    const current = activeTab.sql;
+    const newSql = current.trim() ? current + '\n\n' + aiResult.sql : aiResult.sql;
+    updateTab(activeQueryTabId, { sql: newSql });
+  }, [aiResult, activeTab.sql, activeQueryTabId, updateTab]);
 
   // Build toolbar actions
   const toolbarActions: ToolbarAction[] = [
