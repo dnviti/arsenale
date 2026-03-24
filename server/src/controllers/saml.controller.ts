@@ -5,7 +5,7 @@ import { AuthPayload } from '../types';
 import { verifyJwt } from '../utils/jwt';
 import { AppError } from '../middleware/error.middleware';
 import { OAuthCallbackData, getSamlMetadata } from '../config/passport';
-import { Prisma } from '../lib/prisma';
+import prisma, { Prisma } from '../lib/prisma';
 import * as oauthService from '../services/oauth.service';
 import * as auditService from '../services/audit.service';
 import { issueTokens } from '../services/auth.service';
@@ -15,7 +15,7 @@ import { getClientIp } from '../utils/ip';
 import { enforceIpAllowlist } from '../utils/ipAllowlist';
 import { getRequestBinding } from '../utils/tokenBinding';
 import { generateAuthCode } from '../utils/authCodeStore';
-import { consumeLinkCode } from '../utils/linkCodeStore';
+import { consumeLinkCode, generateRelayCode, consumeRelayCode } from '../utils/linkCodeStore';
 
 export function initiateSaml(req: Request, res: Response, next: NextFunction) {
   if (!config.oauth.saml.enabled) {
@@ -53,10 +53,7 @@ export function initiateSamlLink(req: Request, res: Response, next: NextFunction
     return next(new AppError('SAML provider not available', 400));
   }
 
-  const relayState = Buffer.from(JSON.stringify({
-    action: 'link',
-    userId,
-  })).toString('base64url');
+  const relayState = generateRelayCode(userId);
 
   passport.authenticate('saml', {
     session: false,
@@ -82,27 +79,24 @@ export function handleSamlCallback(req: Request, res: Response, next: NextFuncti
       const { oauthProfile, oauthTokens, samlAttributes: rawSamlAttrs } = data;
       const samlAttributes = rawSamlAttrs as Prisma.InputJsonValue | undefined;
 
-      // Check for link operation via RelayState
-      const relayState = req.body?.RelayState;
-      if (relayState) {
-        try {
-          const stateData = JSON.parse(
-            Buffer.from(relayState as string, 'base64url').toString(),
+      // Account-link check: unconditionally attempt relay code lookup.
+      // consumeRelayCode() does a server-side Map lookup keyed by the opaque token;
+      // returns null for empty/invalid/expired codes. The returned userId is server-stored,
+      // never derived from user input. No user-controlled condition guards the action.
+      const linkUserId = consumeRelayCode(String(req.body?.RelayState ?? ''));
+      if (linkUserId) {
+        const linkUser = await prisma.user.findUnique({ where: { id: linkUserId }, select: { id: true } });
+        if (linkUser) {
+          await oauthService.linkOAuthAccount(
+            linkUser.id, oauthProfile, oauthTokens, samlAttributes,
           );
-          if (stateData.action === 'link' && stateData.userId) {
-            await oauthService.linkOAuthAccount(
-              stateData.userId, oauthProfile, oauthTokens, samlAttributes,
-            );
-            auditService.log({
-              userId: stateData.userId,
-              action: 'OAUTH_LINK',
-              details: { provider: 'saml' },
-              ipAddress: getClientIp(req),
-            });
-            return res.redirect(`${config.clientUrl}/settings?linked=saml`);
-          }
-        } catch {
-          // Not a link state — proceed with login flow
+          auditService.log({
+            userId: linkUser.id,
+            action: 'OAUTH_LINK',
+            details: { provider: 'saml' },
+            ipAddress: getClientIp(req),
+          });
+          return res.redirect(`${config.clientUrl}/settings?linked=saml`);
         }
       }
 
@@ -143,7 +137,7 @@ export function handleSamlCallback(req: Request, res: Response, next: NextFuncti
 
       res.redirect(`${config.clientUrl}/oauth/callback?code=${code}`);
     } catch (error) {
-      logger.error('SAML callback error:', error);
+      logger.error('SAML callback error:', error instanceof Error ? error.message : 'Unknown error');
       let errorCode = 'authentication_failed';
       if (error instanceof AppError && error.statusCode === 403) {
         errorCode = error.message.includes('disabled')

@@ -15,6 +15,7 @@ export interface SettingValue {
   label: string;
   description: string;
   restartRequired: boolean;
+  sensitive: boolean;
 }
 
 export interface SettingGroup {
@@ -50,5 +51,18 @@ export async function bulkUpdateSystemSettings(
   const { data } = await api.put<{
     results: Array<{ key: string; success: boolean; error?: string }>;
   }>('/admin/system-settings', { updates });
+  return data;
+}
+
+export interface DbStatusResponse {
+  host: string;
+  port: number;
+  database: string;
+  connected: boolean;
+  version: string | null;
+}
+
+export async function getAdminDbStatus(): Promise<DbStatusResponse> {
+  const { data } = await api.get<DbStatusResponse>('/admin/system-settings/db-status');
   return data;
 }

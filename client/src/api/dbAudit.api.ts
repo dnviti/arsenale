@@ -18,6 +18,7 @@ export interface DbAuditLogEntry {
   executionTimeMs: number | null;
   blocked: boolean;
   blockReason: string | null;
+  executionPlan: Record<string, unknown> | null;
   createdAt: string;
   userName: string | null;
   userEmail: string | null;
@@ -160,4 +161,57 @@ export async function updateMaskingPolicy(policyId: string, input: Partial<Maski
 
 export async function deleteMaskingPolicy(policyId: string): Promise<void> {
   await api.delete(`/db-audit/masking-policies/${policyId}`);
+}
+
+// ---- Rate Limit Policies ----
+
+export type RateLimitAction = 'REJECT' | 'LOG_ONLY';
+
+export interface RateLimitPolicy {
+  id: string;
+  tenantId: string;
+  name: string;
+  queryType: DbQueryType | null;
+  windowMs: number;
+  maxQueries: number;
+  burstMax: number;
+  exemptRoles: string[];
+  scope: string | null;
+  action: RateLimitAction;
+  enabled: boolean;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RateLimitPolicyInput {
+  name: string;
+  queryType?: DbQueryType | null;
+  windowMs?: number;
+  maxQueries?: number;
+  burstMax?: number;
+  exemptRoles?: string[];
+  scope?: string | null;
+  action?: RateLimitAction;
+  enabled?: boolean;
+  priority?: number;
+}
+
+export async function getRateLimitPolicies(): Promise<RateLimitPolicy[]> {
+  const { data } = await api.get('/db-audit/rate-limit-policies');
+  return data;
+}
+
+export async function createRateLimitPolicy(input: RateLimitPolicyInput): Promise<RateLimitPolicy> {
+  const { data } = await api.post('/db-audit/rate-limit-policies', input);
+  return data;
+}
+
+export async function updateRateLimitPolicy(policyId: string, input: Partial<RateLimitPolicyInput>): Promise<RateLimitPolicy> {
+  const { data } = await api.put(`/db-audit/rate-limit-policies/${policyId}`, input);
+  return data;
+}
+
+export async function deleteRateLimitPolicy(policyId: string): Promise<void> {
+  await api.delete(`/db-audit/rate-limit-policies/${policyId}`);
 }

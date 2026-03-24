@@ -51,8 +51,24 @@ export async function getPublicConfig(): Promise<{ selfSignupEnabled: boolean; s
   return { selfSignupEnabled: await getSelfSignupEnabled(), selfSignupEnvLocked: isSelfSignupEnvLocked() };
 }
 
-export async function getMinimalPublicConfig(): Promise<{ selfSignupEnabled: boolean }> {
-  return { selfSignupEnabled: await getSelfSignupEnabled() };
+export interface MinimalPublicConfig {
+  selfSignupEnabled: boolean;
+  features: {
+    databaseProxyEnabled: boolean;
+    connectionsEnabled: boolean;
+    keychainEnabled: boolean;
+  };
+}
+
+export async function getMinimalPublicConfig(): Promise<MinimalPublicConfig> {
+  return {
+    selfSignupEnabled: await getSelfSignupEnabled(),
+    features: {
+      databaseProxyEnabled: config.features.databaseProxyEnabled,
+      connectionsEnabled: config.features.connectionsEnabled,
+      keychainEnabled: config.features.keychainEnabled,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,7 @@ const HIBP_USER_AGENT = 'Arsenale-PasswordCheck';
  * This is NOT used for password storage — HIBP requires SHA-1 prefix matching.
  */
 function hibpFingerprint(input: string): string {
+  // lgtm[js/insufficient-password-hash] — SHA-1 mandated by HIBP k-Anonymity API; not used for storage
   return crypto.createHash('sha1').update(input).digest('hex').toUpperCase();
 }
 

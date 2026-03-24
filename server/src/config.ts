@@ -179,6 +179,15 @@ export const config = {
   sessionInactivityTimeoutSeconds: parseInt(process.env.SESSION_INACTIVITY_TIMEOUT_SECONDS || '3600', 10),
   maxConcurrentSessions: parseInt(process.env.MAX_CONCURRENT_SESSIONS || '0', 10),
   absoluteSessionTimeoutSeconds: parseInt(process.env.ABSOLUTE_SESSION_TIMEOUT_SECONDS || '43200', 10),
+  // Database query execution
+  dbQueryTimeoutMs: parseInt(process.env.DB_QUERY_TIMEOUT_MS || '30000', 10),
+  dbQueryMaxRows: parseInt(process.env.DB_QUERY_MAX_ROWS || '10000', 10),
+  // Database query rate limiting (token bucket)
+  dbRateLimitDefaultWindowMs: parseInt(process.env.DB_RATE_LIMIT_DEFAULT_WINDOW_MS || '60000', 10),
+  dbRateLimitDefaultMaxQueries: parseInt(process.env.DB_RATE_LIMIT_DEFAULT_MAX_QUERIES || '100', 10),
+  dbRateLimitCleanupIntervalMs: parseInt(process.env.DB_RATE_LIMIT_CLEANUP_INTERVAL_MS || '300000', 10),
+  dbPoolMaxConnections: parseInt(process.env.DB_POOL_MAX_CONNECTIONS || '3', 10),
+  dbPoolIdleTimeoutMs: parseInt(process.env.DB_POOL_IDLE_TIMEOUT_MS || '60000', 10),
   // Container orchestrator
   orchestratorType: (process.env.ORCHESTRATOR_TYPE || '') as '' | 'docker' | 'podman' | 'kubernetes' | 'none',
   dockerSocketPath: process.env.DOCKER_SOCKET_PATH || '/var/run/docker.sock',
@@ -250,6 +259,10 @@ export const config = {
     autoProvision: process.env.LDAP_AUTO_PROVISION !== 'false',
     defaultTenantId: process.env.LDAP_DEFAULT_TENANT_ID || '',
   },
+  // Allow connections to private/local network addresses
+  allowLocalNetwork: process.env.ALLOW_LOCAL_NETWORK?.toLowerCase() !== 'false',
+  // Allow connections to loopback addresses (localhost, 127.x, ::1) — opt-in, secure by default
+  allowLoopback: process.env.ALLOW_LOOPBACK?.toLowerCase() === 'true',
   // Multi-tenancy — allow sharing connections with users outside the sharer's tenant
   allowExternalSharing: process.env.ALLOW_EXTERNAL_SHARING === 'true',
   webauthn: {
@@ -266,5 +279,24 @@ export const config = {
     tokenTtlSeconds: parseInt(process.env.SSH_PROXY_TOKEN_TTL_SECONDS || '300', 10),
     caPublicKeyPath: process.env.SSH_PROXY_CA_PUBLIC_KEY || '',
     keystrokeRecording: process.env.SSH_PROXY_KEYSTROKE_RECORDING === 'true',
+  },
+  // Feature Toggles (opt-out: enabled by default, set to 'false' to disable)
+  features: {
+    databaseProxyEnabled: process.env.FEATURE_DATABASE_PROXY_ENABLED !== 'false',
+    connectionsEnabled: process.env.FEATURE_CONNECTIONS_ENABLED !== 'false',
+    keychainEnabled: process.env.FEATURE_KEYCHAIN_ENABLED !== 'false',
+  },
+  // AI / LLM Integration
+  ai: {
+    provider: (process.env.AI_PROVIDER || '') as '' | 'anthropic' | 'openai' | 'ollama' | 'openai-compatible',
+    apiKey: process.env.AI_API_KEY || '',
+    model: process.env.AI_MODEL || '',
+    baseUrl: process.env.AI_BASE_URL || '',
+    maxTokens: parseInt(process.env.AI_MAX_TOKENS || '4096', 10),
+    temperature: parseFloat(process.env.AI_TEMPERATURE || '0.2'),
+    timeoutMs: parseInt(process.env.AI_TIMEOUT_MS || '60000', 10),
+    queryGenerationEnabled: process.env.AI_QUERY_GENERATION_ENABLED === 'true',
+    queryGenerationModel: process.env.AI_QUERY_GENERATION_MODEL || '',
+    maxRequestsPerDay: parseInt(process.env.AI_MAX_REQUESTS_PER_DAY || '100', 10),
   },
 };

@@ -16,6 +16,7 @@ import { cleanupExpiredTokens, cleanupAbsolutelyTimedOutFamilies } from './servi
 import { checkExpiringSecrets } from './services/secretExpiry.service';
 import { markServerReady } from './services/health.service';
 import * as sessionService from './services/session.service';
+import { destroyAllPools as destroyAllDbPools } from './services/dbQueryExecutor.service';
 import { initSessionCleanup, checkAndCloseInactiveSessions } from './services/sessionCleanup.service';
 import { detectOrchestrator, OrchestratorType } from './orchestrator';
 import * as managedGatewayService from './services/managedGateway.service';
@@ -23,10 +24,19 @@ import * as autoscalerService from './services/autoscaler.service';
 import { completeGuacRecording, cleanupExpiredRecordings } from './services/recording.service';
 import { initGeoIp } from './services/geoip.service';
 import { setupTunnelHandler } from './socket/tunnel.handler';
-import { startSshProxyServer, stopSshProxyServer } from './services/sshProxy.service';
+import { startSshProxyServer, stopSshProxyServer, restartSshProxy } from './services/sshProxy.service';
 import { cleanupIdleTunnels } from './services/rdGateway.service';
 import { cleanupExpiredDeviceCodes } from './services/deviceAuth.service';
 import { applySystemSettings } from './services/systemSettings.service';
+import { registerReload } from './services/configReloader.service';
+import { reloadPassportStrategies } from './config/passport';
+import { reloadKeyRotationJob, reloadLdapSyncJob } from './services/scheduler.service';
+import { resetEmailProvider } from './services/email';
+import { resetSmsProvider } from './services/sms';
+import { rebuildLoginRateLimiter } from './middleware/loginRateLimit.middleware';
+import { rebuildOauthRateLimiters } from './middleware/oauthRateLimit.middleware';
+import { rebuildVaultRateLimiters } from './middleware/vaultRateLimit.middleware';
+import { rebuildSessionRateLimiter } from './middleware/sessionRateLimit.middleware';
 
 function freePort(port: number): void {
   try {
@@ -118,6 +128,22 @@ async function main() {
   startAllSyncJobs().catch((err) => {
     logger.error('Failed to start sync jobs:', err);
   });
+
+  // Register live-reload callbacks for system settings
+  for (const g of ['oauth-google', 'oauth-microsoft', 'oauth-github', 'oauth-oidc', 'oauth-saml']) {
+    registerReload(g, reloadPassportStrategies);
+  }
+  registerReload('ldap', reloadLdapSyncJob);
+  registerReload('key-rotation', reloadKeyRotationJob);
+  registerReload('ssh-proxy', restartSshProxy);
+  registerReload('email', resetEmailProvider);
+  registerReload('sms', resetSmsProvider);
+  registerReload('rate-limiting', rebuildLoginRateLimiter);
+  registerReload('rate-limiting-advanced', rebuildOauthRateLimiters);
+  registerReload('rate-limiting-advanced', rebuildSessionRateLimiter);
+  registerReload('vault', rebuildVaultRateLimiters);
+  registerReload('ai', () => { logger.verbose('AI/LLM settings reloaded'); });
+  registerReload('feature-toggles', () => { logger.verbose('Feature toggles reloaded'); });
 
   // Start gateway health monitors
   startAllMonitors();
@@ -395,6 +421,9 @@ async function main() {
       logger.error('Failed to close sessions on shutdown:', err);
     }
 
+    // Close all DB query executor pools
+    await destroyAllDbPools();
+
     // Stop SSH proxy server
     stopSshProxyServer();
 
@@ -417,4 +446,4 @@ async function main() {
   process.on('SIGINT', shutdown);
 }
 
-main().catch((err) => logger.error(err));
+main().catch((err) => logger.error('Fatal startup error:', err instanceof Error ? err.message : 'Unknown error'));
