@@ -79,4 +79,4 @@ Open `http://localhost:3000` — register, set up your vault, create connections
 
 - **GitHub:** [dnviti/arsenale](https://github.com/dnviti/arsenale)
 - **License:** Business Source License (BSL)
-- **Version:** 1.7.0
+- **Version:** 1.7.1
