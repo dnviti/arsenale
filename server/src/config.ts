@@ -280,7 +280,7 @@ export const config = {
     caPublicKeyPath: process.env.SSH_PROXY_CA_PUBLIC_KEY || '',
     keystrokeRecording: process.env.SSH_PROXY_KEYSTROKE_RECORDING === 'true',
   },
-  // AI / LLM Integration (SQL Query Optimizer)
+  // AI / LLM Integration
   ai: {
     provider: (process.env.AI_PROVIDER || '') as '' | 'anthropic' | 'openai' | 'ollama' | 'openai-compatible',
     apiKey: process.env.AI_API_KEY || '',
@@ -289,5 +289,8 @@ export const config = {
     maxTokens: parseInt(process.env.AI_MAX_TOKENS || '4096', 10),
     temperature: parseFloat(process.env.AI_TEMPERATURE || '0.2'),
     timeoutMs: parseInt(process.env.AI_TIMEOUT_MS || '60000', 10),
+    queryGenerationEnabled: process.env.AI_QUERY_GENERATION_ENABLED === 'true',
+    queryGenerationModel: process.env.AI_QUERY_GENERATION_MODEL || '',
+    maxRequestsPerDay: parseInt(process.env.AI_MAX_REQUESTS_PER_DAY || '100', 10),
   },
 };

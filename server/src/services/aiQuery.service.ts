@@ -1,12 +1,506 @@
+import { config } from '../config';
 import { v4 as uuidv4 } from 'uuid';
-import * as auditService from './audit.service';
-import * as llm from './llm.service';
 import { logger } from '../utils/logger';
 import { AppError } from '../middleware/error.middleware';
+import prisma from '../lib/prisma';
+import * as auditService from './audit.service';
+import * as tenantAiConfigService from './tenantAiConfig.service';
+import * as sqlFirewall from './sqlFirewall.service';
+import * as llm from './llm.service';
+import type { TableInfo } from './dbSession.service';
 import type { IntrospectionType } from './dbIntrospection.service';
-import type { LlmMessage } from './llm.service';
+import type { LlmMessage, LlmOverrides } from './llm.service';
 
-const log = logger.child('ai-query');
+const log = logger.child('aiQuery');
+
+// ===========================================================================
+// AI Query Generation (AISQL-2069)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Per-tenant daily request counters (persisted in DB via AiDailyUsage)
+// ---------------------------------------------------------------------------
+async function incrementDailyCounter(tenantId: string, limit: number): Promise<void> {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  // Ensure the row exists
+  await prisma.aiDailyUsage.upsert({
+    where: { tenantId_date: { tenantId, date: today } },
+    create: { tenantId, date: today, count: 0 },
+    update: {},
+  });
+
+  // Atomic conditional increment: only increment if below limit
+  const updated = await prisma.$executeRaw`
+    UPDATE "AiDailyUsage"
+    SET count = count + 1, "updatedAt" = NOW()
+    WHERE "tenantId" = ${tenantId} AND date = ${today} AND count < ${limit}
+  `;
+
+  if (updated === 0) {
+    throw new AppError('Daily AI query generation limit reached for this tenant', 429);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Schema formatting
+// ---------------------------------------------------------------------------
+function formatSchemaContext(tables: TableInfo[], dbProtocol: string): string {
+  if (!tables.length) return 'No schema information available.';
+
+  const lines: string[] = [`Database type: ${dbProtocol}`, '', 'Schema:'];
+
+  for (const table of tables.slice(0, 50)) {
+    const qualifiedName = table.schema && table.schema !== 'public'
+      ? `${table.schema}.${table.name}`
+      : table.name;
+
+    const cols = table.columns
+      .map((c) => {
+        const nullable = c.nullable ? ' NULL' : ' NOT NULL';
+        const pk = c.isPrimaryKey ? ' PK' : '';
+        return `  ${c.name} ${c.dataType}${nullable}${pk}`;
+      })
+      .join('\n');
+
+    lines.push(`\nTABLE ${qualifiedName}:`);
+    lines.push(cols);
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// System prompt for query generation
+// ---------------------------------------------------------------------------
+function buildGenerationSystemPrompt(dbProtocol: string): string {
+  const dialect = dbProtocol.toUpperCase();
+  return `You are a SQL query assistant. You generate SQL queries from natural language descriptions.
+
+CRITICAL CONSTRAINT:
+You may ONLY reference tables that appear in the schema below. The user has explicitly approved only these tables. You MUST NOT reference, join, subquery, or otherwise use ANY table not listed in the schema. If the approved tables are insufficient to fully answer the request, write the best query you can using ONLY the approved tables and explain the limitation.
+
+RULES:
+1. ONLY generate SELECT queries. NEVER generate INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, or any DML/DDL statements.
+2. Use the correct SQL dialect for ${dialect}.
+3. ONLY use table and column names from the provided schema — do not reference any other tables.
+4. If the request is ambiguous, make reasonable assumptions and explain them.
+5. When the user does not specify a limit, add a reasonable limit on the number of returned rows. Use the appropriate limiting syntax for the ${dialect} dialect (for example, LIMIT for PostgreSQL/MySQL, TOP for MSSQL, FETCH FIRST for DB2/Oracle).
+6. Use table aliases for readability.
+7. Return your response as a JSON object with two fields:
+   - "sql": the generated SELECT query (using ONLY approved tables)
+   - "explanation": a brief explanation of what the query does and any assumptions made
+
+Example response:
+{"sql": "SELECT o.id, o.total FROM orders o WHERE o.total > 1000", "explanation": "Retrieves orders where the total is greater than 1000."}`;
+}
+
+// ---------------------------------------------------------------------------
+// Response parsing for query generation
+// ---------------------------------------------------------------------------
+function parseGenerationResponse(raw: string): { sql: string; explanation: string } {
+  // Try to extract JSON from the response
+  const jsonMatch = raw.match(/\{[\s\S]*"sql"[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as { sql?: string; explanation?: string };
+      if (parsed.sql) {
+        return {
+          sql: parsed.sql.trim(),
+          explanation: parsed.explanation?.trim() ?? '',
+        };
+      }
+    } catch {
+      // Fall through to text parsing
+    }
+  }
+
+  // Extract SQL from code block
+  const sqlMatch = raw.match(/```sql\s*([\s\S]*?)```/i) ?? raw.match(/```\s*([\s\S]*?)```/);
+  const sql = sqlMatch ? sqlMatch[1].trim() : raw.trim();
+
+  // Everything after the code block is explanation
+  const afterBlock = sqlMatch ? raw.slice(raw.indexOf('```', raw.indexOf('```') + 3) + 3).trim() : '';
+
+  return { sql, explanation: afterBlock || '' };
+}
+
+// ---------------------------------------------------------------------------
+// Table reference enforcement
+// ---------------------------------------------------------------------------
+/**
+ * Checks if the SQL references any table from the full schema that is NOT in
+ * the approved (filtered) schema. Returns the first violating table name or null.
+ */
+function findUnapprovedTableReference(
+  sql: string,
+  approvedTables: TableInfo[],
+  allTables: TableInfo[],
+): string | null {
+  const approvedNames = new Set<string>();
+  for (const t of approvedTables) {
+    approvedNames.add(t.name.toLowerCase());
+    approvedNames.add(`${t.schema}.${t.name}`.toLowerCase());
+  }
+
+  const sqlLower = sql.toLowerCase();
+
+  for (const t of allTables) {
+    const unqualified = t.name.toLowerCase();
+    const qualified = `${t.schema}.${t.name}`.toLowerCase();
+
+    // Skip if this table is approved
+    if (approvedNames.has(unqualified) || approvedNames.has(qualified)) continue;
+
+    // Check if the unapproved table name appears as a word in the SQL
+    // Use word boundary matching to avoid false positives (e.g., "orders" matching "order_items")
+    const pattern = new RegExp(`\\b${escapeRegex(unqualified)}\\b`, 'i');
+    if (pattern.test(sqlLower)) {
+      return t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name;
+    }
+    // Also check qualified form
+    const qualifiedPattern = new RegExp(`\\b${escapeRegex(qualified)}\\b`, 'i');
+    if (qualifiedPattern.test(sqlLower)) {
+      return `${t.schema}.${t.name}`;
+    }
+  }
+
+  return null;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// ---------------------------------------------------------------------------
+// Generation conversation store (in-memory, TTL-managed)
+// ---------------------------------------------------------------------------
+export interface ObjectRequest {
+  name: string;
+  schema: string;
+  reason: string;
+}
+
+interface GenerationConversation {
+  id: string;
+  userId: string;
+  tenantId: string;
+  prompt: string;
+  dbProtocol: string;
+  fullSchema: TableInfo[];
+  overrides?: LlmOverrides;
+  ipAddress?: string;
+  createdAt: Date;
+}
+
+const generationConversations = new Map<string, GenerationConversation>();
+
+const GENERATION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+setInterval(() => {
+  const cutoff = Date.now() - GENERATION_TTL_MS;
+  for (const [id, conv] of generationConversations) {
+    if (conv.createdAt.getTime() < cutoff) generationConversations.delete(id);
+  }
+}, 60_000);
+
+// ---------------------------------------------------------------------------
+// Planning system prompt (step 1: which tables are needed)
+// ---------------------------------------------------------------------------
+function buildPlanningSystemPrompt(): string {
+  return `You are a SQL query planning assistant. Given a user's request and a list of available database tables, determine which tables are needed to write the query.
+
+Return ONLY valid JSON with no markdown fences:
+{"tables": [{"name": "table_name", "schema": "schema_name", "reason": "brief reason this table is needed"}]}
+
+Rules:
+- Only include tables that are genuinely needed to answer the user's request.
+- Do not invent tables that are not in the provided list.
+- Include join tables if a relationship requires them.
+- Keep reasons concise (one sentence).`;
+}
+
+function formatTableList(tables: TableInfo[]): string {
+  if (!tables.length) return 'No tables available.';
+  const lines: string[] = ['Available tables:'];
+  for (const t of tables.slice(0, 100)) {
+    const qualified = t.schema && t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name;
+    const colNames = t.columns.map((c) => c.name).join(', ');
+    lines.push(`- ${qualified} (${colNames})`);
+  }
+  return lines.join('\n');
+}
+
+function parsePlanningResponse(raw: string): ObjectRequest[] {
+  const jsonMatch = raw.match(/\{[\s\S]*"tables"[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as { tables?: Array<{ name?: string; schema?: string; reason?: string }> };
+      if (Array.isArray(parsed.tables)) {
+        return parsed.tables
+          .filter((t) => t.name)
+          .map((t) => ({ name: t.name!, schema: t.schema || 'public', reason: t.reason || '' }));
+      }
+    } catch {
+      // Fall through
+    }
+  }
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+export interface AnalyzeParams {
+  tenantId: string;
+  userId: string;
+  prompt: string;
+  schema: TableInfo[];
+  dbProtocol: string;
+  ipAddress?: string;
+}
+
+export interface AnalyzeResult {
+  status: 'pending_approval';
+  conversationId: string;
+  objectRequests: ObjectRequest[];
+}
+
+export interface GenerateResult {
+  status: 'complete';
+  sql: string;
+  explanation: string;
+  firewallWarning?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Step 1: Analyze query intent (returns needed tables for approval)
+// ---------------------------------------------------------------------------
+export async function analyzeQueryIntent(params: AnalyzeParams): Promise<AnalyzeResult> {
+  const { tenantId, userId, prompt, schema, dbProtocol, ipAddress } = params;
+
+  // 1. Get tenant AI configuration
+  const tenantCfg = await tenantAiConfigService.getFullConfig(tenantId);
+
+  // 2. Check if feature is enabled
+  if (!config.ai.queryGenerationEnabled && !tenantCfg?.enabled) {
+    throw new AppError('AI query generation is not enabled', 403);
+  }
+
+  // 3. Build LLM overrides
+  const queryModel = config.ai.queryGenerationModel || undefined;
+  const dailyLimit = tenantCfg?.dailyRequestLimit ?? config.ai.maxRequestsPerDay;
+
+  let overrides: LlmOverrides | undefined;
+  if (tenantCfg && tenantCfg.provider !== 'none' && tenantCfg.apiKey) {
+    overrides = {
+      provider: tenantCfg.provider,
+      apiKey: tenantCfg.apiKey,
+      model: tenantCfg.modelId || queryModel,
+      baseUrl: tenantCfg.baseUrl || undefined,
+      maxTokens: tenantCfg.maxTokensPerRequest,
+    };
+  } else if (queryModel) {
+    overrides = { model: queryModel };
+  }
+
+  // 4. Rate-limit check
+  await incrementDailyCounter(tenantId, dailyLimit);
+
+  // 5. Ask LLM which tables are needed
+  const systemPrompt = buildPlanningSystemPrompt();
+  const tableList = formatTableList(schema);
+  const userPrompt = `${tableList}\n\nUser request: ${prompt}`;
+
+  let objectRequests: ObjectRequest[];
+  try {
+    const llmResult = await llm.complete({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }, overrides);
+    objectRequests = parsePlanningResponse(llmResult.content);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    log.error(`AI query planning failed: ${message}`);
+    throw new AppError(`AI query planning failed: ${message}`, 502);
+  }
+
+  // Filter to only tables that actually exist in the schema
+  const schemaLookup = new Set(schema.map((t) => `${t.schema}.${t.name}`));
+  objectRequests = objectRequests.filter((r) => schemaLookup.has(`${r.schema}.${r.name}`));
+
+  if (objectRequests.length === 0) {
+    throw new AppError('The AI could not identify any relevant tables for your request. Try rephrasing.', 400);
+  }
+
+  // 6. Store conversation
+  const conversationId = uuidv4();
+  generationConversations.set(conversationId, {
+    id: conversationId,
+    userId,
+    tenantId,
+    prompt,
+    dbProtocol,
+    fullSchema: schema,
+    overrides,
+    ipAddress,
+    createdAt: new Date(),
+  });
+
+  log.info(`AI query analysis started: conversation ${conversationId}, ${objectRequests.length} tables requested`);
+
+  return { status: 'pending_approval', conversationId, objectRequests };
+}
+
+// ---------------------------------------------------------------------------
+// Step 2: Generate SQL with approved tables only
+// ---------------------------------------------------------------------------
+export async function confirmAndGenerate(
+  conversationId: string,
+  approvedObjects: string[],
+  userId: string,
+  tenantId: string,
+  ipAddress?: string,
+): Promise<GenerateResult> {
+  const conv = generationConversations.get(conversationId);
+  if (!conv) {
+    throw new AppError('Conversation expired or not found. Please start a new query.', 404);
+  }
+
+  if (conv.userId !== userId || conv.tenantId !== tenantId) {
+    throw new AppError('Unauthorized', 403);
+  }
+
+  // Clean up the conversation
+  generationConversations.delete(conversationId);
+
+  // Filter schema to only approved tables
+  const approvedSet = new Set(approvedObjects);
+  const filteredSchema = conv.fullSchema.filter((t) => {
+    const qualified = `${t.schema}.${t.name}`;
+    const unqualified = t.name;
+    return approvedSet.has(qualified) || approvedSet.has(unqualified);
+  });
+
+  if (filteredSchema.length === 0) {
+    throw new AppError('No tables were approved. Cannot generate a query.', 400);
+  }
+
+  // Build prompts with filtered schema only
+  const systemPrompt = buildGenerationSystemPrompt(conv.dbProtocol);
+  const schemaContext = formatSchemaContext(filteredSchema, conv.dbProtocol);
+  const userPrompt = `${schemaContext}\n\nUser request: ${conv.prompt}`;
+
+  const provider = conv.overrides?.provider || config.ai.provider || 'none';
+  const model = conv.overrides?.model || config.ai.model || '';
+
+  let result: { sql: string; explanation: string };
+  try {
+    const llmResult = await llm.complete({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    }, conv.overrides);
+
+    result = parseGenerationResponse(llmResult.content);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    log.error(`AI query generation failed: ${message}`);
+    throw new AppError(`AI query generation failed: ${message}`, 502);
+  }
+
+  // Validate SELECT-only
+  const normalizedSql = result.sql.replace(/^\s*--.*/gm, '').trim();
+  const firstWord = normalizedSql.split(/\s+/)[0]?.toUpperCase();
+  if (firstWord !== 'SELECT' && firstWord !== 'WITH' && firstWord !== '(') {
+    log.warn(`AI generated non-SELECT query, blocking: first word was "${firstWord}"`);
+    throw new AppError('The AI generated a non-SELECT query. Only SELECT queries are allowed.', 400);
+  }
+
+  // Enforce approved tables — reject SQL that references unapproved tables
+  const violation = findUnapprovedTableReference(result.sql, filteredSchema, conv.fullSchema);
+  if (violation) {
+    log.warn(`AI referenced unapproved table "${violation}", regenerating with stricter constraint`);
+    // Retry once with an explicit denial list
+    const deniedTables = conv.fullSchema
+      .filter((t) => !filteredSchema.some((f) => f.name === t.name && f.schema === t.schema))
+      .map((t) => t.schema !== 'public' ? `${t.schema}.${t.name}` : t.name);
+    const stricterPrompt = `${schemaContext}\n\nIMPORTANT: You MUST NOT reference these denied tables: ${deniedTables.join(', ')}\n\nUser request: ${conv.prompt}`;
+    try {
+      const retryResult = await llm.complete({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: stricterPrompt },
+        ],
+      }, conv.overrides);
+      result = parseGenerationResponse(retryResult.content);
+      // Check again
+      const retryViolation = findUnapprovedTableReference(result.sql, filteredSchema, conv.fullSchema);
+      if (retryViolation) {
+        throw new AppError(
+          `The AI used unapproved table "${retryViolation}". Only these tables were approved: ${approvedObjects.join(', ')}. Try approving more tables or rephrasing your request.`,
+          400,
+        );
+      }
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        `The AI used unapproved table "${violation}". Only these tables were approved: ${approvedObjects.join(', ')}. Try approving more tables or rephrasing your request.`,
+        400,
+      );
+    }
+  }
+
+  // SQL firewall check (advisory)
+  let firewallWarning: string | undefined;
+  try {
+    const firewallResult = await sqlFirewall.evaluateQuery(tenantId, result.sql);
+    if (!firewallResult.allowed) {
+      firewallWarning = firewallResult.matchedRule
+        ? `Firewall would block: ${firewallResult.matchedRule.name}`
+        : 'SQL firewall would block this query';
+    } else if (firewallResult.matchedRule && firewallResult.action !== 'BLOCK') {
+      firewallWarning = `Firewall alert: ${firewallResult.matchedRule.name}`;
+    }
+  } catch {
+    // Firewall check is best-effort
+  }
+
+  // Audit log
+  auditService.log({
+    userId,
+    action: 'AI_QUERY_GENERATED',
+    targetType: 'DatabaseQuery',
+    targetId: tenantId,
+    details: {
+      prompt: conv.prompt.slice(0, 200),
+      generatedSql: result.sql,
+      approvedTables: approvedObjects,
+      provider,
+      model,
+      tenantId,
+      firewallWarning: firewallWarning ?? undefined,
+    },
+    ipAddress,
+  });
+
+  return {
+    status: 'complete',
+    sql: result.sql,
+    explanation: result.explanation,
+    firewallWarning,
+  };
+}
+
+// ===========================================================================
+// AI Query Optimization (SQLVIZ-2070)
+// ===========================================================================
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,10 +547,10 @@ interface ConversationState {
 const conversations = new Map<string, ConversationState>();
 
 // ---------------------------------------------------------------------------
-// System prompt
+// System prompt for optimization
 // ---------------------------------------------------------------------------
 
-const SYSTEM_PROMPT = `You are an expert SQL performance analyst and query optimizer.
+const OPTIMIZATION_SYSTEM_PROMPT = `You are an expert SQL performance analyst and query optimizer.
 Your task is to analyze SQL queries and their execution plans, then produce optimized versions.
 
 You work in a multi-turn flow:
@@ -120,7 +614,7 @@ export async function optimizeQuery(
 
   const userMessage = buildFirstTurnMessage(input);
   const messages: LlmMessage[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: OPTIMIZATION_SYSTEM_PROMPT },
     { role: 'user', content: userMessage },
   ];
 

@@ -60,6 +60,8 @@ model Tenant {
   tenantVaultMembers TenantVaultMember[]
   syncProfiles       SyncProfile[]
   externalVaultProviders ExternalVaultProvider[]
+  aiConfig           TenantAiConfig?
+  aiDailyUsage       AiDailyUsage[]
 }
 
 model Team {
@@ -460,6 +462,20 @@ model SshKeyPair {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
+model AiDailyUsage {
+  id        String   @id @default(uuid())
+  tenantId  String
+  date      DateTime @db.Date
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
+  @@index([date])
+}
+
 model SharedConnection {
   id               String     @id @default(uuid())
   connectionId     String
@@ -701,6 +717,7 @@ enum AuditAction {
   KEYSTROKE_POLICY_CREATE
   KEYSTROKE_POLICY_UPDATE
   KEYSTROKE_POLICY_DELETE
+  AI_QUERY_GENERATED
   DB_QUERY_PLAN_REQUESTED
   DB_QUERY_AI_OPTIMIZED
   DB_INTROSPECTION_REQUESTED
@@ -1243,6 +1260,7 @@ model DbAuditLog {
   executionTimeMs Int?
   blocked         Boolean     @default(false)
   blockReason     String?
+  executionPlan   Json?
   createdAt       DateTime    @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1403,4 +1421,22 @@ model KeystrokePolicy {
 
   @@index([tenantId])
   @@index([tenantId, enabled])
+}
+
+model TenantAiConfig {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  provider            String   @default("none")
+  encryptedApiKey     String?
+  apiKeyIV            String?
+  apiKeyTag           String?
+  modelId             String   @default("claude-sonnet-4-20250514")
+  baseUrl             String?
+  maxTokensPerRequest Int      @default(4000)
+  dailyRequestLimit   Int      @default(100)
+  enabled             Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

@@ -34,6 +34,7 @@ interface QueryVisualizerProps {
   blockReason?: string | null;
   sessionId?: string;
   dbProtocol?: string;
+  storedExecutionPlan?: Record<string, unknown> | null;
   onApplySql?: (sql: string) => void;
 }
 
@@ -43,7 +44,7 @@ interface QueryVisualizerProps {
 
 export default function QueryVisualizer({
   open, onClose, queryText, queryType, executionTimeMs, rowsAffected,
-  tablesAccessed, blocked, blockReason, sessionId, dbProtocol, onApplySql,
+  tablesAccessed, blocked, blockReason, sessionId, dbProtocol, storedExecutionPlan, onApplySql,
 }: QueryVisualizerProps) {
   const [copied, setCopied] = useState(false);
   const [planLoading, setPlanLoading] = useState(false);
@@ -53,6 +54,7 @@ export default function QueryVisualizer({
 
   const unsupportedProtocols = ['mongodb', 'db2'];
   const canExplain = sessionId && dbProtocol && !unsupportedProtocols.includes(dbProtocol) && !blocked;
+  const hasStoredPlan = storedExecutionPlan != null && 'supported' in storedExecutionPlan;
 
   const handleCopy = useCallback(async () => {
     try {
@@ -217,7 +219,25 @@ export default function QueryVisualizer({
           Execution Plan
         </Typography>
 
-        {!canExplain && (
+        {/* Stored plan from audit log */}
+        {hasStoredPlan && (
+          <Box sx={{ mb: 2.5 }}>
+            {storedExecutionPlan.supported ? (
+              <ExecutionPlanTree
+                plan={storedExecutionPlan.plan}
+                format={(storedExecutionPlan.format as 'json' | 'xml' | 'text') ?? 'json'}
+                raw={storedExecutionPlan.raw as string | undefined}
+              />
+            ) : (
+              <Alert severity="info">
+                Execution plans are not supported for this database protocol.
+              </Alert>
+            )}
+          </Box>
+        )}
+
+        {/* Live session plan fetch */}
+        {!hasStoredPlan && !canExplain && (
           <Alert severity="info" sx={{ mb: 2 }}>
             {blocked
               ? 'Execution plan is not available for blocked queries.'
@@ -229,20 +249,20 @@ export default function QueryVisualizer({
           </Alert>
         )}
 
-        {canExplain && !planResult && !planLoading && !planError && (
+        {!hasStoredPlan && canExplain && !planResult && !planLoading && !planError && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Waiting for query execution...
           </Typography>
         )}
 
-        {planLoading && (
+        {!hasStoredPlan && planLoading && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             <CircularProgress size={20} />
             <Typography variant="body2" color="text.secondary">Fetching execution plan...</Typography>
           </Box>
         )}
 
-        {planError && (
+        {!hasStoredPlan && planError && (
           <Alert
             severity="error"
             sx={{ mb: 2 }}
@@ -256,7 +276,7 @@ export default function QueryVisualizer({
           </Alert>
         )}
 
-        {planResult && (
+        {!hasStoredPlan && planResult && (
           <Box sx={{ mb: 2.5 }}>
             {planResult.supported ? (
               <ExecutionPlanTree

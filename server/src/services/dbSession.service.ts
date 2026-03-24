@@ -393,6 +393,20 @@ export async function executeQuery(params: {
 
   const executionTimeMs = rawResult.durationMs;
 
+  // --- Best-effort execution plan capture (for audit log) ---
+  let executionPlanJson: unknown = undefined;
+  const unsupportedProtocols = new Set(['mongodb', 'db2']);
+  if (!unsupportedProtocols.has(pool.protocol)) {
+    try {
+      const explainResult = await dbQueryExecutor.runExplain(pool, sql);
+      if (explainResult.supported) {
+        executionPlanJson = explainResult;
+      }
+    } catch {
+      // Execution plan capture is best-effort; never fail the query
+    }
+  }
+
   // --- Data masking ---
   const maskingPolicies = await dataMasking.getActivePolicies(tenantId);
   const maskedColumns = dataMasking.findMaskedColumns(
@@ -416,6 +430,7 @@ export async function executeQuery(params: {
     blockReason: firewallNote,
     rowsAffected: rawResult.rowCount,
     executionTimeMs,
+    executionPlan: executionPlanJson,
   });
 
   const totalDurationMs = Date.now() - startTime;

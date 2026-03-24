@@ -51,6 +51,7 @@ interface UiPreferences {
   tunnelMetricsOpen: boolean;
   desktopNotificationsEnabled: boolean;
   dbSchemaBrowserOpen: boolean;
+  dbAiPanelOpen: boolean;
   dbQueryHistoryOpen: boolean;
   queryVisualizerOpen: boolean;
   dbQuerySubTabs: Record<string, { tabs: Array<{ id: string; label: string; sql: string }>; activeId: string }>;
@@ -119,6 +120,7 @@ const defaults: UiPreferences = {
   tunnelMetricsOpen: true,
   desktopNotificationsEnabled: false,
   dbSchemaBrowserOpen: false,
+  dbAiPanelOpen: false,
   dbQueryHistoryOpen: false,
   queryVisualizerOpen: false,
   dbQuerySubTabs: {},

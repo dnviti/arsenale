@@ -6,14 +6,21 @@ import {
   Alert,
   IconButton,
   Tooltip,
+  TextField,
+  Button,
+  Collapse,
+  Paper,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Button,
-  TextField,
   Tab,
   Tabs,
+  Card,
+  CardContent,
+  Chip,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   PlayArrow as RunIcon,
@@ -24,6 +31,7 @@ import {
   Code as FormatIcon,
   PowerSettingsNew as DisconnectIcon,
   Download as ExportIcon,
+  AutoAwesome as AiIcon,
   AccountTree as VisualizerIcon,
   History as HistoryIcon,
   SaveAlt as SaveIcon,
@@ -31,6 +39,8 @@ import {
   Close as CloseIcon,
   Refresh as ReconnectIcon,
   Tune as TuneIcon,
+  Security as PermissionIcon,
+  Send as SendIcon,
 } from '@mui/icons-material';
 import Editor, { type OnMount, type Monaco } from '@monaco-editor/react';
 import type * as monacoNs from 'monaco-editor';
@@ -39,6 +49,7 @@ import type { CredentialOverride } from '../../store/tabsStore';
 import type { DbQueryResult, DbSchemaInfo, DbSessionConfig } from '../../api/database.api';
 import { createDbSession, endDbSession, dbSessionHeartbeat, updateDbSessionConfig } from '../../api/database.api';
 import { extractApiError } from '../../utils/apiError';
+import { analyzeQuery, confirmGeneration, type ObjectRequest } from '../../api/aiQuery.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useAutoReconnect } from '../../hooks/useAutoReconnect';
 import ReconnectOverlay from '../shared/ReconnectOverlay';
@@ -50,6 +61,7 @@ import DbSchemaBrowser from './DbSchemaBrowser';
 import QueryVisualizer from './QueryVisualizer';
 import DbQueryHistory, { addSavedQuery, deriveQueryLabel } from './DbQueryHistory';
 import DbSessionConfigPopover from './DbSessionConfigPopover';
+import { format as formatSql } from 'sql-formatter';
 import { createSqlCompletionProvider } from './sqlCompletionProvider';
 import { validateSql } from './sqlValidation';
 
@@ -125,6 +137,7 @@ export default function DbEditor({
   const monacoEditorRef = useRef<monacoNs.editor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<Monaco | null>(null);
   const completionDisposableRef = useRef<monacoNs.IDisposable | null>(null);
+  const formattingDisposableRef = useRef<monacoNs.IDisposable | null>(null);
   const validationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -156,6 +169,18 @@ export default function DbEditor({
   const [currentSessionConfig, setCurrentSessionConfig] = useState<DbSessionConfig>(
     () => storedSessionConfig ?? {},
   );
+
+  // AI Assistant state (AISQL-2069)
+  type AiStep = 'idle' | 'analyzing' | 'permissions' | 'generating' | 'result' | 'error';
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiStep, setAiStep] = useState<AiStep>('idle');
+  const [aiResult, setAiResult] = useState<{ sql: string; explanation: string; firewallWarning?: string } | null>(null);
+  const [aiError, setAiError] = useState('');
+  const [showExplanation, setShowExplanation] = useState(false);
+  const [aiObjectRequests, setAiObjectRequests] = useState<ObjectRequest[]>([]);
+  const [aiApprovals, setAiApprovals] = useState<Record<number, boolean>>({});
+  const [aiConversationId, setAiConversationId] = useState('');
+  const aiPanelOpen = useUiPreferencesStore((s) => s.dbAiPanelOpen);
 
   const [queryTabs, setQueryTabs] = useState<QuerySubTab[]>(() => {
     if (storedSubTabs?.tabs?.length) {
@@ -509,6 +534,18 @@ export default function DbEditor({
       run: () => { handleRunQueryRef.current(); },
     });
 
+    // Register SQL formatting provider (sql-formatter)
+    formattingDisposableRef.current = monaco.languages.registerDocumentFormattingEditProvider(
+      'sql',
+      {
+        provideDocumentFormattingEdits(model: monacoNs.editor.ITextModel) {
+          const text = model.getValue();
+          const formatted = formatSql(text, { language: 'sql', tabWidth: 2, keywordCase: 'upper' });
+          return [{ range: model.getFullModelRange(), text: formatted }];
+        },
+      },
+    );
+
     // Register completion provider with current schema
     completionDisposableRef.current = monaco.languages.registerCompletionItemProvider(
       'sql',
@@ -562,6 +599,7 @@ export default function DbEditor({
     return () => {
       if (validationTimerRef.current) clearTimeout(validationTimerRef.current);
       completionDisposableRef.current?.dispose();
+      formattingDisposableRef.current?.dispose();
     };
   }, []);
 
@@ -600,32 +638,19 @@ export default function DbEditor({
     setHistoryRefresh((n) => n + 1);
   }, [saveName, activeTab, connectionId, activeQueryTabId, updateTab]);
 
-  // Format SQL — uppercase keywords via Monaco or fallback
+  // Format SQL using sql-formatter (toolbar button or Monaco Shift+Alt+F)
   const handleFormatSql = useCallback(() => {
     const editor = monacoEditorRef.current;
     if (editor) {
-      // Try Monaco's built-in format action first
+      // Trigger Monaco's format action — our registered provider will handle it
       const formatAction = editor.getAction('editor.action.formatDocument');
       if (formatAction) {
         formatAction.run();
         return;
       }
     }
-    // Fallback: basic keyword uppercasing
-    const keywords = [
-      'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'ORDER BY', 'GROUP BY',
-      'HAVING', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'OUTER JOIN',
-      'ON', 'AS', 'INSERT INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE FROM',
-      'CREATE TABLE', 'ALTER TABLE', 'DROP TABLE', 'LIMIT', 'OFFSET',
-      'DISTINCT', 'UNION', 'EXCEPT', 'INTERSECT', 'IN', 'NOT', 'NULL',
-      'IS', 'LIKE', 'BETWEEN', 'EXISTS', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
-    ];
-    let formatted = activeTab.sql;
-    for (const kw of keywords) {
-      // eslint-disable-next-line security/detect-non-literal-regexp
-      const regex = new RegExp(`\\b${kw.replace(/ /g, '\\s+')}\\b`, 'gi');
-      formatted = formatted.replace(regex, kw);
-    }
+    // Fallback: format directly via sql-formatter and update state
+    const formatted = formatSql(activeTab.sql, { language: 'sql', tabWidth: 2, keywordCase: 'upper' });
     updateTab(activeQueryTabId, { sql: formatted });
   }, [activeTab, activeQueryTabId, updateTab]);
 
@@ -682,6 +707,66 @@ export default function DbEditor({
     setConnectionState('disconnected');
   }, []);
 
+  // AI: Step 1 — analyze prompt and get table permissions
+  const handleAiGenerate = useCallback(async () => {
+    if (!sessionIdRef.current || !aiPrompt.trim() || aiStep === 'analyzing' || aiStep === 'generating') return;
+    setAiStep('analyzing');
+    setAiError('');
+    setAiResult(null);
+    setAiObjectRequests([]);
+    setAiApprovals({});
+    setAiConversationId('');
+    try {
+      const result = await analyzeQuery(sessionIdRef.current, aiPrompt.trim(), protocol);
+      setAiConversationId(result.conversationId);
+      setAiObjectRequests(result.objectRequests);
+      const defaults: Record<number, boolean> = {};
+      result.objectRequests.forEach((_, i) => { defaults[i] = false; });
+      setAiApprovals(defaults);
+      setAiStep('permissions');
+    } catch (err) {
+      setAiError(extractApiError(err, 'AI query analysis failed'));
+      setAiStep('error');
+    }
+  }, [aiPrompt, aiStep, protocol]);
+
+  // AI: Step 2 — confirm approved tables and generate SQL
+  const handleAiConfirm = useCallback(async () => {
+    if (!aiConversationId) return;
+    const approved = aiObjectRequests
+      .filter((_, i) => aiApprovals[i])
+      .map((r) => r.schema !== 'public' ? `${r.schema}.${r.name}` : r.name);
+    if (approved.length === 0) return;
+
+    setAiStep('generating');
+    setAiError('');
+    try {
+      const result = await confirmGeneration(aiConversationId, approved);
+      setAiResult({ sql: result.sql, explanation: result.explanation, firewallWarning: result.firewallWarning });
+      setAiStep('result');
+    } catch (err) {
+      setAiError(extractApiError(err, 'AI query generation failed'));
+      setAiStep('error');
+    }
+  }, [aiConversationId, aiObjectRequests, aiApprovals]);
+
+  // AI: Cancel permissions and go back to idle
+  const handleAiCancel = useCallback(() => {
+    setAiStep('idle');
+    setAiObjectRequests([]);
+    setAiApprovals({});
+    setAiConversationId('');
+    setAiError('');
+  }, []);
+
+  // AI: Insert generated SQL into editor
+  const handleAiInsert = useCallback(() => {
+    if (!aiResult?.sql) return;
+    const current = activeTab.sql;
+    const newSql = current.trim() ? current + '\n\n' + aiResult.sql : aiResult.sql;
+    updateTab(activeQueryTabId, { sql: newSql });
+  }, [aiResult, activeTab.sql, activeQueryTabId, updateTab]);
+
   // Build toolbar actions
   const toolbarActions: ToolbarAction[] = [
     {
@@ -716,6 +801,13 @@ export default function DbEditor({
         if (newVal) handleRefreshSchema();
       },
       active: schemaBrowserOpen,
+    },
+    {
+      id: 'ai-assistant',
+      icon: <AiIcon />,
+      tooltip: aiPanelOpen ? 'Hide AI assistant' : 'Show AI assistant',
+      onClick: () => setPref('dbAiPanelOpen', !aiPanelOpen),
+      active: aiPanelOpen,
     },
     {
       id: 'query-history',
@@ -925,6 +1017,190 @@ export default function DbEditor({
           {error}
         </Alert>
       )}
+
+      {/* AI Assistant panel */}
+      <Collapse in={aiPanelOpen && connectionState === 'connected'}>
+        <Paper
+          elevation={0}
+          sx={{
+            borderBottom: 1,
+            borderColor: 'divider',
+            p: 1.5,
+            bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(144,202,249,0.04)' : 'rgba(25,118,210,0.02)',
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <AiIcon sx={{ fontSize: 18, color: 'primary.main' }} />
+            <Typography variant="subtitle2" color="primary">
+              AI Assistant
+            </Typography>
+          </Box>
+
+          {/* Prompt input — shown in idle, error, and result steps */}
+          {(aiStep === 'idle' || aiStep === 'error' || aiStep === 'result') && (
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <TextField
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                placeholder="Describe the query you need in plain English..."
+                size="small"
+                fullWidth
+                multiline
+                maxRows={3}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAiGenerate();
+                  }
+                }}
+                sx={{ '& .MuiInputBase-root': { fontSize: '0.875rem' } }}
+              />
+              <Button
+                variant="contained"
+                size="small"
+                onClick={handleAiGenerate}
+                disabled={!aiPrompt.trim()}
+                sx={{ minWidth: 90, height: 40 }}
+              >
+                Generate
+              </Button>
+            </Box>
+          )}
+
+          {/* Loading: analyzing or generating */}
+          {(aiStep === 'analyzing' || aiStep === 'generating') && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2, justifyContent: 'center' }}>
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">
+                {aiStep === 'analyzing' ? 'Analyzing which tables are needed...' : 'Generating SQL query...'}
+              </Typography>
+            </Box>
+          )}
+
+          {/* Permissions step — table approval cards */}
+          {aiStep === 'permissions' && (
+            <Box sx={{ mt: 0.5 }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <PermissionIcon fontSize="small" color="warning" />
+                Tables needed ({Object.values(aiApprovals).filter(Boolean).length}/{aiObjectRequests.length} approved)
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                The AI identified these tables for your query. Approve which ones it can read:
+              </Typography>
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+                {aiObjectRequests.map((req, i) => (
+                  <Card key={i} variant="outlined" sx={{ bgcolor: aiApprovals[i] ? 'action.hover' : undefined }}>
+                    <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Box sx={{ flex: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                            <Chip
+                              label={req.schema}
+                              size="small"
+                              color="primary"
+                              variant="outlined"
+                              sx={{ height: 20 }}
+                            />
+                            <Typography variant="body2" fontWeight={600}>{req.name}</Typography>
+                          </Box>
+                          <Typography variant="caption" color="text.secondary">{req.reason}</Typography>
+                        </Box>
+                        <FormControlLabel
+                          control={
+                            <Switch
+                              checked={aiApprovals[i] ?? false}
+                              onChange={(_, checked) => setAiApprovals((prev) => ({ ...prev, [i]: checked }))}
+                              size="small"
+                            />
+                          }
+                          label={aiApprovals[i] ? 'Allow' : 'Deny'}
+                          labelPlacement="start"
+                          sx={{ ml: 2, mr: 0 }}
+                        />
+                      </Box>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<SendIcon />}
+                  onClick={handleAiConfirm}
+                  disabled={Object.values(aiApprovals).filter(Boolean).length === 0}
+                >
+                  Generate with approved ({Object.values(aiApprovals).filter(Boolean).length})
+                </Button>
+                <Button size="small" color="inherit" onClick={handleAiCancel}>Cancel</Button>
+              </Box>
+            </Box>
+          )}
+
+          {/* Error display */}
+          {aiStep === 'error' && aiError && (
+            <Alert severity="error" sx={{ mt: 1 }} onClose={() => { setAiError(''); setAiStep('idle'); }}>
+              {aiError}
+            </Alert>
+          )}
+
+          {/* Result display */}
+          {aiStep === 'result' && aiResult && (
+            <Box sx={{ mt: 1.5 }}>
+              <Box
+                sx={{
+                  p: 1,
+                  bgcolor: 'background.default',
+                  borderRadius: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  fontFamily: 'monospace',
+                  fontSize: '0.8125rem',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 150,
+                  overflow: 'auto',
+                }}
+              >
+                {aiResult.sql}
+              </Box>
+
+              {aiResult.firewallWarning && (
+                <Alert severity="warning" sx={{ mt: 1 }}>
+                  {aiResult.firewallWarning}
+                </Alert>
+              )}
+
+              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                <Button size="small" variant="outlined" onClick={handleAiInsert}>
+                  Insert into editor
+                </Button>
+                {aiResult.explanation && (
+                  <Button
+                    size="small"
+                    variant="text"
+                    onClick={() => setShowExplanation((v) => !v)}
+                  >
+                    {showExplanation ? 'Hide explanation' : 'Explain'}
+                  </Button>
+                )}
+              </Box>
+
+              <Collapse in={showExplanation && Boolean(aiResult.explanation)}>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mt: 1, pl: 1, borderLeft: 2, borderColor: 'primary.main' }}
+                >
+                  {aiResult.explanation}
+                </Typography>
+              </Collapse>
+            </Box>
+          )}
+        </Paper>
+      </Collapse>
 
       {/* Main content area */}
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>

@@ -811,6 +811,7 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
         tablesAccessed={visualizerEntry?.tablesAccessed ?? []}
         blocked={visualizerEntry?.blocked ?? false}
         blockReason={visualizerEntry?.blockReason}
+        storedExecutionPlan={visualizerEntry?.executionPlan ?? null}
       />
     </Dialog>
   );
