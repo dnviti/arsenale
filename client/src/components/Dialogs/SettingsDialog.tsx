@@ -58,6 +58,7 @@ import NotificationPreferencesSection from '../Settings/NotificationPreferencesS
 import NotificationsSection from '../Settings/NotificationsSection';
 import { SlideUp } from '../common/SlideUp';
 import { isAdminOrAbove } from '../../utils/roles';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 
 interface TabDef {
   id: string;
@@ -101,6 +102,7 @@ interface SettingsDialogProps {
 
 export default function SettingsDialog({ open, onClose, initialTab, linkedProvider, onViewUserProfile, onGeoIpClick, onImport, onExport }: SettingsDialogProps) {
   const user = useAuthStore((s) => s.user);
+  const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const [hasPassword, setHasPassword] = useState(true);
   const [deleteOrgTrigger, setDeleteOrgTrigger] = useState<(() => void) | null>(null);
 
@@ -219,7 +221,7 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
           {resolvedTab === 'appearance' && (
             <Stack spacing={3}>
               <AppearanceSection />
-              <SqlEditorSection />
+              {databaseProxyEnabled && <SqlEditorSection />}
             </Stack>
           )}
           {resolvedTab === 'notifications' && (
@@ -314,7 +316,7 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
           {resolvedTab === 'integrations' && (
             <Stack spacing={3}>
               <SyncProfileSection />
-              {isOwner && <AiQueryConfigSection />}
+              {isOwner && databaseProxyEnabled && <AiQueryConfigSection />}
             </Stack>
           )}
           {resolvedTab === 'tunnel' && <TunnelConfigSection />}
@@ -330,9 +332,9 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
               <EmailProviderSection />
               <LdapConfigSection />
               <SamlConfigSection />
-              <DbFirewallSection />
-              <DbMaskingSection />
-              <DbRateLimitSection />
+              {databaseProxyEnabled && <DbFirewallSection />}
+              {databaseProxyEnabled && <DbMaskingSection />}
+              {databaseProxyEnabled && <DbRateLimitSection />}
               <TenantAuditLogSection onViewUserProfile={onViewUserProfile} onGeoIpClick={onGeoIpClick} />
             </Stack>
           )}

@@ -25,6 +25,7 @@ import { useTenantStore } from '../../store/tenantStore';
 import SecretPicker from '../Keychain/SecretPicker';
 import { useVaultStore } from '../../store/vaultStore';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { listVaultProviders, VaultProviderData } from '../../api/externalVault.api';
 
 interface ConnectionDialogProps {
@@ -36,6 +37,8 @@ interface ConnectionDialogProps {
 }
 
 export default function ConnectionDialog({ open, onClose, connection, folderId, teamId }: ConnectionDialogProps) {
+  const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
+  const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
   const [name, setName] = useState('');
   const [type, setType] = useState<'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL'>('SSH');
   const [host, setHost] = useState('');
@@ -327,11 +330,11 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
               onChange={(e) => handleTypeChange(e.target.value as 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL')}
               disabled={isEditMode}
             >
-              <MenuItem value="SSH">SSH</MenuItem>
-              <MenuItem value="RDP">RDP</MenuItem>
-              <MenuItem value="VNC">VNC</MenuItem>
-              <MenuItem value="DATABASE">Database</MenuItem>
-              <MenuItem value="DB_TUNNEL">Database (SSH Tunnel)</MenuItem>
+              {connectionsEnabled && <MenuItem value="SSH">SSH</MenuItem>}
+              {connectionsEnabled && <MenuItem value="RDP">RDP</MenuItem>}
+              {connectionsEnabled && <MenuItem value="VNC">VNC</MenuItem>}
+              {databaseProxyEnabled && <MenuItem value="DATABASE">Database</MenuItem>}
+              {databaseProxyEnabled && <MenuItem value="DB_TUNNEL">Database (SSH Tunnel)</MenuItem>}
             </Select>
           </FormControl>
           {hasTenant && availableGateways.length > 0 && (

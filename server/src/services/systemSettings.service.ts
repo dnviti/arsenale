@@ -59,6 +59,29 @@ export const SENSITIVE_MASK = '••••••••';
 // Settings Registry — single source of truth for all UI-configurable settings
 // ---------------------------------------------------------------------------
 export const SETTINGS_REGISTRY: SettingDef[] = [
+  // ── Feature Toggles ─────────────────────────────────────────────────────
+  {
+    key: 'FEATURE_DATABASE_PROXY_ENABLED', envVar: 'FEATURE_DATABASE_PROXY_ENABLED',
+    configPath: 'features.databaseProxyEnabled', type: 'boolean', default: true,
+    group: 'feature-toggles', label: 'Database SQL Proxy',
+    description: 'Enable the database SQL proxy feature (AI SQL, DB connections, DB audit).',
+    minEditRole: 'ADMIN',
+  },
+  {
+    key: 'FEATURE_CONNECTIONS_ENABLED', envVar: 'FEATURE_CONNECTIONS_ENABLED',
+    configPath: 'features.connectionsEnabled', type: 'boolean', default: true,
+    group: 'feature-toggles', label: 'Connection Management',
+    description: 'Enable the connection management feature (SSH, RDP, VNC connections, folders, sharing).',
+    minEditRole: 'ADMIN',
+  },
+  {
+    key: 'FEATURE_KEYCHAIN_ENABLED', envVar: 'FEATURE_KEYCHAIN_ENABLED',
+    configPath: 'features.keychainEnabled', type: 'boolean', default: true,
+    group: 'feature-toggles', label: 'Keychain / Secrets Vault',
+    description: 'Enable the keychain and secrets management feature.',
+    minEditRole: 'ADMIN',
+  },
+
   // ── General ──────────────────────────────────────────────────────────────
   {
     key: 'EMAIL_VERIFY_REQUIRED', envVar: 'EMAIL_VERIFY_REQUIRED',
@@ -473,6 +496,7 @@ export const SETTINGS_REGISTRY: SettingDef[] = [
 
 // Group metadata for UI display ordering and labels
 export const SETTING_GROUPS: { key: string; label: string; order: number }[] = [
+  { key: 'feature-toggles', label: 'Feature Toggles', order: -1 },
   { key: 'general', label: 'General', order: 0 },
   { key: 'logging', label: 'Logging', order: 1 },
   { key: 'rate-limiting', label: 'Rate Limiting', order: 2 },

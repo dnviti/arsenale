@@ -5,6 +5,7 @@ import MainLayout from '../components/Layout/MainLayout';
 import { useConnectionsStore } from '../store/connectionsStore';
 import { useTabsStore } from '../store/tabsStore';
 import { useAuthStore } from '../store/authStore';
+import { useFeatureFlagsStore } from '../store/featureFlagsStore';
 import type { ConnectionData } from '../api/connections.api';
 
 export default function DashboardPage() {
@@ -12,6 +13,7 @@ export default function DashboardPage() {
   const restoreTabs = useTabsStore((s) => s.restoreTabs);
   const openTab = useTabsStore((s) => s.openTab);
   const fetchDomainProfile = useAuthStore((s) => s.fetchDomainProfile);
+  const fetchFeatureFlags = useFeatureFlagsStore((s) => s.fetchFeatureFlags);
   const [searchParams, setSearchParams] = useSearchParams();
   const autoconnectHandled = useRef(false);
 
@@ -38,8 +40,9 @@ export default function DashboardPage() {
       }
     });
     fetchDomainProfile();
+    fetchFeatureFlags();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time setup on mount
-  }, [fetchConnections, restoreTabs, fetchDomainProfile]);
+  }, [fetchConnections, restoreTabs, fetchDomainProfile, fetchFeatureFlags]);
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
