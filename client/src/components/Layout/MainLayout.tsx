@@ -53,6 +53,7 @@ import { useShareSync } from '../../hooks/useShareSync';
 import { useSecretStore } from '../../store/secretStore';
 import { useLazyMount } from '../../hooks/useLazyMount';
 import { useDlpBrowserHardening } from '../../hooks/useDlpBrowserHardening';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import type { NavigationActions } from '../../utils/notificationActions';
 
 const SIDEBAR_WIDTH = 280;
@@ -74,6 +75,12 @@ export default function MainLayout() {
   const expiringCount = useSecretStore((s) => s.expiringCount);
   const pwnedCount = useSecretStore((s) => s.pwnedCount);
   const fetchCounts = useSecretStore((s) => s.fetchCounts);
+
+  const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
+  const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
+  const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
+  const fetchFeatureFlags = useFeatureFlagsStore((s) => s.fetchFeatureFlags);
+  const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
 
   useGatewayMonitor();
   useShareSync();
@@ -261,16 +268,18 @@ export default function MainLayout() {
                 : { bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.main', borderColor: (theme) => `${theme.palette.error.main}26`, '& .MuiChip-icon': { color: 'error.main' } }),
             }}
           />
-          <IconButton
-            color="inherit"
-            onClick={() => setKeychainOpen(true)}
-            title="Keychain"
-            sx={{ mr: 1, '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
-          >
-            <Badge badgeContent={expiringCount + pwnedCount} color="error" max={99}>
-              <KeychainIcon />
-            </Badge>
-          </IconButton>
+          {keychainEnabled && (
+            <IconButton
+              color="inherit"
+              onClick={() => setKeychainOpen(true)}
+              title="Keychain"
+              sx={{ mr: 1, '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
+            >
+              <Badge badgeContent={expiringCount + pwnedCount} color="error" max={99}>
+                <KeychainIcon />
+              </Badge>
+            </IconButton>
+          )}
           <Box sx={{ flexGrow: 1 }} />
           <NotificationBell navigationActions={navigationActions} />
           <IconButton
@@ -324,57 +333,69 @@ export default function MainLayout() {
 
       <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         {/* Sidebar */}
-        <Box
-          sx={{
-            width: SIDEBAR_WIDTH,
-            minWidth: SIDEBAR_WIDTH,
-            borderRight: 1, borderColor: 'divider',
-            display: 'flex',
-            flexDirection: 'column',
-            bgcolor: 'background.paper',
-            color: 'text.primary',
-            userSelect: 'none',
-          }}
-        >
-          {!user?.tenantId && (
-            <Alert
-              severity="info"
-              variant="outlined"
-              sx={{ m: 1, '& .MuiAlert-message': { width: '100%' } }}
-              action={
-                <Button size="small" onClick={() => handleOpenSettings('organization')}>
-                  Get Started
-                </Button>
-              }
-            >
-              <Typography variant="body2">
-                Set up an organization to create teams and collaborate.
-              </Typography>
-            </Alert>
-          )}
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
-            <ConnectionTree
-              onEditConnection={handleEditConnection}
-              onShareConnection={handleShareConnection}
-              onConnectAsConnection={setConnectAsTarget}
-              onCreateConnection={handleCreateConnection}
-              onCreateFolder={handleCreateFolder}
-              onEditFolder={handleEditFolder}
-              onShareFolder={handleShareFolder}
-              onViewAuditLog={(conn) => setConnectionAuditTarget({ id: conn.id, name: conn.name })}
-            />
+        {anyConnectionFeature && (
+          <Box
+            sx={{
+              width: SIDEBAR_WIDTH,
+              minWidth: SIDEBAR_WIDTH,
+              borderRight: 1, borderColor: 'divider',
+              display: 'flex',
+              flexDirection: 'column',
+              bgcolor: 'background.paper',
+              color: 'text.primary',
+              userSelect: 'none',
+            }}
+          >
+            {!user?.tenantId && (
+              <Alert
+                severity="info"
+                variant="outlined"
+                sx={{ m: 1, '& .MuiAlert-message': { width: '100%' } }}
+                action={
+                  <Button size="small" onClick={() => handleOpenSettings('organization')}>
+                    Get Started
+                  </Button>
+                }
+              >
+                <Typography variant="body2">
+                  Set up an organization to create teams and collaborate.
+                </Typography>
+              </Alert>
+            )}
+            <Box sx={{ flex: 1, overflow: 'auto' }}>
+              <ConnectionTree
+                onEditConnection={handleEditConnection}
+                onShareConnection={handleShareConnection}
+                onConnectAsConnection={setConnectAsTarget}
+                onCreateConnection={handleCreateConnection}
+                onCreateFolder={handleCreateFolder}
+                onEditFolder={handleEditFolder}
+                onShareFolder={handleShareFolder}
+                onViewAuditLog={(conn) => setConnectionAuditTarget({ id: conn.id, name: conn.name })}
+              />
+            </Box>
+            <VersionIndicator />
           </Box>
-          <VersionIndicator />
-        </Box>
+        )}
 
         {/* Main content */}
         <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          <TabBar />
-          <TabPanel />
+          {anyConnectionFeature ? (
+            <>
+              <TabBar />
+              <TabPanel />
+            </>
+          ) : (
+            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                Connection management is disabled.
+              </Typography>
+            </Box>
+          )}
         </Box>
       </Box>
 
-      {connectionDialogMounted && (
+      {anyConnectionFeature && connectionDialogMounted && (
         <Suspense fallback={null}>
           <ConnectionDialog
             open={connectionDialogOpen}
@@ -385,7 +406,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {folderDialogMounted && (
+      {anyConnectionFeature && folderDialogMounted && (
         <Suspense fallback={null}>
           <FolderDialog
             open={folderDialogOpen}
@@ -396,7 +417,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {shareDialogMounted && (
+      {anyConnectionFeature && shareDialogMounted && (
         <Suspense fallback={null}>
           <ShareDialog
             open={!!shareTarget}
@@ -407,7 +428,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {shareFolderDialogMounted && (
+      {anyConnectionFeature && shareFolderDialogMounted && (
         <Suspense fallback={null}>
           <ShareFolderDialog
             open={!!shareFolderTarget}
@@ -417,7 +438,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {connectAsDialogMounted && (
+      {anyConnectionFeature && connectAsDialogMounted && (
         <Suspense fallback={null}>
           <ConnectAsDialog
             open={!!connectAsTarget}
@@ -448,7 +469,7 @@ export default function MainLayout() {
         <Suspense fallback={null}>
           <SettingsDialog
             open={settingsOpen}
-            onClose={() => { setSettingsOpen(false); setLinkedProvider(null); }}
+            onClose={() => { setSettingsOpen(false); setLinkedProvider(null); fetchFeatureFlags(); }}
             initialTab={settingsInitialTab}
             linkedProvider={linkedProvider}
             onViewUserProfile={(uid) => setProfileUserId(uid)}
@@ -467,7 +488,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {keychainDialogMounted && (
+      {keychainEnabled && keychainDialogMounted && (
         <Suspense fallback={null}>
           <KeychainDialog
             open={keychainOpen}
@@ -475,7 +496,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {connectionAuditDialogMounted && (
+      {anyConnectionFeature && connectionAuditDialogMounted && (
         <Suspense fallback={null}>
           <ConnectionAuditLogDialog
             open={!!connectionAuditTarget}
@@ -503,7 +524,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {importDialogMounted && (
+      {anyConnectionFeature && importDialogMounted && (
         <Suspense fallback={null}>
           <ImportDialog
             open={importDialogOpen}
@@ -511,7 +532,7 @@ export default function MainLayout() {
           />
         </Suspense>
       )}
-      {exportDialogMounted && (
+      {anyConnectionFeature && exportDialogMounted && (
         <Suspense fallback={null}>
           <ExportDialog
             open={exportDialogOpen}

@@ -280,6 +280,12 @@ export const config = {
     caPublicKeyPath: process.env.SSH_PROXY_CA_PUBLIC_KEY || '',
     keystrokeRecording: process.env.SSH_PROXY_KEYSTROKE_RECORDING === 'true',
   },
+  // Feature Toggles (opt-out: enabled by default, set to 'false' to disable)
+  features: {
+    databaseProxyEnabled: process.env.FEATURE_DATABASE_PROXY_ENABLED !== 'false',
+    connectionsEnabled: process.env.FEATURE_CONNECTIONS_ENABLED !== 'false',
+    keychainEnabled: process.env.FEATURE_KEYCHAIN_ENABLED !== 'false',
+  },
   // AI / LLM Integration
   ai: {
     provider: (process.env.AI_PROVIDER || '') as '' | 'anthropic' | 'openai' | 'ollama' | 'openai-compatible',
