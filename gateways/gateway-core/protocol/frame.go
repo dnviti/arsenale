@@ -6,11 +6,17 @@ import (
 	"fmt"
 )
 
+// MaxPayloadSize is the maximum allowed payload size (10 MB). Frames exceeding
+// this limit are rejected to prevent excessive memory allocation.
+const MaxPayloadSize = 10 * 1024 * 1024
+
 var (
 	// ErrFrameTooShort is returned when the buffer is smaller than HeaderSize.
 	ErrFrameTooShort = errors.New("frame too short: need at least 4 bytes")
 	// ErrInvalidMsgType is returned for unrecognized message types.
 	ErrInvalidMsgType = errors.New("invalid message type")
+	// ErrPayloadTooLarge is returned when the payload exceeds MaxPayloadSize.
+	ErrPayloadTooLarge = errors.New("payload exceeds maximum size")
 )
 
 // BuildFrame constructs a binary frame from the given message type, stream ID,
@@ -49,6 +55,9 @@ func ParseFrame(buf []byte) (*Frame, []byte, error) {
 	}
 
 	payload := buf[HeaderSize:]
+	if len(payload) > MaxPayloadSize {
+		return nil, buf, fmt.Errorf("%w: %d bytes (max %d)", ErrPayloadTooLarge, len(payload), MaxPayloadSize)
+	}
 	if len(payload) > 0 {
 		f.Payload = make([]byte, len(payload))
 		copy(f.Payload, payload)

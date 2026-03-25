@@ -14,11 +14,12 @@ var (
 // Stream represents a single multiplexed stream within the tunnel. It
 // implements io.ReadWriteCloser for convenient bidirectional I/O.
 type Stream struct {
-	id       uint16
-	sendFunc func(streamID uint16, data []byte) error
-	readBuf  chan []byte
-	closed   bool
-	mu       sync.Mutex
+	id        uint16
+	sendFunc  func(streamID uint16, data []byte) error
+	readBuf   chan []byte
+	remainder []byte // leftover bytes from a partial Read
+	closed    bool
+	mu        sync.Mutex
 }
 
 // newStream creates a new stream with the given ID and send function.
@@ -36,13 +37,33 @@ func (s *Stream) ID() uint16 {
 }
 
 // Read reads data from the stream's receive buffer. It blocks until data is
-// available or the stream is closed.
+// available or the stream is closed. If the caller's buffer is smaller than
+// the received chunk, excess bytes are retained and returned on the next Read.
 func (s *Stream) Read(p []byte) (int, error) {
+	s.mu.Lock()
+	// Return leftover bytes from a previous partial read first.
+	if len(s.remainder) > 0 {
+		n := copy(p, s.remainder)
+		if n < len(s.remainder) {
+			s.remainder = s.remainder[n:]
+		} else {
+			s.remainder = nil
+		}
+		s.mu.Unlock()
+		return n, nil
+	}
+	s.mu.Unlock()
+
 	data, ok := <-s.readBuf
 	if !ok {
 		return 0, io.EOF
 	}
 	n := copy(p, data)
+	if n < len(data) {
+		s.mu.Lock()
+		s.remainder = data[n:]
+		s.mu.Unlock()
+	}
 	return n, nil
 }
 
@@ -85,8 +106,12 @@ func (s *Stream) deliver(data []byte) bool {
 	}
 	s.mu.Unlock()
 
+	// Defensive copy to prevent the caller's buffer from being reused.
+	buf := make([]byte, len(data))
+	copy(buf, data)
+
 	select {
-	case s.readBuf <- data:
+	case s.readBuf <- buf:
 		return true
 	default:
 		// Buffer full — drop data to prevent blocking the tunnel read loop.

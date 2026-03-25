@@ -5,11 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"sync"
 	"time"
 
 	"github.com/dnviti/arsenale/gateways/gateway-core/protocol"
 )
+
+// maxSessionIDLength is the maximum allowed length for a session ID.
+const maxSessionIDLength = 128
+
+// validSessionIDPattern matches alphanumeric characters, hyphens, and underscores.
+var validSessionIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// validateSessionID checks that a session ID is non-empty, within length limits,
+// and contains only safe characters (alphanumeric, hyphens, underscores).
+func validateSessionID(id string) error {
+	if id == "" {
+		return fmt.Errorf("session ID must not be empty")
+	}
+	if len(id) > maxSessionIDLength {
+		return fmt.Errorf("session ID too long: %d chars (max %d)", len(id), maxSessionIDLength)
+	}
+	if !validSessionIDPattern.MatchString(id) {
+		return fmt.Errorf("session ID contains invalid characters (allowed: alphanumeric, hyphens, underscores)")
+	}
+	return nil
+}
 
 // Session tracks an active session within the manager.
 type Session struct {
@@ -57,6 +79,10 @@ func (sm *SessionManager) HandleSessionCreate(ctx context.Context, frame *protoc
 	var p sessionCreatePayload
 	if err := json.Unmarshal(frame.Payload, &p); err != nil {
 		return fmt.Errorf("parsing session create payload: %w", err)
+	}
+
+	if err := validateSessionID(p.SessionID); err != nil {
+		return fmt.Errorf("invalid session ID: %w", err)
 	}
 
 	sm.mu.RLock()

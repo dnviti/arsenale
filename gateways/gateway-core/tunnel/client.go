@@ -258,8 +258,8 @@ func (tc *TunnelClient) dispatchFrame(frame *protocol.Frame) {
 	}
 }
 
-// heartbeatLoop sends PING frames at the configured interval with local
-// service health metadata.
+// heartbeatLoop sends HEARTBEAT frames (type 6) with health metadata and
+// empty PING frames (type 4) for RTT measurement at the configured interval.
 func (tc *TunnelClient) heartbeatLoop(ctx context.Context) {
 	ticker := time.NewTicker(tc.cfg.PingInterval)
 	defer ticker.Stop()
@@ -269,11 +269,20 @@ func (tc *TunnelClient) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// Send HEARTBEAT with health metadata (server parses health from type 6).
 			health := tc.probeLocalService()
 			payload, _ := json.Marshal(health)
-			ping := &protocol.Frame{
-				Type:    protocol.MsgPing,
+			heartbeat := &protocol.Frame{
+				Type:    protocol.MsgHeartbeat,
 				Payload: payload,
+			}
+			if err := tc.SendFrame(heartbeat); err != nil {
+				log.Printf("[tunnel] Failed to send HEARTBEAT: %v", err)
+			}
+
+			// Send empty PING for RTT measurement (server responds with PONG).
+			ping := &protocol.Frame{
+				Type: protocol.MsgPing,
 			}
 			if err := tc.SendFrame(ping); err != nil {
 				log.Printf("[tunnel] Failed to send PING: %v", err)
@@ -282,7 +291,7 @@ func (tc *TunnelClient) heartbeatLoop(ctx context.Context) {
 	}
 }
 
-// healthStatus is the JSON payload sent in PING frames.
+// healthStatus is the JSON payload sent in HEARTBEAT frames.
 type healthStatus struct {
 	Healthy       bool  `json:"healthy"`
 	LatencyMs     int64 `json:"latencyMs"`

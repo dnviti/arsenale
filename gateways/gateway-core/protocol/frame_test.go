@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"errors"
 	"testing"
 )
 
@@ -101,6 +102,32 @@ func TestBuildFrameHeaderLayout(t *testing.T) {
 	}
 	if frame[4] != 0xAB {
 		t.Errorf("byte 4 (payload): got %02x, want AB", frame[4])
+	}
+}
+
+func TestParseFramePayloadTooLarge(t *testing.T) {
+	// Build a frame header manually with an oversized payload.
+	header := BuildFrame(MsgData, 1, nil)
+	oversized := make([]byte, MaxPayloadSize+1)
+	buf := append(header, oversized...)
+	_, _, err := ParseFrame(buf)
+	if err == nil {
+		t.Fatal("expected error for oversized payload")
+	}
+	if !errors.Is(err, ErrPayloadTooLarge) {
+		t.Errorf("expected ErrPayloadTooLarge, got: %v", err)
+	}
+}
+
+func TestParseFramePayloadAtMaxSize(t *testing.T) {
+	payload := make([]byte, MaxPayloadSize)
+	buf := BuildFrame(MsgData, 1, payload)
+	frame, _, err := ParseFrame(buf)
+	if err != nil {
+		t.Fatalf("expected no error at max payload size, got: %v", err)
+	}
+	if len(frame.Payload) != MaxPayloadSize {
+		t.Errorf("payload length: got %d, want %d", len(frame.Payload), MaxPayloadSize)
 	}
 }
 

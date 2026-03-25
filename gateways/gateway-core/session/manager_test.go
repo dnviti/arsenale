@@ -222,6 +222,50 @@ func TestNoHandlerRegistered(t *testing.T) {
 	}
 }
 
+func TestSessionIDValidation(t *testing.T) {
+	sm := NewSessionManager()
+	handler := newMockHandler("ssh")
+	sm.RegisterHandler("ssh", handler)
+	ctx := context.Background()
+
+	tests := []struct {
+		name      string
+		sessionID string
+		wantErr   bool
+	}{
+		{"valid alphanumeric", "sess-123_abc", false},
+		{"empty", "", true},
+		{"too long", string(make([]byte, 129)), true},
+		{"special chars", "sess@123!", true},
+		{"spaces", "sess 123", true},
+		{"dots", "sess.123", true},
+		{"valid hyphens-underscores", "my-session_01", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Fill in 'a' for the too-long case to make it valid characters
+			sid := tt.sessionID
+			if tt.name == "too long" {
+				b := make([]byte, 129)
+				for i := range b {
+					b[i] = 'a'
+				}
+				sid = string(b)
+			}
+
+			createFrame := makeFrame(protocol.MsgSessionCreate, 1, sessionCreatePayload{
+				SessionID: sid,
+				Protocol:  "ssh",
+			})
+			err := sm.HandleSessionCreate(ctx, createFrame)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("wantErr=%v, got err=%v", tt.wantErr, err)
+			}
+		})
+	}
+}
+
 func TestSessionNotFound(t *testing.T) {
 	sm := NewSessionManager()
 	handler := newMockHandler("ssh")
