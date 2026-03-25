@@ -4,6 +4,7 @@ import { AppError } from '../middleware/error.middleware';
 import * as auditService from './audit.service';
 import type { ResolvedCredentials } from '../types';
 import { getAdapter, invalidateCaches, toResolvedCredentials } from './vaultAdapters';
+import type { ExternalVaultType, ExternalVaultAuthMethod } from '../generated/prisma/client';
 
 // ---------- Types ----------
 
@@ -87,9 +88,9 @@ export async function createProvider(
     data: {
       tenantId,
       name: input.name,
-      providerType: (input.providerType as never) ?? 'HASHICORP_VAULT',
+      providerType: (input.providerType ?? 'HASHICORP_VAULT') as ExternalVaultType,
       serverUrl: input.serverUrl,
-      authMethod: input.authMethod as never,
+      authMethod: input.authMethod as ExternalVaultAuthMethod,
       namespace: input.namespace ?? null,
       mountPath: input.mountPath ?? 'secret',
       encryptedAuthPayload: encrypted.ciphertext,

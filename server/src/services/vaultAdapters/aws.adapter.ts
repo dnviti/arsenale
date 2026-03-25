@@ -23,6 +23,7 @@ const REQUEST_TIMEOUT_MS = 10_000;
 interface AwsCreds {
   accessKeyId: string;
   secretAccessKey: string;
+  sessionToken?: string;
   region: string;
 }
 
@@ -47,6 +48,9 @@ function sigV4Sign(
   const amzDate = `${dateStamp}T${now.toISOString().replace(/[-:T]/g, '').slice(8, 14)}Z`;
 
   headers['x-amz-date'] = amzDate;
+  if (creds.sessionToken) {
+    headers['x-amz-security-token'] = creds.sessionToken;
+  }
 
   const signedHeaderNames = Object.keys(headers).sort().join(';');
   const canonicalHeaders = Object.keys(headers)
@@ -78,9 +82,85 @@ function sigV4Sign(
   return headers;
 }
 
+// ---------- IMDS / ECS credential fetching ----------
+
+const IMDS_TIMEOUT_MS = 2_000;
+
+interface ImdsCredentials {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken: string;
+}
+
+/**
+ * Fetch temporary credentials from ECS container credential endpoint.
+ * Available when AWS_CONTAINER_CREDENTIALS_RELATIVE_URI is set (Fargate / ECS).
+ */
+async function fetchEcsCredentials(): Promise<ImdsCredentials | null> {
+  const relativeUri = process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI;
+  if (!relativeUri) return null;
+
+  try {
+    const resp = await fetch(`http://169.254.170.2${relativeUri}`, {
+      signal: AbortSignal.timeout(IMDS_TIMEOUT_MS),
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as Record<string, string>;
+    if (data.AccessKeyId && data.SecretAccessKey && data.Token) {
+      return { accessKeyId: data.AccessKeyId, secretAccessKey: data.SecretAccessKey, sessionToken: data.Token };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch temporary credentials from EC2 Instance Metadata Service (IMDS v2).
+ * Works for EC2 instances and EKS pods with IRSA that expose IMDS.
+ */
+async function fetchImdsCredentials(): Promise<ImdsCredentials | null> {
+  const imdsBase = 'http://169.254.169.254';
+  try {
+    // IMDSv2: obtain session token first
+    const tokenResp = await fetch(`${imdsBase}/latest/api/token`, {
+      method: 'PUT',
+      headers: { 'X-aws-ec2-metadata-token-ttl-seconds': '21600' },
+      signal: AbortSignal.timeout(IMDS_TIMEOUT_MS),
+    });
+    if (!tokenResp.ok) return null;
+    const imdsToken = await tokenResp.text();
+
+    const imdsHeaders = { 'X-aws-ec2-metadata-token': imdsToken };
+
+    // Get the IAM role name attached to the instance
+    const roleResp = await fetch(`${imdsBase}/latest/meta-data/iam/security-credentials/`, {
+      headers: imdsHeaders,
+      signal: AbortSignal.timeout(IMDS_TIMEOUT_MS),
+    });
+    if (!roleResp.ok) return null;
+    const roleName = (await roleResp.text()).trim().split('\n')[0];
+    if (!roleName) return null;
+
+    // Fetch credentials for that role
+    const credsResp = await fetch(`${imdsBase}/latest/meta-data/iam/security-credentials/${roleName}`, {
+      headers: imdsHeaders,
+      signal: AbortSignal.timeout(IMDS_TIMEOUT_MS),
+    });
+    if (!credsResp.ok) return null;
+    const data = (await credsResp.json()) as Record<string, string>;
+    if (data.AccessKeyId && data.SecretAccessKey && data.Token) {
+      return { accessKeyId: data.AccessKeyId, secretAccessKey: data.SecretAccessKey, sessionToken: data.Token };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- Helpers ----------
 
-function parsePayload(provider: VaultProviderRow): AwsCreds {
+async function parsePayload(provider: VaultProviderRow): Promise<AwsCreds> {
   const json = decryptWithServerKey({
     ciphertext: provider.encryptedAuthPayload,
     iv: provider.authPayloadIV,
@@ -95,15 +175,40 @@ function parsePayload(provider: VaultProviderRow): AwsCreds {
   }
 
   if (provider.authMethod === 'IAM_ROLE') {
-    // When using IAM_ROLE, access keys come from the environment (IRSA / instance profile).
-    // We still need a region.
+    // When using IAM_ROLE, credentials come from (in order):
+    //   1. Environment variables (IRSA, CI, local dev)
+    //   2. ECS container credentials endpoint (Fargate / ECS)
+    //   3. EC2 Instance Metadata Service v2 (EC2 / instance profiles)
     const region = (payload.region as string) || provider.serverUrl || 'us-east-1';
-    const accessKeyId = process.env.AWS_ACCESS_KEY_ID ?? '';
-    const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY ?? '';
-    if (!accessKeyId || !secretAccessKey) {
-      throw new AppError('IAM_ROLE auth requires AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the environment', 400);
+
+    // Try environment variables first
+    const envAccessKey = process.env.AWS_ACCESS_KEY_ID ?? '';
+    const envSecretKey = process.env.AWS_SECRET_ACCESS_KEY ?? '';
+    if (envAccessKey && envSecretKey) {
+      return {
+        accessKeyId: envAccessKey,
+        secretAccessKey: envSecretKey,
+        sessionToken: process.env.AWS_SESSION_TOKEN || undefined,
+        region,
+      };
     }
-    return { accessKeyId, secretAccessKey, region };
+
+    // Try ECS container credentials
+    const ecsCreds = await fetchEcsCredentials();
+    if (ecsCreds) {
+      return { ...ecsCreds, region };
+    }
+
+    // Try EC2 IMDS v2
+    const imdsCreds = await fetchImdsCredentials();
+    if (imdsCreds) {
+      return { ...imdsCreds, region };
+    }
+
+    throw new AppError(
+      'IAM_ROLE auth could not resolve credentials from environment variables, ECS container endpoint, or EC2 instance metadata (IMDS v2)',
+      400,
+    );
   }
 
   // IAM_ACCESS_KEY
@@ -191,7 +296,7 @@ export const awsAdapter: VaultAdapter = {
     const cached = secretCache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.data;
 
-    const creds = parsePayload(provider);
+    const creds = await parsePayload(provider);
     const { secretId, versionStage } = parseSecretPath(secretPath);
     const data = await fetchSecret(creds, secretId, versionStage);
 

@@ -1,24 +1,20 @@
-import { useRef } from 'react';
+import { useReducer } from 'react';
 
 /**
  * Returns true once `trigger` has been truthy at least once.
  * Used to defer mounting lazy-loaded components until first needed,
  * while keeping them mounted afterwards to preserve exit animations.
  *
- * Uses a ref instead of useState to avoid cascading re-renders when
- * many instances are used in the same component (e.g. MainLayout).
- * The parent already re-renders when the trigger prop changes, so
- * no extra setState is needed.
+ * Uses useReducer to derive the latch state without render-time ref
+ * mutation (unsafe in concurrent mode) or setState-in-effect (lint).
+ * React re-evaluates the reducer when `trigger` changes via the parent.
  */
-// Intentional: ref accessed during render to avoid cascading re-renders when many
-// instances share a parent (e.g. MainLayout). The parent already re-renders when the
-// trigger prop changes, so no extra setState is needed.
-/* eslint-disable react-hooks/refs */
 export function useLazyMount(trigger: unknown): boolean {
-  const mounted = useRef(false);
-  if (trigger && !mounted.current) {
-    mounted.current = true;
-  }
-  return mounted.current;
+  // One-way latch: once dispatched, stays true forever.
+  const [mounted, mount] = useReducer(() => true, Boolean(trigger));
+
+  // When trigger becomes truthy for the first time, latch on.
+  if (trigger && !mounted) mount();
+
+  return mounted;
 }
-/* eslint-enable react-hooks/refs */

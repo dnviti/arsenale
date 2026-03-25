@@ -18,6 +18,15 @@ const authMethods = [
   'CONJUR_API_KEY', 'CONJUR_AUTHN_K8S',
 ] as const;
 
+// Auth methods allowed per provider type (mirrors AUTH_METHODS_BY_PROVIDER in vaultAdapters/index.ts)
+const authMethodsByProvider: Record<string, readonly string[]> = {
+  HASHICORP_VAULT: ['TOKEN', 'APPROLE'],
+  AWS_SECRETS_MANAGER: ['IAM_ACCESS_KEY', 'IAM_ROLE'],
+  AZURE_KEY_VAULT: ['CLIENT_CREDENTIALS', 'MANAGED_IDENTITY'],
+  GCP_SECRET_MANAGER: ['SERVICE_ACCOUNT_KEY', 'WORKLOAD_IDENTITY'],
+  CYBERARK_CONJUR: ['CONJUR_API_KEY', 'CONJUR_AUTHN_K8S'],
+};
+
 // Auth method → required payload keys
 function validateAuthPayload(authMethod: string, parsed: Record<string, unknown>): boolean {
   switch (authMethod) {
@@ -76,6 +85,12 @@ export const createVaultProviderSchema = z.object({
     }
   },
   { message: 'authPayload must be valid JSON with the expected keys for the selected authMethod', path: ['authPayload'] }
+).refine(
+  (data) => {
+    const allowed = authMethodsByProvider[data.providerType];
+    return allowed ? allowed.includes(data.authMethod) : false;
+  },
+  { message: 'authMethod is not supported for the selected providerType', path: ['authMethod'] }
 );
 export type CreateVaultProviderInput = z.infer<typeof createVaultProviderSchema>;
 
@@ -103,6 +118,15 @@ export const updateVaultProviderSchema = z.object({
     }
   },
   { message: 'authPayload must be valid JSON with the expected keys for the selected authMethod', path: ['authPayload'] }
+).refine(
+  (data) => {
+    if (!data.authMethod) return true; // authMethod is optional on update
+    const providerType = data.providerType; // may be undefined on update — service layer validates against stored value
+    if (!providerType) return true;
+    const allowed = authMethodsByProvider[providerType];
+    return allowed ? allowed.includes(data.authMethod) : false;
+  },
+  { message: 'authMethod is not supported for the selected providerType', path: ['authMethod'] }
 );
 export type UpdateVaultProviderInput = z.infer<typeof updateVaultProviderSchema>;
 

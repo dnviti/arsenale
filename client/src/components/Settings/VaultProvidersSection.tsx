@@ -54,8 +54,8 @@ const PROVIDERS: ProviderMeta[] = [
       { value: 'IAM_ROLE', label: 'IAM Role (IRSA / Instance Profile)' },
     ],
     defaultMount: '',
-    serverUrlPlaceholder: 'us-east-1',
-    serverUrlLabel: 'AWS Region',
+    serverUrlPlaceholder: 'https://secretsmanager.us-east-1.amazonaws.com',
+    serverUrlLabel: 'Endpoint URL',
     secretPathHelp: 'Secret name or ARN. Append #AWSPREVIOUS for previous version.',
   },
   {
@@ -225,6 +225,13 @@ function AuthFields({ authMethod, isEdit, values, onChange }: AuthFieldProps) {
   }
 }
 
+/** Auth methods that rely on environment/platform credentials and don't require user-supplied secrets. */
+const AUTH_METHODS_NO_CREDENTIALS_REQUIRED: Set<ExternalVaultAuthMethod> = new Set([
+  'IAM_ROLE',
+  'MANAGED_IDENTITY',
+  'WORKLOAD_IDENTITY',
+]);
+
 // ---------- Component ----------
 
 interface VaultProvidersSectionProps {
@@ -331,13 +338,17 @@ export default function VaultProvidersSection({ tenantId }: VaultProvidersSectio
     return Object.values(formAuthValues).some((v) => v.length > 0);
   };
 
+  const requiresAuthCredentials = (): boolean => {
+    return !AUTH_METHODS_NO_CREDENTIALS_REQUIRED.has(formAuth);
+  };
+
   const handleSave = async () => {
     if (!formName || !formUrl) {
       setFormError('Name and Server URL / Region are required');
       return;
     }
 
-    if (!hasAuthCredentials() && !editingProvider) {
+    if (requiresAuthCredentials() && !hasAuthCredentials() && !editingProvider) {
       setFormError('Authentication credentials are required');
       return;
     }

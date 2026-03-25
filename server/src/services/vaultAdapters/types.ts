@@ -6,6 +6,7 @@
  */
 
 import type { ResolvedCredentials } from '../../types';
+import { AppError } from '../../middleware/error.middleware';
 
 // ---------- Provider row shape expected by adapters ----------
 
@@ -49,7 +50,7 @@ export function toResolvedCredentials(data: Record<string, string>, secretPath: 
   const username = data.username ?? data.user ?? '';
   const password = data.password ?? data.pass ?? '';
   if (!username && !password) {
-    throw new Error(`Secret at "${secretPath}" does not contain username/password fields`);
+    throw new AppError(`Secret at "${secretPath}" does not contain username/password fields`, 502);
   }
   return {
     username,
