@@ -11,12 +11,35 @@ import (
 	"github.com/dnviti/arsenale/gateways/gateway-core/protocol"
 )
 
+// SensitiveBytes is a []byte wrapper for secret fields. Unlike Go strings,
+// the backing array can be reliably zeroed in place. It marshals/unmarshals
+// as a JSON string and prints as [REDACTED] to prevent accidental logging.
+type SensitiveBytes []byte
+
+// String returns a redacted placeholder so secrets are never printed via fmt.
+func (s SensitiveBytes) String() string { return "[REDACTED]" }
+
+// MarshalJSON encodes SensitiveBytes as a JSON string.
+func (s SensitiveBytes) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(s))
+}
+
+// UnmarshalJSON decodes a JSON string into SensitiveBytes.
+func (s *SensitiveBytes) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+	*s = SensitiveBytes(str)
+	return nil
+}
+
 // Credentials holds the authentication material for a session.
 type Credentials struct {
 	Username   string            `json:"username,omitempty"`
-	Password   string            `json:"password,omitempty"`
-	PrivateKey string            `json:"privateKey,omitempty"`
-	Passphrase string            `json:"passphrase,omitempty"`
+	Password   SensitiveBytes    `json:"password,omitempty"`
+	PrivateKey SensitiveBytes    `json:"privateKey,omitempty"`
+	Passphrase SensitiveBytes    `json:"passphrase,omitempty"`
 	Extra      map[string]string `json:"extra,omitempty"`
 }
 
@@ -70,8 +93,23 @@ func (ch *CredentialHandler) GetCredentials(sessionID string) (*Credentials, err
 		return nil, fmt.Errorf("no credentials for session %s", sessionID)
 	}
 
-	// Return a copy to prevent external mutation.
-	cp := *creds
+	// Return a deep copy to prevent external mutation and ensure
+	// independent SensitiveBytes backing arrays.
+	cp := Credentials{
+		Username: creds.Username,
+	}
+	if creds.Password != nil {
+		cp.Password = make(SensitiveBytes, len(creds.Password))
+		copy(cp.Password, creds.Password)
+	}
+	if creds.PrivateKey != nil {
+		cp.PrivateKey = make(SensitiveBytes, len(creds.PrivateKey))
+		copy(cp.PrivateKey, creds.PrivateKey)
+	}
+	if creds.Passphrase != nil {
+		cp.Passphrase = make(SensitiveBytes, len(creds.Passphrase))
+		copy(cp.Passphrase, creds.Passphrase)
+	}
 	if creds.Extra != nil {
 		cp.Extra = make(map[string]string, len(creds.Extra))
 		for k, v := range creds.Extra {
@@ -103,29 +141,27 @@ func (ch *CredentialHandler) ClearAll() {
 	}
 }
 
-// zeroCreds overwrites all sensitive string fields with zeroes to prevent
-// them from lingering in memory.
+// zeroCreds overwrites all sensitive fields with zeroes in place, then nils
+// the slices. Because SensitiveBytes is a []byte, the backing array is
+// zeroed directly — unlike Go strings whose backing memory is immutable.
 func zeroCreds(c *Credentials) {
-	zeroString(&c.Username)
-	zeroString(&c.Password)
-	zeroString(&c.PrivateKey)
-	zeroString(&c.Passphrase)
-	for k := range c.Extra {
-		v := c.Extra[k]
-		zeroString(&v)
-		c.Extra[k] = v
+	for i := range c.Password {
+		c.Password[i] = 0
 	}
-}
+	c.Password = nil
 
-// zeroString overwrites a string's backing memory with zeroes.
-// Note: Go strings are immutable, so we convert to a byte slice, zero it,
-// then replace the string. This zeroes the byte slice copy, not the original
-// string's backing array (which may still exist until GC). For defense-in-depth
-// this is the best we can do in safe Go without unsafe pointers.
-func zeroString(s *string) {
-	b := []byte(*s)
-	for i := range b {
-		b[i] = 0
+	for i := range c.PrivateKey {
+		c.PrivateKey[i] = 0
 	}
-	*s = string(b)
+	c.PrivateKey = nil
+
+	for i := range c.Passphrase {
+		c.Passphrase[i] = 0
+	}
+	c.Passphrase = nil
+
+	c.Username = ""
+	for k := range c.Extra {
+		c.Extra[k] = ""
+	}
 }

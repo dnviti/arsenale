@@ -24,8 +24,8 @@ func TestHandlePushAndGet(t *testing.T) {
 
 	frame := makeCredFrame("sess-1", Credentials{
 		Username:   "admin",
-		Password:   "s3cret",
-		PrivateKey: "-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----",
+		Password:   SensitiveBytes("s3cret"),
+		PrivateKey: SensitiveBytes("-----BEGIN RSA PRIVATE KEY-----\ntest\n-----END RSA PRIVATE KEY-----"),
 		Extra:      map[string]string{"domain": "CORP"},
 	})
 
@@ -40,8 +40,8 @@ func TestHandlePushAndGet(t *testing.T) {
 	if creds.Username != "admin" {
 		t.Errorf("username: got %q, want %q", creds.Username, "admin")
 	}
-	if creds.Password != "s3cret" {
-		t.Errorf("password: got %q, want %q", creds.Password, "s3cret")
+	if string(creds.Password) != "s3cret" {
+		t.Errorf("password: got %q, want %q", string(creds.Password), "s3cret")
 	}
 	if creds.Extra["domain"] != "CORP" {
 		t.Errorf("extra[domain]: got %q, want %q", creds.Extra["domain"], "CORP")
@@ -78,7 +78,7 @@ func TestClearCredentials(t *testing.T) {
 
 	frame := makeCredFrame("sess-3", Credentials{
 		Username: "admin",
-		Password: "password123",
+		Password: SensitiveBytes("password123"),
 	})
 	if err := ch.HandlePush(frame); err != nil {
 		t.Fatalf("HandlePush: %v", err)
@@ -117,28 +117,44 @@ func TestSecureZeroing(t *testing.T) {
 
 	frame := makeCredFrame("sess-z", Credentials{
 		Username:   "admin",
-		Password:   "TopSecret!",
-		PrivateKey: "key-data",
-		Passphrase: "pass",
+		Password:   SensitiveBytes("TopSecret!"),
+		PrivateKey: SensitiveBytes("key-data"),
+		Passphrase: SensitiveBytes("pass"),
 		Extra:      map[string]string{"token": "abc123"},
 	})
 	if err := ch.HandlePush(frame); err != nil {
 		t.Fatalf("HandlePush: %v", err)
 	}
 
-	// Get a reference before clearing (via internal access for testing)
+	// Get a reference before clearing (via internal access for testing).
 	ch.mu.RLock()
 	stored := ch.store["sess-z"]
+	// Keep a reference to the backing arrays before zeroing.
+	pwBacking := stored.Password
+	pkBacking := stored.PrivateKey
 	ch.mu.RUnlock()
 
 	ch.ClearCredentials("sess-z")
 
-	// After zeroing, the stored struct's fields should be zeroed strings.
-	if stored.Password != "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00" {
-		t.Errorf("password not zeroed: got %q", stored.Password)
+	// After zeroing, the backing arrays should contain all zero bytes.
+	for i, b := range pwBacking {
+		if b != 0 {
+			t.Errorf("password not zeroed: byte %d is 0x%02x", i, b)
+			break
+		}
 	}
-	if stored.PrivateKey != "\x00\x00\x00\x00\x00\x00\x00\x00" {
-		t.Errorf("privateKey not zeroed: got %q", stored.PrivateKey)
+	for i, b := range pkBacking {
+		if b != 0 {
+			t.Errorf("privateKey not zeroed: byte %d is 0x%02x", i, b)
+			break
+		}
+	}
+	// The struct fields should be nil after zeroing.
+	if stored.Password != nil {
+		t.Errorf("password should be nil after zeroing")
+	}
+	if stored.PrivateKey != nil {
+		t.Errorf("privateKey should be nil after zeroing")
 	}
 }
 

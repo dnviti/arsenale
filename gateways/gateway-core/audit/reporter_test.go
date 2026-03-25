@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/dnviti/arsenale/gateways/gateway-core/protocol"
 )
@@ -12,8 +11,11 @@ import (
 func TestReportEventSerialization(t *testing.T) {
 	var received []*protocol.Frame
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 
+	wg.Add(1)
 	sender := func(frame *protocol.Frame) error {
+		defer wg.Done()
 		mu.Lock()
 		received = append(received, frame)
 		mu.Unlock()
@@ -28,8 +30,7 @@ func TestReportEventSerialization(t *testing.T) {
 		"host":     "10.0.0.1",
 	})
 
-	// Wait for async processing
-	time.Sleep(100 * time.Millisecond)
+	wg.Wait()
 	reporter.Stop()
 
 	mu.Lock()
@@ -62,8 +63,10 @@ func TestReportEventSerialization(t *testing.T) {
 func TestReportMultipleEvents(t *testing.T) {
 	var received []*protocol.Frame
 	var mu sync.Mutex
+	var wg sync.WaitGroup
 
 	sender := func(frame *protocol.Frame) error {
+		defer wg.Done()
 		mu.Lock()
 		received = append(received, frame)
 		mu.Unlock()
@@ -80,11 +83,12 @@ func TestReportMultipleEvents(t *testing.T) {
 		EventSessionEnded,
 	}
 
+	wg.Add(len(events))
 	for _, et := range events {
 		reporter.ReportEvent("sess-2", et, nil)
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	wg.Wait()
 	reporter.Stop()
 
 	mu.Lock()
@@ -141,7 +145,6 @@ func TestReporterIgnoresAfterStop(t *testing.T) {
 	// This should not panic or send
 	reporter.ReportEvent("sess-after", EventSessionStarted, nil)
 
-	time.Sleep(50 * time.Millisecond)
 	mu.Lock()
 	defer mu.Unlock()
 	// count should be 0 — nothing was sent before Stop

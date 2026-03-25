@@ -40,7 +40,7 @@ func TestConcurrentCredentialAccess(t *testing.T) {
 			for j := 0; j < iterations; j++ {
 				frame := makeResilienceCredFrame(sid, Credentials{
 					Username: fmt.Sprintf("user-%d-%d", idx, j),
-					Password: fmt.Sprintf("pass-%d-%d", idx, j),
+					Password: SensitiveBytes(fmt.Sprintf("pass-%d-%d", idx, j)),
 				})
 				if err := ch.HandlePush(frame); err != nil {
 					t.Errorf("HandlePush for %s: %v", sid, err)
@@ -82,9 +82,9 @@ func TestCredentialZeroingVerification(t *testing.T) {
 
 	frame := makeResilienceCredFrame("zero-test", Credentials{
 		Username:   "admin",
-		Password:   "SuperSecret123!",
-		PrivateKey: "-----BEGIN RSA PRIVATE KEY-----\nMIIEpA...\n-----END RSA PRIVATE KEY-----",
-		Passphrase: "keypass",
+		Password:   SensitiveBytes("SuperSecret123!"),
+		PrivateKey: SensitiveBytes("-----BEGIN RSA PRIVATE KEY-----\nMIIEpA...\n-----END RSA PRIVATE KEY-----"),
+		Passphrase: SensitiveBytes("keypass"),
 		Extra:      map[string]string{"token": "abc123xyz", "domain": "CORP"},
 	})
 	if err := ch.HandlePush(frame); err != nil {
@@ -94,15 +94,19 @@ func TestCredentialZeroingVerification(t *testing.T) {
 	// Get a reference to the stored credentials (internal access for testing).
 	ch.mu.RLock()
 	stored := ch.store["zero-test"]
+	// Keep references to backing arrays before zeroing.
+	pwBacking := stored.Password
+	pkBacking := stored.PrivateKey
+	ppBacking := stored.Passphrase
 	ch.mu.RUnlock()
 
 	// Clear credentials.
 	ch.ClearCredentials("zero-test")
 
-	// Verify fields are zeroed (all bytes should be 0x00).
-	checkZeroed := func(name, val string) {
+	// Verify SensitiveBytes backing arrays are zeroed (all bytes should be 0x00).
+	checkZeroed := func(name string, val []byte) {
 		t.Helper()
-		for i, b := range []byte(val) {
+		for i, b := range val {
 			if b != 0 {
 				t.Errorf("%s not zeroed: byte %d is 0x%02x", name, i, b)
 				return
@@ -110,12 +114,23 @@ func TestCredentialZeroingVerification(t *testing.T) {
 		}
 	}
 
-	checkZeroed("Username", stored.Username)
-	checkZeroed("Password", stored.Password)
-	checkZeroed("PrivateKey", stored.PrivateKey)
-	checkZeroed("Passphrase", stored.Passphrase)
-	for k, v := range stored.Extra {
-		checkZeroed(fmt.Sprintf("Extra[%s]", k), v)
+	checkZeroed("Password", pwBacking)
+	checkZeroed("PrivateKey", pkBacking)
+	checkZeroed("Passphrase", ppBacking)
+
+	// SensitiveBytes fields should be nil after zeroing.
+	if stored.Password != nil {
+		t.Error("Password should be nil after zeroing")
+	}
+	if stored.PrivateKey != nil {
+		t.Error("PrivateKey should be nil after zeroing")
+	}
+	if stored.Passphrase != nil {
+		t.Error("Passphrase should be nil after zeroing")
+	}
+	// Username (string) should be empty.
+	if stored.Username != "" {
+		t.Errorf("Username not cleared: got %q", stored.Username)
 	}
 }
 
@@ -134,8 +149,8 @@ func TestMassiveCredentialStore(t *testing.T) {
 		sid := fmt.Sprintf("mass-%05d", i)
 		frame := makeResilienceCredFrame(sid, Credentials{
 			Username:   fmt.Sprintf("user-%d", i),
-			Password:   fmt.Sprintf("password-%d-with-some-padding-to-be-realistic", i),
-			PrivateKey: fmt.Sprintf("-----BEGIN KEY-----\n%d\n-----END KEY-----", i),
+			Password:   SensitiveBytes(fmt.Sprintf("password-%d-with-some-padding-to-be-realistic", i)),
+			PrivateKey: SensitiveBytes(fmt.Sprintf("-----BEGIN KEY-----\n%d\n-----END KEY-----", i)),
 			Extra:      map[string]string{"domain": "CORP", "tenant": fmt.Sprintf("t-%d", i)},
 		})
 		if err := ch.HandlePush(frame); err != nil {
@@ -190,7 +205,7 @@ func TestCredentialOverwriteAtomicity(t *testing.T) {
 	// Seed with initial credentials.
 	frame := makeResilienceCredFrame(sessionID, Credentials{
 		Username: "initial-user",
-		Password: "initial-pass",
+		Password: SensitiveBytes("initial-pass"),
 	})
 	if err := ch.HandlePush(frame); err != nil {
 		t.Fatalf("initial push: %v", err)
@@ -213,7 +228,7 @@ func TestCredentialOverwriteAtomicity(t *testing.T) {
 				pass := fmt.Sprintf("pass-%d-iter-%d", idx, j)
 				f := makeResilienceCredFrame(sessionID, Credentials{
 					Username: user,
-					Password: pass,
+					Password: SensitiveBytes(pass),
 				})
 				_ = ch.HandlePush(f)
 			}
@@ -239,12 +254,12 @@ func TestCredentialOverwriteAtomicity(t *testing.T) {
 				// However, since HandlePush replaces the entire struct
 				// atomically under a write lock, this should never happen.
 				// We also accept the initial seed values.
-				if creds.Username == "initial-user" && creds.Password == "initial-pass" {
+				if creds.Username == "initial-user" && string(creds.Password) == "initial-pass" {
 					continue
 				}
 				// Extract the suffix from username and password.
 				uSuffix := creds.Username[len("writer-"):]
-				pSuffix := creds.Password[len("pass-"):]
+				pSuffix := string(creds.Password)[len("pass-"):]
 				if uSuffix != pSuffix {
 					partialReads.Add(1)
 				}
