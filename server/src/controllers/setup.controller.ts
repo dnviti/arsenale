@@ -10,6 +10,19 @@ export async function getSetupStatus(_req: Request, res: Response) {
   res.json({ required });
 }
 
+export async function getDbStatus(_req: Request, res: Response) {
+  const required = await setupService.isSetupRequired();
+  if (!required) {
+    // After setup is completed, only return minimal connectivity info
+    // to avoid leaking infrastructure details to unauthenticated clients.
+    // Authenticated admins can use /admin/system-settings/db-status instead.
+    res.status(403).json({ error: 'Setup has already been completed' });
+    return;
+  }
+  const status = await setupService.getDbStatus();
+  res.json(status);
+}
+
 export async function completeSetup(req: Request, res: Response, next: NextFunction) {
   try {
     const required = await setupService.isSetupRequired();

@@ -3,11 +3,12 @@ import { AppError } from '../middleware/error.middleware';
 import { getConnectionCredentials } from './connection.service';
 import * as sessionService from './session.service';
 import * as auditService from './audit.service';
+import * as dbQueryExecutor from './dbQueryExecutor.service';
 import { selectInstance } from './loadBalancer.service';
 import { getDefaultGateway } from './gateway.service';
 import { isTunnelConnected, createTcpProxy } from './tunnel.service';
 import { logger } from '../utils/logger';
-import type { DbSettings } from '../types';
+import type { DbSettings, DbSessionConfig } from '../types';
 
 const log = logger.child('db-proxy');
 
@@ -43,8 +44,9 @@ export async function createDbProxySession(params: {
   ipAddress?: string;
   overrideUsername?: string;
   overridePassword?: string;
+  sessionConfig?: DbSessionConfig;
 }): Promise<DbProxySessionResult> {
-  const { userId, connectionId, tenantId, ipAddress, overrideUsername, overridePassword } = params;
+  const { userId, connectionId, tenantId, ipAddress, overrideUsername, overridePassword, sessionConfig } = params;
 
   const conn = await prisma.connection.findUnique({
     where: { id: connectionId },
@@ -154,6 +156,20 @@ export async function createDbProxySession(params: {
       dbProtocol,
       databaseName,
       username,
+      resolvedHost: proxyHost,
+      resolvedPort: proxyPort,
+      // Propagate DB-specific settings so pool creation can reconstruct DbSettings
+      ...(dbSettings.oracleConnectionType && { oracleConnectionType: dbSettings.oracleConnectionType }),
+      ...(dbSettings.oracleSid && { oracleSid: dbSettings.oracleSid }),
+      ...(dbSettings.oracleServiceName && { oracleServiceName: dbSettings.oracleServiceName }),
+      ...(dbSettings.oracleRole && { oracleRole: dbSettings.oracleRole }),
+      ...(dbSettings.oracleTnsAlias && { oracleTnsAlias: dbSettings.oracleTnsAlias }),
+      ...(dbSettings.oracleTnsDescriptor && { oracleTnsDescriptor: dbSettings.oracleTnsDescriptor }),
+      ...(dbSettings.oracleConnectString && { oracleConnectString: dbSettings.oracleConnectString }),
+      ...(dbSettings.mssqlInstanceName && { mssqlInstanceName: dbSettings.mssqlInstanceName }),
+      ...(dbSettings.mssqlAuthMode && { mssqlAuthMode: dbSettings.mssqlAuthMode }),
+      ...(dbSettings.db2DatabaseAlias && { db2DatabaseAlias: dbSettings.db2DatabaseAlias }),
+      ...(sessionConfig && { sessionConfig }),
     },
     routingDecision,
   });
@@ -201,6 +217,7 @@ export async function endDbProxySession(
     throw new AppError('Session already closed', 410);
   }
 
+  await dbQueryExecutor.destroyPool(sessionId);
   await sessionService.endSession(sessionId, 'client_disconnect');
   log.info(`DB proxy session ${sessionId} ended`);
 }

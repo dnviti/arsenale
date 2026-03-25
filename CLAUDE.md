@@ -13,6 +13,8 @@ Always respond and work in English, even if the user's prompt is written in anot
 - **Simplicity First:** Make every change as simple as possible. Impact minimal code.
 - **No Laziness:** Find root causes. No temporary fixes. Senior developer standards.
 - **Minimal Impact:** Only touch what's necessary. No side effects introducing new bugs.
+- **Always Ask Before Commit/Push:** Never run `git commit` or `git push` without explicitly asking the user for confirmation first. Present the list of staged files and the proposed commit message, then wait for approval.
+- **Protected Branches — No Direct Commits:** Never commit or push directly to `main`, `staging`, or `develop`. Always work on a dedicated branch (e.g., `task/`, `fix/`, `chore/`, `feat/`) and use pull requests to merge into those standard branches. `main`, `staging`, and `develop` are pull-only — never push to them.
 
 ### Plan Mode Default
 
@@ -193,6 +195,31 @@ This ensures deployments can be fully configured via `.env` / Docker Compose / K
 ### Vault & Encryption
 
 All connection credentials are encrypted at rest using AES-256-GCM. Each user has a master key derived from their password via Argon2. The master key is held in-memory server-side with a configurable TTL (vault sessions auto-expire). When the vault is locked, users must re-enter their password to decrypt credentials.
+
+### Logging Security (No Clear-Text Sensitive Data)
+
+**Never log sensitive data in clear text.** This is enforced by CodeQL (`js/clear-text-logging`) and must be followed in all new code.
+
+**What must NOT appear in log output:**
+- Passwords, temporary passwords, recovery keys, master keys
+- Tokens (JWT, access, refresh, API keys, reset tokens, verification codes)
+- OAuth client secrets, private keys, credentials
+- SMS/email bodies that may contain OTPs or credentials
+- Full error objects from Prisma or other ORMs (may embed query data with secrets)
+
+**Rules for all logger/console calls:**
+1. **Never pass raw error objects** to `logger.error()` — use `err instanceof Error ? err.message : 'Unknown error'` instead. Prisma and ORM errors can include query data containing passwords/tokens in their message/stack.
+2. **Never interpolate sensitive variables** in log template literals — use `[REDACTED]` placeholder instead.
+3. **Never log properties from sensitive config objects** (e.g., `config.oauth.*`) in log messages — CodeQL taints the entire object tree. Use static strings.
+4. **Dev-mode fallback logs** (email/SMS when no provider is configured) must redact all secrets, codes, tokens, and message bodies.
+5. **CLI commands** that intentionally display credentials (recovery keys, setup passwords) are acceptable but must use `console.log` directly — never route through the logger.
+
+**The logger (`server/src/utils/logger.ts`) provides defense-in-depth:**
+- `SENSITIVE_KEYS` set: redacts known sensitive object keys (password, token, secret, etc.)
+- `SENSITIVE_VALUE_PATTERNS`: regex-based scrubbing of JWT tokens, Bearer headers, and key=value pairs with sensitive names from Error messages and strings
+- All log methods pass arguments through `sanitize()` → `formatArgs()` before output
+
+**When adding new logger calls**, ask: "Could any argument contain a password, token, key, or credential — even transitively through an error object?" If yes, extract only the safe message string.
 
 ### Authentication
 
@@ -437,9 +464,56 @@ All scripts and skills reference `python3`. On Windows where only `python` is av
 | Port check fails | Ensure `netstat` is available (built into Windows). Run as Administrator if needed. |
 | Permission denied on kill | Run the terminal as Administrator for `taskkill` operations. |
 
-### Vector Memory (opt-in)
+### Vector Memory
 
-CodeClaw includes an optional vector memory layer that indexes source code, tasks, and generated documents for semantic search. It is **disabled by default** and requires optional dependencies.
+CodeClaw includes a vector memory layer that indexes source code, tasks, and generated documents for semantic search. It can be accessed via **MCP tools** (preferred when the server is running) or **CLI scripts** (fallback).
+
+**Claude MUST use the MCP claw-vector-memory tools whenever they are available.** At the start of every session:
+1. Call `mcp__claw-vector-memory__backend_health` to check if the vector memory server is running
+2. If healthy, use MCP tools for all vector memory operations throughout the session
+3. If unhealthy or unavailable, fall back to the CLI scripts below
+
+#### MCP Tools (preferred)
+
+When the `claw-vector-memory` MCP server is running, use these tools directly:
+
+| MCP Tool | Purpose |
+|----------|---------|
+| `mcp__claw-vector-memory__semantic_search` | Find relevant code/context via semantic similarity |
+| `mcp__claw-vector-memory__store_memory` | Persist learnings, discoveries, and notes into vector memory |
+| `mcp__claw-vector-memory__index_repository` | Trigger incremental or full codebase re-indexing |
+| `mcp__claw-vector-memory__get_task_context` | Get comprehensive context for a task (code, deps, notes) |
+| `mcp__claw-vector-memory__backend_health` | Check backend health and availability |
+| `mcp__claw-vector-memory__list_backends` | List configured backends and their status |
+
+**When to use MCP vector memory:**
+- Before starting any task: `semantic_search` for related code and prior learnings
+- Before picking up a task: `get_task_context` for full task context including dependencies
+- After completing significant work: `store_memory` to persist architectural decisions, gotchas, and patterns discovered
+- After editing multiple files: `index_repository` (incremental) to keep the index fresh
+- **Before spawning agents/subagents:** `index_repository` (incremental) so spawned agents read up-to-date indexed data
+- **After finishing code edits:** `index_repository` (incremental) immediately after writing/editing files, before any other action
+
+**Memory storage rule:** Never use the file-based `MEMORY.md` / memory file system (`~/.claude/projects/.../memory/`). All persistent memory — storing learnings, searching prior context, indexing — must go through the MCP `claw-vector-memory` tools exclusively. If the MCP server is unavailable, skip persistence rather than falling back to memory files.
+
+**User request triggers — use MCP vector memory when the user asks about:**
+- "project memory", "project store", "update/check/clear the store" → `store_memory` / `semantic_search`
+- "code search", "find in code", "search the codebase", "what's about X" → `semantic_search` first, fall back to Grep/Glob only if MCP is unavailable
+- "remember this", "save this to the store", "add to memory" → `store_memory`
+- Any automatic/hook-triggered context gathering before a task → `semantic_search` + `get_task_context`
+
+#### Data Alignment Rule (MANDATORY)
+
+This rule applies to the **main process, all agents, and all subagents equally.** Every process that reads or writes code must keep the vector index in sync:
+
+1. **Write-then-index:** After any file edit or write operation, call `index_repository` (incremental) before proceeding. This ensures subsequent searches by any process reflect the latest state.
+2. **Index-before-spawn:** Before launching any agent or subagent, the parent process must call `index_repository` (incremental) so the spawned process starts with aligned data.
+3. **Agents must search:** Agents and subagents must call `semantic_search` at the start of their work to leverage existing context and avoid redundant exploration.
+4. **Agents must store:** When an agent discovers something significant (architectural pattern, gotcha, decision), it must call `store_memory` before returning results, so the knowledge is available to all future processes.
+
+The goal is **zero stale reads**: every process — main, agent, or subagent — works with the same up-to-date indexed codebase. Skipping index updates creates drift between what processes "know" and what the code actually says.
+
+#### CLI Scripts (fallback)
 
 | Component | Purpose |
 |-----------|---------|
@@ -448,12 +522,14 @@ CodeClaw includes an optional vector memory layer that indexes source code, task
 | `vector_memory.py status` | Check index health and staleness |
 | `vector_memory.py clear --force` | Reset the vector index |
 
-**Setup:**
+#### Setup
+
 1. Install dependencies: `pip install lancedb onnxruntime tokenizers numpy pyarrow`
 2. Enable in `project-config.json`: set `vector_memory.enabled` to `true`
 3. Run initial index: `python3 scripts/vector_memory.py index --full`
 
-**Configuration** (`project-config.json` > `vector_memory`):
+#### Configuration (`project-config.json` > `vector_memory`)
+
 - `enabled`: Enable/disable vector memory (default: `false`)
 - `auto_index`: Auto-reindex on file Edit/Write hooks (default: `false`)
 - `embedding_provider`: `"local"` (default), `"openai"`, or `"voyage"`

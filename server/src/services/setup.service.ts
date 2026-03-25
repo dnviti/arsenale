@@ -155,7 +155,7 @@ export async function completeSetup(data: SetupCompleteInput) {
     tenantInfo = await tenantService.createTenant(user.id, tenant.name);
     logger.info(`Setup wizard: created tenant "${tenant.name}" for admin ${admin.email}`);
   } catch (err) {
-    logger.error('Setup wizard: tenant creation failed:', err);
+    logger.error('Setup wizard: tenant creation failed:', err instanceof Error ? err.message : 'Unknown error');
     throw new Error('Admin user created but tenant creation failed. Please log in and create an organization manually.');
   }
 
@@ -181,4 +181,38 @@ export async function completeSetup(data: SetupCompleteInput) {
     refreshToken: tokens.refreshToken,
     tenantMemberships: tokens.tenantMemberships,
   };
+}
+
+/**
+ * Get database connection status by parsing DATABASE_URL and testing connectivity.
+ */
+export async function getDbStatus(): Promise<{
+  host: string;
+  port: number;
+  database: string;
+  connected: boolean;
+  version: string | null;
+}> {
+  const dbUrl = process.env.DATABASE_URL || '';
+  let host = '', port = 5432, database = '';
+  try {
+    const url = new URL(dbUrl);
+    host = url.hostname;
+    port = parseInt(url.port || '5432', 10);
+    database = url.pathname.replace(/^\//, '');
+  } catch { /* invalid URL */ }
+
+  let connected = false;
+  let version: string | null = null;
+  try {
+    const result = await prisma.$queryRawUnsafe<[{ version: string }]>('SELECT version()');
+    connected = true;
+    // Only expose the engine name and major version (e.g. "PostgreSQL 16.x"),
+    // not the full build string which leaks OS/compiler/architecture details.
+    const raw = result[0]?.version || '';
+    const match = raw.match(/^(\w+)\s+([\d]+(?:\.[\d]+)?)/);
+    version = match ? `${match[1]} ${match[2]}` : (raw ? 'connected' : null);
+  } catch { /* connection failed */ }
+
+  return { host, port, database, connected, version };
 }

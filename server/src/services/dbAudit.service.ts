@@ -16,6 +16,7 @@ export interface DbAuditLogInput {
   executionTimeMs?: number;
   blocked?: boolean;
   blockReason?: string;
+  executionPlan?: unknown;
 }
 
 export interface DbAuditLogEntry {
@@ -30,6 +31,7 @@ export interface DbAuditLogEntry {
   executionTimeMs: number | null;
   blocked: boolean;
   blockReason: string | null;
+  executionPlan: unknown | null;
   createdAt: Date;
 }
 
@@ -65,15 +67,80 @@ const UPDATE_KEYWORDS = /^\s*UPDATE\b/i;
 const DELETE_KEYWORDS = /^\s*DELETE\b/i;
 
 /**
+ * Strip leading SQL comments (line `--` and block comments) and whitespace.
+ * Uses a character-scanning loop instead of regex to avoid polynomial
+ * backtracking (CodeQL js/polynomial-redos).
+ */
+function stripLeadingComments(sql: string): string {
+  let i = 0;
+  const len = sql.length;
+
+  while (i < len) {
+    // Skip whitespace
+    const ch = sql.charCodeAt(i);
+    if (ch === 32 || ch === 9 || ch === 10 || ch === 13) { // space, tab, LF, CR
+      i++;
+      continue;
+    }
+
+    // Line comment: -- ... \n
+    if (i + 1 < len && sql[i] === '-' && sql[i + 1] === '-') {
+      i += 2;
+      while (i < len && sql[i] !== '\n') i++;
+      if (i < len) i++; // skip newline
+      continue;
+    }
+
+    // Block comment: /* ... */
+    if (i + 1 < len && sql[i] === '/' && sql[i + 1] === '*') {
+      i += 2;
+      while (i + 1 < len && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
+      if (i + 1 < len) i += 2; // skip */
+      continue;
+    }
+
+    break;
+  }
+
+  return sql.slice(i);
+}
+
+/**
  * Classify a SQL query text into a DbQueryType.
+ * Handles CTEs (WITH ... SELECT/INSERT/UPDATE/DELETE), EXPLAIN, SHOW, etc.
  */
 export function classifyQuery(queryText: string): DbQueryType {
-  const trimmed = queryText.trim();
+  const trimmed = stripLeadingComments(queryText);
+
   if (DDL_KEYWORDS.test(trimmed)) return 'DDL';
   if (SELECT_KEYWORDS.test(trimmed)) return 'SELECT';
   if (INSERT_KEYWORDS.test(trimmed)) return 'INSERT';
   if (UPDATE_KEYWORDS.test(trimmed)) return 'UPDATE';
   if (DELETE_KEYWORDS.test(trimmed)) return 'DELETE';
+
+  // CTE: WITH name AS (...) SELECT/INSERT/UPDATE/DELETE
+  if (/^\s*WITH\b/i.test(trimmed)) {
+    // Look for the final statement after the CTE definitions
+    if (/\)\s*SELECT\b/i.test(trimmed)) return 'SELECT';
+    if (/\)\s*INSERT\b/i.test(trimmed)) return 'INSERT';
+    if (/\)\s*UPDATE\b/i.test(trimmed)) return 'UPDATE';
+    if (/\)\s*DELETE\b/i.test(trimmed)) return 'DELETE';
+    return 'SELECT'; // CTEs are overwhelmingly SELECT
+  }
+
+  // EXPLAIN/DESCRIBE wraps another statement
+  if (/^\s*(EXPLAIN|DESCRIBE|DESC)\b/i.test(trimmed)) return 'SELECT';
+  // SHOW (SHOW TABLES, SHOW COLUMNS, etc.)
+  if (/^\s*SHOW\b/i.test(trimmed)) return 'SELECT';
+  // SET is DDL-like
+  if (/^\s*SET\b/i.test(trimmed)) return 'DDL';
+  // GRANT/REVOKE
+  if (/^\s*(GRANT|REVOKE)\b/i.test(trimmed)) return 'DDL';
+  // MERGE (upsert)
+  if (/^\s*MERGE\b/i.test(trimmed)) return 'UPDATE';
+  // CALL / EXEC (stored procedures)
+  if (/^\s*(CALL|EXEC|EXECUTE)\b/i.test(trimmed)) return 'OTHER';
+
   return 'OTHER';
 }
 
@@ -137,6 +204,7 @@ export function logQuery(input: DbAuditLogInput): void {
         executionTimeMs: input.executionTimeMs ?? null,
         blocked: input.blocked ?? false,
         blockReason: input.blockReason ?? null,
+        executionPlan: input.executionPlan ?? Prisma.DbNull,
       },
     })
     .catch((err) => {
@@ -157,6 +225,7 @@ export function interceptQuery(params: {
   executionTimeMs?: number;
   blocked?: boolean;
   blockReason?: string;
+  executionPlan?: unknown;
 }): void {
   const queryType = classifyQuery(params.queryText);
   const tablesAccessed = extractTables(params.queryText);
@@ -172,6 +241,7 @@ export function interceptQuery(params: {
     executionTimeMs: params.executionTimeMs,
     blocked: params.blocked,
     blockReason: params.blockReason,
+    executionPlan: params.executionPlan,
   });
 }
 
@@ -237,6 +307,7 @@ export async function getDbAuditLogs(query: DbAuditLogQuery): Promise<PaginatedD
     executionTimeMs: r.executionTimeMs,
     blocked: r.blocked,
     blockReason: r.blockReason,
+    executionPlan: r.executionPlan,
     createdAt: r.createdAt,
     userName: r.user?.username ?? null,
     userEmail: r.user?.email ?? null,

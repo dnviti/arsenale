@@ -60,6 +60,8 @@ model Tenant {
   tenantVaultMembers TenantVaultMember[]
   syncProfiles       SyncProfile[]
   externalVaultProviders ExternalVaultProvider[]
+  aiConfig           TenantAiConfig?
+  aiDailyUsage       AiDailyUsage[]
 }
 
 model Team {
@@ -460,6 +462,20 @@ model SshKeyPair {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
+model AiDailyUsage {
+  id        String   @id @default(uuid())
+  tenantId  String
+  date      DateTime @db.Date
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, date])
+  @@index([date])
+}
+
 model SharedConnection {
   id               String     @id @default(uuid())
   connectionId     String
@@ -686,16 +702,26 @@ enum AuditAction {
   DB_TUNNEL_ERROR
   DB_QUERY_EXECUTED
   DB_QUERY_BLOCKED
+  DB_QUERY_FIREWALL_ALERT
   DB_FIREWALL_RULE_CREATE
   DB_FIREWALL_RULE_UPDATE
   DB_FIREWALL_RULE_DELETE
   DB_MASKING_POLICY_CREATE
   DB_MASKING_POLICY_UPDATE
   DB_MASKING_POLICY_DELETE
+  DB_QUERY_RATE_LIMITED
+  DB_RATE_LIMIT_POLICY_CREATE
+  DB_RATE_LIMIT_POLICY_UPDATE
+  DB_RATE_LIMIT_POLICY_DELETE
   SESSION_TERMINATED_POLICY_VIOLATION
   KEYSTROKE_POLICY_CREATE
   KEYSTROKE_POLICY_UPDATE
   KEYSTROKE_POLICY_DELETE
+  AI_QUERY_GENERATED
+  DB_QUERY_PLAN_REQUESTED
+  DB_QUERY_AI_OPTIMIZED
+  DB_INTROSPECTION_REQUESTED
+  DB_SESSION_CONFIG_UPDATED
 }
 
 model AuditLog {
@@ -1234,6 +1260,7 @@ model DbAuditLog {
   executionTimeMs Int?
   blocked         Boolean     @default(false)
   blockReason     String?
+  executionPlan   Json?
   createdAt       DateTime    @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1292,6 +1319,33 @@ model DbMaskingPolicy {
 
   @@index([tenantId, enabled])
   @@index([tenantId])
+}
+
+enum RateLimitAction {
+  REJECT
+  LOG_ONLY
+}
+
+/// Policy-based SQL query rate limiter evaluated after the SQL firewall and
+/// before query execution. Uses a token bucket algorithm with in-memory state.
+model DbRateLimitPolicy {
+  id           String           @id @default(uuid())
+  tenantId     String
+  name         String
+  queryType    DbQueryType?     /// Null means all query types
+  windowMs     Int              @default(60000)
+  maxQueries   Int              @default(100)
+  burstMax     Int              @default(10) /// Token bucket burst capacity
+  exemptRoles  String[]         @default([])
+  scope        String?          /// Optional database or table scope
+  action       RateLimitAction  @default(REJECT)
+  enabled      Boolean          @default(true)
+  priority     Int              @default(0)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([tenantId, enabled])
+  @@index([tenantId, queryType, scope])
 }
 
 /// OAuth 2.0 Device Authorization Grant (RFC 8628).
@@ -1367,4 +1421,22 @@ model KeystrokePolicy {
 
   @@index([tenantId])
   @@index([tenantId, enabled])
+}
+
+model TenantAiConfig {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique
+  provider            String   @default("none")
+  encryptedApiKey     String?
+  apiKeyIV            String?
+  apiKeyTag           String?
+  modelId             String   @default("claude-sonnet-4-20250514")
+  baseUrl             String?
+  maxTokensPerRequest Int      @default(4000)
+  dailyRequestLimit   Int      @default(100)
+  enabled             Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }

@@ -1,10 +1,19 @@
+const MAX_CSV_LINE_LENGTH = 1_048_576; // 1 MB per line
+const MAX_CSV_LINES = 100_000;
+
 export function parseCSV(csv: string): { headers: string[]; rows: string[][] } {
   const lines = csv.split(/\r?\n/).filter(line => line.trim() !== '');
   if (lines.length === 0) {
     return { headers: [], rows: [] };
   }
+  if (lines.length > MAX_CSV_LINES) {
+    throw new Error(`CSV exceeds maximum of ${MAX_CSV_LINES} lines`);
+  }
 
   const parseLine = (line: string): string[] => {
+    if (line.length > MAX_CSV_LINE_LENGTH) {
+      throw new Error(`CSV line exceeds maximum length of ${MAX_CSV_LINE_LENGTH} characters`);
+    }
     const result: string[] = [];
     let current = '';
     let inQuotes = false;

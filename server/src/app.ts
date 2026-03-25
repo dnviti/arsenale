@@ -42,6 +42,7 @@ import dbAuditRoutes from './routes/dbAudit.routes';
 import passwordRotationRoutes from './routes/passwordRotation.routes';
 import dbTunnelRoutes from './routes/dbTunnel.routes';
 import keystrokePolicyRoutes from './routes/keystrokePolicy.routes';
+import aiQueryRoutes from './routes/aiQuery.routes';
 import systemSettingsRoutes from './routes/systemSettings.routes';
 import setupRoutes from './routes/setup.routes';
 import healthRoutes from './routes/health.routes';
@@ -50,8 +51,18 @@ import { requestLogger } from './middleware/requestLogger.middleware';
 import { validateCsrf } from './middleware/csrf.middleware';
 import { globalRateLimit } from './middleware/globalRateLimit.middleware';
 import { config } from './config';
+import { requireFeature } from './middleware/featureGate.middleware';
 
 const app = express();
+
+// Feature gate middleware instances (read config at request time for live reload)
+const dbProxyGate = requireFeature(() => config.features.databaseProxyEnabled, 'Database SQL Proxy');
+const connectionsGate = requireFeature(() => config.features.connectionsEnabled, 'Connection Management');
+const connectionsOrDbGate = requireFeature(
+  () => config.features.connectionsEnabled || config.features.databaseProxyEnabled,
+  'Connection Management',
+);
+const keychainGate = requireFeature(() => config.features.keychainEnabled, 'Keychain');
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -87,9 +98,12 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '500kb' }));
-app.use(cookieParser());
+app.use(cookieParser()); // codeql[js/missing-token-validation] CSRF validated by custom double-submit-cookie middleware at lines 98-105
 app.use(passport.initialize());
-if (config.logHttpRequests) app.use(requestLogger);
+app.use((req, res, next) => {
+  if (config.logHttpRequests) return requestLogger(req, res, next);
+  next();
+});
 
 // Global CSRF validation for all state-changing requests (after CORS, before routes)
 app.use('/api', (req, res, next) => {
@@ -111,11 +125,11 @@ app.use('/api/auth/saml', samlRoutes);
 app.use('/api/auth', oauthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/vault', vaultRoutes);
-app.use('/api/connections', connectionsRoutes);
-app.use('/api/folders', foldersRoutes);
-app.use('/api/connections', sharingRoutes);
-app.use('/api/sessions/db-tunnel', dbTunnelRoutes);
-app.use('/api/sessions', sessionsRoutes);
+app.use('/api/connections', connectionsOrDbGate, connectionsRoutes);
+app.use('/api/folders', connectionsOrDbGate, foldersRoutes);
+app.use('/api/connections', connectionsOrDbGate, sharingRoutes);
+app.use('/api/sessions/db-tunnel', dbProxyGate, dbTunnelRoutes);
+app.use('/api/sessions', connectionsGate, sessionsRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/user/2fa', twofaRoutes);
 app.use('/api/user/2fa/sms', smsMfaRoutes);
@@ -128,24 +142,25 @@ app.use('/api/teams', teamRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/gateways', gatewayRoutes);
 app.use('/api/tabs', tabsRoutes);
-app.use('/api/secrets', secretRoutes);
-app.use('/api/vault-folders', vaultFoldersRoutes);
+app.use('/api/secrets', keychainGate, secretRoutes);
+app.use('/api/vault-folders', keychainGate, vaultFoldersRoutes);
 app.use('/api/share', publicShareRoutes);
 app.use('/api/recordings', recordingRoutes);
-app.use('/api/connections', importExportRoutes);
+app.use('/api/connections', connectionsOrDbGate, importExportRoutes);
 app.use('/api/geoip', geoipRoutes);
 app.use('/api/ldap', ldapRoutes);
 app.use('/api/sync-profiles', syncRoutes);
 app.use('/api/vault-providers', externalVaultRoutes);
 app.use('/api/access-policies', accessPolicyRoutes);
 app.use('/api/checkouts', checkoutRoutes);
-app.use('/api/sessions/ssh-proxy', sshProxyRoutes);
+app.use('/api/sessions/ssh-proxy', connectionsGate, sshProxyRoutes);
 app.use('/api/rdgw', rdGatewayRoutes);
 app.use('/api/cli', cliRoutes);
-app.use('/api/sessions/database', dbProxyRoutes);
-app.use('/api/db-audit', dbAuditRoutes);
-app.use('/api/secrets', passwordRotationRoutes);
+app.use('/api/sessions/database', dbProxyGate, dbProxyRoutes);
+app.use('/api/db-audit', dbProxyGate, dbAuditRoutes);
+app.use('/api/secrets', keychainGate, passwordRotationRoutes);
 app.use('/api/keystroke-policies', keystrokePolicyRoutes);
+app.use('/api/ai', dbProxyGate, aiQueryRoutes);
 app.use('/api/admin/system-settings', systemSettingsRoutes);
 
 // Health & readiness probes

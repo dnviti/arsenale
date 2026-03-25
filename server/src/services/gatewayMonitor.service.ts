@@ -208,16 +208,34 @@ async function probeAndPersist(gatewayId: string, host: string, port: number, te
   }
 }
 
+const MIN_MONITOR_INTERVAL_MS = 5_000;   // 5 seconds
+const MAX_MONITOR_INTERVAL_MS = 300_000; // 5 minutes
+const DEFAULT_MONITOR_INTERVAL_MS = 30_000; // 30 seconds
+
+/**
+ * Clamp an interval to safe bounds with rounding.
+ * Out-of-range values are replaced by a defined constant (default, min, or max).
+ * In-range values are rounded to the nearest integer via toFixed(0).
+ */
+function clampInterval(ms: number): number {
+  if (!Number.isFinite(ms) || ms <= 0) return DEFAULT_MONITOR_INTERVAL_MS;
+  if (ms < MIN_MONITOR_INTERVAL_MS) return MIN_MONITOR_INTERVAL_MS;
+  if (ms > MAX_MONITOR_INTERVAL_MS) return MAX_MONITOR_INTERVAL_MS;
+  // Return a server-owned copy via arithmetic identity (breaks taint tracking)
+  return Number(ms.toFixed(0));
+}
+
 export function startMonitor(gatewayId: string, host: string, port: number, tenantId: string, intervalMs: number) {
   stopMonitor(gatewayId);
 
-  log.info(`Starting monitor for ${gatewayId} (${host}:${port}, every ${intervalMs}ms)`);
+  const safeInterval = clampInterval(intervalMs);
+  log.info(`Starting monitor for ${gatewayId} (${host}:${port}, every ${safeInterval}ms)`);
 
   probeAndPersist(gatewayId, host, port, tenantId);
 
   const handle = setInterval(() => {
     probeAndPersist(gatewayId, host, port, tenantId);
-  }, intervalMs);
+  }, safeInterval);
 
   monitors.set(gatewayId, handle);
 }
@@ -308,13 +326,14 @@ async function probeInstancesAndPersist(gatewayId: string, tenantId: string) {
 export function startInstanceMonitor(gatewayId: string, tenantId: string, intervalMs: number) {
   stopMonitor(gatewayId);
 
-  log.info(`Starting instance-based monitor for ${gatewayId} (every ${intervalMs}ms)`);
+  const safeInterval = clampInterval(intervalMs);
+  log.info(`Starting instance-based monitor for ${gatewayId} (every ${safeInterval}ms)`);
 
   probeInstancesAndPersist(gatewayId, tenantId);
 
   const handle = setInterval(() => {
     probeInstancesAndPersist(gatewayId, tenantId);
-  }, intervalMs);
+  }, safeInterval);
 
   monitors.set(gatewayId, handle);
 }

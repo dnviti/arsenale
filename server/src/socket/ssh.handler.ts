@@ -84,6 +84,10 @@ export function setupSshHandler(io: Server) {
   const sshNamespace = io.of('/ssh');
 
   sshNamespace.use((socket, next) => {
+    if (!config.features.connectionsEnabled) {
+      return next(new Error('The Connection Management feature is currently disabled.'));
+    }
+
     const token = socket.handshake.auth.token;
     if (!token) return next(new Error('Authentication required'));
 

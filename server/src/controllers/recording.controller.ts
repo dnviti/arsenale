@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { readFile, stat } from 'fs/promises';
+import { open } from 'fs/promises';
 import fs from 'fs';
 import { AuthRequest, assertAuthenticated } from '../types';
 import * as recordingService from '../services/recording.service';
@@ -67,15 +67,25 @@ export async function analyzeRecording(req: AuthRequest, res: Response) {
   if (!recording) throw new AppError('Recording not found', 404);
   if (recording.format !== 'guac') throw new AppError('Only .guac recordings can be analyzed', 400);
 
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
-  const fileStat = await stat(recording.filePath).catch(() => null);
-  if (!fileStat) throw new AppError('Recording file not found on disk', 404);
-
-  // Read the file (limit to 10MB to avoid memory issues)
+  // Read only the first maxBytes from the file to avoid OOM on large recordings
   const maxBytes = 10 * 1024 * 1024;
-  // eslint-disable-next-line security/detect-non-literal-fs-filename
-  const buf = await readFile(recording.filePath);
-  const content = buf.slice(0, maxBytes).toString('ascii');
+  let content: string;
+  let bytesRead = 0;
+  let fh;
+  try {
+    // eslint-disable-next-line security/detect-non-literal-fs-filename
+    fh = await open(recording.filePath, 'r');
+    const buf = Buffer.alloc(maxBytes);
+    ({ bytesRead } = await fh.read(buf, 0, maxBytes, 0));
+    content = buf.subarray(0, bytesRead).toString('ascii');
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new AppError('Recording file not found on disk', 404);
+    }
+    throw err;
+  } finally {
+    await fh?.close();
+  }
 
   const instructions: Record<string, number> = {};
   let displayWidth = 0;
@@ -119,8 +129,8 @@ export async function analyzeRecording(req: AuthRequest, res: Response) {
   }
 
   res.json({
-    fileSize: fileStat.size,
-    truncated: buf.length > maxBytes,
+    fileSize: bytesRead,
+    truncated: bytesRead >= maxBytes,
     instructions,
     syncCount: instructions['sync'] || 0,
     displayWidth,

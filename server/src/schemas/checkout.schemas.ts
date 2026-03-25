@@ -5,10 +5,24 @@ export const createCheckoutSchema = z.object({
   connectionId: z.string().uuid().optional(),
   durationMinutes: z.number().int().min(1).max(1440),
   reason: z.string().max(500).optional(),
-}).refine(
-  (data) => (data.secretId && !data.connectionId) || (!data.secretId && data.connectionId),
-  { message: 'Provide either secretId or connectionId, not both' },
-);
+}).superRefine((data, ctx) => {
+  const hasSecret = !!data.secretId;
+  const hasConnection = !!data.connectionId;
+
+  if (hasSecret && hasConnection) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Provide either secretId or connectionId, not both',
+      path: ['secretId'],
+    });
+  } else if (!hasSecret && !hasConnection) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Provide one of secretId or connectionId',
+      path: ['secretId'],
+    });
+  }
+});
 
 export type CreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
 
