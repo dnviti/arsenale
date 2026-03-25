@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Dialog, AppBar, Toolbar, Typography, Box, IconButton, Tabs, Tab,
   Stack, useMediaQuery, Card, CardContent, Button,
@@ -128,18 +128,19 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
     return validTabIds.has(preferred) ? preferred : 'profile';
   });
 
-  // Track prop changes to sync initialTab (React derived-state-from-props pattern)
-  const [prevOpen, setPrevOpen] = useState(open);
-  const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
-
-  if (open !== prevOpen || initialTab !== prevInitialTab) {
-    setPrevOpen(open);
-    setPrevInitialTab(initialTab);
-    if (open && initialTab && validTabIds.has(initialTab)) {
+  // Sync activeTab when dialog opens with a specific initialTab
+  const prevOpenRef = useRef(open);
+  const prevInitialTabRef = useRef(initialTab);
+  useEffect(() => {
+    const openChanged = open !== prevOpenRef.current;
+    const tabChanged = initialTab !== prevInitialTabRef.current;
+    prevOpenRef.current = open;
+    prevInitialTabRef.current = initialTab;
+    if ((openChanged || tabChanged) && open && initialTab && validTabIds.has(initialTab)) {
       setActiveTabState(initialTab);
       setStoredTab('settingsActiveTab', initialTab);
     }
-  }
+  }, [open, initialTab, validTabIds, setStoredTab]);
 
   // Ensure active tab is always valid (handles tenant removal, tab changes)
   const resolvedTab = validTabIds.has(activeTab) ? activeTab : 'profile';
