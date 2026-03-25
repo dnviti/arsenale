@@ -75,6 +75,26 @@ export async function updateTenant(req: AuthRequest, res: Response) {
       ipAddress: getClientIp(req),
     });
   }
+  const recordingFields = ['recordingEnabled', 'recordingRetentionDays'] as const;
+  const recordingChanges = recordingFields.filter((f) => data[f] !== undefined);
+  if (recordingChanges.length > 0) {
+    auditService.log({
+      userId: req.user.userId, action: 'TENANT_UPDATE',
+      targetType: 'Tenant', targetId: tenantId,
+      details: { policy: 'recording', fields: Object.fromEntries(recordingChanges.map((f) => [f, data[f]])) },
+      ipAddress: getClientIp(req),
+    });
+  }
+  const storageFields = ['fileUploadMaxSizeBytes', 'userDriveQuotaBytes'] as const;
+  const storageChanges = storageFields.filter((f) => data[f] !== undefined);
+  if (storageChanges.length > 0) {
+    auditService.log({
+      userId: req.user.userId, action: 'TENANT_UPDATE',
+      targetType: 'Tenant', targetId: tenantId,
+      details: { policy: 'storage', fields: Object.fromEntries(storageChanges.map((f) => [f, data[f]])) },
+      ipAddress: getClientIp(req),
+    });
+  }
   auditService.log({
     userId: req.user.userId, action: 'TENANT_UPDATE',
     targetType: 'Tenant', targetId: tenantId,

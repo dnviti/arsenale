@@ -61,12 +61,13 @@ export async function deleteFile(userId: string, fileName: string): Promise<void
   await fs.unlink(filePath); // eslint-disable-line security/detect-non-literal-fs-filename -- path validated by getFilePath
 }
 
-export async function checkQuota(userId: string, additionalBytes: number): Promise<void> {
+export async function checkQuota(userId: string, additionalBytes: number, tenantQuotaBytes?: number | null): Promise<void> {
   const files = await listFiles(userId);
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-  if (totalSize + additionalBytes > config.userDriveQuota) {
+  const effectiveQuota = tenantQuotaBytes ?? config.userDriveQuota;
+  if (totalSize + additionalBytes > effectiveQuota) {
     throw new AppError(
-      `Drive quota exceeded. Current usage: ${Math.round(totalSize / 1024 / 1024)}MB, limit: ${Math.round(config.userDriveQuota / 1024 / 1024)}MB`,
+      `Drive quota exceeded. Current usage: ${Math.round(totalSize / 1024 / 1024)}MB, limit: ${Math.round(effectiveQuota / 1024 / 1024)}MB`,
       413
     );
   }

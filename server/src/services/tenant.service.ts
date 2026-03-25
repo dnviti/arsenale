@@ -123,6 +123,10 @@ export async function getTenant(tenantId: string) {
     tunnelRequireForRemote: tenant.tunnelRequireForRemote,
     tunnelTokenMaxLifetimeDays: tenant.tunnelTokenMaxLifetimeDays,
     tunnelAgentAllowedCidrs: tenant.tunnelAgentAllowedCidrs,
+    recordingEnabled: tenant.recordingEnabled,
+    recordingRetentionDays: tenant.recordingRetentionDays,
+    fileUploadMaxSizeBytes: tenant.fileUploadMaxSizeBytes,
+    userDriveQuotaBytes: tenant.userDriveQuotaBytes,
     userCount: tenant._count.members,
     teamCount: tenant._count.teams,
     createdAt: tenant.createdAt,
@@ -148,6 +152,10 @@ export async function updateTenant(tenantId: string, data: {
   tunnelRequireForRemote?: boolean;
   tunnelTokenMaxLifetimeDays?: number | null;
   tunnelAgentAllowedCidrs?: string[];
+  recordingEnabled?: boolean;
+  recordingRetentionDays?: number | null;
+  fileUploadMaxSizeBytes?: number | null;
+  userDriveQuotaBytes?: number | null;
 }) {
   const updateData: Record<string, unknown> = {};
 
@@ -205,6 +213,18 @@ export async function updateTenant(tenantId: string, data: {
   if (data.tunnelAgentAllowedCidrs !== undefined) {
     updateData.tunnelAgentAllowedCidrs = data.tunnelAgentAllowedCidrs;
   }
+  if (data.recordingEnabled !== undefined) {
+    updateData.recordingEnabled = data.recordingEnabled;
+  }
+  if (data.recordingRetentionDays !== undefined) {
+    updateData.recordingRetentionDays = data.recordingRetentionDays;
+  }
+  if (data.fileUploadMaxSizeBytes !== undefined) {
+    updateData.fileUploadMaxSizeBytes = data.fileUploadMaxSizeBytes;
+  }
+  if (data.userDriveQuotaBytes !== undefined) {
+    updateData.userDriveQuotaBytes = data.userDriveQuotaBytes;
+  }
 
   if (Object.keys(updateData).length === 0) {
     throw new AppError('No fields to update', 400);
@@ -235,6 +255,10 @@ export async function updateTenant(tenantId: string, data: {
     tunnelRequireForRemote: tenant.tunnelRequireForRemote,
     tunnelTokenMaxLifetimeDays: tenant.tunnelTokenMaxLifetimeDays,
     tunnelAgentAllowedCidrs: tenant.tunnelAgentAllowedCidrs,
+    recordingEnabled: tenant.recordingEnabled,
+    recordingRetentionDays: tenant.recordingRetentionDays,
+    fileUploadMaxSizeBytes: tenant.fileUploadMaxSizeBytes,
+    userDriveQuotaBytes: tenant.userDriveQuotaBytes,
     updatedAt: tenant.updatedAt,
   };
 }

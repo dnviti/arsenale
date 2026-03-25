@@ -154,7 +154,7 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
     const tenantDlp = req.user.tenantId
       ? await prisma.tenant.findUnique({
           where: { id: req.user.tenantId },
-          select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true, enforcedConnectionSettings: true },
+          select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true, enforcedConnectionSettings: true, recordingEnabled: true },
         })
       : null;
     const tenantEnforced = (tenantDlp?.enforcedConnectionSettings as EnforcedConnectionSettings) ?? null;
@@ -169,10 +169,11 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       ? path.posix.join('/guacd-drive', req.user.userId)
       : undefined;
 
-    // Build recording params if enabled
+    // Build recording params if enabled (global + tenant-level gate)
+    const tenantRecordingEnabled = tenantDlp?.recordingEnabled ?? true;
     let rdpRecording: { recordingPath: string; recordingName: string } | undefined;
     let rdpRecordingId: string | undefined;
-    if (config.recordingEnabled) {
+    if (config.recordingEnabled && tenantRecordingEnabled) {
       // Force reconnect resize method when recording — display-update can leave the
       // recording without initial graphical content (only mouse cursor visible)
       mergedRdp.resizeMethod = 'reconnect';
@@ -375,7 +376,7 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
     const vncTenantDlp = req.user.tenantId
       ? await prisma.tenant.findUnique({
           where: { id: req.user.tenantId },
-          select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true, enforcedConnectionSettings: true },
+          select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true, enforcedConnectionSettings: true, recordingEnabled: true },
         })
       : null;
     const vncTenantEnforced = (vncTenantDlp?.enforcedConnectionSettings as EnforcedConnectionSettings) ?? null;
@@ -385,10 +386,11 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
       conn.dlpPolicy as DlpPolicy | null,
     );
 
-    // Build recording params if enabled
+    // Build recording params if enabled (global + tenant-level gate)
+    const vncTenantRecordingEnabled = vncTenantDlp?.recordingEnabled ?? true;
     let vncRecording: { recordingPath: string; recordingName: string } | undefined;
     let vncRecordingId: string | undefined;
-    if (config.recordingEnabled) {
+    if (config.recordingEnabled && vncTenantRecordingEnabled) {
       try {
         const recGatewayDir = selectedContainerName || 'default';
         const recFilePath = buildRecordingPath(req.user.userId, connectionId, 'VNC', 'guac', recGatewayDir);
