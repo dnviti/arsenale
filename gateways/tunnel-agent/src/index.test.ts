@@ -76,8 +76,7 @@ describe('index.ts entry point', () => {
 
     // Use a real class so `new TunnelAgent(cfg)` works
     vi.doMock('./tunnel', () => ({
-      TunnelAgent: class {
-        constructor() { /* no-op */ }
+      TunnelAgent: class MockAgent {
         start = mockStart;
       },
     }));
@@ -105,8 +104,7 @@ describe('index.ts entry point', () => {
     }));
 
     vi.doMock('./tunnel', () => ({
-      TunnelAgent: class {
-        constructor() { /* no-op */ }
+      TunnelAgent: class MockAgent {
         start = mockStart;
       },
     }));

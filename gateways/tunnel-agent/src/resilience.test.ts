@@ -9,7 +9,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import net from 'net';
 import type { TunnelConfig } from './config';
-import { MsgType, buildFrame, HEADER_SIZE } from './protocol';
+import { MsgType, buildFrame } from './protocol';
 import {
   handleOpenFrame,
   handleDataFrame,
@@ -133,14 +133,11 @@ function getWsHandler<T extends (...args: unknown[]) => void>(event: string): T 
 // =========================================================================
 
 describe('Connection Resilience', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
-  let onceSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
     vi.useFakeTimers();
     resetMockWsInstance();
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
-    onceSpy = vi.spyOn(process, 'once').mockImplementation(() => process);
+    vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    vi.spyOn(process, 'once').mockImplementation(() => process);
   });
 
   afterEach(() => {
@@ -552,12 +549,10 @@ describe('Frame Protocol Resilience', () => {
 // =========================================================================
 
 describe('Graceful Shutdown', () => {
-  let exitSpy: ReturnType<typeof vi.spyOn>;
-
   beforeEach(() => {
     vi.useFakeTimers();
     resetMockWsInstance();
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     vi.spyOn(process, 'once').mockImplementation(() => process);
   });
 

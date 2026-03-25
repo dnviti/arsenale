@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import net from 'net';
-import { MsgType, buildFrame } from './protocol';
+import { MsgType } from './protocol';
 
 // We need to isolate the module-level activeSockets map between tests,
 // so we re-import via a dynamic import after resetting modules.
