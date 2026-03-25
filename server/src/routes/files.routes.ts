@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
+import fsp from 'fs/promises';
 import { authenticate } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { fileNameSchema } from '../schemas/files.schemas';
@@ -8,6 +9,8 @@ import { AuthRequest, assertAuthenticated } from '../types';
 import * as filesController from '../controllers/files.controller';
 import { config } from '../config';
 import { ensureUserDrive, checkQuota } from '../services/file.service';
+import prisma from '../lib/prisma';
+import { AppError } from '../middleware/error.middleware';
 
 const storage = multer.diskStorage({
   destination: async (req: Request, _file, cb) => {
@@ -39,7 +42,41 @@ const quotaCheck = async (req: AuthRequest, _res: Response, next: NextFunction) 
   try {
     assertAuthenticated(req);
     const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-    await checkQuota(req.user.userId, contentLength);
+    // Resolve tenant-level quota override
+    let tenantQuotaBytes: number | null | undefined;
+    if (req.user.tenantId) {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: req.user.tenantId },
+        select: { userDriveQuotaBytes: true, fileUploadMaxSizeBytes: true },
+      });
+      tenantQuotaBytes = tenant?.userDriveQuotaBytes;
+    }
+    await checkQuota(req.user.userId, contentLength, tenantQuotaBytes);
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Post-upload middleware: enforce tenant-specific file size limit
+const tenantFileSizeCheck = async (req: AuthRequest, _res: Response, next: NextFunction) => {
+  try {
+    assertAuthenticated(req);
+    if (!req.file || !req.user.tenantId) { next(); return; }
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: req.user.tenantId },
+      select: { fileUploadMaxSizeBytes: true },
+    });
+    const maxSize = tenant?.fileUploadMaxSizeBytes;
+    if (maxSize && req.file.size > maxSize) {
+      // Delete the uploaded file that exceeds tenant limit
+      // eslint-disable-next-line security/detect-non-literal-fs-filename
+      await fsp.unlink(req.file.path).catch(() => {});
+      throw new AppError(
+        `File exceeds organization limit of ${Math.round(maxSize / 1024 / 1024)}MB`,
+        413,
+      );
+    }
     next();
   } catch (err) {
     next(err);
@@ -48,7 +85,7 @@ const quotaCheck = async (req: AuthRequest, _res: Response, next: NextFunction) 
 
 router.get('/', asyncHandler(filesController.list));
 router.get('/:name', validate(fileNameSchema, 'params'), asyncHandler(filesController.download));
-router.post('/', quotaCheck as never, upload.single('file'), asyncHandler(filesController.upload) as never);
+router.post('/', quotaCheck as never, upload.single('file'), tenantFileSizeCheck as never, asyncHandler(filesController.upload) as never);
 router.delete('/:name', validate(fileNameSchema, 'params'), asyncHandler(filesController.remove));
 
 export default router;

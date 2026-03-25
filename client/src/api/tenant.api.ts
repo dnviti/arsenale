@@ -31,6 +31,10 @@ export interface TenantData {
   tunnelRequireForRemote: boolean;
   tunnelTokenMaxLifetimeDays: number | null;
   tunnelAgentAllowedCidrs: string[];
+  recordingEnabled: boolean;
+  recordingRetentionDays: number | null;
+  fileUploadMaxSizeBytes: number | null;
+  userDriveQuotaBytes: number | null;
   teamCount: number;
   createdAt: string;
   updatedAt: string;
@@ -108,7 +112,7 @@ export async function getTenantMfaStats(tenantId: string): Promise<{ total: numb
   return data;
 }
 
-export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; maxConcurrentSessions?: number; absoluteSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null; dlpDisableCopy?: boolean; dlpDisablePaste?: boolean; dlpDisableDownload?: boolean; dlpDisableUpload?: boolean; enforcedConnectionSettings?: EnforcedConnectionSettings | null; tunnelDefaultEnabled?: boolean; tunnelAutoTokenRotation?: boolean; tunnelTokenRotationDays?: number; tunnelRequireForRemote?: boolean; tunnelTokenMaxLifetimeDays?: number | null; tunnelAgentAllowedCidrs?: string[] }): Promise<TenantData> {
+export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; maxConcurrentSessions?: number; absoluteSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null; dlpDisableCopy?: boolean; dlpDisablePaste?: boolean; dlpDisableDownload?: boolean; dlpDisableUpload?: boolean; enforcedConnectionSettings?: EnforcedConnectionSettings | null; tunnelDefaultEnabled?: boolean; tunnelAutoTokenRotation?: boolean; tunnelTokenRotationDays?: number; tunnelRequireForRemote?: boolean; tunnelTokenMaxLifetimeDays?: number | null; tunnelAgentAllowedCidrs?: string[]; recordingEnabled?: boolean; recordingRetentionDays?: number | null; fileUploadMaxSizeBytes?: number | null; userDriveQuotaBytes?: number | null }): Promise<TenantData> {
   const { data } = await api.put(`/tenants/${id}`, payload);
   return data;
 }

@@ -37,6 +37,10 @@ export const updateTenantSchema = z.object({
   tunnelTokenRotationDays: z.number().int().min(1).max(365).optional(),
   tunnelRequireForRemote: z.boolean().optional(),
   tunnelTokenMaxLifetimeDays: z.number().int().min(1).max(365).nullable().optional(),
+  recordingEnabled: z.boolean().optional(),
+  recordingRetentionDays: z.number().int().min(1).max(3650).nullable().optional(),
+  fileUploadMaxSizeBytes: z.number().int().min(1).max(2147483647).nullable().optional(),
+  userDriveQuotaBytes: z.number().int().min(1).max(2147483647).nullable().optional(),
   tunnelAgentAllowedCidrs: z.array(z.string().regex(cidrRegex, 'Invalid IP/CIDR format')).max(100).optional()
     .refine((entries) => {
       if (!entries) return true;

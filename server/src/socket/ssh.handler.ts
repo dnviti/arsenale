@@ -219,7 +219,7 @@ export function setupSshHandler(io: Server) {
         const tenantDlp = user.tenantId
           ? await prisma.tenant.findUnique({
               where: { id: user.tenantId },
-              select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true, enforcedConnectionSettings: true },
+              select: { dlpDisableCopy: true, dlpDisablePaste: true, dlpDisableDownload: true, dlpDisableUpload: true, enforcedConnectionSettings: true, recordingEnabled: true },
             })
           : null;
         const tenantEnforced = (tenantDlp?.enforcedConnectionSettings as EnforcedConnectionSettings) ?? null;
@@ -386,8 +386,9 @@ export function setupSshHandler(io: Server) {
 
         socket.emit('session:ready', { dlpPolicy, enforcedSshSettings: tenantEnforced?.ssh ?? null });
 
-        // Start recording if enabled
-        if (config.recordingEnabled) {
+        // Start recording if enabled (global + tenant-level gate)
+        const sshTenantRecordingEnabled = tenantDlp?.recordingEnabled ?? true;
+        if (config.recordingEnabled && sshTenantRecordingEnabled) {
           try {
             const recPath = buildRecordingPath(user.userId, data.connectionId, 'SSH', 'cast');
             recordingWriter = new AsciicastWriter(recPath);

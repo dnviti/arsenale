@@ -48,6 +48,10 @@ model Tenant {
   tunnelRequireForRemote       Boolean  @default(false)
   tunnelTokenMaxLifetimeDays   Int?
   tunnelAgentAllowedCidrs      String[] @default([])
+  recordingEnabled             Boolean  @default(true)
+  recordingRetentionDays       Int?
+  fileUploadMaxSizeBytes       Int?
+  userDriveQuotaBytes          Int?
   createdAt                    DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

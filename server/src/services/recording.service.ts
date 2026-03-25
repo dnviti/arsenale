@@ -443,12 +443,49 @@ export function buildRecordingPath(
 export async function cleanupExpiredRecordings(): Promise<number> {
   if (config.recordingRetentionDays <= 0) return 0;
 
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - config.recordingRetentionDays);
+  // Build per-tenant retention map (tenants with custom retention override)
+  const tenantsWithCustomRetention = await prisma.tenant.findMany({
+    where: { recordingRetentionDays: { not: null } },
+    select: { id: true, recordingRetentionDays: true },
+  });
+  const tenantRetentionMap = new Map<string, number>();
+  for (const t of tenantsWithCustomRetention) {
+    if (t.recordingRetentionDays !== null) {
+      tenantRetentionMap.set(t.id, t.recordingRetentionDays);
+    }
+  }
 
-  const expired = await prisma.sessionRecording.findMany({
-    where: { createdAt: { lt: cutoff }, status: 'COMPLETE' },
-    select: { id: true, filePath: true },
+  // Fetch all completed recordings with user's tenant membership
+  const globalCutoff = new Date();
+  globalCutoff.setDate(globalCutoff.getDate() - config.recordingRetentionDays);
+
+  const candidates = await prisma.sessionRecording.findMany({
+    where: { status: 'COMPLETE' },
+    select: {
+      id: true,
+      filePath: true,
+      createdAt: true,
+      user: {
+        select: {
+          tenantMemberships: {
+            where: { isActive: true },
+            select: { tenantId: true },
+            take: 1,
+          },
+        },
+      },
+    },
+  });
+
+  // Determine which recordings are expired based on per-tenant or global retention
+  const expired = candidates.filter((rec) => {
+    const tenantId = rec.user?.tenantMemberships?.[0]?.tenantId;
+    const retentionDays = tenantId && tenantRetentionMap.has(tenantId)
+      ? tenantRetentionMap.get(tenantId)!
+      : config.recordingRetentionDays;
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - retentionDays);
+    return rec.createdAt < cutoff;
   });
 
   // Optional: Also ask the guacenc sidecar to clean up any orphaned .m4v files

@@ -77,6 +77,16 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
   const [dlpDisableUpload, setDlpDisableUpload] = useState(false);
   const [savingDlp, setSavingDlp] = useState(false);
   const [dlpError, setDlpError] = useState('');
+  const [recordingEnabled, setRecordingEnabled] = useState(true);
+  const [savingRecording, setSavingRecording] = useState(false);
+  const [recordingError, setRecordingError] = useState('');
+  const [recordingRetentionDays, setRecordingRetentionDays] = useState('');
+  const [savingRetention, setSavingRetention] = useState(false);
+  const [retentionError, setRetentionError] = useState('');
+  const [fileUploadMaxSizeMb, setFileUploadMaxSizeMb] = useState('');
+  const [userDriveQuotaMb, setUserDriveQuotaMb] = useState('');
+  const [savingStorage, setSavingStorage] = useState(false);
+  const [storageError, setStorageError] = useState('');
   const [createUserOpen, setCreateUserOpen] = useState(false);
   const [togglingUser, setTogglingUser] = useState<string | null>(null);
 
@@ -139,6 +149,10 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
       setDlpDisablePaste(tenant.dlpDisablePaste);
       setDlpDisableDownload(tenant.dlpDisableDownload);
       setDlpDisableUpload(tenant.dlpDisableUpload);
+      setRecordingEnabled(tenant.recordingEnabled);
+      setRecordingRetentionDays(tenant.recordingRetentionDays != null ? String(tenant.recordingRetentionDays) : '');
+      setFileUploadMaxSizeMb(tenant.fileUploadMaxSizeBytes != null ? String(Math.round(tenant.fileUploadMaxSizeBytes / 1048576)) : '');
+      setUserDriveQuotaMb(tenant.userDriveQuotaBytes != null ? String(Math.round(tenant.userDriveQuotaBytes / 1048576)) : '');
       fetchUsers();
       if (isAdmin) {
         getTenantMfaStats(tenant.id).then(setMfaDashboard).catch(() => {});
@@ -807,6 +821,139 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
                     sx={{ display: 'block' }}
                   />
                 ))}
+              </Box>
+
+              {/* Session Recording */}
+              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Typography variant="subtitle2" gutterBottom>Session Recording</Typography>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                  When enabled, all SSH, RDP, and VNC sessions are recorded. Requires the global recording feature to be enabled by the system administrator.
+                </Typography>
+                {recordingError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setRecordingError('')}>{recordingError}</Alert>}
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={recordingEnabled}
+                      disabled={savingRecording}
+                      onChange={async (_, checked) => {
+                        setRecordingError('');
+                        setSavingRecording(true);
+                        try {
+                          await updateTenant({ recordingEnabled: checked });
+                          setRecordingEnabled(checked);
+                        } catch (err: unknown) {
+                          setRecordingError(extractApiError(err, 'Failed to update recording policy'));
+                        } finally {
+                          setSavingRecording(false);
+                        }
+                      }}
+                    />
+                  }
+                  label="Enable session recording"
+                  sx={{ display: 'block' }}
+                />
+              </Box>
+
+              {/* Recording Retention */}
+              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Typography variant="subtitle2" gutterBottom>Recording Retention</Typography>
+                {retentionError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setRetentionError('')}>{retentionError}</Alert>}
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <TextField
+                    label="Retention (days)"
+                    type="number"
+                    size="small"
+                    value={recordingRetentionDays}
+                    onChange={(e) => setRecordingRetentionDays(e.target.value)}
+                    placeholder="System default"
+                    helperText="System default: 90 days. Leave empty to use system default."
+                    slotProps={{ htmlInput: { min: 1, max: 3650 } }}
+                    sx={{ width: 240 }}
+                  />
+                  <Button
+                    variant="contained"
+                    size="small"
+                    disabled={savingRetention}
+                    onClick={async () => {
+                      setRetentionError('');
+                      setSavingRetention(true);
+                      try {
+                        const val = recordingRetentionDays.trim() === '' ? null : parseInt(recordingRetentionDays, 10);
+                        if (val !== null && (isNaN(val) || val < 1 || val > 3650)) {
+                          setRetentionError('Must be between 1 and 3650 days');
+                          return;
+                        }
+                        await updateTenant({ recordingRetentionDays: val });
+                      } catch (err: unknown) {
+                        setRetentionError(extractApiError(err, 'Failed to update retention'));
+                      } finally {
+                        setSavingRetention(false);
+                      }
+                    }}
+                  >
+                    {savingRetention ? <CircularProgress size={20} /> : 'Save'}
+                  </Button>
+                </Stack>
+              </Box>
+
+              {/* Storage & Quotas */}
+              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                <Typography variant="subtitle2" gutterBottom>Storage & Quotas</Typography>
+                {storageError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setStorageError('')}>{storageError}</Alert>}
+                <Stack spacing={2}>
+                  <TextField
+                    label="Max file upload size (MB)"
+                    type="number"
+                    size="small"
+                    value={fileUploadMaxSizeMb}
+                    onChange={(e) => setFileUploadMaxSizeMb(e.target.value)}
+                    placeholder="System default"
+                    helperText="System default: 10 MB. Leave empty to use system default."
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    sx={{ width: 240 }}
+                  />
+                  <TextField
+                    label="User drive quota (MB)"
+                    type="number"
+                    size="small"
+                    value={userDriveQuotaMb}
+                    onChange={(e) => setUserDriveQuotaMb(e.target.value)}
+                    placeholder="System default"
+                    helperText="System default: 100 MB. Leave empty to use system default."
+                    slotProps={{ htmlInput: { min: 1 } }}
+                    sx={{ width: 240 }}
+                  />
+                  <Box>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      disabled={savingStorage}
+                      onClick={async () => {
+                        setStorageError('');
+                        setSavingStorage(true);
+                        try {
+                          const uploadSize = fileUploadMaxSizeMb.trim() === '' ? null : parseInt(fileUploadMaxSizeMb, 10) * 1048576;
+                          const driveQuota = userDriveQuotaMb.trim() === '' ? null : parseInt(userDriveQuotaMb, 10) * 1048576;
+                          if (uploadSize !== null && (isNaN(uploadSize) || uploadSize < 1)) {
+                            setStorageError('Upload size must be a positive number');
+                            return;
+                          }
+                          if (driveQuota !== null && (isNaN(driveQuota) || driveQuota < 1)) {
+                            setStorageError('Drive quota must be a positive number');
+                            return;
+                          }
+                          await updateTenant({ fileUploadMaxSizeBytes: uploadSize, userDriveQuotaBytes: driveQuota });
+                        } catch (err: unknown) {
+                          setStorageError(extractApiError(err, 'Failed to update storage settings'));
+                        } finally {
+                          setSavingStorage(false);
+                        }
+                      }}
+                    >
+                      {savingStorage ? <CircularProgress size={20} /> : 'Save'}
+                    </Button>
+                  </Box>
+                </Stack>
               </Box>
           </CardContent>
         </Card>
