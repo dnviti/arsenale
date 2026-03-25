@@ -120,7 +120,8 @@ import { TunnelAgent } from './tunnel';
 // ---------------------------------------------------------------------------
 
 /** Get an event handler from the mock WS instance */
-function getWsHandler<T extends (...args: unknown[]) => void>(event: string): T {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getWsHandler<T extends (...args: any[]) => void>(event: string): T {
   const call = mockWsInstance.on.mock.calls.find(
     (c: unknown[]) => c[0] === event,
   );
@@ -388,8 +389,9 @@ describe('TCP Forwarder Resilience', () => {
     expect(fakeSocket.write).toHaveBeenCalledTimes(10_000);
 
     // Verify order: first and last
-    expect(fakeSocket.write.mock.calls[0][0]).toEqual(Buffer.from('frame-0'));
-    expect(fakeSocket.write.mock.calls[9999][0]).toEqual(Buffer.from('frame-9999'));
+    const writeCalls = fakeSocket.write.mock.calls as unknown[][];
+    expect(writeCalls[0][0]).toEqual(Buffer.from('frame-0'));
+    expect(writeCalls[9999][0]).toEqual(Buffer.from('frame-9999'));
   });
 });
 
