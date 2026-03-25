@@ -17,6 +17,9 @@ import { extractApiError } from '../../utils/apiError';
 // eslint-disable-next-line security/detect-unsafe-regex
 const CIDR_RE = /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
 
+// Stable slotProps references to avoid InputBase re-render cycles
+const DAYS_SLOT_PROPS = { htmlInput: { min: 1, max: 365 } } as const;
+
 /** Validate IP/CIDR beyond the regex — checks octet ranges and prefix length */
 function isValidCidr(value: string): boolean {
   if (!CIDR_RE.test(value)) return false;
@@ -217,7 +220,7 @@ export default function TunnelConfigSection() {
               value={tunnelTokenRotationDays}
               onChange={(e) => { setTunnelTokenRotationDays(Math.max(1, parseInt(e.target.value, 10) || 1));}}
               disabled={saving || !tunnelAutoTokenRotation}
-              slotProps={{ htmlInput: { min: 1, max: 365 } }}
+              slotProps={DAYS_SLOT_PROPS}
               sx={{ width: 200 }}
             />
             <TextField
@@ -230,7 +233,7 @@ export default function TunnelConfigSection() {
                 setTunnelTokenMaxLifetimeDays(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
               }}
               disabled={saving}
-              slotProps={{ htmlInput: { min: 1, max: 365 } }}
+              slotProps={DAYS_SLOT_PROPS}
               helperText="Leave empty for no limit"
               sx={{ width: 220 }}
             />

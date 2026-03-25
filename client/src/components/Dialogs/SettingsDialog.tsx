@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Dialog, AppBar, Toolbar, Typography, Box, IconButton, Tabs, Tab,
   Stack, useMediaQuery, Card, CardContent, Button,
@@ -122,31 +122,24 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
   const storedTab = useUiPreferencesStore((s) => s.settingsActiveTab);
   const setStoredTab = useUiPreferencesStore((s) => s.set);
 
-  // Use initialTab when provided, otherwise fall back to stored preference
-  const [activeTab, setActiveTabState] = useState(() => {
-    const preferred = initialTab || storedTab || 'profile';
-    return validTabIds.has(preferred) ? preferred : 'profile';
-  });
+  // --- Active tab state (React 19 render-time adjustment, no useEffect) ---
+  const [activeTab, setActiveTabRaw] = useState('profile');
+  const [prevOpen, setPrevOpen] = useState(false);
+  const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
 
-  // Sync activeTab when dialog opens with a specific initialTab
-  const prevOpenRef = useRef(open);
-  const prevInitialTabRef = useRef(initialTab);
-  useEffect(() => {
-    const openChanged = open !== prevOpenRef.current;
-    const tabChanged = initialTab !== prevInitialTabRef.current;
-    prevOpenRef.current = open;
-    prevInitialTabRef.current = initialTab;
-    if ((openChanged || tabChanged) && open && initialTab && validTabIds.has(initialTab)) {
-      setActiveTabState(initialTab);
-      setStoredTab('settingsActiveTab', initialTab);
-    }
-  }, [open, initialTab, validTabIds, setStoredTab]);
+  // Reset tab when dialog opens or initialTab changes while open
+  if (open && (!prevOpen || initialTab !== prevInitialTab)) {
+    const target = initialTab || storedTab || 'profile';
+    setActiveTabRaw(validTabIds.has(target) ? target : 'profile');
+  }
+  if (open !== prevOpen) setPrevOpen(open);
+  if (initialTab !== prevInitialTab) setPrevInitialTab(initialTab);
 
-  // Ensure active tab is always valid (handles tenant removal, tab changes)
+  // Ensure active tab is always valid (handles tenant removal, role changes)
   const resolvedTab = validTabIds.has(activeTab) ? activeTab : 'profile';
 
   const setActiveTab = useCallback((tab: string) => {
-    setActiveTabState(tab);
+    setActiveTabRaw(tab);
     setStoredTab('settingsActiveTab', tab);
   }, [setStoredTab]);
 

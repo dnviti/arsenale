@@ -10,6 +10,10 @@ import { useRef } from 'react';
  * The parent already re-renders when the trigger prop changes, so
  * no extra setState is needed.
  */
+// Intentional: ref accessed during render to avoid cascading re-renders when many
+// instances share a parent (e.g. MainLayout). The parent already re-renders when the
+// trigger prop changes, so no extra setState is needed.
+/* eslint-disable react-hooks/refs */
 export function useLazyMount(trigger: unknown): boolean {
   const mounted = useRef(false);
   if (trigger && !mounted.current) {
@@ -17,3 +21,4 @@ export function useLazyMount(trigger: unknown): boolean {
   }
   return mounted.current;
 }
+/* eslint-enable react-hooks/refs */
