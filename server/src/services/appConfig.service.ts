@@ -51,8 +51,68 @@ export async function getPublicConfig(): Promise<{ selfSignupEnabled: boolean; s
   return { selfSignupEnabled: await getSelfSignupEnabled(), selfSignupEnvLocked: isSelfSignupEnvLocked() };
 }
 
-export async function getMinimalPublicConfig(): Promise<{ selfSignupEnabled: boolean }> {
-  return { selfSignupEnabled: await getSelfSignupEnabled() };
+export interface MinimalPublicConfig {
+  selfSignupEnabled: boolean;
+  features: {
+    databaseProxyEnabled: boolean;
+    connectionsEnabled: boolean;
+    keychainEnabled: boolean;
+  };
+}
+
+export async function getMinimalPublicConfig(): Promise<MinimalPublicConfig> {
+  return {
+    selfSignupEnabled: await getSelfSignupEnabled(),
+    features: {
+      databaseProxyEnabled: config.features.databaseProxyEnabled,
+      connectionsEnabled: config.features.connectionsEnabled,
+      keychainEnabled: config.features.keychainEnabled,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Setup Status
+// ---------------------------------------------------------------------------
+
+let setupCache: { completed: boolean; expiresAt: number } | null = null;
+
+export async function isSetupCompleted(): Promise<boolean> {
+  const now = Date.now();
+  if (setupCache && setupCache.expiresAt > now) {
+    return setupCache.completed;
+  }
+  try {
+    const row = await prisma.appConfig.findUnique({ where: { key: 'setupCompleted' } });
+    const value = row?.value === 'true';
+    setupCache = { completed: value, expiresAt: now + CACHE_TTL_MS };
+    return value;
+  } catch (err) {
+    logger.error('Failed to read AppConfig setupCompleted:', err);
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SSH Proxy Configuration
+// ---------------------------------------------------------------------------
+
+export interface SshProxyConfig {
+  enabled: boolean;
+  port: number;
+  allowedAuthMethods: string[];
+  caPublicKeyPath: string;
+  keystrokeRecording: boolean;
+}
+
+export function getSshProxyConfig(): SshProxyConfig {
+  return {
+    enabled: config.sshProxy.enabled,
+    port: config.sshProxy.port,
+    allowedAuthMethods: config.sshProxy.allowedAuthMethods,
+    caPublicKeyPath: config.sshProxy.caPublicKeyPath,
+    keystrokeRecording: config.sshProxy.keystrokeRecording,
+  };
 }
 
 // ---------------------------------------------------------------------------

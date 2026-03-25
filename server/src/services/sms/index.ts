@@ -30,13 +30,16 @@ function getSendFn(): SmsSendFn | null {
   return cachedSendFn;
 }
 
+/** Reset cached provider so the next sendSms() re-creates it from current config. */
+export function resetSmsProvider(): void { cachedSendFn = undefined; }
+
 export async function sendSms(msg: SmsMessage): Promise<void> {
   const send = getSendFn();
   if (!send) {
     logger.info('========================================');
     logger.info('SMS (dev mode — no provider configured):');
     logger.info(`  To: ${msg.to}`);
-    logger.info(`  Body: ${msg.body}`);
+    logger.info('  Body: [REDACTED]');
     logger.info('========================================');
     return;
   }

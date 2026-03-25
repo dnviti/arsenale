@@ -36,6 +36,9 @@ function getSendFn(): SendFn | null {
   return cachedSendFn;
 }
 
+/** Reset cached provider so the next sendEmail() re-creates it from current config. */
+export function resetEmailProvider(): void { cachedSendFn = undefined; }
+
 export async function sendEmail(msg: EmailMessage): Promise<void> {
   const send = getSendFn();
   if (!send) {
@@ -88,7 +91,8 @@ export async function sendPasswordResetEmail(
   if (!send) {
     logger.info('========================================');
     logger.info('PASSWORD RESET LINK (dev mode):');
-    logger.info(resetUrl);
+    logger.info(`  To: ${to}`);
+    logger.info(`  Reset URL: ${config.clientUrl}/reset-password?token=[REDACTED]`);
     logger.info('========================================');
     return;
   }
@@ -118,7 +122,7 @@ export async function sendWelcomeEmail(
     logger.info('========================================');
     logger.info('WELCOME EMAIL (dev mode):');
     logger.info(`  To: ${to}`);
-    logger.info(`  Temporary password: ${temporaryPassword}`);
+    logger.info('  Temporary password: [REDACTED]');
     logger.info(`  Login URL: ${loginUrl}`);
     logger.info('========================================');
     return;
@@ -149,7 +153,7 @@ export async function sendIdentityVerificationCode(
     logger.info('========================================');
     logger.info('IDENTITY VERIFICATION CODE (dev mode):');
     logger.info(`  To: ${to}`);
-    logger.info(`  Code: ${code}`);
+    logger.info('  Code: [REDACTED]');
     logger.info(`  Purpose: ${purpose}`);
     logger.info('========================================');
     return;
@@ -183,7 +187,7 @@ export async function sendEmailChangeCode(
     logger.info('========================================');
     logger.info(`EMAIL CHANGE CODE (dev mode — ${isOldEmail ? 'old' : 'new'} email):`);
     logger.info(`  To: ${to}`);
-    logger.info(`  Code: ${code}`);
+    logger.info('  Code: [REDACTED]');
     logger.info('========================================');
     return;
   }

@@ -48,11 +48,17 @@ import OAuthProvidersAdminSection from '../Settings/OAuthProvidersAdminSection';
 import AccessPolicySection from '../Settings/AccessPolicySection';
 import NativeSshSection from '../Settings/NativeSshSection';
 import RdGatewayConfigSection from '../Settings/RdGatewayConfigSection';
+import DbFirewallSection from '../Settings/DbFirewallSection';
+import DbMaskingSection from '../Settings/DbMaskingSection';
+import AiQueryConfigSection from '../Settings/AiQueryConfigSection';
+import DbRateLimitSection from '../Settings/DbRateLimitSection';
 import AppearanceSection from '../Settings/AppearanceSection';
+import SqlEditorSection from '../Settings/SqlEditorSection';
 import NotificationPreferencesSection from '../Settings/NotificationPreferencesSection';
 import NotificationsSection from '../Settings/NotificationsSection';
 import { SlideUp } from '../common/SlideUp';
 import { isAdminOrAbove } from '../../utils/roles';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 
 interface TabDef {
   id: string;
@@ -96,6 +102,7 @@ interface SettingsDialogProps {
 
 export default function SettingsDialog({ open, onClose, initialTab, linkedProvider, onViewUserProfile, onGeoIpClick, onImport, onExport }: SettingsDialogProps) {
   const user = useAuthStore((s) => s.user);
+  const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const [hasPassword, setHasPassword] = useState(true);
   const [deleteOrgTrigger, setDeleteOrgTrigger] = useState<(() => void) | null>(null);
 
@@ -212,7 +219,10 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
             </Stack>
           )}
           {resolvedTab === 'appearance' && (
-            <AppearanceSection />
+            <Stack spacing={3}>
+              <AppearanceSection />
+              {databaseProxyEnabled && <SqlEditorSection />}
+            </Stack>
           )}
           {resolvedTab === 'notifications' && (
             <Stack spacing={3}>
@@ -303,7 +313,12 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
           {resolvedTab === 'gateways' && (
             <GatewaySection onNavigateToTab={setActiveTab} />
           )}
-          {resolvedTab === 'integrations' && <SyncProfileSection />}
+          {resolvedTab === 'integrations' && (
+            <Stack spacing={3}>
+              <SyncProfileSection />
+              {isOwner && databaseProxyEnabled && <AiQueryConfigSection />}
+            </Stack>
+          )}
           {resolvedTab === 'tunnel' && <TunnelConfigSection />}
           {resolvedTab === 'administration' && (
             <Stack spacing={3}>
@@ -317,6 +332,9 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
               <EmailProviderSection />
               <LdapConfigSection />
               <SamlConfigSection />
+              {databaseProxyEnabled && <DbFirewallSection />}
+              {databaseProxyEnabled && <DbMaskingSection />}
+              {databaseProxyEnabled && <DbRateLimitSection />}
               <TenantAuditLogSection onViewUserProfile={onViewUserProfile} onGeoIpClick={onGeoIpClick} />
             </Stack>
           )}

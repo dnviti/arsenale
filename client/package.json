@@ -1,6 +1,6 @@
 {
   "name": "client",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "React 19 + Vite frontend for Arsenale",
   "license": "BUSL-1.1",
   "private": true,
@@ -19,6 +19,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@glokon/guacamole-common-js": "^1.6.0",
+    "@monaco-editor/react": "^4.7.0",
     "@mui/icons-material": "^7.3.9",
     "@mui/material": "^7.3.9",
     "@simplewebauthn/browser": "^13.3.0",
@@ -29,12 +30,14 @@
     "@zxcvbn-ts/language-en": "^3.0.2",
     "axios": "^1.13.6",
     "leaflet": "^1.9.4",
+    "monaco-editor": "^0.55.1",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-leaflet": "^5.0.0",
     "react-router-dom": "^7.13.1",
     "socket.io-client": "^4.8.3",
+    "sql-formatter": "^15.7.2",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

@@ -33,7 +33,7 @@ export default function OAuthProvidersAdminSection() {
           Authentication Providers
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          OAuth and SSO provider configuration is managed via environment variables.
+          OAuth and SSO providers can be configured in the System Settings section below. Environment variables, when set, take precedence and lock the corresponding fields.
         </Typography>
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}

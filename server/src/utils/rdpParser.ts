@@ -6,7 +6,7 @@ export interface RdpConnection {
 }
 
 export function parseRdpFile(content: string): RdpConnection {
-  const properties: Record<string, string> = {};
+  const properties = new Map<string, string>();
 
   const lines = content.split(/\r?\n/);
 
@@ -19,12 +19,12 @@ export function parseRdpFile(content: string): RdpConnection {
     const match = trimmed.match(/^([^:]+):([^:]+):(.*)$/);
     if (match) {
       const [, key, _type, value] = match;
-      properties[key.trim()] = value.trim();
+      properties.set(key.trim(), value.trim());
     }
   }
 
-  const fullAddress = properties['full address'] || properties['address'] || '';
-  const username = properties['username'];
+  const fullAddress = properties.get('full address') || properties.get('address') || '';
+  const username = properties.get('username');
 
   const { hostname, port } = parseAddress(fullAddress);
 

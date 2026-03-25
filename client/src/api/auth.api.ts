@@ -83,7 +83,18 @@ export async function logoutApi() {
   await api.post('/auth/logout');
 }
 
-export async function getPublicConfig(): Promise<{ selfSignupEnabled: boolean }> {
-  const { data } = await api.get('/auth/config');
+export interface FeatureFlags {
+  databaseProxyEnabled: boolean;
+  connectionsEnabled: boolean;
+  keychainEnabled: boolean;
+}
+
+export interface PublicConfig {
+  selfSignupEnabled: boolean;
+  features: FeatureFlags;
+}
+
+export async function getPublicConfig(): Promise<PublicConfig> {
+  const { data } = await api.get<PublicConfig>('/auth/config');
   return data;
 }
