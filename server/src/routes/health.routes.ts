@@ -4,6 +4,8 @@ import {
   checkDatabase,
   checkGuacd,
 } from '../services/health.service';
+import { checkRequiredGateways, type GatewayHealthStatus } from '../services/gatewayHealth.service';
+import { config } from '../config';
 
 const router = Router();
 
@@ -18,7 +20,7 @@ router.get('/health', (_req: Request, res: Response) => {
 router.get('/ready', async (_req: Request, res: Response) => {
   if (!isServerReady()) {
     res.status(503).json({
-      status: 'not_ready',
+      status: 'unavailable',
       reason: 'Server still initializing',
     });
     return;
@@ -27,11 +29,52 @@ router.get('/ready', async (_req: Request, res: Response) => {
   const db = await checkDatabase();
   const guacd = await checkGuacd();
 
-  const ready = db.ok;
+  // Short-circuit gateway checks when DB is down — checkRequiredGateways
+  // uses Prisma queries that would throw on a dead connection.
+  let gatewayCheck: { allAvailable: boolean; missing: string[]; details: GatewayHealthStatus | { error: string } };
 
-  res.status(ready ? 200 : 503).json({
-    status: ready ? 'ready' : 'not_ready',
-    checks: { database: db, guacd },
+  if (!db.ok) {
+    gatewayCheck = {
+      allAvailable: false,
+      missing: [],
+      details: { error: 'Gateway checks skipped because database is unavailable' },
+    };
+  } else {
+    try {
+      gatewayCheck = await checkRequiredGateways(config.gatewayRequiredTypes);
+    } catch (err) {
+      gatewayCheck = {
+        allAvailable: false,
+        missing: [],
+        details: {
+          error: err instanceof Error ? err.message : 'Failed to check gateway health',
+        },
+      };
+    }
+  }
+
+  let status: 'ok' | 'degraded' | 'unavailable' = db.ok ? 'ok' : 'unavailable';
+
+  if (db.ok && !gatewayCheck.allAvailable) {
+    if (config.gatewayRoutingMode === 'gateway-mandatory') {
+      status = 'unavailable';
+    } else {
+      status = 'degraded';
+    }
+  }
+
+  const httpStatus = status === 'unavailable' ? 503 : 200;
+
+  res.status(httpStatus).json({
+    status,
+    checks: {
+      database: db,
+      guacd,
+      gateways: {
+        mode: config.gatewayRoutingMode,
+        ...gatewayCheck.details,
+      },
+    },
   });
 });
 

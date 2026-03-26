@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   Box, Switch, TextField, Select, MenuItem, FormControlLabel,
   Typography, Chip, Tooltip, IconButton, CircularProgress, InputAdornment,
+  OutlinedInput,
 } from '@mui/material';
 import LockIcon from '@mui/icons-material/Lock';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
@@ -123,6 +124,63 @@ export default function SettingField({ setting, onUpdated }: Props) {
             {setting.options.map((opt) => (
               <MenuItem key={opt} value={opt}>
                 {opt || '(disabled)'}
+              </MenuItem>
+            ))}
+          </Select>
+          {saving && <CircularProgress size={16} />}
+        </Box>
+        {error && (
+          <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+            {error}
+          </Typography>
+        )}
+      </Box>
+    );
+  }
+
+  if (setting.type === 'string[]' && setting.options) {
+    const arrayValue: string[] = Array.isArray(localValue)
+      ? localValue as string[]
+      : String(localValue || '').split(',').map(s => s.trim()).filter(Boolean);
+
+    return (
+      <Box sx={{ py: 0.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+          <Typography variant="body2" fontWeight="medium">{setting.label}</Typography>
+          {sourceChip(setting.source)}
+          {setting.restartRequired && (
+            <Tooltip title="Requires server restart to take effect">
+              <RestartAltIcon fontSize="small" color="action" />
+            </Tooltip>
+          )}
+        </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          {setting.description}
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Select
+            size="small"
+            multiple
+            value={arrayValue}
+            onChange={(e) => {
+              const val = e.target.value as string[];
+              setLocalValue(val);
+              handleSave(val.join(','));
+            }}
+            disabled={disabled}
+            input={<OutlinedInput />}
+            renderValue={(selected) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {(selected as string[]).map((v) => (
+                  <Chip key={v} label={v} size="small" />
+                ))}
+              </Box>
+            )}
+            sx={{ minWidth: 280 }}
+          >
+            {setting.options.map((opt) => (
+              <MenuItem key={opt} value={opt}>
+                {opt}
               </MenuItem>
             ))}
           </Select>

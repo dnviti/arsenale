@@ -280,6 +280,33 @@ export const config = {
     caPublicKeyPath: process.env.SSH_PROXY_CA_PUBLIC_KEY || '',
     keystrokeRecording: process.env.SSH_PROXY_KEYSTROKE_RECORDING === 'true',
   },
+  // Gateway routing mode
+  gatewayRoutingMode: (() => {
+    const val = process.env.GATEWAY_ROUTING_MODE || 'prefer-gateway';
+    const allowed = ['prefer-gateway', 'gateway-mandatory'] as const;
+    if (!(allowed as readonly string[]).includes(val)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[config] Invalid GATEWAY_ROUTING_MODE "${val}" — falling back to "prefer-gateway"`);
+      return 'prefer-gateway' as const;
+    }
+    return val as typeof allowed[number];
+  })(),
+  gatewayHealthCheckIntervalMs: (() => {
+    const val = parseInt(process.env.GATEWAY_HEALTH_CHECK_INTERVAL_MS || '30000', 10);
+    return Number.isFinite(val) && val > 0 ? val : 30000;
+  })(),
+  gatewayRequiredTypes: (() => {
+    const allowed = ['MANAGED_SSH', 'GUACD', 'DB_PROXY'] as const;
+    const raw = (process.env.GATEWAY_REQUIRED_TYPES || 'MANAGED_SSH,GUACD,DB_PROXY')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    const valid = raw.filter(t => (allowed as readonly string[]).includes(t));
+    if (valid.length < raw.length) {
+      const invalid = raw.filter(t => !(allowed as readonly string[]).includes(t));
+      // eslint-disable-next-line no-console
+      console.warn(`[config] Ignoring invalid GATEWAY_REQUIRED_TYPES: ${invalid.join(', ')}`);
+    }
+    return valid as unknown as Array<typeof allowed[number]>;
+  })(),
   // Feature Toggles (opt-out: enabled by default, set to 'false' to disable)
   features: {
     databaseProxyEnabled: process.env.FEATURE_DATABASE_PROXY_ENABLED !== 'false',
