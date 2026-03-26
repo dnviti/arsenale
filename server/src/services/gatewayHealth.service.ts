@@ -20,7 +20,7 @@ const PROTOCOL_TO_GATEWAY_TYPE: Record<SessionProtocol, GatewayType[]> = {
   DATABASE: ['DB_PROXY'],
 };
 
-const GATEWAY_TYPE_TO_PROTOCOL: Record<string, SessionProtocol> = {
+const GATEWAY_TYPE_TO_PROTOCOL: Partial<Record<GatewayType, SessionProtocol>> = {
   MANAGED_SSH: 'SSH',
   GUACD: 'RDP', // Also covers VNC — both go through guacd
   DB_PROXY: 'DATABASE',
@@ -70,10 +70,12 @@ export async function getAvailableGateways(protocol: SessionProtocol): Promise<G
   const requiredTypes = PROTOCOL_TO_GATEWAY_TYPE[protocol];
   if (!requiredTypes) return [];
 
-  const connectedTunnelIds = new Set(getRegisteredTunnels());
+  const connectedTunnelIds = Array.from(new Set(getRegisteredTunnels()));
+  if (connectedTunnelIds.length === 0) return [];
 
   const gateways = await prisma.gateway.findMany({
     where: {
+      id: { in: connectedTunnelIds },
       type: { in: requiredTypes },
     },
     select: {
@@ -83,33 +85,24 @@ export async function getAvailableGateways(protocol: SessionProtocol): Promise<G
     },
   });
 
-  const available: GatewayInfo[] = [];
-  for (const gw of gateways) {
-    const tunnelConnected = connectedTunnelIds.has(gw.id);
-    if (!tunnelConnected) continue;
-
+  return gateways.map((gw) => {
     const info = getTunnelInfo(gw.id);
-    available.push({
+    return {
       gatewayId: gw.id,
       name: gw.name,
       type: gw.type,
       tunnelConnected: true,
       activeStreams: info?.activeStreams ?? 0,
-    });
-  }
-
-  return available;
+    };
+  });
 }
 
 /**
  * Returns an overall health status object covering all protocol types.
+ * Only queries gateways that have an active tunnel connection.
  */
 export async function getHealthStatus(): Promise<GatewayHealthStatus> {
-  const connectedTunnelIds = new Set(getRegisteredTunnels());
-
-  const gateways = await prisma.gateway.findMany({
-    select: { id: true, type: true },
-  });
+  const connectedTunnelIds = Array.from(new Set(getRegisteredTunnels()));
 
   const counts: Record<SessionProtocol, number> = {
     SSH: 0,
@@ -118,15 +111,20 @@ export async function getHealthStatus(): Promise<GatewayHealthStatus> {
     DATABASE: 0,
   };
 
-  for (const gw of gateways) {
-    if (!connectedTunnelIds.has(gw.id)) continue;
+  if (connectedTunnelIds.length > 0) {
+    const gateways = await prisma.gateway.findMany({
+      where: { id: { in: connectedTunnelIds } },
+      select: { id: true, type: true },
+    });
 
-    const protocol = GATEWAY_TYPE_TO_PROTOCOL[gw.type];
-    if (protocol) {
-      counts[protocol]++;
-      // GUACD serves both RDP and VNC
-      if (gw.type === 'GUACD') {
-        counts.VNC++;
+    for (const gw of gateways) {
+      const protocol = GATEWAY_TYPE_TO_PROTOCOL[gw.type];
+      if (protocol) {
+        counts[protocol]++;
+        // GUACD serves both RDP and VNC
+        if (gw.type === 'GUACD') {
+          counts.VNC++;
+        }
       }
     }
   }
@@ -159,15 +157,9 @@ export async function checkRequiredGateways(
 }> {
   const details = await getHealthStatus();
 
-  const typeToProtocol: Record<string, SessionProtocol> = {
-    MANAGED_SSH: 'SSH',
-    GUACD: 'RDP',
-    DB_PROXY: 'DATABASE',
-  };
-
   const missing: string[] = [];
   for (const t of requiredTypes) {
-    const protocol = typeToProtocol[t];
+    const protocol = GATEWAY_TYPE_TO_PROTOCOL[t];
     if (!protocol) continue;
     const key = protocol.toLowerCase() as keyof GatewayHealthStatus;
     if (details[key].status === 'disconnected') {
