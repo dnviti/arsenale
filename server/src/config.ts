@@ -55,9 +55,11 @@ export const config = {
     return secret || 'dev-guac-secret';
   })(),
   serverEncryptionKey: resolveServerEncryptionKey(),
-  gatewayApiToken: process.env.GATEWAY_API_TOKEN || '',
-  gatewayApiUseTls: process.env.GATEWAY_API_USE_TLS === 'true',
-  gatewayApiTlsCa: process.env.GATEWAY_API_TLS_CA || '',
+  // Gateway key management gRPC (mTLS — replaces old HTTP API + bearer token)
+  gatewayGrpcPort: parseInt(process.env.GATEWAY_GRPC_PORT || '9022', 10),
+  gatewayGrpcTlsCa: process.env.GATEWAY_GRPC_TLS_CA || '',
+  gatewayGrpcTlsCert: process.env.GATEWAY_GRPC_TLS_CERT || '',
+  gatewayGrpcTlsKey: process.env.GATEWAY_GRPC_TLS_KEY || '',
   vaultTtlMinutes: parseInt(process.env.VAULT_TTL_MINUTES || '30', 10),
   vaultRecoveryTtlMs: parseExpiry(process.env.JWT_REFRESH_EXPIRES_IN || '7d'),
   nodeEnv: process.env.NODE_ENV || 'development',

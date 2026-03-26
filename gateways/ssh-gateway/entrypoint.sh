@@ -24,12 +24,15 @@ fi
 
 chmod 600 "$AUTH_KEYS_FILE"
 
-# Start HTTPS key management API (sidecar) if token is configured
-if [ -n "$GATEWAY_API_TOKEN" ]; then
-  echo "Starting key management API (HTTPS)..."
-  node /opt/key-api/key-api-server.js &
+# Start gRPC key management server (mTLS-authenticated, replaces old HTTPS API)
+if [ -n "$GATEWAY_GRPC_TLS_CA" ] && [ -n "$GATEWAY_GRPC_TLS_CERT" ] && [ -n "$GATEWAY_GRPC_TLS_KEY" ]; then
+  echo "Starting key management gRPC server (mTLS)..."
+  /usr/local/bin/key-mgmt-server &
+elif [ "${GATEWAY_GRPC_INSECURE:-false}" = "true" ]; then
+  echo "WARNING: Starting key management gRPC server (INSECURE — no mTLS)..."
+  /usr/local/bin/key-mgmt-server &
 else
-  echo "WARNING: GATEWAY_API_TOKEN not set — key management API disabled"
+  echo "WARNING: GATEWAY_GRPC_TLS_* not set — key management gRPC server disabled"
 fi
 
 # Start zero-trust tunnel agent if configured (auto-activating, dormant if env vars absent)

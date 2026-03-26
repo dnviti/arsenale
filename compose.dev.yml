@@ -6,8 +6,6 @@ services:
       POSTGRES_USER: arsenale
       POSTGRES_PASSWORD: arsenale_password
       POSTGRES_DB: arsenale
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata_dev:/var/lib/postgresql
       - ./dev-certs/postgres/server-cert.pem:/certs/server-cert.pem:ro
@@ -94,9 +92,6 @@ services:
       CACHE_TLS_CA: "${CACHE_TLS_CA:-}"
       CACHE_TLS_CERT: "${CACHE_TLS_CERT:-}"
       CACHE_TLS_KEY: "${CACHE_TLS_KEY:-}"
-    ports:
-      - "127.0.0.1:6380:6380"
-      - "127.0.0.1:6381:6381"
     volumes:
       - gocache_data_dev:/data
       # Mount gocache mTLS certificates (read-only) — shared CA at /certs/ca.pem
@@ -129,10 +124,6 @@ services:
       - ${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/var/run/docker.sock:ro
       # Dev certificates (read-only)
       - ./dev-certs:/app/dev-certs:ro
-    ports:
-      - "3001:3001"
-      - "3002:3002"
-      - "3011:3011"
     env_file:
       - .env
     environment:
@@ -161,8 +152,10 @@ services:
       # guacenc sidecar
       GUACENC_SERVICE_URL: https://guacenc:3003
       GUACENC_USE_TLS: "true"
-      # Gateway API
-      GATEWAY_API_USE_TLS: "true"
+      # Gateway gRPC mTLS client certs (server -> ssh-gateway key mgmt)
+      GATEWAY_GRPC_TLS_CA: /app/dev-certs/ca.pem
+      GATEWAY_GRPC_TLS_CERT: /app/dev-certs/ssh-gateway/client-cert.pem
+      GATEWAY_GRPC_TLS_KEY: /app/dev-certs/ssh-gateway/client-key.pem
       # Client URL
       CLIENT_URL: https://localhost:3000
     networks:
@@ -226,12 +219,13 @@ services:
     container_name: arsenale-ssh-gateway
     ports:
       - "2222:2222"
-      - "8022:8022"
     environment:
       SSH_PORT: "2222"
-      GATEWAY_API_TOKEN: "${GATEWAY_API_TOKEN:-}"
-      GATEWAY_API_TLS_CERT: /certs/server-cert.pem
-      GATEWAY_API_TLS_KEY: /certs/server-key.pem
+      # gRPC key management mTLS (replaces old HTTPS + bearer token API)
+      GATEWAY_GRPC_PORT: "9022"
+      GATEWAY_GRPC_TLS_CA: /certs/ca.pem
+      GATEWAY_GRPC_TLS_CERT: /certs/server-cert.pem
+      GATEWAY_GRPC_TLS_KEY: /certs/server-key.pem
       NODE_EXTRA_CA_CERTS: /certs/ca.pem
     volumes:
       - ./dev-certs/ssh-gateway:/certs:ro
@@ -316,8 +310,6 @@ services:
       context: gateways/rdgw
       dockerfile: Dockerfile
     container_name: arsenale-rdgw
-    ports:
-      - "3443:3443"
     environment:
       RDGW_LISTEN_ADDR: ":3443"
       RDGW_TLS_CERT: /certs/server-cert.pem

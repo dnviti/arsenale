@@ -88,9 +88,10 @@ echo "=== guacd TLS ==="
 generate_server_cert "$CERT_DIR/guacd" "guacd" "DNS:guacd, DNS:localhost, IP:127.0.0.1"
 chmod 644 "$CERT_DIR/guacd/server-key.pem"  # guacd container runs as non-root (guacd user)
 
-# 6. SSH Gateway sidecar API (HTTPS key management)
-echo "=== SSH Gateway API HTTPS ==="
-generate_server_cert "$CERT_DIR/ssh-gateway" "ssh-gateway" "DNS:ssh-gateway, DNS:arsenale-ssh-gateway, DNS:localhost, IP:127.0.0.1"
+# 6. SSH Gateway gRPC mTLS (server cert for the gateway + client cert for the Arsenale server)
+echo "=== SSH Gateway gRPC mTLS ==="
+generate_server_cert "$CERT_DIR/ssh-gateway" "ssh-gateway" "DNS:ssh-gateway, DNS:arsenale-ssh-gateway, DNS:localhost, IP:127.0.0.1" "clientAuth"
+generate_client_cert "$CERT_DIR/ssh-gateway" "arsenale-server"
 chmod 644 "$CERT_DIR/ssh-gateway/server-key.pem"  # Rootless container needs read access
 
 # 7. RD Gateway (MS-TSGU proxy)

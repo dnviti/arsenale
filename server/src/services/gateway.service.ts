@@ -1,6 +1,4 @@
 import crypto from 'crypto';
-import fs from 'fs';
-import https from 'https';
 import prisma, { ManagedInstanceStatus } from '../lib/prisma';
 import type { GatewayType } from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
@@ -12,6 +10,7 @@ import { logger } from '../utils/logger';
 import { generateTunnelToken, revokeTunnelToken, isTunnelConnected, deregisterTunnel, getTunnelInfo } from './tunnel.service';
 import { generateCaCert, generateClientCertificate, certFingerprint } from '../utils/certGenerator';
 import * as auditService from './audit.service';
+import { pushKey as grpcPushKey, closeGatewayKeyClient } from '../utils/gatewayKeyClient';
 
 const log = logger.child('gateway');
 import { removeGatewayInstance } from './managedGateway.service';
@@ -493,11 +492,6 @@ export async function pushKeyToGateway(
     throw new AppError('Push key is only supported for MANAGED_SSH gateways', 400);
   }
 
-  const token = config.gatewayApiToken;
-  if (!token) {
-    throw new AppError('GATEWAY_API_TOKEN is not configured on the server', 500);
-  }
-
   const keyPair = await prisma.sshKeyPair.findUnique({
     where: { tenantId },
     select: { publicKey: true },
@@ -506,69 +500,39 @@ export async function pushKeyToGateway(
     throw new AppError('No SSH key pair found for this tenant. Generate one first.', 404);
   }
 
+  const grpcPort = config.gatewayGrpcPort;
+
   const instances = await prisma.managedGatewayInstance.findMany({
     where: {
       gatewayId,
       status: ManagedInstanceStatus.RUNNING,
-      apiPort: { not: null },
     },
-    select: { id: true, host: true, apiPort: true },
+    select: { id: true, host: true },
   });
 
   if (instances.length === 0) {
-    throw new AppError('No running instances with an API port found for this gateway', 400);
+    throw new AppError('No running instances found for this gateway', 400);
   }
 
-  log.info(`Pushing SSH key to gateway ${gatewayId} (${instances.length} instances)`);
+  log.info(`Pushing SSH key to gateway ${gatewayId} via gRPC (${instances.length} instances)`);
 
   const results: PushKeyInstanceResult[] = [];
 
-  // Build a custom HTTPS dispatcher when gateway API TLS + CA is configured
-  let gatewayFetchOptions: Record<string, unknown> = {};
-  if (config.gatewayApiUseTls && config.gatewayApiTlsCa) {
-    try {
-      // eslint-disable-next-line security/detect-non-literal-fs-filename
-      const ca = fs.readFileSync(config.gatewayApiTlsCa);
-      gatewayFetchOptions = { dispatcher: new https.Agent({ ca }) };
-    } catch (err) {
-      log.warn(`Failed to load gateway API TLS CA from ${config.gatewayApiTlsCa}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  }
-
   for (const instance of instances) {
-    const scheme = config.gatewayApiUseTls ? 'https' : 'http';
-    const url = `${scheme}://${instance.host}:${instance.apiPort}/cgi-bin/authorized-keys`;
-    const ac = new AbortController();
-    const timeout = setTimeout(() => ac.abort(), 5000);
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ publicKey: keyPair.publicKey }),
-        signal: ac.signal,
-        ...gatewayFetchOptions,
-      });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        const body = await response.text();
-        const error = `HTTP ${response.status}: ${body}`;
-        log.debug(`Key push to instance ${instance.id} (${instance.host}:${instance.apiPort}) failed: ${error}`);
-        results.push({ instanceId: instance.id, ok: false, error });
-      } else {
-        log.debug(`Key push to instance ${instance.id} (${instance.host}:${instance.apiPort}) succeeded`);
+      const res = await grpcPushKey(instance.host, grpcPort, keyPair.publicKey);
+      if (res.ok) {
+        log.debug(`gRPC key push to instance ${instance.id} (${instance.host}:${grpcPort}) succeeded`);
         results.push({ instanceId: instance.id, ok: true });
+      } else {
+        log.debug(`gRPC key push to instance ${instance.id} (${instance.host}:${grpcPort}) failed: ${res.message}`);
+        results.push({ instanceId: instance.id, ok: false, error: res.message });
       }
     } catch (err) {
-      clearTimeout(timeout);
-      const msg = (err as Error).name === 'AbortError'
-        ? 'Request timed out (5s)'
-        : (err as Error).message;
-      log.debug(`Key push to instance ${instance.id} (${instance.host}:${instance.apiPort}) failed: ${msg}`);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.debug(`gRPC key push to instance ${instance.id} (${instance.host}:${grpcPort}) failed: ${msg}`);
+      // Invalidate the cached client on connection errors
+      closeGatewayKeyClient(instance.host, grpcPort);
       results.push({ instanceId: instance.id, ok: false, error: msg });
     }
   }

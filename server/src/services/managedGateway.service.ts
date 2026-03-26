@@ -83,12 +83,12 @@ function buildContainerConfig(
       namespace: k8sNamespace,
       env: {
         ...(publicKey ? { SSH_AUTHORIZED_KEYS: publicKey } : {}),
-        ...(config.gatewayApiToken ? { GATEWAY_API_TOKEN: config.gatewayApiToken } : {}),
+        // gRPC key management uses mTLS (certs mounted via volumes), no token needed
+        GATEWAY_GRPC_INSECURE: 'true',
         ...tunnelEnvVars,
       },
       ports: [
         { container: 2222, ...(publishHostPort != null ? { host: publishHostPort } : {}) },
-        ...(publishApiHostPort != null ? [{ container: 8022, host: publishApiHostPort }] : []),
       ],
       labels: {
         'arsenale.managed': 'true',

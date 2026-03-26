@@ -1,6 +1,13 @@
 # Build context: monorepo root (see compose.yml — context: .)
 # This allows copying gateways/tunnel-agent sources alongside the ssh-gateway files.
 
+# ── gRPC key management server build stage ──────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS grpc-builder
+
+WORKDIR /build
+COPY gateways/ssh-gateway/grpc-server/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /key-mgmt-server .
+
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
 
@@ -44,9 +51,8 @@ RUN ssh-keygen -A \
 COPY gateways/ssh-gateway/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
-# Node.js HTTPS key management API (replaces BusyBox httpd + CGI)
-RUN mkdir -p /opt/key-api
-COPY gateways/ssh-gateway/key-api-server.js /opt/key-api/key-api-server.js
+# gRPC key management server (static binary — replaces Node.js key-api-server.js)
+COPY --from=grpc-builder /key-mgmt-server /usr/local/bin/key-mgmt-server
 
 # Embed pre-built tunnel agent
 COPY --from=tunnel-builder /tunnel-agent/dist /opt/tunnel-agent/dist
@@ -55,7 +61,7 @@ COPY --from=tunnel-builder /tunnel-agent/package.json /opt/tunnel-agent/package.
 
 USER tunnel
 
-EXPOSE 2222 8022
+EXPOSE 2222 9022
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
     CMD nc -z localhost ${SSH_PORT:-2222} || exit 1
