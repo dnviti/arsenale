@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import prisma, { ManagedInstanceStatus } from '../lib/prisma';
 import type { GatewayType } from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
@@ -607,6 +608,12 @@ async function ensureMtlsCerts(
   // Use a serializable transaction to prevent duplicate CA generation
   // when multiple gateways in the same tenant are provisioned concurrently.
   const { caFingerprintResult, clientExpiry } = await prisma.$transaction(async (tx) => {
+    // Acquire a per-tenant advisory lock to serialize CA generation.
+    // This prevents duplicate CAs when concurrent transactions target different
+    // gateway rows in the same tenant (which Serializable isolation alone doesn't cover).
+    const lockKey = BigInt('0x' + crypto.createHash('md5').update(tenantId).digest('hex').slice(0, 15));
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+
     // Try to find an existing CA from another gateway in the same tenant
     const existingCaGw = await tx.gateway.findFirst({
       where: {

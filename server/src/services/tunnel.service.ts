@@ -22,7 +22,7 @@ import prisma from '../lib/prisma';
 import { encryptWithServerKey, decryptWithServerKey, hashToken } from './crypto.service';
 import { logger } from '../utils/logger';
 import * as auditService from './audit.service';
-import { generateClientCertificate } from '../utils/certGenerator';
+import { generateClientCertificate, verifyCertChain } from '../utils/certGenerator';
 
 const log = logger.child('tunnel');
 
@@ -567,12 +567,14 @@ export async function revokeTunnelToken(
  *   X-Gateway-Id:  <uuid>
  *   X-Agent-Version: <version string>   (optional)
  *
- * When clientCertCn is provided, it is validated against the gateway's stored CA cert chain.
+ * When clientCertPem is provided, it is verified against the gateway's stored CA
+ * certificate using cryptographic chain validation (not just CN matching).
  */
 export async function authenticateTunnelRequest(
   gatewayId: string,
   bearerToken: string,
   clientCertCn?: string,
+  clientCertPem?: string,
 ): Promise<{ id: string; tenantId: string } | null> {
   if (!gatewayId || !bearerToken) return null;
 
@@ -587,6 +589,7 @@ export async function authenticateTunnelRequest(
       tunnelTokenTag: true,
       tunnelTokenHash: true,
       tunnelCaCert: true,
+      tunnelClientCert: true,
     },
   });
 
@@ -629,7 +632,17 @@ export async function authenticateTunnelRequest(
   // Validate the client cert CN matches the gatewayId (already checked in handler, defence in depth)
   if (clientCertCn && clientCertCn !== gatewayId) {
     log.warn(`[tunnel] Auth failed: client cert CN "${clientCertCn}" != gatewayId "${gatewayId}"`);
+    auditService.log({ action: 'TUNNEL_MTLS_REJECTED', targetType: 'Gateway', targetId: gatewayId, details: { reason: 'cn_mismatch' } });
     return null;
+  }
+
+  // Verify the client cert chains to the gateway's stored CA (cryptographic validation)
+  if (clientCertPem && gateway.tunnelCaCert && gateway.tunnelClientCert) {
+    if (!verifyCertChain(clientCertPem, gateway.tunnelCaCert)) {
+      log.warn(`[tunnel] Auth failed: client cert for gateway ${gatewayId} does not chain to stored CA`);
+      auditService.log({ action: 'TUNNEL_MTLS_REJECTED', targetType: 'Gateway', targetId: gatewayId, details: { reason: 'ca_chain_validation_failed' } });
+      return null;
+    }
   }
 
   return { id: gateway.id, tenantId: gateway.tenantId };

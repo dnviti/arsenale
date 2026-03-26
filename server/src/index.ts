@@ -1,7 +1,9 @@
 import crypto from 'crypto';
 import { execSync, execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import https from 'https';
 import app from './app';
 import { config } from './config';
 import { initializePassport } from './config/passport';
@@ -106,13 +108,41 @@ async function main() {
   await initGeoIp();
   await initializePassport();
 
+  // Create the main HTTP server.
+  // When tunnel TLS certs are configured, also create a dedicated HTTPS server
+  // for the tunnel endpoint so mTLS client certificate verification works.
   const server = http.createServer(app);
+
+  let tunnelServer: http.Server | https.Server;
+  if (config.tunnelServerCert && config.tunnelServerKey) {
+    try {
+      const tlsOptions: https.ServerOptions = {
+        cert: fs.readFileSync(config.tunnelServerCert),
+        key: fs.readFileSync(config.tunnelServerKey),
+        requestCert: true,
+        // We do tenant-specific CA validation in-app, not at the TLS layer
+        rejectUnauthorized: false,
+      };
+      if (config.tunnelServerCa) {
+        tlsOptions.ca = fs.readFileSync(config.tunnelServerCa);
+      }
+      tunnelServer = https.createServer(tlsOptions, app);
+      logger.info('[tunnel] TLS enabled for tunnel endpoint — mTLS client certificates will be verified');
+    } catch (err) {
+      logger.error('[tunnel] Failed to load tunnel TLS certificates:', err instanceof Error ? err.message : 'Unknown error');
+      logger.warn('[tunnel] Falling back to plain HTTP for tunnel endpoint — mTLS enforcement disabled');
+      tunnelServer = server;
+    }
+  } else {
+    logger.warn('[tunnel] TUNNEL_SERVER_CERT/KEY not configured — tunnel runs over plain HTTP, mTLS enforcement disabled');
+    tunnelServer = server;
+  }
 
   // Setup Socket.io for SSH
   const io = setupSocketIO(server);
 
-  // Setup zero-trust tunnel WebSocket endpoint
-  setupTunnelHandler(server);
+  // Setup zero-trust tunnel WebSocket endpoint (on the TLS-enabled server when available)
+  setupTunnelHandler(tunnelServer);
 
   // Start SSH protocol proxy (if enabled)
   startSshProxyServer();
@@ -430,6 +460,14 @@ async function main() {
     markServerReady();
   });
 
+  // If the tunnel server is separate (TLS-enabled), start it on port+10
+  if (tunnelServer !== server) {
+    const tunnelPort = config.port + 10;
+    tunnelServer.listen(tunnelPort, () => {
+      logger.info(`[tunnel] TLS tunnel server listening on port ${tunnelPort}`);
+    });
+  }
+
   const shutdown = async () => {
     logger.info('Shutting down...');
     stopAllMonitors();
@@ -459,6 +497,12 @@ async function main() {
       } catch {
         // Ignore close errors during shutdown
       }
+    }
+
+    if (tunnelServer !== server) {
+      tunnelServer.close(() => {
+        logger.info('[tunnel] TLS tunnel server closed.');
+      });
     }
 
     server.close(() => {

@@ -284,6 +284,10 @@ export const config = {
   tunnelServerCert: process.env.TUNNEL_SERVER_CERT || '',
   tunnelServerKey: process.env.TUNNEL_SERVER_KEY || '',
   tunnelServerCa: process.env.TUNNEL_SERVER_CA || '',
+  // Comma-separated list of trusted proxy IPs allowed to forward mTLS headers.
+  // Empty = trust all proxies when trustProxy is enabled.
+  tunnelTrustedProxyIps: (process.env.TUNNEL_TRUSTED_PROXY_IPS || '')
+    .split(',').map(s => s.trim()).filter(Boolean),
   // Gateway routing mode
   gatewayRoutingMode: (() => {
     const val = process.env.GATEWAY_ROUTING_MODE || 'prefer-gateway';
