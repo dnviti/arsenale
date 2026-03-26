@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: docker.io/library/postgres:18
     container_name: postgres
     environment:
       POSTGRES_USER: arsenale
@@ -9,12 +9,25 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - pgdata_dev:/var/lib/postgresql/data
-      - ./dev-certs/postgres/server-cert.pem:/var/lib/postgresql/server.crt:ro
-      - ./dev-certs/postgres/server-key.pem:/var/lib/postgresql/server.key:ro
-      - ./dev-certs/ca.pem:/var/lib/postgresql/ca.crt:ro
+      - pgdata_dev:/var/lib/postgresql
+      - ./dev-certs/postgres/server-cert.pem:/certs/server-cert.pem:ro
+      - ./dev-certs/postgres/server-key.pem:/certs/server-key.pem:ro
+      - ./dev-certs/ca.pem:/certs/ca.pem:ro
       - ./infrastructure/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-    command: ["bash", "-c", "cp /var/lib/postgresql/server.key /tmp/server.key && chown 999:999 /tmp/server.key && chmod 600 /tmp/server.key && exec docker-entrypoint.sh postgres -c ssl=on -c ssl_cert_file=/var/lib/postgresql/server.crt -c ssl_key_file=/tmp/server.key -c ssl_ca_file=/var/lib/postgresql/ca.crt -c hba_file=/etc/postgresql/pg_hba.conf"]
+    command: >-
+      bash -c "
+        cp /certs/server-key.pem /tmp/server.key &&
+        chown 999:999 /tmp/server.key &&
+        chmod 600 /tmp/server.key &&
+        cp /certs/server-cert.pem /tmp/server.crt &&
+        cp /certs/ca.pem /tmp/ca.crt &&
+        exec docker-entrypoint.sh postgres
+          -c ssl=on
+          -c ssl_cert_file=/tmp/server.crt
+          -c ssl_key_file=/tmp/server.key
+          -c ssl_ca_file=/tmp/ca.crt
+          -c hba_file=/etc/postgresql/pg_hba.conf
+      "
     networks:
       - net-db
     restart: always
@@ -24,24 +37,25 @@ services:
       timeout: 5s
       retries: 5
 
-  # guacd:
-  #   image: guacamole/guacd:1.6.0
-  #   environment:
-  #     GUACD_SSL: "true"
-  #     GUACD_SSL_CERT: /certs/server-cert.pem
-  #     GUACD_SSL_KEY: /certs/server-key.pem
-  #   volumes:
-  #     - ${RECORDING_PATH:-./data/recordings}:/recordings
-  #     - ./dev-certs/guacd:/certs:ro
-  #   networks:
-  #     - net-guacd
-  #   restart: always
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "nc -z localhost 4822 || exit 1"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 3
-  #     start_period: 10s
+  guacd:
+    image: docker.io/guacamole/guacd:1.6.0
+    container_name: guacd
+    environment:
+      GUACD_SSL: "true"
+      GUACD_SSL_CERT: /certs/server-cert.pem
+      GUACD_SSL_KEY: /certs/server-key.pem
+    volumes:
+      - ${RECORDING_PATH:-./data/recordings}:/recordings
+      - ./dev-certs/guacd:/certs:ro
+    networks:
+      - net-guacd
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 4822 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   guacenc:
     build:
@@ -49,8 +63,6 @@ services:
       dockerfile: Dockerfile
     container_name: guacenc
     restart: always
-    ports:
-      - "3003:3003"
     environment:
       - RECORDING_PATH=/recordings
       - GUACENC_TLS_CERT=/certs/server-cert.pem
@@ -61,64 +73,12 @@ services:
       - ./dev-certs/guacenc:/certs:ro
     networks:
       - net-guacenc
-
-  # server:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.dev
-  #   working_dir: /app
-  #   command: >
-  #     sh -c "npm run db:generate &&
-  #            npx tsx watch server/src/index.ts"
-  #   volumes:
-  #     - .:/app
-  #     - /app/node_modules
-  #     - /var/run/docker.sock:/var/run/docker.sock
-  #   ports:
-  #     - "3001:3001"
-  #     - "3002:3002"
-  #   env_file:
-  #     - .env
-  #   environment:
-  #     # Override host-oriented values from .env for Docker networking
-  #     DATABASE_URL: postgresql://arsenale:arsenale_password@postgres:5432/arsenale
-  #     GUACD_HOST: guacd
-  #     GUACD_PORT: "4822"
-  #     DOCKER_NETWORK: arsenale-dev
-  #     DOCKER_SOCKET_PATH: /var/run/docker.sock
-  #     NODE_ENV: development
-  #   networks:
-  #     - net-db
-  #     - net-guacd
-  #     - net-guacenc
-  #     - net-cache
-  #     - net-gateway
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-
-  # client:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.dev
-  #   working_dir: /app/client
-  #   command: npx vite --host
-  #   volumes:
-  #     - .:/app
-  #     - /app/node_modules
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     VITE_API_TARGET: http://server:3001
-  #     VITE_GUAC_TARGET: http://server:3002
-  #   networks:
-  #     - net-db
-  #     - net-guacd
-  #     - net-guacenc
-  #     - net-cache
-  #     - net-gateway
-  #   depends_on:
-  #     - server
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost:3003/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   gocache:
     build:
@@ -152,20 +112,239 @@ services:
       retries: 3
       start_period: 5s
 
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: arsenale-server
+    working_dir: /app
+    userns_mode: keep-id
+    command: >
+      sh -c "npx prisma generate --schema=server/prisma/schema.prisma &&
+             npx tsx watch server/src/index.ts"
+    volumes:
+      - .:/app
+      # Podman socket for container orchestration (rootless)
+      - ${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/var/run/docker.sock:ro
+      # Dev certificates (read-only)
+      - ./dev-certs:/app/dev-certs:ro
+    ports:
+      - "3001:3001"
+      - "3002:3002"
+      - "3011:3011"
+    env_file:
+      - .env
+    environment:
+      # Override host-oriented values for Docker networking
+      DATABASE_URL: postgresql://arsenale:arsenale_password@postgres:5432/arsenale?sslmode=require
+      GUACD_HOST: guacd
+      GUACD_PORT: "4822"
+      GUACD_SSL: "true"
+      GUACD_CA_CERT: /app/dev-certs/ca.pem
+      DOCKER_NETWORK: arsenale-net-gateway
+      DOCKER_SOCKET_PATH: /var/run/docker.sock
+      NODE_ENV: development
+      NODE_EXTRA_CA_CERTS: /app/dev-certs/ca.pem
+      # Server TLS (Express HTTPS + Guacamole WSS)
+      SERVER_TLS_CERT: /app/dev-certs/server/server-cert.pem
+      SERVER_TLS_KEY: /app/dev-certs/server/server-key.pem
+      # Tunnel mTLS server
+      TUNNEL_SERVER_CERT: /app/dev-certs/tunnel/server-cert.pem
+      TUNNEL_SERVER_KEY: /app/dev-certs/tunnel/server-key.pem
+      TUNNEL_SERVER_CA: /app/dev-certs/ca.pem
+      # gocache mTLS client certs (server -> gocache)
+      CACHE_SIDECAR_URL: gocache:6380
+      CACHE_SIDECAR_TLS_CA: /app/dev-certs/ca.pem
+      CACHE_SIDECAR_TLS_CERT: /app/dev-certs/gocache/client-cert.pem
+      CACHE_SIDECAR_TLS_KEY: /app/dev-certs/gocache/client-key.pem
+      # guacenc sidecar
+      GUACENC_SERVICE_URL: https://guacenc:3003
+      GUACENC_USE_TLS: "true"
+      # Gateway API
+      GATEWAY_API_USE_TLS: "true"
+      # Client URL
+      CLIENT_URL: https://localhost:3000
+    networks:
+      - net-db
+      - net-guacd
+      - net-guacenc
+      - net-cache
+      - net-gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+      guacd:
+        condition: service_healthy
+      gocache:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost:3001/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: arsenale-client
+    working_dir: /app/client
+    userns_mode: keep-id
+    command: npx vite --host
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./dev-certs:/app/dev-certs:ro
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_TARGET: https://server:3001
+      VITE_GUAC_TARGET: https://server:3002
+      VITE_TLS_CERT: /app/dev-certs/server/server-cert.pem
+      VITE_TLS_KEY: /app/dev-certs/server/server-key.pem
+      NODE_EXTRA_CA_CERTS: /app/dev-certs/ca.pem
+    networks:
+      - net-gateway
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost:3000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  ssh-gateway:
+    build:
+      context: .
+      dockerfile: gateways/ssh-gateway/Dockerfile
+    container_name: arsenale-ssh-gateway
+    ports:
+      - "2222:2222"
+      - "8022:8022"
+    environment:
+      SSH_PORT: "2222"
+      GATEWAY_API_TOKEN: "${GATEWAY_API_TOKEN:-}"
+      GATEWAY_API_TLS_CERT: /certs/server-cert.pem
+      GATEWAY_API_TLS_KEY: /certs/server-key.pem
+      NODE_EXTRA_CA_CERTS: /certs/ca.pem
+    volumes:
+      - ./dev-certs/ssh-gateway:/certs:ro
+      - ./dev-certs/ca.pem:/certs/ca.pem:ro
+    networks:
+      - net-gateway
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  tunnel-agent:
+    build:
+      context: gateways/tunnel-agent
+      dockerfile: Dockerfile
+    container_name: arsenale-tunnel-agent
+    environment:
+      TUNNEL_SERVER_URL: "wss://server:3011"
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+      TUNNEL_GATEWAY_ID: "${TUNNEL_GATEWAY_ID:-}"
+      TUNNEL_CA_CERT: /certs/ca.pem
+      NODE_EXTRA_CA_CERTS: /certs/ca.pem
+    volumes:
+      - ./dev-certs/ca.pem:/certs/ca.pem:ro
+      - ./dev-certs/tunnel:/certs/tunnel:ro
+    networks:
+      - net-gateway
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"process.exit(0)\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  db-proxy:
+    build:
+      context: .
+      dockerfile: gateways/db-proxy/Dockerfile
+    container_name: arsenale-db-proxy
+    environment:
+      DB_LISTEN_PORT: "5433"
+      TUNNEL_SERVER_URL: "${DB_PROXY_TUNNEL_SERVER_URL:-}"
+      TUNNEL_TOKEN: "${DB_PROXY_TUNNEL_TOKEN:-}"
+      TUNNEL_GATEWAY_ID: "${DB_PROXY_TUNNEL_GATEWAY_ID:-}"
+      NODE_EXTRA_CA_CERTS: /certs/ca.pem
+    volumes:
+      - ./dev-certs/ca.pem:/certs/ca.pem:ro
+    networks:
+      - net-gateway
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /proc/1/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  rdgw:
+    build:
+      context: gateways/rdgw
+      dockerfile: Dockerfile
+    container_name: arsenale-rdgw
+    ports:
+      - "3443:3443"
+    environment:
+      RDGW_LISTEN_ADDR: ":3443"
+      RDGW_TLS_CERT: /certs/server-cert.pem
+      RDGW_TLS_KEY: /certs/server-key.pem
+      RDGW_ARSENALE_API_URL: "https://server:3001"
+      RDGW_API_TOKEN: "${RDGW_API_TOKEN:-}"
+      RDGW_LOG_LEVEL: "debug"
+    volumes:
+      - ./dev-certs/rdgw:/certs:ro
+      - ./dev-certs/ca.pem:/certs/ca.pem:ro
+    networks:
+      - net-gateway
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost:3443/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
 networks:
-  # Server↔PostgreSQL only
+  # Server<->PostgreSQL only
   net-db:
     name: arsenale-net-db
-  # Server↔guacd only
+  # Server<->guacd only
   net-guacd:
     name: arsenale-net-guacd
-  # Server↔guacenc only
+  # Server<->guacenc only
   net-guacenc:
     name: arsenale-net-guacenc
-  # Server↔gocache + gocache peers
+  # Server<->gocache + gocache peers
   net-cache:
     name: arsenale-net-cache
-  # Server↔gateways (SSH, managed containers)
+  # Server<->gateways (SSH, tunnel, db-proxy, rdgw, client)
   net-gateway:
     name: arsenale-net-gateway
 

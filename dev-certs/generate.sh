@@ -11,6 +11,9 @@
 #     tunnel/                     — tunnel mTLS server
 #     postgres/                   — PostgreSQL SSL
 #     guacenc/                    — guacenc sidecar HTTPS
+#     guacd/                      — guacd TLS listener
+#     ssh-gateway/                — SSH Gateway API HTTPS
+#     rdgw/                       — RD Gateway HTTPS
 #     server/                     — Express + guacamole-lite HTTPS
 
 set -euo pipefail
@@ -90,7 +93,12 @@ echo "=== SSH Gateway API HTTPS ==="
 generate_server_cert "$CERT_DIR/ssh-gateway" "ssh-gateway" "DNS:ssh-gateway, DNS:arsenale-ssh-gateway, DNS:localhost, IP:127.0.0.1"
 chmod 644 "$CERT_DIR/ssh-gateway/server-key.pem"  # Rootless container needs read access
 
-# 7. Express + guacamole-lite
+# 7. RD Gateway (MS-TSGU proxy)
+echo "=== RD Gateway HTTPS ==="
+generate_server_cert "$CERT_DIR/rdgw" "rdgw" "DNS:rdgw, DNS:arsenale-rdgw, DNS:localhost, IP:127.0.0.1"
+chmod 644 "$CERT_DIR/rdgw/server-key.pem"  # Rootless container needs read access
+
+# 8. Express + guacamole-lite
 echo "=== Dev Server HTTPS ==="
 generate_server_cert "$CERT_DIR/server" "localhost" "DNS:localhost, IP:127.0.0.1, IP:::1"
 
@@ -105,4 +113,5 @@ echo "  PostgreSQL:  $CERT_DIR/postgres/"
 echo "  guacenc:     $CERT_DIR/guacenc/"
 echo "  guacd:       $CERT_DIR/guacd/"
 echo "  ssh-gateway: $CERT_DIR/ssh-gateway/"
+echo "  rdgw:        $CERT_DIR/rdgw/"
 echo "  server:      $CERT_DIR/server/"
