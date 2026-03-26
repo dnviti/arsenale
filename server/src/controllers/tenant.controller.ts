@@ -9,6 +9,7 @@ import { logger } from '../utils/logger';
 import { getClientIp } from '../utils/ip';
 import { getRequestBinding } from '../utils/tokenBinding';
 import type { CreateTenantInput, UpdateTenantInput, InviteUserInput, UpdateRoleInput, CreateUserInput, ToggleUserEnabledInput, AdminChangeEmailInput, AdminChangePasswordInput, UpdateMembershipExpiryInput, IpAllowlistInput } from '../schemas/tenant.schemas';
+import * as rolePermissionService from '../services/rolePermission.service';
 
 export async function createTenant(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
@@ -275,6 +276,36 @@ export async function updateMembershipExpiry(req: AuthRequest, res: Response) {
     ipAddress: getClientIp(req),
   });
   res.json(result);
+}
+
+export async function getUserPermissions(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const tenantId = req.params.id as string;
+  const targetUserId = req.params.userId as string;
+  const result = await rolePermissionService.getUserPermissions(targetUserId, tenantId);
+  if (!result) {
+    res.status(404).json({ error: 'User not found in this organization' });
+    return;
+  }
+  res.json(result);
+}
+
+export async function updateUserPermissions(req: AuthRequest, res: Response) {
+  assertTenantAuthenticated(req);
+  const tenantId = req.params.id as string;
+  const targetUserId = req.params.userId as string;
+  const { overrides } = req.body as { overrides: Record<string, boolean> | null };
+  await rolePermissionService.updatePermissionOverrides(targetUserId, tenantId, overrides);
+  auditService.log({
+    userId: req.user.userId,
+    action: 'TENANT_UPDATE_USER_ROLE',
+    targetType: 'User',
+    targetId: targetUserId,
+    details: { tenantId, permissionOverrides: overrides ? Object.keys(overrides) : null },
+    ipAddress: getClientIp(req),
+  });
+  const updated = await rolePermissionService.getUserPermissions(targetUserId, tenantId);
+  res.json(updated);
 }
 
 export async function getIpAllowlist(req: AuthRequest, res: Response) {

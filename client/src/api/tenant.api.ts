@@ -234,6 +234,41 @@ export async function updateMembershipExpiry(
   await api.patch(`/tenants/${tenantId}/users/${userId}/expiry`, { expiresAt });
 }
 
+// Permission flags
+export type PermissionFlag =
+  | 'canConnect'
+  | 'canCreateConnections'
+  | 'canManageConnections'
+  | 'canViewCredentials'
+  | 'canShareConnections'
+  | 'canViewAuditLog'
+  | 'canManageSessions'
+  | 'canManageGateways'
+  | 'canManageUsers'
+  | 'canManageSecrets'
+  | 'canManageTenantSettings';
+
+export interface UserPermissionsData {
+  role: string;
+  permissions: Record<PermissionFlag, boolean>;
+  overrides: Record<string, boolean> | null;
+  defaults: Record<PermissionFlag, boolean>;
+}
+
+export async function getUserPermissions(tenantId: string, userId: string): Promise<UserPermissionsData> {
+  const { data } = await api.get<UserPermissionsData>(`/tenants/${tenantId}/users/${userId}/permissions`);
+  return data;
+}
+
+export async function updateUserPermissions(
+  tenantId: string,
+  userId: string,
+  overrides: Record<string, boolean> | null,
+): Promise<UserPermissionsData> {
+  const { data } = await api.put<UserPermissionsData>(`/tenants/${tenantId}/users/${userId}/permissions`, { overrides });
+  return data;
+}
+
 export interface IpAllowlistData {
   enabled: boolean;
   mode: 'flag' | 'block';

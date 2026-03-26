@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { TenantRoleType } from '../types';
 import { AppError } from '../middleware/error.middleware';
 import * as sshKeyService from './sshkey.service';
+import { invalidatePermissionCache } from './rolePermission.service';
 import * as auditService from './audit.service';
 import * as identityVerification from './identityVerification.service';
 import { logger } from '../utils/logger';
@@ -502,6 +503,8 @@ export async function updateUserRole(
     data: { role: newRole as TenantRole },
     include: { user: { select: { id: true, email: true, username: true } } },
   });
+
+  invalidatePermissionCache(targetUserId, tenantId);
 
   return { id: updated.user.id, email: updated.user.email, username: updated.user.username, role: updated.role };
 }

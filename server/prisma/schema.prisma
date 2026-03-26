@@ -928,11 +928,12 @@ model TenantMember {
   id        String     @id @default(uuid())
   tenantId  String
   userId    String
-  role      TenantRole @default(MEMBER)
-  isActive  Boolean    @default(false)
-  joinedAt  DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  expiresAt DateTime?
+  role                TenantRole @default(MEMBER)
+  isActive            Boolean    @default(false)
+  permissionOverrides Json?
+  joinedAt            DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  expiresAt           DateTime?
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)

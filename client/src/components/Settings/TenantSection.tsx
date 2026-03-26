@@ -15,6 +15,7 @@ import InviteDialog from '../Dialogs/InviteDialog';
 import CreateUserDialog from '../Dialogs/CreateUserDialog';
 import IdentityVerification from '../common/IdentityVerification';
 import VaultProvidersSection from './VaultProvidersSection';
+import PermissionOverridesDialog from './PermissionOverridesDialog';
 import { extractApiError } from '../../utils/apiError';
 import { ALL_ROLES, ROLE_LABELS, isAdminOrAbove, type TenantRole } from '../../utils/roles';
 import { useNotificationStore } from '../../store/notificationStore';
@@ -117,6 +118,10 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
   const [changePwdLoading, setChangePwdLoading] = useState(false);
   const [changePwdError, setChangePwdError] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
+
+  // Permission overrides dialog
+  const [permDialogOpen, setPermDialogOpen] = useState(false);
+  const [permTarget, setPermTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Membership expiry dialog
   const [expiryDialogOpen, setExpiryDialogOpen] = useState(false);
@@ -1021,6 +1026,13 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
         open={!!menuAnchor}
         onClose={closeAdminMenu}
       >
+        <MenuItem onClick={() => {
+          if (menuTargetUser) {
+            setPermTarget({ id: menuTargetUser.id, name: menuTargetUser.name });
+            setPermDialogOpen(true);
+            closeAdminMenu();
+          }
+        }}>Permissions</MenuItem>
         <MenuItem onClick={openChangeEmail}>Change Email</MenuItem>
         <MenuItem onClick={openChangePwd}>Change Password</MenuItem>
         <MenuItem onClick={() => {
@@ -1252,6 +1264,17 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Permission overrides dialog */}
+      {tenant && permTarget && (
+        <PermissionOverridesDialog
+          open={permDialogOpen}
+          onClose={() => setPermDialogOpen(false)}
+          tenantId={tenant.id}
+          userId={permTarget.id}
+          userName={permTarget.name}
+        />
+      )}
 
     </>
   );
