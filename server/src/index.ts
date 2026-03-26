@@ -37,7 +37,7 @@ import { rebuildLoginRateLimiter } from './middleware/loginRateLimit.middleware'
 import { rebuildOauthRateLimiters } from './middleware/oauthRateLimit.middleware';
 import { rebuildVaultRateLimiters } from './middleware/vaultRateLimit.middleware';
 import { rebuildSessionRateLimiter } from './middleware/sessionRateLimit.middleware';
-import { runIfLeader, startLeaderHeartbeat } from './utils/leaderElection';
+import { runIfLeader } from './utils/leaderElection';
 
 function freePort(port: number): void {
   try {
@@ -119,9 +119,6 @@ async function main() {
 
   // Initialize session cleanup with Socket.IO reference
   initSessionCleanup(io);
-
-  // Start leader heartbeat for distributed lock-based job coordination
-  const leaderHb = startLeaderHeartbeat('scheduler');
 
   // Start scheduled jobs
   startKeyRotationJob();
@@ -435,7 +432,6 @@ async function main() {
 
   const shutdown = async () => {
     logger.info('Shutting down...');
-    leaderHb.stop();
     stopAllMonitors();
     stopAllJobs();
     stopAllSyncJobs();

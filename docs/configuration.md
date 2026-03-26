@@ -368,7 +368,8 @@ Anomaly detection for rapid connection to many distinct targets (MITRE T1021).
 |----------|---------|-------------|
 | `CACHE_SIDECAR_URL` | `localhost:6380` | gRPC endpoint of the gocache sidecar |
 | `CACHE_SIDECAR_ENABLED` | `true` | Set to `false` to disable distributed cache (single-instance fallback) |
-| `CACHE_PROTO_PATH` | `infrastructure/gocache/proto/cache.proto` | Proto file path (override for Docker builds) |
+
+> **Note:** The TypeScript gRPC client uses a manual JSON codec service definition that matches the Go sidecar's custom codec (`infrastructure/gocache/codec.go`). No `.proto` file is loaded at runtime.
 
 Sidecar-side configuration (container environment):
 

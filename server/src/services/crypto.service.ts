@@ -13,8 +13,14 @@ const IV_LENGTH = 16;
 const KEY_LENGTH = 32;
 const SALT_LENGTH = 32;
 
-// In-memory vault store (local fallback): userId -> VaultSession
-const vaultStore = new Map<string, VaultSession>();
+// Extended local vault session with stored TTL for correct sliding window renewal.
+// We don't modify the shared VaultSession type — this is local-only.
+interface LocalVaultSession extends VaultSession {
+  ttlMs: number; // 0 = never expires
+}
+
+// In-memory vault store (local fallback): userId -> LocalVaultSession
+const vaultStore = new Map<string, LocalVaultSession>();
 
 // In-memory vault recovery store (local fallback): userId -> server-encrypted master key.
 // Allows MFA-based re-unlock after vault TTL expiry without the user's password.
@@ -22,12 +28,21 @@ const vaultStore = new Map<string, VaultSession>();
 const vaultRecoveryStore = new Map<string, { encryptedKey: EncryptedField; expiresAt: number }>();
 
 // In-memory team vault store (local fallback): "${teamId}:${userId}" -> decrypted team master key
-const teamVaultStore = new Map<string, { teamKey: Buffer; expiresAt: number }>();
+const teamVaultStore = new Map<string, { teamKey: Buffer; expiresAt: number; ttlMs: number }>();
 
 // In-memory tenant vault store (local fallback): "${tenantId}:${userId}" -> decrypted tenant master key
-const tenantVaultStore = new Map<string, { tenantKey: Buffer; expiresAt: number }>();
+const tenantVaultStore = new Map<string, { tenantKey: Buffer; expiresAt: number; ttlMs: number }>();
 
-// --- Cache index helpers (for prefix-based cleanup without scan) ---
+/**
+ * Cache index helpers for team/tenant vault cleanup.
+ *
+ * These perform non-atomic read-modify-write on JSON arrays. Concurrent
+ * writers can lose entries, but the impact is limited: a lost entry means
+ * a team/tenant vault session may persist in cache until its TTL expires
+ * (typically 30 minutes) rather than being cleaned up immediately on lock.
+ * This is an acceptable trade-off given the low frequency of concurrent
+ * team vault operations and the TTL safety net.
+ */
 
 async function addToIndex(indexKey: string, value: string): Promise<void> {
   const buf = await cache.get(indexKey);
@@ -230,11 +245,13 @@ export function decryptWithServerKey(field: EncryptedField): string {
 // ttlMinutes: undefined = server default, 0 = never, >0 = custom
 export function storeVaultSession(userId: string, masterKey: Buffer, ttlMinutes?: number): void {
   const effective = ttlMinutes ?? config.vaultTtlMinutes;
-  const expiresAt = effective === 0 ? Infinity : Date.now() + effective * 60 * 1000;
+  const ttlMs = effective === 0 ? 0 : effective * 60 * 1000;
+  const expiresAt = effective === 0 ? Infinity : Date.now() + ttlMs;
   // Local map (sync, immediate)
   vaultStore.set(userId, {
     masterKey: Buffer.from(masterKey), // copy the buffer
     expiresAt,
+    ttlMs,
   });
   // Cache (async, fire-and-forget)
   if (config.cacheSidecarEnabled && effective !== 0) {
@@ -255,13 +272,12 @@ export async function getVaultSession(userId: string): Promise<VaultSession | nu
       // Fall through to cache check
     } else {
       // Sliding window: reset TTL on every successful access (skip for "never" sessions)
-      if (local.expiresAt !== Infinity) {
-        const ttlMs = config.vaultTtlMinutes * 60 * 1000;
-        local.expiresAt = Date.now() + ttlMs;
+      if (local.expiresAt !== Infinity && local.ttlMs > 0) {
+        local.expiresAt = Date.now() + local.ttlMs;
         // Refresh cache TTL (fire-and-forget)
         if (config.cacheSidecarEnabled) {
           const encrypted = encrypt(local.masterKey.toString('hex'), config.serverEncryptionKey);
-          cache.set(`vault:user:${userId}`, JSON.stringify(encrypted), { ttl: ttlMs }).catch(() => {});
+          cache.set(`vault:user:${userId}`, JSON.stringify(encrypted), { ttl: local.ttlMs }).catch(() => {});
         }
       }
       return local;
@@ -276,10 +292,11 @@ export async function getVaultSession(userId: string): Promise<VaultSession | nu
     const encrypted = JSON.parse(buf.toString()) as EncryptedField;
     const hex = decrypt(encrypted, config.serverEncryptionKey);
     const masterKey = Buffer.from(hex, 'hex');
+    // When hydrating from cache, original TTL is unknown; use server default
     const ttlMs = config.vaultTtlMinutes * 60 * 1000;
-    const session: VaultSession = { masterKey, expiresAt: Date.now() + ttlMs };
+    const session: LocalVaultSession = { masterKey, expiresAt: Date.now() + ttlMs, ttlMs };
     // Hydrate local map
-    vaultStore.set(userId, { masterKey: Buffer.from(masterKey), expiresAt: session.expiresAt });
+    vaultStore.set(userId, { masterKey: Buffer.from(masterKey), expiresAt: session.expiresAt, ttlMs });
     // Refresh cache TTL (sliding window)
     cache.set(`vault:user:${userId}`, buf.toString(), { ttl: ttlMs }).catch(() => {});
     return session;
@@ -434,6 +451,7 @@ export function storeTeamVaultSession(teamId: string, userId: string, teamKey: B
   teamVaultStore.set(mapKey, {
     teamKey: Buffer.from(teamKey), // defensive copy
     expiresAt: Date.now() + ttlMs,
+    ttlMs,
   });
   // Cache (async, fire-and-forget)
   if (config.cacheSidecarEnabled) {
@@ -455,12 +473,11 @@ export async function getTeamMasterKey(teamId: string, userId: string): Promise<
       teamVaultStore.delete(mapKey);
       // Fall through to cache check
     } else {
-      // Sliding window
-      const ttlMs = config.vaultTtlMinutes * 60 * 1000;
-      session.expiresAt = Date.now() + ttlMs;
+      // Sliding window: use stored ttlMs instead of config default
+      session.expiresAt = Date.now() + session.ttlMs;
       if (config.cacheSidecarEnabled) {
         const encrypted = encrypt(session.teamKey.toString('hex'), config.serverEncryptionKey);
-        cache.set(`vault:team:${teamId}:${userId}`, JSON.stringify(encrypted), { ttl: ttlMs }).catch(() => {});
+        cache.set(`vault:team:${teamId}:${userId}`, JSON.stringify(encrypted), { ttl: session.ttlMs }).catch(() => {});
       }
       return session.teamKey;
     }
@@ -474,8 +491,8 @@ export async function getTeamMasterKey(teamId: string, userId: string): Promise<
     const hex = decrypt(encrypted, config.serverEncryptionKey);
     const teamKey = Buffer.from(hex, 'hex');
     const ttlMs = config.vaultTtlMinutes * 60 * 1000;
-    // Hydrate local map
-    teamVaultStore.set(mapKey, { teamKey: Buffer.from(teamKey), expiresAt: Date.now() + ttlMs });
+    // Hydrate local map (use server default TTL since original is unknown)
+    teamVaultStore.set(mapKey, { teamKey: Buffer.from(teamKey), expiresAt: Date.now() + ttlMs, ttlMs });
     // Refresh cache TTL (sliding window)
     cache.set(`vault:team:${teamId}:${userId}`, buf.toString(), { ttl: ttlMs }).catch(() => {});
     return teamKey;
@@ -550,6 +567,7 @@ export function storeTenantVaultSession(tenantId: string, userId: string, tenant
   tenantVaultStore.set(mapKey, {
     tenantKey: Buffer.from(tenantKey), // defensive copy
     expiresAt: Date.now() + ttlMs,
+    ttlMs,
   });
   // Cache (async, fire-and-forget)
   if (config.cacheSidecarEnabled) {
@@ -571,12 +589,11 @@ export async function getTenantMasterKey(tenantId: string, userId: string): Prom
       tenantVaultStore.delete(mapKey);
       // Fall through to cache check
     } else {
-      // Sliding window
-      const ttlMs = config.vaultTtlMinutes * 60 * 1000;
-      session.expiresAt = Date.now() + ttlMs;
+      // Sliding window: use stored ttlMs instead of config default
+      session.expiresAt = Date.now() + session.ttlMs;
       if (config.cacheSidecarEnabled) {
         const encrypted = encrypt(session.tenantKey.toString('hex'), config.serverEncryptionKey);
-        cache.set(`vault:tenant:${tenantId}:${userId}`, JSON.stringify(encrypted), { ttl: ttlMs }).catch(() => {});
+        cache.set(`vault:tenant:${tenantId}:${userId}`, JSON.stringify(encrypted), { ttl: session.ttlMs }).catch(() => {});
       }
       return session.tenantKey;
     }
@@ -590,8 +607,8 @@ export async function getTenantMasterKey(tenantId: string, userId: string): Prom
     const hex = decrypt(encrypted, config.serverEncryptionKey);
     const tenantKey = Buffer.from(hex, 'hex');
     const ttlMs = config.vaultTtlMinutes * 60 * 1000;
-    // Hydrate local map
-    tenantVaultStore.set(mapKey, { tenantKey: Buffer.from(tenantKey), expiresAt: Date.now() + ttlMs });
+    // Hydrate local map (use server default TTL since original is unknown)
+    tenantVaultStore.set(mapKey, { tenantKey: Buffer.from(tenantKey), expiresAt: Date.now() + ttlMs, ttlMs });
     // Refresh cache TTL (sliding window)
     cache.set(`vault:tenant:${tenantId}:${userId}`, buf.toString(), { ttl: ttlMs }).catch(() => {});
     return tenantKey;

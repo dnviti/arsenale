@@ -33,6 +33,10 @@ interface CacheClient {
     req: { key: string },
     callback: (err: Error | null, res: { value: Buffer; found: boolean }) => void
   ): void;
+  Expire(
+    req: { key: string; ttl_ms: number },
+    callback: (err: Error | null, res: { ok: boolean }) => void
+  ): void;
   Publish(
     req: { channel: string; message: Buffer },
     callback: (err: Error | null, res: { receivers: number }) => void
@@ -141,6 +145,7 @@ export async function getCacheClient(): Promise<CacheClient | null> {
       Delete: makeMethodDef('/cache.CacheService/Delete', false, []),
       Incr: makeMethodDef('/cache.CacheService/Incr', false, []),
       GetDel: makeMethodDef('/cache.CacheService/GetDel', false, ['value']),
+      Expire: makeMethodDef('/cache.CacheService/Expire', false, []),
       Publish: makeMethodDef('/cache.CacheService/Publish', false, []),
       Subscribe: makeMethodDef('/cache.CacheService/Subscribe', true, ['message']),
       AcquireLock: makeMethodDef('/cache.CacheService/AcquireLock', false, []),
@@ -234,6 +239,16 @@ export async function incr(key: string, delta = 1): Promise<number | null> {
   if (!c) return null;
   const res = await promisify(c.Incr, { key, delta }, c);
   return res?.value ?? null;
+}
+
+/**
+ * Set a TTL on an existing key. Returns true if the key existed.
+ */
+export async function expire(key: string, ttlMs: number): Promise<boolean> {
+  const c = await getCacheClient();
+  if (!c) return false;
+  const res = await promisify(c.Expire, { key, ttl_ms: ttlMs }, c);
+  return res?.ok ?? false;
 }
 
 /**

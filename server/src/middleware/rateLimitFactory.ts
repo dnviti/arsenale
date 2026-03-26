@@ -24,23 +24,30 @@ class GoCacheRateLimitStore implements Store {
   constructor(private windowMs: number) {}
 
   async increment(key: string): Promise<IncrementResponse> {
-    const windowStart = Math.floor(Date.now() / this.windowMs) * this.windowMs;
+    const now = Date.now();
+    const windowStart = Math.floor(now / this.windowMs) * this.windowMs;
+    const windowEnd = windowStart + this.windowMs;
     const cacheKey = `rl:${key}:${windowStart}`;
-    // Atomic increment — no separate TTL set needed.
-    // Keys are timestamp-bucketed so stale windows are naturally ignored.
-    // The sidecar's background sweeper / LRU eviction handles cleanup.
     const count = await cache.incr(cacheKey, 1);
+    // Set TTL so counter keys don't accumulate indefinitely (+1s buffer)
+    const ttlMs = windowEnd - now + 1000;
+    cache.expire(cacheKey, ttlMs).catch(() => {}); // best-effort
 
     return {
       totalHits: count ?? 1,
-      resetTime: new Date(windowStart + this.windowMs),
+      resetTime: new Date(windowEnd),
     };
   }
 
   async decrement(key: string): Promise<void> {
-    const windowStart = Math.floor(Date.now() / this.windowMs) * this.windowMs;
+    const now = Date.now();
+    const windowStart = Math.floor(now / this.windowMs) * this.windowMs;
+    const windowEnd = windowStart + this.windowMs;
     const cacheKey = `rl:${key}:${windowStart}`;
     await cache.incr(cacheKey, -1);
+    // Set TTL so counter keys don't accumulate indefinitely (+1s buffer)
+    const ttlMs = windowEnd - now + 1000;
+    cache.expire(cacheKey, ttlMs).catch(() => {}); // best-effort
   }
 
   async resetKey(key: string): Promise<void> {

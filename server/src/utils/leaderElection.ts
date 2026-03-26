@@ -44,10 +44,19 @@ export async function runIfLeader(
     return;
   }
 
+  let heartbeatTimer: NodeJS.Timeout | null = null;
   try {
+    // Renew lock periodically to prevent expiry during long-running fn()
+    const heartbeatInterval = Math.max(1000, Math.floor(ttlMs / 3));
+    heartbeatTimer = setInterval(() => {
+      cache.renewLock(lockName, ttlMs, result.holderId).catch((err) => {
+        logger.warn('Leader lock renew failed: %s', err instanceof Error ? err.message : 'Unknown error');
+      });
+    }, heartbeatInterval);
     await fn();
   } finally {
-    await cache.releaseLock(lockName, instanceId);
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    await cache.releaseLock(lockName, result.holderId);
   }
 }
 

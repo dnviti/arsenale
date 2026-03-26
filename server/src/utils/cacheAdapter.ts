@@ -47,6 +47,7 @@ export function createGoCacheAdapterFactory(): ((nsp: { name: string }) => Adapt
 
 class GoCacheAdapter extends Adapter {
   private unsubscribe: (() => void) | null = null;
+  private closed = false;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(nsp: any) {
@@ -56,19 +57,23 @@ class GoCacheAdapter extends Adapter {
 
   private setupSubscription(): void {
     const channel = 'sio:*';
-    cache.subscribe(channel, (_ch: string, message: Buffer) => {
+    const expectedBroadcast = `sio:${this.nsp.name}`;
+    const expectedServer = `sio:server:${this.nsp.name}`;
+
+    const pending = cache.subscribe(channel, (ch: string, message: Buffer) => {
+      if (this.closed) return;
       try {
         const msg: AdapterMessage = JSON.parse(message.toString());
         // Skip messages from this instance
         if (msg.src === instanceId) return;
 
-        if (msg.type === 'broadcast') {
+        if (msg.type === 'broadcast' && ch === expectedBroadcast) {
           const opts = {
             rooms: new Set(msg.opts?.rooms ?? []),
             except: new Set(msg.opts?.except ?? []),
           };
           super.broadcast(msg.packet, opts);
-        } else if (msg.type === 'serverSideEmit') {
+        } else if (msg.type === 'serverSideEmit' && ch === expectedServer) {
           super.serverSideEmit(msg.packet);
         }
       } catch (err) {
@@ -77,8 +82,15 @@ class GoCacheAdapter extends Adapter {
           err instanceof Error ? err.message : 'Unknown error',
         );
       }
-    }, true).then((unsub) => {
-      this.unsubscribe = unsub;
+    }, true);
+
+    pending.then((unsub) => {
+      if (this.closed && unsub) {
+        // Already closed before subscription resolved — clean up immediately
+        unsub();
+      } else {
+        this.unsubscribe = unsub;
+      }
     }).catch((err) => {
       logger.warn(
         'GoCacheAdapter: subscription setup failed: %s',
@@ -123,6 +135,7 @@ class GoCacheAdapter extends Adapter {
   }
 
   close(): void {
+    this.closed = true;
     if (this.unsubscribe) {
       this.unsubscribe();
       this.unsubscribe = null;
