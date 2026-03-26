@@ -66,7 +66,7 @@ export function check(
   if (!geoCoords || geoCoords.length < 2) return;
 
   doCheck(auditLogId, userId, geoCoords, createdAt).catch((err) => {
-    logger.error('Impossible travel check failed:', err);
+    logger.error('Impossible travel check failed:', err instanceof Error ? err.message : 'Unknown error');
   });
 }
 
@@ -155,7 +155,7 @@ async function doCheck(
         flags: ['IMPOSSIBLE_TRAVEL'],
       },
     })
-    .catch((err) => logger.error('Failed to write impossible travel audit log:', err));
+    .catch((err) => logger.error('Failed to write impossible travel audit log:', err instanceof Error ? err.message : 'Unknown error'));
 
   // Notify tenant admins
   await notifyTenantAdmins(userId, prevLocation, currLocation, Math.round(timeDiffHours * 60), Math.round(distanceKm));

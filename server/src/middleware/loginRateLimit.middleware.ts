@@ -10,12 +10,18 @@ let _globalLimiter = createRateLimiter({
   message: 'Too many login attempts. Please try again later.',
 });
 
+const MAX_TENANT_LIMITERS = 500;
 const _tenantLimiters = new Map<string, RequestHandler>();
 
 function getOrCreateTenantLimiter(tenantId: string, windowMs: number, max: number): RequestHandler {
   const key = `${tenantId}:${windowMs}:${max}`;
   let limiter = _tenantLimiters.get(key);
   if (!limiter) {
+    // Evict oldest entries if cache is full
+    if (_tenantLimiters.size >= MAX_TENANT_LIMITERS) {
+      const firstKey = _tenantLimiters.keys().next().value;
+      if (firstKey !== undefined) _tenantLimiters.delete(firstKey);
+    }
     limiter = createRateLimiter({
       windowMs,
       max,
