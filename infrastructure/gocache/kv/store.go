@@ -387,3 +387,46 @@ func (s *Store) DeleteIfNewer(key string, timestamp uint64) bool {
 func (s *Store) UsedMemory() int64 {
 	return s.usedMem.Load()
 }
+
+// SnapshotEntry represents a single key-value pair captured during a store snapshot.
+type SnapshotEntry struct {
+	Key       string
+	Value     []byte
+	TTLMs     int64
+	Timestamp uint64
+}
+
+// Snapshot returns all non-expired entries for full-state sync when a peer joins the cluster.
+// Each entry's TTL is converted from absolute expiry to remaining milliseconds.
+func (s *Store) Snapshot() []SnapshotEntry {
+	var entries []SnapshotEntry
+	now := s.clock().UnixNano()
+
+	for i := range s.shards {
+		sh := &s.shards[i]
+		sh.mu.RLock()
+		for key, e := range sh.items {
+			if e.expiresAt != 0 && now >= e.expiresAt {
+				continue // expired
+			}
+			var ttlMs int64
+			if e.expiresAt > 0 {
+				remaining := (e.expiresAt - now) / int64(time.Millisecond)
+				if remaining <= 0 {
+					continue
+				}
+				ttlMs = remaining
+			}
+			val := make([]byte, len(e.value))
+			copy(val, e.value)
+			entries = append(entries, SnapshotEntry{
+				Key:       key,
+				Value:     val,
+				TTLMs:     ttlMs,
+				Timestamp: e.timestamp,
+			})
+		}
+		sh.mu.RUnlock()
+	}
+	return entries
+}

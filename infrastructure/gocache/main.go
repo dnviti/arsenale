@@ -30,26 +30,38 @@ import (
 
 // config holds all runtime configuration parsed from env vars.
 type config struct {
-	listenAddr        string // tcp://host:port or unix:///path
-	healthPort        int
-	maxMemory         int64
-	replicationBuffer int
-	discoveryMode     string // docker | kubernetes | manual
-	peers             string
-	k8sService        string
-	k8sNamespace      string
+	listenAddr     string // tcp://host:port or unix:///path
+	healthPort     int
+	maxMemory      int64
+	discoveryMode  string // docker | kubernetes | manual
+	peers          string
+	k8sService     string
+	k8sNamespace   string
+	peerBufferSize int    // max buffered replication entries per peer
+	peerSyncMode   string // "sync" (ACK-based) or "async" (fire-and-forget)
+	peerCNPrefix   string // required CN prefix for peer certificates
+	peerTLSEnabled bool   // mTLS for peer replication
 }
 
 func parseConfig() config {
 	cfg := config{
-		listenAddr:        envOrDefault("CACHE_LISTEN", "tcp://localhost:6380"),
-		healthPort:        envIntOrDefault("CACHE_HEALTH_PORT", 6381),
-		maxMemory:         parseBytes(envOrDefault("CACHE_MAX_MEMORY", "256mb")),
-		replicationBuffer: int(parseBytes(envOrDefault("CACHE_REPLICATION_BUFFER", "10mb"))),
-		discoveryMode:     envOrDefault("CACHE_DISCOVERY", "manual"),
-		peers:             os.Getenv("CACHE_PEERS"),
-		k8sService:        envOrDefault("CACHE_K8S_SERVICE", "gocache"),
-		k8sNamespace:      os.Getenv("CACHE_K8S_NAMESPACE"),
+		listenAddr:     envOrDefault("CACHE_LISTEN", "tcp://localhost:6380"),
+		healthPort:     envIntOrDefault("CACHE_HEALTH_PORT", 6381),
+		maxMemory:      parseBytes(envOrDefault("CACHE_MAX_MEMORY", "256mb")),
+		discoveryMode:  envOrDefault("CACHE_DISCOVERY", "manual"),
+		peers:          os.Getenv("CACHE_PEERS"),
+		k8sService:     envOrDefault("CACHE_K8S_SERVICE", "gocache"),
+		k8sNamespace:   os.Getenv("CACHE_K8S_NAMESPACE"),
+		peerBufferSize: envIntOrDefault("CACHE_PEER_BUFFER_SIZE", 10000),
+		peerSyncMode:   envOrDefault("CACHE_PEER_SYNC_MODE", "sync"),
+		peerCNPrefix:   envOrDefault("CACHE_PEER_CN_PREFIX", "gocache"),
+	}
+	// Peer TLS defaults to enabled when all CACHE_TLS_* vars are set.
+	cfg.peerTLSEnabled = os.Getenv("CACHE_TLS_CA") != "" &&
+		os.Getenv("CACHE_TLS_CERT") != "" &&
+		os.Getenv("CACHE_TLS_KEY") != ""
+	if v := os.Getenv("CACHE_PEER_TLS_ENABLED"); v == "false" {
+		cfg.peerTLSEnabled = false
 	}
 	return cfg
 }
@@ -83,7 +95,50 @@ func main() {
 	}
 
 	registry := peer.NewRegistry(discovery, listenAddr)
-	replicationEngine := peer.NewEngine(registry, cfg.replicationBuffer)
+	replicationEngine := peer.NewEngine(registry, cfg.peerBufferSize)
+
+	// Configure peer replication mTLS.
+	if cfg.peerTLSEnabled {
+		certPath := os.Getenv("CACHE_TLS_CERT")
+		keyPath := os.Getenv("CACHE_TLS_KEY")
+		caPath := os.Getenv("CACHE_TLS_CA")
+		peerCert, err := tls.LoadX509KeyPair(certPath, keyPath)
+		if err != nil {
+			log.Fatalf("[main] peer TLS: failed to load cert/key (%s, %s): %v", certPath, keyPath, err)
+		}
+		caPEM, err := os.ReadFile(caPath)
+		if err != nil {
+			log.Fatalf("[main] peer TLS: failed to read CA %s: %v", caPath, err)
+		}
+		caPool := x509.NewCertPool()
+		if !caPool.AppendCertsFromPEM(caPEM) {
+			log.Fatalf("[main] peer TLS: failed to parse CA from %s", caPath)
+		}
+		replicationEngine.SetPeerTLS(peerCert, caPool)
+		log.Println("[main] peer replication using mTLS")
+	} else {
+		log.Println("[main] peer replication using INSECURE plaintext — set CACHE_TLS_CA/CERT/KEY to enable")
+	}
+	replicationEngine.PeerCNPrefix = cfg.peerCNPrefix
+	replicationEngine.SyncMode = cfg.peerSyncMode == "sync"
+	log.Printf("[main] peer replication: sync_mode=%s buffer_size=%d cn_prefix=%q",
+		cfg.peerSyncMode, cfg.peerBufferSize, cfg.peerCNPrefix)
+
+	// Wire snapshot provider for full-state sync on peer reconnect.
+	replicationEngine.SnapshotProvider = func() []peer.ReplicationEntry {
+		snapEntries := store.Snapshot()
+		result := make([]peer.ReplicationEntry, len(snapEntries))
+		for i, se := range snapEntries {
+			result[i] = peer.ReplicationEntry{
+				Op:        peer.OpKVSet,
+				Key:       se.Key,
+				Value:     se.Value,
+				TTLMs:     se.TTLMs,
+				Timestamp: se.Timestamp,
+			}
+		}
+		return result
+	}
 
 	// Wire replication callbacks with LWW (last-writer-wins) conflict resolution.
 	replicationEngine.OnKVSet = func(key string, value []byte, ttlMs int64, timestamp uint64) {

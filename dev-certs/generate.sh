@@ -23,15 +23,19 @@ openssl req -new -x509 -sha256 -key "$CERT_DIR/ca-key.pem" -out "$CERT_DIR/ca.pe
   -days "$DAYS" -subj "/CN=arsenale-dev-ca/O=Arsenale" -batch 2>/dev/null
 
 generate_server_cert() {
-  local dir="$1" cn="$2" sans="$3"
+  local dir="$1" cn="$2" sans="$3" extra_eku="${4:-}"
   mkdir -p "$dir"
+  local eku="serverAuth"
+  if [ -n "$extra_eku" ]; then
+    eku="serverAuth, $extra_eku"
+  fi
   openssl ecparam -genkey -name prime256v1 -out "$dir/server-key.pem" 2>/dev/null
   openssl req -new -sha256 -key "$dir/server-key.pem" -out "$dir/server.csr" \
     -subj "/CN=$cn/O=Arsenale" -batch 2>/dev/null
   cat > "$dir/server-ext.cnf" <<EOF
 subjectAltName = $sans
 keyUsage = digitalSignature, keyEncipherment
-extendedKeyUsage = serverAuth
+extendedKeyUsage = $eku
 EOF
   openssl x509 -req -sha256 -in "$dir/server.csr" \
     -CA "$CERT_DIR/ca.pem" -CAkey "$CERT_DIR/ca-key.pem" \
@@ -58,7 +62,7 @@ EOF
 
 # 1. gocache (gRPC mTLS — server + client)
 echo "=== gocache mTLS ==="
-generate_server_cert "$CERT_DIR/gocache" "gocache" "DNS:gocache, DNS:localhost, IP:127.0.0.1, IP:::1"
+generate_server_cert "$CERT_DIR/gocache" "gocache" "DNS:gocache, DNS:localhost, IP:127.0.0.1, IP:::1" "clientAuth"
 generate_client_cert "$CERT_DIR/gocache" "arsenale-server"
 chmod 644 "$CERT_DIR/gocache"/*-key.pem  # Rootless container UID 10001
 
