@@ -14,20 +14,21 @@ services:
       - ./dev-certs/postgres/server-key.pem:/certs/server-key.pem:ro
       - ./dev-certs/ca.pem:/certs/ca.pem:ro
       - ./infrastructure/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-    command: >-
-      bash -c "
+    command:
+      - bash
+      - -c
+      - |
         cp /certs/server-key.pem /tmp/server.key &&
         chown 999:999 /tmp/server.key &&
         chmod 600 /tmp/server.key &&
         cp /certs/server-cert.pem /tmp/server.crt &&
         cp /certs/ca.pem /tmp/ca.crt &&
-        exec docker-entrypoint.sh postgres
-          -c ssl=on
-          -c ssl_cert_file=/tmp/server.crt
-          -c ssl_key_file=/tmp/server.key
-          -c ssl_ca_file=/tmp/ca.crt
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/tmp/server.crt \
+          -c ssl_key_file=/tmp/server.key \
+          -c ssl_ca_file=/tmp/ca.crt \
           -c hba_file=/etc/postgresql/pg_hba.conf
-      "
     networks:
       - net-db
     restart: always
@@ -74,7 +75,7 @@ services:
     networks:
       - net-guacenc
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-check-certificate -qO- https://localhost:3003/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,ssl; urllib.request.urlopen('https://localhost:3003/health',context=ssl._create_unverified_context())\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -253,6 +254,15 @@ services:
       context: gateways/tunnel-agent
       dockerfile: Dockerfile
     container_name: arsenale-tunnel-agent
+    command:
+      - sh
+      - -c
+      - |
+        if [ -z "$TUNNEL_TOKEN" ] || [ -z "$TUNNEL_GATEWAY_ID" ]; then
+          echo "[tunnel-agent] No TUNNEL_TOKEN/TUNNEL_GATEWAY_ID — running in dormant mode"
+          exec tail -f /dev/null
+        fi
+        exec node dist/index.js
     environment:
       TUNNEL_SERVER_URL: "wss://server:3011"
       TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
