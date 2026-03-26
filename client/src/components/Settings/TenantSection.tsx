@@ -6,7 +6,7 @@ import {
   DialogActions, Alert, CircularProgress, Box, IconButton, FormControlLabel, Switch,
   Menu,
 } from '@mui/material';
-import { PersonAdd, GroupAdd, MoreVert, ContentCopy } from '@mui/icons-material';
+import { PersonAdd, GroupAdd, MoreVert, ContentCopy, TuneRounded } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { useTenantStore } from '../../store/tenantStore';
 import { getTenantMfaStats, adminChangeUserEmail, adminChangeUserPassword } from '../../api/tenant.api';
@@ -576,20 +576,34 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
                         </Box>
                       </TableCell>
                       <TableCell>
-                        {isAdmin && u.id !== user?.id ? (
-                          <Select
-                            value={u.role}
-                            size="small"
-                            onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                            sx={{ minWidth: 110 }}
-                          >
-                            {ALL_ROLES.map((r) => (
-                              <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
-                            ))}
-                          </Select>
-                        ) : (
-                          <Chip label={u.role} size="small" variant="outlined" />
-                        )}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          {isAdmin && u.id !== user?.id ? (
+                            <Select
+                              value={u.role}
+                              size="small"
+                              onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                              sx={{ minWidth: 110 }}
+                            >
+                              {ALL_ROLES.map((r) => (
+                                <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
+                              ))}
+                            </Select>
+                          ) : (
+                            <Chip label={u.role} size="small" variant="outlined" />
+                          )}
+                          {isAdmin && (
+                            <IconButton
+                              size="small"
+                              title="Edit permissions"
+                              onClick={() => {
+                                setPermTarget({ id: u.id, name: u.username || u.email });
+                                setPermDialogOpen(true);
+                              }}
+                            >
+                              <TuneRounded fontSize="small" />
+                            </IconButton>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         {u.totpEnabled || u.smsMfaEnabled ? (
