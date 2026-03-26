@@ -59,6 +59,7 @@ Open `http://localhost:3000` -- register, set up your vault, create connections.
 | [Development](development.md) | Contributing, local dev, testing, branch strategy |
 | [Troubleshooting](troubleshooting.md) | Common errors, debugging tips, FAQ |
 | [Infrastructure Roadmap](infrastructure-roadmap.md) | Future microservices decomposition plan, phased approach |
+| [Agent Orchestration Gateway](agent-orchestration-gateway.md) | Future update — LLM agent fleet management, per-agent LLM providers, scheduling, permissions |
 | [LLM Context](llm-context.md) | Consolidated single-file for AI/bot consumption |
 
 ## :sparkles: Key Features
