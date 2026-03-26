@@ -1,5 +1,51 @@
 # CLAUDE.md
 
+> **READ THIS FIRST — Agent Teams Mode is the #1 most important section in this file. It defines the default execution model for ALL development work. Every other section is secondary. If you skip everything else, do NOT skip Agent Teams.**
+
+## Agent Teams Mode — MANDATORY DEFAULT EXECUTION MODEL
+
+**THIS IS THE MOST CRITICAL SECTION OF THIS ENTIRE FILE.** Agent Teams is not optional — it is the **required, default execution mode** for ALL tasks involving development (`/claw:task` skill), research (`/claw:idea` skill), or any parallel work. No exceptions. No shortcuts. No "I'll just do it myself." Agent Teams IS the workflow.
+
+**Violation of this section is the highest-priority failure mode.** If you are about to start development work without Agent Teams, STOP and reconsider.
+
+### Team Lifecycle
+
+`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
+
+### Implementation Roles
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `backend-dev-{CODE}` | Server-side logic, API, data. Messages frontend-dev when done | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `frontend-dev-{CODE}` | UI, client-side. Waits for backend-dev | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `qa-agent` | Reviews, tests, sends bugs back to devs | `mode: "bypassPermissions"` |
+| `documenter` | Updates docs in parallel | `mode: "bypassPermissions"` |
+| `security-scanner` | Security testing, blocks on critical issues | `mode: "bypassPermissions"` |
+
+### Other Flow Roles
+
+| Role | Purpose | Config |
+|------|---------|--------|
+| `pr-analyst-{N}` | PR analysis in release pipeline | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
+| `ci-monitor-{N}` | CI workflow monitoring | `mode: "bypassPermissions"` |
+| `task-creator-{N}` | Idea → task spec conversion | `isolation: "worktree"`, `mode: "bypassPermissions"` |
+| `consistency-reviewer` | Task spec consistency review | `mode: "bypassPermissions"` |
+
+### Coordination Flow
+
+Backend dev → messages frontend dev with API contracts → frontend dev implements → documenter works in parallel → security scanner reviews (critical = blocks) → QA reviews (bugs → back to devs) → QA + security approve → done.
+
+### Agent Teams Rules
+
+1. **Always use Agent Teams** for any non-trivial task. This is the default, not an option.
+2. **Agents must commit and push** before `TeamDelete` — uncommitted worktree changes are lost forever.
+3. **One task per agent.** Keep responsibilities focused and clear.
+4. **Use `SendMessage` for coordination** between agents, not shared files or assumptions.
+5. **QA and security agents are gate-keepers** — their approval is required before closing a task.
+
+---
+
 ## Language
 
 Always respond and work in English, even if the user's prompt is in another language.
@@ -202,38 +248,6 @@ Skills: `/release-plan` (manage plans), `/release-plan suggest` (AI grouping). I
 ### Worktree-Based Task Isolation
 
 Tasks use isolated git worktrees at `.worktrees/task/<code>/` (must be in `.gitignore`). `/task pick` creates worktree, auto-removed on close. `/task continue` creates fresh worktree from existing branch. `task_manager.py` reads/writes task files from main repo root. Run `/release` and `/setup env` from main repository.
-
-## Agent Teams Mode
-
-**Default execution mode.** Use Agent Teams for any task involving development (/claw:task skill), research (/claw:idea skill), or parallel work in general. No exceptions. This is the core of the CLAUDE workflow.
-
-### Team Lifecycle
-
-`TeamCreate` → `TaskCreate` per unit of work → `Agent` (spawn teammates) → teammates claim/complete via `TaskUpdate`, communicate via `SendMessage` → `SendMessage` shutdown → `TeamDelete`
-
-### Implementation Roles
-
-| Role | Purpose | Config |
-|------|---------|--------|
-| `backend-dev-{CODE}` | Server-side logic, API, data. Messages frontend-dev when done | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `frontend-dev-{CODE}` | UI, client-side. Waits for backend-dev | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `qa-agent` | Reviews, tests, sends bugs back to devs | `mode: "bypassPermissions"` |
-| `documenter` | Updates docs in parallel | `mode: "bypassPermissions"` |
-| `security-scanner` | Security testing, blocks on critical issues | `mode: "bypassPermissions"` |
-
-### Other Flow Roles
-
-| Role | Purpose | Config |
-|------|---------|--------|
-| `pr-analyst-{N}` | PR analysis in release pipeline | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `security-auditor` | Cross-PR security validation | `mode: "bypassPermissions"` |
-| `ci-monitor-{N}` | CI workflow monitoring | `mode: "bypassPermissions"` |
-| `task-creator-{N}` | Idea → task spec conversion | `isolation: "worktree"`, `mode: "bypassPermissions"` |
-| `consistency-reviewer` | Task spec consistency review | `mode: "bypassPermissions"` |
-
-### Coordination Flow
-
-Backend dev → messages frontend dev with API contracts → frontend dev implements → documenter works in parallel → security scanner reviews (critical = blocks) → QA reviews (bugs → back to devs) → QA + security approve → done.
 
 ## Cross-Platform Notes
 
