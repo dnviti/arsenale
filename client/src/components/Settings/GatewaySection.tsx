@@ -378,9 +378,9 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
                     </AccordionSummary>
                     <AccordionDetails>
                       <Typography variant="body2" color="text.secondary">
-                        For Managed SSH gateways with an API port configured, click the{' '}
+                        For Managed SSH gateways, click the{' '}
                         <strong>Push Key</strong> button on the gateway row to deploy the public key
-                        automatically. Alternatively, copy this public key and add it to the{' '}
+                        via gRPC (mTLS). Alternatively, copy this public key and add it to the{' '}
                         <code>SSH_AUTHORIZED_KEYS</code> environment variable of your SSH gateway
                         container, or mount it as <code>/config/authorized_keys</code>.
                         The server will use the corresponding private key to authenticate automatically.
@@ -574,7 +574,7 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
                             <IconButton size="small" onClick={() => handleTest(gw)} title="Test connectivity">
                               <TestIcon fontSize="small" />
                             </IconButton>
-                            {gw.type === 'MANAGED_SSH' && gw.apiPort && (
+                            {gw.type === 'MANAGED_SSH' && (
                               <Tooltip title={
                                 pushStates[gw.id]?.result?.ok ? 'Key pushed successfully' :
                                 pushStates[gw.id]?.result?.error ? pushStates[gw.id].result?.error :
@@ -692,8 +692,7 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
           <DialogContentText>
             This will generate a new SSH key pair and replace the current one.
             The new public key will be automatically pushed to all Managed SSH gateways
-            with an API port configured. For gateways without an API port, you will need to
-            update the key manually. Existing connections may fail briefly during the update.
+            via gRPC. Existing connections may fail briefly during the update.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

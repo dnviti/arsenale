@@ -155,7 +155,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       setPort(defaultPort);
     }
     if (newType === 'MANAGED_SSH' && !apiPort) {
-      setApiPort('8022');
+      setApiPort('9022');
     } else if (newType !== 'MANAGED_SSH') {
       setApiPort('');
     }
@@ -476,13 +476,13 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           )}
           {type === 'MANAGED_SSH' && (
             <TextField
-              label="API Port (sidecar)"
+              label="gRPC Port (key management)"
               value={apiPort}
               onChange={(e) => setApiPort(e.target.value)}
               type="number"
               fullWidth
               disabled={publishPorts}
-              helperText={publishPorts ? 'Auto-assigned at deploy' : 'HTTP port for the key management sidecar (default: 8022)'}
+              helperText={publishPorts ? 'Auto-assigned at deploy' : 'gRPC port for key management mTLS (default: 9022)'}
             />
           )}
           {(type === 'MANAGED_SSH' || type === 'GUACD' || type === 'DB_PROXY') && (

@@ -62,7 +62,7 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       setHost('');
       setPort('22');
       setDescription('');
-      setApiPort('8022');
+      setApiPort('9022');
       setMonitoringEnabled(true);
       setMonitorIntervalMs('5000');
       setInactivityTimeout('60');
@@ -86,7 +86,7 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       if (!port || port === '4822' || port === '2222' || port === '22') setPort('5432');
     }
     if (newType === 'MANAGED_SSH' && !apiPort) {
-      setApiPort('8022');
+      setApiPort('9022');
     } else if (newType !== 'MANAGED_SSH') {
       setApiPort('');
     }
@@ -232,7 +232,7 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
 
           {type === 'MANAGED_SSH' && (
             <TextField
-              label="API Port (for key push)"
+              label="gRPC Port (key management)"
               value={apiPort}
               onChange={(e) => setApiPort(e.target.value)}
               type="number"

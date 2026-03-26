@@ -198,7 +198,7 @@ export async function createGateway(
         port: input.port,
         description: input.description ?? null,
         isDefault: input.isDefault ?? false,
-        apiPort: input.type === 'MANAGED_SSH' ? (input.apiPort ?? null) : null,
+        apiPort: input.type === 'MANAGED_SSH' ? (input.apiPort ?? config.gatewayGrpcPort) : null,
         monitoringEnabled: input.monitoringEnabled ?? true,
         monitorIntervalMs: input.monitorIntervalMs ?? 5000,
         inactivityTimeoutSeconds: input.inactivityTimeoutSeconds ?? 3600,
@@ -511,7 +511,31 @@ export async function pushKeyToGateway(
   });
 
   if (instances.length === 0) {
-    throw new AppError('No running instances found for this gateway', 400);
+    // No managed instances — try direct push to the gateway host.
+    // This handles static containers (compose.dev.yml) and external gateways.
+    const directGw = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId },
+      select: { host: true, apiPort: true },
+    });
+
+    if (directGw?.host) {
+      const directPort = directGw.apiPort || grpcPort;
+      log.info(`No managed instances — pushing key directly to gateway ${gatewayId} at ${directGw.host}:${directPort}`);
+
+      try {
+        const result = await grpcPushKey(directGw.host, directPort, keyPair.publicKey);
+        if (!result.ok) {
+          throw new AppError(`Key push failed: ${result.message}`, 502);
+        }
+        return [{ instanceId: 'direct', ok: true }];
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        closeGatewayKeyClient(directGw.host, directPort);
+        throw new AppError(`Key push to ${directGw.host}:${directPort} failed: ${(err as Error).message}`, 502);
+      }
+    }
+
+    throw new AppError('No running instances and no host configured for this gateway', 400);
   }
 
   log.info(`Pushing SSH key to gateway ${gatewayId} via gRPC (${instances.length} instances)`);
