@@ -193,6 +193,7 @@ func (r *Registry) OnUpdate(fn func(peers []*Peer)) {
 // Start begins periodic peer discovery and health checking.
 func (r *Registry) Start(ctx context.Context) {
 	go r.discoveryLoop(ctx)
+	go r.healthCheckLoop(ctx)
 }
 
 // Stop halts the discovery loop.
@@ -263,6 +264,41 @@ func (r *Registry) discoveryLoop(ctx context.Context) {
 		case <-ticker.C:
 			r.refreshPeers(ctx)
 		}
+	}
+}
+
+func (r *Registry) healthCheckLoop(ctx context.Context) {
+	ticker := time.NewTicker(healthCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.stopCh:
+			return
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.checkPeerHealth(ctx)
+		}
+	}
+}
+
+func (r *Registry) checkPeerHealth(ctx context.Context) {
+	r.mu.RLock()
+	peers := make([]*Peer, 0, len(r.peers))
+	for _, p := range r.peers {
+		peers = append(peers, p)
+	}
+	r.mu.RUnlock()
+
+	for _, p := range peers {
+		conn, err := net.DialTimeout("tcp", p.Address, 2*time.Second)
+		if err != nil {
+			r.MarkUnhealthy(p.Address)
+			continue
+		}
+		conn.Close()
+		r.MarkHealthy(p.Address)
 	}
 }
 

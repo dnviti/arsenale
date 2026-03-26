@@ -18,8 +18,9 @@ type Message struct {
 type Subscriber struct {
 	id      uint64
 	Ch      chan Message
-	channel string  // exact channel or pattern
-	pattern bool    // if true, channel is a glob pattern
+	channel string // exact channel or pattern
+	pattern bool   // if true, channel is a glob pattern
+	closed  bool   // tracks whether Ch has been closed (for idempotent Unsubscribe)
 }
 
 // Broker manages pub/sub subscriptions and message delivery.
@@ -80,6 +81,10 @@ func (b *Broker) Unsubscribe(sub *Subscriber) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if sub.closed {
+		return // already unsubscribed — idempotent
+	}
+
 	if sub.pattern {
 		delete(b.patterns, sub.id)
 	} else {
@@ -91,6 +96,7 @@ func (b *Broker) Unsubscribe(sub *Subscriber) {
 		}
 	}
 	close(sub.Ch)
+	sub.closed = true
 }
 
 // Publish delivers a message to matching subscribers (at-most-once).

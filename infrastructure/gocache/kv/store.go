@@ -20,9 +20,10 @@ const (
 // entry holds a value and optional expiry metadata.
 type entry struct {
 	value     []byte
-	expiresAt int64 // unix-nano; 0 = no expiry
-	size      int   // approximate in-memory size
+	expiresAt int64  // unix-nano; 0 = no expiry
+	size      int    // approximate in-memory size
 	lruElem   *list.Element
+	timestamp uint64 // logical timestamp for LWW conflict resolution
 }
 
 // shard is a single partition of the key-space.
@@ -201,8 +202,14 @@ func (s *Store) Incr(key string, delta int64) int64 {
 		if len(e.value) == 8 {
 			current = int64(binary.LittleEndian.Uint64(e.value))
 		} else {
-			// Non-8-byte value: reallocate to proper size.
+			// Non-8-byte value: reallocate to proper size and fix memory accounting.
+			oldSize := e.size
 			e.value = make([]byte, 8)
+			newSize := entrySize(key, e.value)
+			if newSize != oldSize {
+				e.size = newSize
+				s.usedMem.Add(int64(newSize - oldSize))
+			}
 		}
 		current += delta
 		binary.LittleEndian.PutUint64(e.value, uint64(current))
@@ -314,6 +321,66 @@ func (s *Store) sweep() {
 		}
 		sh.mu.Unlock()
 	}
+}
+
+// SetIfNewer stores a value only if the given timestamp is newer than the current
+// entry's timestamp (last-writer-wins). Returns true if the value was applied.
+func (s *Store) SetIfNewer(key string, value []byte, ttl time.Duration, timestamp uint64) bool {
+	sh := &s.shards[shardFor(key)]
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	if old, ok := sh.items[key]; ok {
+		if old.timestamp > timestamp {
+			return false // stale update
+		}
+	}
+
+	var expiresAt int64
+	if ttl > 0 {
+		expiresAt = s.clock().Add(ttl).UnixNano()
+	}
+
+	sz := entrySize(key, value)
+
+	if old, ok := sh.items[key]; ok {
+		s.usedMem.Add(int64(-old.size))
+		old.value = value
+		old.expiresAt = expiresAt
+		old.size = sz
+		old.timestamp = timestamp
+		sh.lruList.MoveToFront(old.lruElem)
+		s.usedMem.Add(int64(sz))
+	} else {
+		e := &entry{
+			value:     value,
+			expiresAt: expiresAt,
+			size:      sz,
+			timestamp: timestamp,
+		}
+		e.lruElem = sh.lruList.PushFront(key)
+		sh.items[key] = e
+		s.usedMem.Add(int64(sz))
+	}
+	return true
+}
+
+// DeleteIfNewer deletes a key only if the given timestamp is newer than the
+// current entry's timestamp (last-writer-wins). Returns true if deleted.
+func (s *Store) DeleteIfNewer(key string, timestamp uint64) bool {
+	sh := &s.shards[shardFor(key)]
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	e, ok := sh.items[key]
+	if !ok {
+		return false
+	}
+	if e.timestamp > timestamp {
+		return false // stale delete
+	}
+	s.deleteEntryLocked(sh, key, e)
+	return true
 }
 
 // UsedMemory returns the current memory usage estimate in bytes.

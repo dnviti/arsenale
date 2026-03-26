@@ -15,12 +15,15 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /gocache .
 # Runtime stage
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates wget
+RUN apk add --no-cache ca-certificates wget && \
+    addgroup -S gocache && adduser -S gocache -G gocache
 
 COPY --from=builder /gocache /usr/local/bin/gocache
 
 EXPOSE 6380
 EXPOSE 6381
+
+USER gocache
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -qO- http://localhost:6381/health || exit 1

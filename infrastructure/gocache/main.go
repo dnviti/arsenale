@@ -82,16 +82,20 @@ func main() {
 	registry := peer.NewRegistry(discovery, listenAddr)
 	replicationEngine := peer.NewEngine(registry, cfg.replicationBuffer)
 
-	// Wire replication callbacks.
+	// Wire replication callbacks with LWW (last-writer-wins) conflict resolution.
 	replicationEngine.OnKVSet = func(key string, value []byte, ttlMs int64, timestamp uint64) {
 		var ttl time.Duration
 		if ttlMs > 0 {
 			ttl = time.Duration(ttlMs) * time.Millisecond
 		}
-		store.Set(key, value, ttl)
+		if !store.SetIfNewer(key, value, ttl, timestamp) {
+			log.Printf("[replication] skipped stale SET for key %q (ts=%d)", key, timestamp)
+		}
 	}
 	replicationEngine.OnKVDelete = func(key string, timestamp uint64) {
-		store.Delete(key)
+		if !store.DeleteIfNewer(key, timestamp) {
+			log.Printf("[replication] skipped stale DELETE for key %q (ts=%d)", key, timestamp)
+		}
 	}
 	replicationEngine.OnPubSub = func(channel string, message []byte) {
 		broker.DeliverLocal(channel, message)
@@ -105,6 +109,19 @@ func main() {
 	replicationEngine.Start()
 	defer replicationEngine.Stop()
 
+	// Start the replication listener so peers can connect inbound.
+	replicationAddr := envOrDefault("CACHE_REPLICATION_ADDR", listenAddr)
+	go func() {
+		ln, err := peer.ListenForReplication(replicationAddr, replicationEngine)
+		if err != nil {
+			log.Printf("[main] replication listener failed: %v (peer replication disabled)", err)
+			return
+		}
+		defer ln.Close()
+		log.Printf("[main] replication listener on %s", replicationAddr)
+		<-ctx.Done()
+	}()
+
 	// gRPC server.
 	svc := &cacheServiceServer{
 		store:       store,
@@ -116,7 +133,10 @@ func main() {
 
 	grpcServer := grpc.NewServer()
 	RegisterCacheServiceServer(grpcServer, svc)
-	reflection.Register(grpcServer)
+	if envOrDefault("CACHE_GRPC_REFLECTION", "false") == "true" {
+		reflection.Register(grpcServer)
+		log.Println("[main] gRPC reflection enabled")
+	}
 
 	// Listen (TCP or Unix socket).
 	network, addr := parseNetworkAddr(cfg.listenAddr)
@@ -141,12 +161,13 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(status)
 	})
+	healthAddr := envOrDefault("CACHE_HEALTH_ADDR", fmt.Sprintf("localhost:%d", cfg.healthPort))
 	healthServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.healthPort),
+		Addr:    healthAddr,
 		Handler: healthMux,
 	}
 	go func() {
-		log.Printf("[main] health endpoint on :%d/health", cfg.healthPort)
+		log.Printf("[main] health endpoint on %s/health", healthAddr)
 		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("[main] health server error: %v", err)
 		}
@@ -366,7 +387,11 @@ func parseBytes(s string) int64 {
 		multiplier = 1024
 		s = strings.TrimSuffix(s, "kb")
 	}
-	n, _ := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	if err != nil {
+		log.Printf("[config] invalid byte size %q, defaulting to 0 (unlimited)", s)
+		return 0
+	}
 	return n * multiplier
 }
 

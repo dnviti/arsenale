@@ -63,7 +63,13 @@ let grpcModule: typeof import('@grpc/grpc-js') | null = null;
 let protoLoaderModule: typeof import('@grpc/proto-loader') | null = null;
 
 const SIDECAR_URL = process.env.CACHE_SIDECAR_URL || 'localhost:6380';
-const PROTO_PATH = path.resolve(__dirname, '../../../infrastructure/gocache/proto/cache.proto');
+// CACHE_PROTO_PATH allows overriding the proto file location for Docker/production
+// where the infrastructure/ directory is not available. Copy cache.proto into the
+// server build context or set this env var to the correct path.
+const DEFAULT_PROTO_PATH = path.resolve(__dirname, 'cache.proto');
+const PROTO_PATH = process.env.CACHE_PROTO_PATH
+  ? path.resolve(process.env.CACHE_PROTO_PATH)
+  : DEFAULT_PROTO_PATH;
 
 /**
  * Lazily loads gRPC dependencies. Returns false if packages are not installed.
@@ -249,13 +255,15 @@ export async function subscribe(
 }
 
 /**
- * Acquire a distributed lock. Returns { acquired, fencingToken } or null.
+ * Acquire a distributed lock. Returns { acquired, fencingToken, holderId } or null.
+ * The holderId is returned so callers can later call releaseLock/renewLock even when
+ * a default holderId was auto-generated.
  */
 export async function acquireLock(
   name: string,
   ttlMs: number,
   holderId?: string
-): Promise<{ acquired: boolean; fencingToken: number } | null> {
+): Promise<{ acquired: boolean; fencingToken: number; holderId: string } | null> {
   const c = await getCacheClient();
   if (!c) return null;
   const holder = holderId ?? `node-${process.pid}-${Date.now()}`;
@@ -265,7 +273,7 @@ export async function acquireLock(
     c
   );
   if (!res) return null;
-  return { acquired: res.acquired, fencingToken: res.fencing_token };
+  return { acquired: res.acquired, fencingToken: res.fencing_token, holderId: holder };
 }
 
 /**

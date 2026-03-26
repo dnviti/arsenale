@@ -184,7 +184,7 @@ func (e *Engine) broadcast(entry ReplicationEntry) {
 	}
 
 	for _, pc := range e.peers {
-		go e.sendToPeer(pc, data)
+		e.sendToPeer(pc, data)
 	}
 }
 
@@ -218,14 +218,17 @@ func (e *Engine) sendToPeer(pc *peerConn, data []byte) {
 }
 
 func (e *Engine) bufferEntry(pc *peerConn, data []byte) {
-	if pc.bufferBytes+len(data) > e.maxBufferBytes {
-		// Drop oldest to make room.
-		for pc.buffer.Len() > 0 && pc.bufferBytes+len(data) > e.maxBufferBytes {
-			front := pc.buffer.Front()
-			if front != nil {
-				old := pc.buffer.Remove(front).([]byte)
-				pc.bufferBytes -= len(old)
-			}
+	// Reject entries that individually exceed the buffer cap.
+	if len(data) > e.maxBufferBytes {
+		log.Printf("[replication] dropping oversize entry (%d bytes) for peer %s", len(data), pc.addr)
+		return
+	}
+	// Drop oldest entries to make room.
+	for pc.buffer.Len() > 0 && pc.bufferBytes+len(data) > e.maxBufferBytes {
+		front := pc.buffer.Front()
+		if front != nil {
+			old := pc.buffer.Remove(front).([]byte)
+			pc.bufferBytes -= len(old)
 		}
 	}
 	pc.buffer.PushBack(data)
@@ -305,6 +308,8 @@ func (e *Engine) reconnectAll() {
 }
 
 func (e *Engine) replayBuffer(pc *peerConn) {
+	replayedBytes := 0
+	replayedEntries := 0
 	for pc.buffer.Len() > 0 {
 		front := pc.buffer.Front()
 		if front == nil {
@@ -318,9 +323,10 @@ func (e *Engine) replayBuffer(pc *peerConn) {
 		msg[len(data)] = '\n'
 		if err := pc.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 			pc.connected = false
-			// Re-buffer remaining entries (they're still in the list).
 			pc.buffer.PushFront(data)
 			pc.bufferBytes += len(data)
+			log.Printf("[replication] partial replay to %s: %d entries (%d bytes), %d entries remaining",
+				pc.addr, replayedEntries, replayedBytes, pc.buffer.Len())
 			return
 		}
 		if _, err := pc.conn.Write(msg); err != nil {
@@ -332,12 +338,10 @@ func (e *Engine) replayBuffer(pc *peerConn) {
 			pc.bufferBytes += len(data)
 			return
 		}
+		replayedBytes += len(data)
+		replayedEntries++
 	}
-	if pc.buffer.Len() == 0 {
-		log.Printf("[replication] buffer replayed to %s (%d bytes)", pc.addr, 0)
-	} else {
-		log.Printf("[replication] partial replay to %s, %d entries remaining", pc.addr, pc.buffer.Len())
-	}
+	log.Printf("[replication] buffer replayed to %s: %d entries (%d bytes)", pc.addr, replayedEntries, replayedBytes)
 }
 
 // ListenForReplication starts a TCP listener that accepts incoming replication connections.

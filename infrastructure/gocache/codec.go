@@ -10,14 +10,20 @@ import (
 )
 
 func init() {
-	// Override the default "proto" codec with JSON marshaling.
-	// This allows plain Go structs to be used as gRPC message types
-	// without protobuf code generation.
+	// INTENTIONAL: Register a JSON codec under the name "proto" to replace the
+	// default protobuf codec. This is by design — the gocache sidecar uses plain
+	// Go structs (not generated protobuf types) as gRPC messages. By overriding
+	// the "proto" codec, all gRPC calls transparently use JSON serialization.
+	//
+	// The TypeScript client must also use JSON serialization (not proto-loader's
+	// default protobuf encoding) to match. Standard gRPC tooling (grpcurl, etc.)
+	// won't work against this server — use the /health HTTP endpoint for probing.
 	encoding.RegisterCodec(&jsonCodec{})
 }
 
 // jsonCodec implements encoding.Codec using JSON marshaling.
 // Registered under the name "proto" to intercept the default gRPC codec.
+// See init() for rationale.
 type jsonCodec struct{}
 
 func (c *jsonCodec) Marshal(v interface{}) ([]byte, error) {
