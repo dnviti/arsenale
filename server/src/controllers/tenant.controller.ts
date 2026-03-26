@@ -294,11 +294,31 @@ export async function updateUserPermissions(req: AuthRequest, res: Response) {
   assertTenantAuthenticated(req);
   const tenantId = req.params.id as string;
   const targetUserId = req.params.userId as string;
-  const { overrides } = req.body as { overrides: Record<string, boolean> | null };
-  await rolePermissionService.updatePermissionOverrides(targetUserId, tenantId, overrides);
+
+  if (!Object.prototype.hasOwnProperty.call(req.body, 'overrides')) {
+    res.status(400).json({ error: 'Missing required field: overrides' });
+    return;
+  }
+
+  const { overrides } = req.body as { overrides: unknown };
+
+  if (overrides !== null) {
+    if (typeof overrides !== 'object' || Array.isArray(overrides)) {
+      res.status(400).json({ error: 'overrides must be an object or null' });
+      return;
+    }
+    const values = Object.values(overrides as Record<string, unknown>);
+    if (values.some((v) => typeof v !== 'boolean')) {
+      res.status(400).json({ error: 'All override values must be booleans' });
+      return;
+    }
+  }
+
+  const validatedOverrides = overrides as Record<string, boolean> | null;
+  await rolePermissionService.updatePermissionOverrides(targetUserId, tenantId, validatedOverrides);
   auditService.log({
     userId: req.user.userId,
-    action: 'TENANT_UPDATE_USER_ROLE',
+    action: 'TENANT_UPDATE_USER_PERMISSIONS',
     targetType: 'User',
     targetId: targetUserId,
     details: { tenantId, permissionOverrides: overrides ? Object.keys(overrides) : null },

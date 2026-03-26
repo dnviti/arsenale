@@ -101,9 +101,38 @@ export function resolvePermissions(
 // ---------------------------------------------------------------------------
 const cache = new Map<string, { permissions: Record<PermissionFlag, boolean>; expiresAt: number }>();
 const CACHE_TTL_MS = 30_000;
+const CACHE_MAX_SIZE = 10_000;
+const CACHE_EVICTION_INTERVAL_MS = 60_000;
+
+// Periodic eviction of expired entries (non-blocking)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) {
+      cache.delete(key);
+    }
+  }
+  // If cache still exceeds max size after eviction, clear entirely
+  if (cache.size > CACHE_MAX_SIZE) {
+    cache.clear();
+  }
+}, CACHE_EVICTION_INTERVAL_MS).unref();
 
 export function invalidatePermissionCache(userId: string, tenantId: string): void {
   cache.delete(`${userId}:${tenantId}`);
+}
+
+/**
+ * Invalidate all cached permission entries for a given tenant.
+ * Called when a user is disabled/removed to ensure stale entries don't persist.
+ */
+export function invalidateAllPermissionsForTenant(tenantId: string): void {
+  const suffix = `:${tenantId}`;
+  for (const key of cache.keys()) {
+    if (key.endsWith(suffix)) {
+      cache.delete(key);
+    }
+  }
 }
 
 /**
@@ -194,9 +223,23 @@ export async function updatePermissionOverrides(
     }
   }
 
+  // Normalize: strip overrides that match the role default so only true
+  // overrides are persisted. If nothing remains, store null.
+  let normalized: Record<string, boolean> | null = null;
+  if (overrides) {
+    const defaults = ROLE_DEFAULTS[member.role];
+    const stripped: Record<string, boolean> = {};
+    for (const [key, value] of Object.entries(overrides)) {
+      if (defaults[key as PermissionFlag] !== value) {
+        stripped[key] = value;
+      }
+    }
+    normalized = Object.keys(stripped).length > 0 ? stripped : null;
+  }
+
   await prisma.tenantMember.update({
     where: { tenantId_userId: { tenantId, userId: targetUserId } },
-    data: { permissionOverrides: overrides ?? Prisma.DbNull },
+    data: { permissionOverrides: normalized ?? Prisma.DbNull },
   });
   invalidatePermissionCache(targetUserId, tenantId);
 }

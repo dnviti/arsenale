@@ -46,7 +46,7 @@ router.put('/:id/users/:userId/email', validateUuidParam(), requireTenant, requi
 router.put('/:id/users/:userId/password', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), validate(adminChangePasswordSchema), asyncHandler(tenantController.adminChangeUserPassword));
 
 // Permission overrides management (admin only)
-router.get('/:id/users/:userId/permissions', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), asyncHandler(tenantController.getUserPermissions));
+router.get('/:id/users/:userId/permissions', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), asyncHandler(tenantController.getUserPermissions));
 router.put('/:id/users/:userId/permissions', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), asyncHandler(tenantController.updateUserPermissions));
 
 // IP allowlist management (admin only)

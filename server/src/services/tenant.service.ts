@@ -544,6 +544,8 @@ export async function removeUser(tenantId: string, targetUserId: string, actingU
     });
   });
 
+  invalidatePermissionCache(targetUserId, tenantId);
+
   return { removed: true };
 }
 
@@ -659,6 +661,8 @@ export async function toggleUserEnabled(
       where: { userId: targetUserId },
     });
   }
+
+  invalidatePermissionCache(targetUserId, tenantId);
 
   return { ...updated, role: membership.role };
 }
