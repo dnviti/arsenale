@@ -42,6 +42,7 @@ interface TunnelEnvOptions {
   gatewayId: string;
   caCert?: string;
   clientCert?: string;
+  clientKey?: string;
 }
 
 function buildContainerConfig(
@@ -71,6 +72,7 @@ function buildContainerConfig(
         TUNNEL_LOCAL_PORT:  gateway.type === 'MANAGED_SSH' ? '2222' : gateway.type === 'DB_PROXY' ? '5432' : '4822',
         ...(tunnelEnv.caCert      ? { TUNNEL_CA_CERT:     tunnelEnv.caCert }      : {}),
         ...(tunnelEnv.clientCert  ? { TUNNEL_CLIENT_CERT: tunnelEnv.clientCert }  : {}),
+        ...(tunnelEnv.clientKey   ? { TUNNEL_CLIENT_KEY:  tunnelEnv.clientKey }   : {}),
       }
     : {};
 
@@ -224,12 +226,27 @@ export async function deployGatewayInstance(
         );
       }
 
+      // Decrypt client key if available
+      let clientKey: string | undefined;
+      if (gateway.tunnelClientKey && gateway.tunnelClientKeyIV && gateway.tunnelClientKeyTag) {
+        try {
+          clientKey = decryptWithServerKey({
+            ciphertext: gateway.tunnelClientKey,
+            iv: gateway.tunnelClientKeyIV,
+            tag: gateway.tunnelClientKeyTag,
+          });
+        } catch (keyErr) {
+          log.warn(`Failed to decrypt client key for gateway ${gatewayId}: ${(keyErr as Error).message}`);
+        }
+      }
+
       tunnelEnvOptions = {
         serverUrl: tunnelServerUrl,
         token: plainToken,
         gatewayId: gateway.id,
         ...(gateway.tunnelCaCert ? { caCert: gateway.tunnelCaCert } : {}),
         ...(gateway.tunnelClientCert ? { clientCert: gateway.tunnelClientCert } : {}),
+        ...(clientKey ? { clientKey } : {}),
       };
 
       log.info(`Tunnel enabled for gateway ${gatewayId} — injecting tunnel env vars, suppressing port mapping`);

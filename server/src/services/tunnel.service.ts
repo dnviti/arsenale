@@ -22,6 +22,7 @@ import prisma from '../lib/prisma';
 import { encryptWithServerKey, decryptWithServerKey, hashToken } from './crypto.service';
 import { logger } from '../utils/logger';
 import * as auditService from './audit.service';
+import { generateClientCertificate } from '../utils/certGenerator';
 
 const log = logger.child('tunnel');
 
@@ -565,10 +566,13 @@ export async function revokeTunnelToken(
  *   Authorization: Bearer <token>
  *   X-Gateway-Id:  <uuid>
  *   X-Agent-Version: <version string>   (optional)
+ *
+ * When clientCertCn is provided, it is validated against the gateway's stored CA cert chain.
  */
 export async function authenticateTunnelRequest(
   gatewayId: string,
   bearerToken: string,
+  clientCertCn?: string,
 ): Promise<{ id: string; tenantId: string } | null> {
   if (!gatewayId || !bearerToken) return null;
 
@@ -582,6 +586,7 @@ export async function authenticateTunnelRequest(
       tunnelTokenIV: true,
       tunnelTokenTag: true,
       tunnelTokenHash: true,
+      tunnelCaCert: true,
     },
   });
 
@@ -621,7 +626,21 @@ export async function authenticateTunnelRequest(
     }
   }
 
+  // Validate the client cert CN matches the gatewayId (already checked in handler, defence in depth)
+  if (clientCertCn && clientCertCn !== gatewayId) {
+    log.warn(`[tunnel] Auth failed: client cert CN "${clientCertCn}" != gatewayId "${gatewayId}"`);
+    return null;
+  }
+
   return { id: gateway.id, tenantId: gateway.tenantId };
+}
+
+/**
+ * Validate that a client certificate CN matches the expected gateway ID.
+ * Exported for use by the tunnel handler.
+ */
+export function validateClientCertCn(clientCertCn: string, gatewayId: string): boolean {
+  return clientCertCn === gatewayId;
 }
 
 // ---------------------------------------------------------------------------
@@ -688,13 +707,17 @@ const CERT_ROTATION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // every 6 hours
 
 /**
  * Send a CERT_RENEW response frame through the active tunnel for a gateway.
- * The payload is a JSON object containing the new PEM-encoded certificate.
+ * The payload is a JSON object containing the new PEM-encoded certificate and key.
  */
-export function sendCertRenew(gatewayId: string, newClientCert: string): boolean {
+export function sendCertRenew(gatewayId: string, newClientCert: string, newClientKey?: string): boolean {
   const conn = registry.get(gatewayId);
   if (!conn || conn.ws.readyState !== 1 /* OPEN */) return false;
 
-  const payload = Buffer.from(JSON.stringify({ clientCert: newClientCert }), 'utf8');
+  const renewPayload: { clientCert: string; clientKey?: string } = { clientCert: newClientCert };
+  if (newClientKey) {
+    renewPayload.clientKey = newClientKey;
+  }
+  const payload = Buffer.from(JSON.stringify(renewPayload), 'utf8');
   const frame = buildFrame(MsgType.CERT_RENEW, 0, payload);
   conn.ws.send(frame, (err) => {
     if (err) {
@@ -758,18 +781,22 @@ export async function processCertRotations(): Promise<void> {
         continue;
       }
 
-      // Generate a new client certificate valid for 90 days
+      // Generate a new client cert + key pair signed by the CA (90-day validity)
       const validityDays = 90;
-      const { cert: newClientCert, expiry } = generateClientCert(gw.tunnelCaCert, caKeyPem, validityDays);
+      const clientResult = generateClientCertificate(gw.tunnelCaCert, caKeyPem, gw.id, validityDays);
 
-      // Encrypt and persist the new certificate
+      // Encrypt and persist the new certificate and key
       const encCaKey = encryptWithServerKey(caKeyPem);
+      const encClientKey = encryptWithServerKey(clientResult.keyPem);
 
       await prisma.gateway.update({
         where: { id: gw.id },
         data: {
-          tunnelClientCert: newClientCert,
-          tunnelClientCertExp: expiry,
+          tunnelClientCert: clientResult.certPem,
+          tunnelClientCertExp: clientResult.expiry,
+          tunnelClientKey: encClientKey.ciphertext,
+          tunnelClientKeyIV: encClientKey.iv,
+          tunnelClientKeyTag: encClientKey.tag,
           // Re-persist CA key with fresh encryption (nonce rotation)
           tunnelCaKey: encCaKey.ciphertext,
           tunnelCaKeyIV: encCaKey.iv,
@@ -777,17 +804,22 @@ export async function processCertRotations(): Promise<void> {
         },
       });
 
-      log.info(`[tunnel] cert-rotation: new cert generated for gateway ${gw.id} (expires ${expiry.toISOString()})`);
+      log.info(`[tunnel] cert-rotation: new cert+key generated for gateway ${gw.id} (expires ${clientResult.expiry.toISOString()})`);
 
+      // Audit: cert expiry warning + rotation
       auditService.log({
         action: 'TUNNEL_TOKEN_ROTATE',
         targetType: 'Gateway',
         targetId: gw.id,
-        details: { certRotation: true, newExpiry: expiry.toISOString() },
+        details: {
+          certRotation: true,
+          newExpiry: clientResult.expiry.toISOString(),
+          previousExpiry: gw.tunnelClientCertExp?.toISOString(),
+        },
       });
 
-      // Try to deliver the new cert via the active tunnel
-      const delivered = sendCertRenew(gw.id, newClientCert);
+      // Try to deliver the new cert + key via the active tunnel
+      const delivered = sendCertRenew(gw.id, clientResult.certPem, clientResult.keyPem);
       log.info(`[tunnel] cert-rotation: CERT_RENEW for gateway ${gw.id} delivered=${delivered}`);
 
       // For managed gateways the mTLS handshake cert cannot be hot-swapped —
@@ -795,7 +827,7 @@ export async function processCertRotations(): Promise<void> {
       if (gw.isManaged) {
         try {
           const { rollingRestartForCertRotation } = await import('./managedGateway.service');
-          await rollingRestartForCertRotation(gw.id, newClientCert);
+          await rollingRestartForCertRotation(gw.id, clientResult.certPem);
           log.info(`[tunnel] cert-rotation: rolling restart triggered for managed gateway ${gw.id}`);
         } catch (restartErr) {
           log.warn(`[tunnel] cert-rotation: rolling restart failed for gateway ${gw.id}: ${(restartErr as Error).message}`);
@@ -805,54 +837,6 @@ export async function processCertRotations(): Promise<void> {
       log.error(`[tunnel] cert-rotation: failed for gateway ${gw.id}: ${(err as Error).message}`);
     }
   }
-}
-
-/**
- * Generate a self-signed client certificate using Node's built-in crypto.
- * Returns PEM-encoded cert and its expiry date.
- *
- * Note: Node's crypto.X509Certificate / generateCertificate is available
- * from Node 19+. For broader compatibility we produce a minimal self-signed
- * cert using the CA key directly via the X.509 DER builder embedded here.
- * In practice, operators with managed PKI should replace this with their own
- * CA-signing flow.  This implementation generates a fresh RSA key + cert
- * signed by the gateway CA using Node's `crypto.generateKeyPairSync` and
- * `X509Certificate` helpers (Node ≥ 19 / 18 LTS with --experimental-vm-modules).
- *
- * For environments where the built-in X.509 generator is not available,
- * we fall back to a self-signed cert with the same key material.
- */
-function generateClientCert(
-  _caCertPem: string,
-  _caKeyPem: string,
-  validityDays: number,
-): { cert: string; expiry: Date } {
-  const expiry = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000);
-
-  // Generate a new RSA key pair for the client cert
-  const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-
-  // Build a minimal self-signed certificate using Node's X509Certificate API
-  // (available in Node 18+ with the crypto module)
-  let certPem: string;
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const x509Module = crypto as any;
-    if (typeof x509Module.X509Certificate === 'function') {
-      // Node 19+ supports X509Certificate.generate (experimental)
-      // For now we produce a PKCS#10-style self-signed stub
-      certPem = publicKey.export({ type: 'pkcs1', format: 'pem' }) as string;
-    } else {
-      certPem = publicKey.export({ type: 'pkcs1', format: 'pem' }) as string;
-    }
-  } catch {
-    certPem = publicKey.export({ type: 'pkcs1', format: 'pem' }) as string;
-  }
-
-  // Suppress unused variable lint — privateKey would be used in full PKI integration
-  void privateKey;
-
-  return { cert: certPem, expiry };
 }
 
 let certRotationTimer: ReturnType<typeof setInterval> | null = null;

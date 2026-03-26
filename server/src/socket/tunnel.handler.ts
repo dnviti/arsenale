@@ -14,13 +14,16 @@
  * (tunnel.service.ts) for frame multiplexing.
  */
 
+import crypto from 'crypto';
 import http from 'http';
+import type tls from 'tls';
 import { WebSocketServer } from 'ws';
 import type { WebSocket } from 'ws';
 import {
   authenticateTunnelRequest,
   registerTunnel,
 } from '../services/tunnel.service';
+import { config } from '../config';
 import { logger } from '../utils/logger';
 
 const log = logger.child('tunnel-handler');
@@ -50,8 +53,66 @@ export function setupTunnelHandler(server: http.Server): WebSocketServer {
       return;
     }
 
+    // -----------------------------------------------------------------------
+    // mTLS enforcement — verify client certificate identity
+    // -----------------------------------------------------------------------
+    let clientCertCn: string | undefined;
+
+    const tlsSocket = req.socket as tls.TLSSocket;
+    if (typeof tlsSocket.getPeerCertificate === 'function') {
+      const peerCert = tlsSocket.getPeerCertificate(false);
+      if (peerCert && peerCert.subject && peerCert.subject.CN) {
+        // TLS-terminated connection with client cert
+        const cnRaw = peerCert.subject.CN;
+        const cn = Array.isArray(cnRaw) ? cnRaw[0] : cnRaw;
+        if (!cn || !timingSafeStringEqual(cn, gatewayId)) {
+          log.warn(`[tunnel] Upgrade rejected: client cert CN does not match X-Gateway-Id "${gatewayId}"`);
+          socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nClient certificate CN mismatch');
+          socket.destroy();
+          return;
+        }
+        // Check cert expiry
+        if (peerCert.valid_to) {
+          const expiryDate = new Date(peerCert.valid_to);
+          if (expiryDate.getTime() < Date.now()) {
+            log.warn(`[tunnel] Upgrade rejected: client cert for gateway ${gatewayId} has expired`);
+            socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nClient certificate expired');
+            socket.destroy();
+            return;
+          }
+        }
+        clientCertCn = cn;
+      }
+    }
+
+    // If no TLS cert, check proxy-forwarded client cert headers (only when proxy is trusted)
+    if (!clientCertCn && config.trustProxy) {
+      const proxyCnRaw = req.headers['x-client-cert-cn'];
+      const proxyCn = Array.isArray(proxyCnRaw) ? proxyCnRaw[0] : proxyCnRaw;
+      const proxyVerifiedRaw = req.headers['x-client-cert-verified'];
+      const proxyVerified = Array.isArray(proxyVerifiedRaw) ? proxyVerifiedRaw[0] : proxyVerifiedRaw;
+
+      if (proxyCn && proxyVerified === 'SUCCESS') {
+        if (!timingSafeStringEqual(proxyCn, gatewayId)) {
+          log.warn(`[tunnel] Upgrade rejected: proxy cert CN does not match X-Gateway-Id "${gatewayId}"`);
+          socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\nClient certificate CN mismatch');
+          socket.destroy();
+          return;
+        }
+        clientCertCn = proxyCn;
+      }
+    }
+
+    // No client certificate at all — reject
+    if (!clientCertCn) {
+      log.warn(`[tunnel] Upgrade rejected: no client certificate for gateway ${gatewayId}`);
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\nClient certificate required');
+      socket.destroy();
+      return;
+    }
+
     // Authenticate asynchronously before completing the upgrade
-    authenticateTunnelRequest(gatewayId, bearerToken)
+    authenticateTunnelRequest(gatewayId, bearerToken, clientCertCn)
       .then((result) => {
         if (!result) {
           log.warn(`[tunnel] Upgrade rejected: invalid credentials for gateway ${gatewayId}`);
@@ -94,4 +155,12 @@ function extractRemoteIp(req: http.IncomingMessage): string | undefined {
     }
   }
   return socketAddr;
+}
+
+/** Constant-time string comparison to prevent timing side-channels on CN values. */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  const aBuf = Buffer.from(a, 'utf8');
+  const bBuf = Buffer.from(b, 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
 }

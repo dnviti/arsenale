@@ -416,6 +416,10 @@ model Gateway {
   tunnelCaKeyTag         String?
   tunnelClientCert       String?
   tunnelClientCertExp    DateTime?
+  tunnelClientKey        String?
+  tunnelClientKeyIV      String?
+  tunnelClientKeyTag     String?
+  tunnelCaCertFingerprint String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

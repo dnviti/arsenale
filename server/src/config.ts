@@ -280,6 +280,10 @@ export const config = {
     caPublicKeyPath: process.env.SSH_PROXY_CA_PUBLIC_KEY || '',
     keystrokeRecording: process.env.SSH_PROXY_KEYSTROKE_RECORDING === 'true',
   },
+  // Tunnel server TLS certificates (for mTLS enforcement)
+  tunnelServerCert: process.env.TUNNEL_SERVER_CERT || '',
+  tunnelServerKey: process.env.TUNNEL_SERVER_KEY || '',
+  tunnelServerCa: process.env.TUNNEL_SERVER_CA || '',
   // Gateway routing mode
   gatewayRoutingMode: (() => {
     const val = process.env.GATEWAY_ROUTING_MODE || 'prefer-gateway';

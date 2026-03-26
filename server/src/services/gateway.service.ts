@@ -1,12 +1,14 @@
 import prisma, { ManagedInstanceStatus } from '../lib/prisma';
 import type { GatewayType } from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
-import { encrypt, decrypt, requireMasterKey } from './crypto.service';
+import { encrypt, decrypt, requireMasterKey, encryptWithServerKey, decryptWithServerKey } from './crypto.service';
 import { config } from '../config';
 import { tcpProbe } from '../utils/tcpProbe';
 import { startMonitor, startInstanceMonitor, stopMonitor, restartMonitor } from './gatewayMonitor.service';
 import { logger } from '../utils/logger';
 import { generateTunnelToken, revokeTunnelToken, isTunnelConnected, deregisterTunnel, getTunnelInfo } from './tunnel.service';
+import { generateCaCert, generateClientCertificate, certFingerprint } from '../utils/certGenerator';
+import * as auditService from './audit.service';
 
 const log = logger.child('gateway');
 import { removeGatewayInstance } from './managedGateway.service';
@@ -574,13 +576,126 @@ export async function generateGatewayTunnelToken(
   gatewayId: string,
   operatorUserId: string,
 ): Promise<{ token: string; tunnelEnabled: boolean }> {
-  const existing = await prisma.gateway.findFirst({
+  const gateway = await prisma.gateway.findFirst({
     where: { id: gatewayId, tenantId },
-    select: { id: true },
+    select: {
+      id: true,
+      tenantId: true,
+      tunnelCaCert: true,
+      tunnelClientCert: true,
+    },
   });
-  if (!existing) throw new AppError('Gateway not found', 404);
+  if (!gateway) throw new AppError('Gateway not found', 404);
+
+  // Auto-generate mTLS certificates if not already present
+  if (!gateway.tunnelCaCert || !gateway.tunnelClientCert) {
+    await ensureMtlsCerts(tenantId, gatewayId, operatorUserId);
+  }
 
   return generateTunnelToken(gatewayId, operatorUserId);
+}
+
+/**
+ * Ensure mTLS CA and client certificates exist for a gateway.
+ * Reuses the tenant-level CA if another gateway in the same tenant already has one.
+ */
+async function ensureMtlsCerts(
+  tenantId: string,
+  gatewayId: string,
+  operatorUserId: string,
+): Promise<void> {
+  // Use a serializable transaction to prevent duplicate CA generation
+  // when multiple gateways in the same tenant are provisioned concurrently.
+  const { caFingerprintResult, clientExpiry } = await prisma.$transaction(async (tx) => {
+    // Try to find an existing CA from another gateway in the same tenant
+    const existingCaGw = await tx.gateway.findFirst({
+      where: {
+        tenantId,
+        tunnelCaCert: { not: null },
+        tunnelCaKey: { not: null },
+        tunnelCaKeyIV: { not: null },
+        tunnelCaKeyTag: { not: null },
+      },
+      select: {
+        tunnelCaCert: true,
+        tunnelCaKey: true,
+        tunnelCaKeyIV: true,
+        tunnelCaKeyTag: true,
+        tunnelCaCertFingerprint: true,
+      },
+    });
+
+    let caCertPem: string;
+    let caKeyPem: string;
+    let encCaKey: { ciphertext: string; iv: string; tag: string };
+    let caFingerprint: string;
+
+    if (existingCaGw?.tunnelCaCert && existingCaGw.tunnelCaKey && existingCaGw.tunnelCaKeyIV && existingCaGw.tunnelCaKeyTag) {
+      // Reuse existing tenant CA
+      caCertPem = existingCaGw.tunnelCaCert;
+      caKeyPem = decryptCaKey(existingCaGw);
+      encCaKey = encryptWithServerKey(caKeyPem);
+      caFingerprint = existingCaGw.tunnelCaCertFingerprint ?? certFingerprint(caCertPem);
+      log.info(`[tunnel] Reusing tenant CA for gateway ${gatewayId}`);
+    } else {
+      // Generate a new CA for this tenant
+      const ca = generateCaCert(`arsenale-tenant-${tenantId}`);
+      caCertPem = ca.certPem;
+      caKeyPem = ca.keyPem;
+      encCaKey = encryptWithServerKey(caKeyPem);
+      caFingerprint = certFingerprint(caCertPem);
+      log.info(`[tunnel] Generated new tenant CA for gateway ${gatewayId} (fingerprint=${caFingerprint.slice(0, 16)}…)`);
+    }
+
+    // Generate client cert signed by the CA (90-day validity, CN = gatewayId)
+    const client = generateClientCertificate(caCertPem, caKeyPem, gatewayId, 90);
+    const encClientKey = encryptWithServerKey(client.keyPem);
+
+    await tx.gateway.update({
+      where: { id: gatewayId },
+      data: {
+        tunnelCaCert: caCertPem,
+        tunnelCaKey: encCaKey.ciphertext,
+        tunnelCaKeyIV: encCaKey.iv,
+        tunnelCaKeyTag: encCaKey.tag,
+        tunnelCaCertFingerprint: caFingerprint,
+        tunnelClientCert: client.certPem,
+        tunnelClientKey: encClientKey.ciphertext,
+        tunnelClientKeyIV: encClientKey.iv,
+        tunnelClientKeyTag: encClientKey.tag,
+        tunnelClientCertExp: client.expiry,
+      },
+    });
+
+    return { caFingerprintResult: caFingerprint, clientExpiry: client.expiry };
+  }, { isolationLevel: 'Serializable' });
+
+  auditService.log({
+    userId: operatorUserId,
+    action: 'TUNNEL_TOKEN_GENERATE',
+    targetType: 'Gateway',
+    targetId: gatewayId,
+    details: {
+      mtlsCertsGenerated: true,
+      caFingerprint: caFingerprintResult.slice(0, 16),
+      clientCertExpiry: clientExpiry.toISOString(),
+    },
+  });
+
+  log.info(`[tunnel] mTLS certs generated for gateway ${gatewayId} (client cert expires ${clientExpiry.toISOString()})`);
+}
+
+/** Helper to decrypt a CA key from encrypted fields. */
+function decryptCaKey(gw: {
+  tunnelCaKey: string | null;
+  tunnelCaKeyIV: string | null;
+  tunnelCaKeyTag: string | null;
+}): string {
+  return decryptWithServerKey({
+    ciphertext: gw.tunnelCaKey!,
+    iv: gw.tunnelCaKeyIV!,
+    tag: gw.tunnelCaKeyTag!,
+  });
 }
 
 export async function revokeGatewayTunnelToken(
