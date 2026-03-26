@@ -19,3 +19,15 @@ export const autoLockSchema = z.object({
   autoLockMinutes: z.number().int().min(0).nullable(),
 });
 export type AutoLockInput = z.infer<typeof autoLockSchema>;
+
+export const recoverWithKeySchema = z.object({
+  recoveryKey: z.string().min(1),
+  password: z.string().min(1),
+});
+export type RecoverWithKeyInput = z.infer<typeof recoverWithKeySchema>;
+
+export const explicitResetSchema = z.object({
+  password: z.string().min(1),
+  confirmReset: z.literal(true),
+});
+export type ExplicitResetInput = z.infer<typeof explicitResetSchema>;

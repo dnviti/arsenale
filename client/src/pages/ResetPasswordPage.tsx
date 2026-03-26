@@ -318,7 +318,7 @@ export default function ResetPasswordPage() {
                 </Alert>
               ) : (
                 <Alert severity="warning" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.warning.main}14`, color: 'warning.light', border: (theme) => `1px solid ${theme.palette.warning.main}26`, '& .MuiAlert-icon': { color: 'warning.light' } }}>
-                  Your vault has been reset. Previously saved connection passwords and secrets have been cleared.
+                  Your vault is locked. Enter your recovery key in Keychain to restore access to your credentials.
                 </Alert>
               )}
               <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>

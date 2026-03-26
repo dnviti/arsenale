@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Dialog, AppBar, Toolbar, Typography, IconButton, Box,
-  Alert, Button,
+  Alert, Button, TextField, Divider,
   DialogTitle, DialogContent, DialogContentText, DialogActions,
 } from '@mui/material';
 import {
@@ -32,7 +32,10 @@ import type { SecretListItem, SecretDetail } from '../../api/secrets.api';
 import type { VaultFolderData, VaultFolderScope } from '../../api/vault-folders.api';
 import { getSecret } from '../../api/secrets.api';
 import { SlideUp } from '../common/SlideUp';
+import RecoveryKeyConfirmDialog from '../common/RecoveryKeyConfirmDialog';
 import { isAdminOrAbove } from '../../utils/roles';
+import { getVaultRecoveryStatus, recoverVaultWithKey, explicitVaultReset } from '../../api/vault.api';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 interface KeychainDialogProps {
   open: boolean;
@@ -64,6 +67,19 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
   const [initializingVault, setInitializingVault] = useState(false);
   const [activeSecretDrag, setActiveSecretDrag] = useState<SecretListItem | null>(null);
 
+  // Vault recovery state
+  const [vaultNeedsRecovery, setVaultNeedsRecovery] = useState(false);
+  const [vaultHasRecoveryKey, setVaultHasRecoveryKey] = useState(false);
+  const [recoveryKeyInput, setRecoveryKeyInput] = useState('');
+  const [recoveryPasswordInput, setRecoveryPasswordInput] = useState('');
+  const [newRecoveryKey, setNewRecoveryKey] = useState('');
+  const [showRecoveryKeyDialog, setShowRecoveryKeyDialog] = useState(false);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetPasswordInput, setResetPasswordInput] = useState('');
+  const recoverAction = useAsyncAction();
+  const resetAction = useAsyncAction();
+
   // DnD sensors
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -88,9 +104,49 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
     await moveSecret(secret.id, targetFolderId);
   };
 
+  // Fetch vault recovery status on open
+  const fetchRecoveryStatus = useCallback(async () => {
+    try {
+      const status = await getVaultRecoveryStatus();
+      setVaultNeedsRecovery(status.needsRecovery);
+      setVaultHasRecoveryKey(status.hasRecoveryKey);
+    } catch {
+      // silently fail — non-critical
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) fetchRecoveryStatus();
+  }, [open, fetchRecoveryStatus]);
+
   useEffect(() => {
     if (open && hasTenant) fetchTenantVaultStatus();
   }, [open, hasTenant, fetchTenantVaultStatus]);
+
+  const handleRecoverVault = async () => {
+    const success = await recoverAction.run(async () => {
+      const result = await recoverVaultWithKey(recoveryKeyInput, recoveryPasswordInput);
+      setNewRecoveryKey(result.newRecoveryKey);
+      setShowRecoveryKeyDialog(true);
+      setVaultNeedsRecovery(false);
+      setRecoveryKeyInput('');
+      setRecoveryPasswordInput('');
+    }, 'Vault recovery failed');
+    if (!success) return;
+  };
+
+  const handleExplicitReset = async () => {
+    const success = await resetAction.run(async () => {
+      const result = await explicitVaultReset(resetPasswordInput);
+      setNewRecoveryKey(result.newRecoveryKey);
+      setShowRecoveryKeyDialog(true);
+      setVaultNeedsRecovery(false);
+      setResetConfirmOpen(false);
+      setResetConfirmText('');
+      setResetPasswordInput('');
+    }, 'Vault reset failed');
+    if (!success) return;
+  };
 
   const handleInitTenantVault = async () => {
     setInitializingVault(true);
@@ -188,6 +244,66 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
           </Typography>
         </Toolbar>
       </AppBar>
+
+      {/* Vault recovery banner */}
+      {vaultNeedsRecovery && (
+        <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Vault Recovery Required
+            </Typography>
+            <Typography variant="body2">
+              Your vault is locked after a password reset. Enter your recovery key to restore access to your credentials.
+            </Typography>
+          </Alert>
+
+          {recoverAction.error && (
+            <Alert severity="error" sx={{ mb: 2 }}>{recoverAction.error}</Alert>
+          )}
+          {resetAction.error && (
+            <Alert severity="error" sx={{ mb: 2 }}>{resetAction.error}</Alert>
+          )}
+
+          {vaultHasRecoveryKey && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Recovery Key"
+                value={recoveryKeyInput}
+                onChange={(e) => setRecoveryKeyInput(e.target.value.trim())}
+                placeholder="Enter your vault recovery key"
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="Current Password"
+                type="password"
+                value={recoveryPasswordInput}
+                onChange={(e) => setRecoveryPasswordInput(e.target.value)}
+                placeholder="Enter your current password"
+              />
+              <Button
+                variant="contained"
+                onClick={handleRecoverVault}
+                disabled={recoverAction.loading || !recoveryKeyInput || !recoveryPasswordInput}
+              >
+                {recoverAction.loading ? 'Recovering...' : 'Recover Vault'}
+              </Button>
+            </Box>
+          )}
+
+          <Divider sx={{ my: 2 }}>or</Divider>
+
+          <Button
+            variant="outlined"
+            color="error"
+            onClick={() => setResetConfirmOpen(true)}
+          >
+            Reset Vault (lose all data)
+          </Button>
+        </Box>
+      )}
 
       {/* Tenant vault banner */}
       {hasTenant && tenantVaultStatus && !tenantVaultStatus.initialized && isAdmin && (
@@ -377,6 +493,58 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Vault explicit reset confirmation */}
+      <Dialog open={resetConfirmOpen} onClose={() => { setResetConfirmOpen(false); setResetConfirmText(''); setResetPasswordInput(''); resetAction.clearError(); }}>
+        <DialogTitle>Reset Vault</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ mb: 2 }}>
+            This will permanently delete all your saved credentials, secrets, and encrypted data. This action cannot be undone.
+          </DialogContentText>
+          {resetAction.error && (
+            <Alert severity="error" sx={{ mb: 2 }}>{resetAction.error}</Alert>
+          )}
+          <TextField
+            fullWidth
+            size="small"
+            label="Current Password"
+            type="password"
+            value={resetPasswordInput}
+            onChange={(e) => setResetPasswordInput(e.target.value)}
+            sx={{ mb: 2 }}
+          />
+          <DialogContentText variant="body2" sx={{ mb: 1 }}>
+            Type <strong>RESET</strong> to confirm:
+          </DialogContentText>
+          <TextField
+            fullWidth
+            size="small"
+            value={resetConfirmText}
+            onChange={(e) => setResetConfirmText(e.target.value)}
+            placeholder="RESET"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setResetConfirmOpen(false); setResetConfirmText(''); setResetPasswordInput(''); resetAction.clearError(); }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleExplicitReset}
+            color="error"
+            variant="contained"
+            disabled={resetConfirmText !== 'RESET' || !resetPasswordInput || resetAction.loading}
+          >
+            {resetAction.loading ? 'Resetting...' : 'Reset Vault'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Recovery key display after successful recovery/reset */}
+      <RecoveryKeyConfirmDialog
+        open={showRecoveryKeyDialog}
+        recoveryKey={newRecoveryKey}
+        onConfirmed={() => { setShowRecoveryKeyDialog(false); setNewRecoveryKey(''); }}
+      />
     </Dialog>
   );
 }
