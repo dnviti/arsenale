@@ -2,6 +2,7 @@ import api from './client';
 
 export interface VaultStatusResponse {
   unlocked: boolean;
+  vaultNeedsRecovery: boolean;
   mfaUnlockAvailable: boolean;
   mfaUnlockMethods: string[];
 }
@@ -69,4 +70,26 @@ export async function getVaultAutoLock() {
 export async function setVaultAutoLock(autoLockMinutes: number | null) {
   const { data } = await api.put('/vault/auto-lock', { autoLockMinutes });
   return data as VaultAutoLockResponse;
+}
+
+// Vault recovery (after password reset)
+
+export interface VaultRecoveryStatusResponse {
+  needsRecovery: boolean;
+  hasRecoveryKey: boolean;
+}
+
+export async function getVaultRecoveryStatus() {
+  const { data } = await api.get('/vault/recovery-status');
+  return data as VaultRecoveryStatusResponse;
+}
+
+export async function recoverVaultWithKey(recoveryKey: string, password: string) {
+  const { data } = await api.post('/vault/recover-with-key', { recoveryKey, password });
+  return data as { success: boolean; newRecoveryKey: string };
+}
+
+export async function explicitVaultReset(password: string) {
+  const { data } = await api.post('/vault/explicit-reset', { password, confirmReset: true });
+  return data as { success: boolean; newRecoveryKey: string };
 }

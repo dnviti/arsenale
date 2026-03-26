@@ -5,7 +5,6 @@ import { logger } from '../utils/logger';
 import {
   hashToken,
   generateSalt,
-  generateMasterKey,
   deriveKeyFromPassword,
   encryptMasterKey,
   decryptMasterKeyWithRecovery,
@@ -248,106 +247,31 @@ export async function completePasswordReset(params: {
   }
 
   if (!vaultPreserved) {
-    // Generate fresh vault
-    const newMasterKey = generateMasterKey();
-    const newVaultSalt = generateSalt();
-    const newDerivedKey = await deriveKeyFromPassword(newPassword, newVaultSalt);
-    const newEncryptedVault = encryptMasterKey(newMasterKey, newDerivedKey);
-
-    // Generate new recovery key for the fresh vault
-    newRecoveryKeyValue = generateRecoveryKey();
-    const newRecovery = await encryptMasterKeyWithRecovery(newMasterKey, newRecoveryKeyValue);
-
-    newMasterKey.fill(0);
-    newDerivedKey.fill(0);
-
-    // Wipe all encrypted data and update vault in a transaction
-    await prisma.$transaction(async (tx) => {
-      // Update user: new password, new vault, clear reset token
-      await tx.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash,
-          vaultSalt: newVaultSalt,
-          encryptedVaultKey: newEncryptedVault.ciphertext,
-          vaultKeyIV: newEncryptedVault.iv,
-          vaultKeyTag: newEncryptedVault.tag,
-          encryptedVaultRecoveryKey: newRecovery.encrypted.ciphertext,
-          vaultRecoveryKeyIV: newRecovery.encrypted.iv,
-          vaultRecoveryKeyTag: newRecovery.encrypted.tag,
-          vaultRecoveryKeySalt: newRecovery.salt,
-          passwordResetTokenHash: null,
-          passwordResetExpiry: null,
-          // Disable TOTP (encrypted secret is lost)
-          totpEnabled: false,
-          totpSecret: null,
-          encryptedTotpSecret: null,
-          totpSecretIV: null,
-          totpSecretTag: null,
-          // Clear encrypted domain password (master key changed)
-          encryptedDomainPassword: null,
-          domainPasswordIV: null,
-          domainPasswordTag: null,
-        },
-      });
-
-      // Wipe encrypted connection credentials owned by this user
-      await tx.connection.updateMany({
-        where: { userId: user.id },
-        data: {
-          encryptedUsername: null,
-          usernameIV: null,
-          usernameTag: null,
-          encryptedPassword: null,
-          passwordIV: null,
-          passwordTag: null,
-        },
-      });
-
-      // Wipe shared connection credentials shared BY this user
-      await tx.sharedConnection.deleteMany({
-        where: { sharedByUserId: user.id },
-      });
-
-      // Wipe team vault keys for this user
-      await tx.teamMember.updateMany({
-        where: { userId: user.id },
-        data: {
-          encryptedTeamVaultKey: null,
-          teamVaultKeyIV: null,
-          teamVaultKeyTag: null,
-        },
-      });
-
-      // Wipe tenant vault memberships for this user
-      await tx.tenantVaultMember.deleteMany({
-        where: { userId: user.id },
-      });
-
-      // Wipe vault secrets owned by this user
-      await tx.vaultSecret.deleteMany({
-        where: { userId: user.id },
-      });
-
-      // Wipe secrets shared BY this user
-      await tx.sharedSecret.deleteMany({
-        where: { sharedByUserId: user.id },
-      });
-
-      // Wipe external secret shares created by this user
-      await tx.externalSecretShare.deleteMany({
-        where: { secret: { userId: user.id } },
-      });
+    // Element/Matrix-style: NEVER auto-wipe encrypted data.
+    // Mark vault as "awaiting recovery" — the user can provide the recovery
+    // key at any time (from Keychain) to restore access.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        vaultNeedsRecovery: true,
+        passwordResetTokenHash: null,
+        passwordResetExpiry: null,
+        // Note: encryptedVaultKey and all encrypted data are preserved.
+        // They remain encrypted with the OLD master key. The user must
+        // provide the recovery key to decrypt the old master key and
+        // re-encrypt it with the new password-derived key.
+      },
     });
 
     auditService.log({
       userId: user.id,
-      action: 'VAULT_RESET',
-      details: { reason: 'password_reset_no_recovery_key' },
+      action: 'VAULT_NEEDS_RECOVERY',
+      details: { reason: 'password_reset_without_recovery_key' },
       ipAddress,
     });
 
-    log.verbose(`Password reset with vault reset for user ${user.id}`);
+    log.verbose(`Password reset with vault pending recovery for user ${user.id}`);
   }
 
   // Invalidate all refresh tokens (force re-login on all devices)

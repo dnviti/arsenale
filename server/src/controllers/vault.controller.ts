@@ -3,7 +3,7 @@ import { AuthRequest, assertAuthenticated } from '../types';
 import * as vaultService from '../services/vault.service';
 import * as auditService from '../services/audit.service';
 import { getClientIp } from '../utils/ip';
-import type { UnlockInput, CodeInput, CredentialInput, RevealInput, AutoLockInput } from '../schemas/vault.schemas';
+import type { UnlockInput, CodeInput, CredentialInput, RevealInput, AutoLockInput, RecoverWithKeyInput, ExplicitResetInput } from '../schemas/vault.schemas';
 
 export async function unlock(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
@@ -87,6 +87,40 @@ export async function revealPassword(req: AuthRequest, res: Response) {
     userId: req.user.userId, action: 'PASSWORD_REVEAL',
     targetType: 'Connection', targetId: connectionId,
     ipAddress: getClientIp(req),
+  });
+  res.json(result);
+}
+
+// Vault recovery (after password reset)
+
+export async function recoveryStatus(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const result = await vaultService.getVaultRecoveryStatus(req.user.userId);
+  res.json(result);
+}
+
+export async function recoverWithKey(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const { recoveryKey, password } = req.body as RecoverWithKeyInput;
+  const result = await vaultService.recoverVaultWithKey(req.user.userId, recoveryKey, password);
+  auditService.log({
+    userId: req.user.userId,
+    action: 'VAULT_RECOVERED',
+    ipAddress: getClientIp(req),
+    details: { method: 'recovery_key' },
+  });
+  res.json(result);
+}
+
+export async function explicitReset(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const { password } = req.body as ExplicitResetInput;
+  const result = await vaultService.explicitVaultReset(req.user.userId, password);
+  auditService.log({
+    userId: req.user.userId,
+    action: 'VAULT_EXPLICIT_RESET',
+    ipAddress: getClientIp(req),
+    details: { reason: 'user_requested' },
   });
   res.json(result);
 }

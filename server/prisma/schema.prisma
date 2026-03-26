@@ -115,7 +115,8 @@ model User {
   encryptedVaultKey  String?
   vaultKeyIV         String?
   vaultKeyTag        String?
-  vaultSetupComplete Boolean     @default(true)
+  vaultSetupComplete  Boolean     @default(true)
+  vaultNeedsRecovery  Boolean     @default(false)
   sshDefaults        Json?
   rdpDefaults        Json?
   totpSecret          String?
@@ -640,6 +641,9 @@ enum AuditAction {
   PASSWORD_RESET_FAILURE
   VAULT_RECOVERY_KEY_GENERATED
   VAULT_RESET
+  VAULT_NEEDS_RECOVERY
+  VAULT_RECOVERED
+  VAULT_EXPLICIT_RESET
   TENANT_CREATE_USER
   TENANT_TOGGLE_USER
   APP_CONFIG_UPDATE
