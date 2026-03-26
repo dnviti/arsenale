@@ -26,6 +26,7 @@ import * as autoscalerService from './services/autoscaler.service';
 import { completeGuacRecording, cleanupExpiredRecordings } from './services/recording.service';
 import { initGeoIp } from './services/geoip.service';
 import { setupTunnelHandler } from './socket/tunnel.handler';
+import { generateSelfSignedServerCert } from './utils/certGenerator';
 import { startSshProxyServer, stopSshProxyServer, restartSshProxy } from './services/sshProxy.service';
 import { cleanupIdleTunnels } from './services/rdGateway.service';
 import { cleanupExpiredDeviceCodes } from './services/deviceAuth.service';
@@ -149,15 +150,33 @@ async function main() {
   await initGeoIp();
   await initializePassport();
 
-  // Create the main HTTP server.
-  // When tunnel TLS certs are configured, also create a dedicated HTTPS server
-  // for the tunnel endpoint so mTLS client certificate verification works.
-  const server = http.createServer(app);
+  // ---------------------------------------------------------------------------
+  // TLS configuration — the main server ALWAYS uses HTTPS.
+  // When explicit certs are provided via SERVER_TLS_CERT/KEY, those are used.
+  // Otherwise, auto-generate self-signed certs for development.
+  // ---------------------------------------------------------------------------
+  let serverTlsOptions: https.ServerOptions;
 
+  if (config.serverTlsCert && config.serverTlsKey) {
+    serverTlsOptions = {
+      cert: fs.readFileSync(config.serverTlsCert),
+      key: fs.readFileSync(config.serverTlsKey),
+    };
+    logger.info('[tls] Main server using provided TLS certificates');
+  } else {
+    const devCert = generateSelfSignedServerCert();
+    serverTlsOptions = { cert: devCert.cert, key: devCert.key };
+    logger.info('[tls] Main server using auto-generated self-signed certificate (development only)');
+  }
+
+  const server = https.createServer(serverTlsOptions, app);
+
+  // Dedicated tunnel HTTPS server with mTLS (requestCert: true) on port+10.
+  // The main server does NOT require client certs — browsers connect to it.
   let tunnelServer: http.Server | https.Server;
   if (config.tunnelServerCert && config.tunnelServerKey) {
     try {
-      const tlsOptions: https.ServerOptions = {
+      const tunnelTlsOptions: https.ServerOptions = {
         cert: fs.readFileSync(config.tunnelServerCert),
         key: fs.readFileSync(config.tunnelServerKey),
         requestCert: true,
@@ -165,17 +184,17 @@ async function main() {
         rejectUnauthorized: false,
       };
       if (config.tunnelServerCa) {
-        tlsOptions.ca = fs.readFileSync(config.tunnelServerCa);
+        tunnelTlsOptions.ca = fs.readFileSync(config.tunnelServerCa);
       }
-      tunnelServer = https.createServer(tlsOptions, app);
+      tunnelServer = https.createServer(tunnelTlsOptions, app);
       logger.info('[tunnel] TLS enabled for tunnel endpoint — mTLS client certificates will be verified');
     } catch (err) {
       logger.error('[tunnel] Failed to load tunnel TLS certificates:', err instanceof Error ? err.message : 'Unknown error');
-      logger.warn('[tunnel] Falling back to plain HTTP for tunnel endpoint — mTLS enforcement disabled');
+      logger.warn('[tunnel] Falling back to main HTTPS server for tunnel endpoint — mTLS enforcement disabled');
       tunnelServer = server;
     }
   } else {
-    logger.warn('[tunnel] TUNNEL_SERVER_CERT/KEY not configured — tunnel runs over plain HTTP, mTLS enforcement disabled');
+    logger.warn('[tunnel] TUNNEL_SERVER_CERT/KEY not configured — tunnel shares main HTTPS server, mTLS enforcement disabled');
     tunnelServer = server;
   }
 
@@ -375,8 +394,9 @@ async function main() {
         return JSON.parse(decrypted);
       };
 
+      const guacTlsServer = https.createServer(serverTlsOptions);
       guacServer = new GuacamoleLite(
-        { port: config.guacamoleWsPort },
+        { server: guacTlsServer },
         {
           host: config.guacdHost,
           port: config.guacdPort,
@@ -391,6 +411,9 @@ async function main() {
           },
         }
       );
+      guacTlsServer.listen(config.guacamoleWsPort, () => {
+        logger.info(`Guacamole WSS server listening on port ${config.guacamoleWsPort}`);
+      });
 
       // Monkey-patch Server.js decryptToken to support AES-256-GCM auth tags
       guacServer.decryptToken = function (encryptedToken: string) {
@@ -484,9 +507,6 @@ async function main() {
         );
       }
 
-      logger.info(
-        `Guacamole WebSocket server listening on port ${config.guacamoleWsPort}`
-      );
     } catch (err) {
       logger.warn(
         'guacamole-lite not available. RDP connections will not work.',
@@ -496,7 +516,7 @@ async function main() {
   }
 
   server.listen(config.port, () => {
-    logger.info(`Server running on port ${config.port}`);
+    logger.info(`HTTPS server running on port ${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
     markServerReady();
   });
@@ -547,7 +567,7 @@ async function main() {
     }
 
     server.close(() => {
-      logger.info('HTTP server closed.');
+      logger.info('HTTPS server closed.');
       process.exit(0);
     });
   };

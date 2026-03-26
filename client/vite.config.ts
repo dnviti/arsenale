@@ -1,11 +1,12 @@
+import fs from 'fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // Allow overriding proxy targets via env vars (set by Docker Compose).
 // Defaults work for host-mode development (server on localhost).
-const apiTarget = process.env.VITE_API_TARGET || 'http://localhost:3001';
-const guacTarget = process.env.VITE_GUAC_TARGET || 'http://localhost:3002';
+const apiTarget = process.env.VITE_API_TARGET || 'https://localhost:3001';
+const guacTarget = process.env.VITE_GUAC_TARGET || 'https://localhost:3002';
 
 export default defineConfig({
   plugins: [
@@ -160,18 +161,36 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    https: (() => {
+      // Use provided certs or fall back to auto-generated dev certs from the server
+      const certPath = process.env.VITE_TLS_CERT || '../infrastructure/dev-server-certs/server-cert.pem';
+      const keyPath = process.env.VITE_TLS_KEY || '../infrastructure/dev-server-certs/server-key.pem';
+      try {
+        return {
+          cert: fs.readFileSync(certPath),
+          key: fs.readFileSync(keyPath),
+        };
+      } catch {
+        // Certs not available yet — Vite will start without HTTPS.
+        // Run the dev cert generation script first, or set VITE_TLS_CERT/KEY.
+        return undefined as unknown as { cert: Buffer; key: Buffer };
+      }
+    })(),
     proxy: {
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+        secure: false, // accept self-signed certs from backend
       },
       '/socket.io': {
         target: apiTarget,
         ws: true,
+        secure: false,
       },
       '/guacamole': {
         target: guacTarget,
         ws: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/guacamole/, ''),
       },
     },

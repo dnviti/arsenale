@@ -100,27 +100,30 @@ export const config = {
   vonageFromNumber: process.env.VONAGE_FROM_NUMBER || '',
   emailVerifyRequired: process.env.EMAIL_VERIFY_REQUIRED === 'true',
   selfSignupEnabled: process.env.SELF_SIGNUP_ENABLED === 'true',
-  clientUrl: process.env.CLIENT_URL || 'http://localhost:3000',
+  // Main server TLS certificates (when provided, Express binds HTTPS)
+  serverTlsCert: process.env.SERVER_TLS_CERT || '',
+  serverTlsKey: process.env.SERVER_TLS_KEY || '',
+  clientUrl: process.env.CLIENT_URL || 'https://localhost:3000',
   oauth: {
     google: {
       enabled: !!process.env.GOOGLE_CLIENT_ID,
       clientId: process.env.GOOGLE_CLIENT_ID || '',
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-      callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/google/callback',
+      callbackUrl: process.env.GOOGLE_CALLBACK_URL || 'https://localhost:3001/api/auth/oauth/google/callback',
       hd: process.env.GOOGLE_HD || '',
     },
     microsoft: {
       enabled: !!process.env.MICROSOFT_CLIENT_ID,
       clientId: process.env.MICROSOFT_CLIENT_ID || '',
       clientSecret: process.env.MICROSOFT_CLIENT_SECRET || '',
-      callbackUrl: process.env.MICROSOFT_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/microsoft/callback',
+      callbackUrl: process.env.MICROSOFT_CALLBACK_URL || 'https://localhost:3001/api/auth/oauth/microsoft/callback',
       tenantId: process.env.MICROSOFT_TENANT_ID || 'common',
     },
     github: {
       enabled: !!process.env.GITHUB_CLIENT_ID,
       clientId: process.env.GITHUB_CLIENT_ID || '',
       clientSecret: process.env.GITHUB_CLIENT_SECRET || '',
-      callbackUrl: process.env.GITHUB_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/github/callback',
+      callbackUrl: process.env.GITHUB_CALLBACK_URL || 'https://localhost:3001/api/auth/oauth/github/callback',
     },
     oidc: {
       enabled: !!process.env.OIDC_CLIENT_ID,
@@ -128,7 +131,7 @@ export const config = {
       issuerUrl: process.env.OIDC_ISSUER_URL || '',
       clientId: process.env.OIDC_CLIENT_ID || '',
       clientSecret: process.env.OIDC_CLIENT_SECRET || '',
-      callbackUrl: process.env.OIDC_CALLBACK_URL || 'http://localhost:3001/api/auth/oauth/oidc/callback',
+      callbackUrl: process.env.OIDC_CALLBACK_URL || 'https://localhost:3001/api/auth/oauth/oidc/callback',
       scopes: process.env.OIDC_SCOPES || 'openid profile email',
     },
     saml: {
@@ -136,7 +139,7 @@ export const config = {
       providerName: process.env.SAML_PROVIDER_NAME || 'SAML SSO',
       entryPoint: process.env.SAML_ENTRY_POINT || '',
       issuer: process.env.SAML_ISSUER || 'arsenale',
-      callbackUrl: process.env.SAML_CALLBACK_URL || 'http://localhost:3001/api/auth/saml/callback',
+      callbackUrl: process.env.SAML_CALLBACK_URL || 'https://localhost:3001/api/auth/saml/callback',
       cert: process.env.SAML_CERT || '',
       metadataUrl: process.env.SAML_METADATA_URL || '',
       wantAuthnResponseSigned: process.env.SAML_WANT_AUTHN_RESPONSE_SIGNED !== 'false',
@@ -272,7 +275,7 @@ export const config = {
   allowExternalSharing: process.env.ALLOW_EXTERNAL_SHARING === 'true',
   webauthn: {
     rpId: process.env.WEBAUTHN_RP_ID || 'localhost',
-    rpOrigin: process.env.WEBAUTHN_RP_ORIGIN || 'http://localhost:3000',
+    rpOrigin: process.env.WEBAUTHN_RP_ORIGIN || 'https://localhost:3000',
     rpName: process.env.WEBAUTHN_RP_NAME || 'Arsenale',
   },
   // SSH Protocol Proxy

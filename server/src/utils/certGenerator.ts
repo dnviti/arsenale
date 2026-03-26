@@ -132,6 +132,9 @@ const OID_BASIC_CONSTRAINTS = '2.5.29.19';
 const OID_KEY_USAGE = '2.5.29.15';
 const OID_SUBJECT_KEY_IDENTIFIER = '2.5.29.14';
 const OID_AUTHORITY_KEY_IDENTIFIER = '2.5.29.35';
+const OID_EXTENDED_KEY_USAGE = '2.5.29.37';
+const OID_SUBJECT_ALT_NAME = '2.5.29.17';
+const OID_SERVER_AUTH = '1.3.6.1.5.5.7.3.1';
 
 // ED25519 AlgorithmIdentifier (no parameters — per RFC 8410)
 const ED25519_ALGORITHM_ID = derWrap(DER.SEQUENCE, derOid(OID_ED25519));
@@ -228,6 +231,75 @@ function buildClientExtensions(clientKeyRaw: Buffer, caKeyRaw: Buffer): Buffer {
   ]));
 
   return derWrap(DER.CONTEXT_3, derWrap(DER.SEQUENCE, Buffer.concat([bcExt, kuExt, skiExt, akiExt])));
+}
+
+/** Build extensions for a server (end-entity) certificate with SANs. */
+function buildServerExtensions(
+  serverKeyRaw: Buffer,
+  caKeyRaw: Buffer,
+  sans: { dns: string[]; ips: string[] },
+): Buffer {
+  // Basic Constraints: CA=FALSE
+  const bcValue = derWrap(DER.SEQUENCE, Buffer.alloc(0));
+  const bcExt = derWrap(DER.SEQUENCE, Buffer.concat([
+    derOid(OID_BASIC_CONSTRAINTS),
+    derWrap(DER.OCTET_STRING, bcValue),
+  ]));
+
+  // Key Usage: digitalSignature + keyEncipherment (bits 0 and 2), critical
+  // digitalSignature=bit0(0x80) + keyEncipherment=bit2(0x20) = 0xA0, 5 unused bits
+  const kuBits = derWrap(DER.BIT_STRING, Buffer.from([0x05, 0xa0]));
+  const kuExt = derWrap(DER.SEQUENCE, Buffer.concat([
+    derOid(OID_KEY_USAGE),
+    derWrap(DER.BOOLEAN, Buffer.from([0xff])), // critical
+    derWrap(DER.OCTET_STRING, kuBits),
+  ]));
+
+  // Extended Key Usage: serverAuth
+  const ekuValue = derWrap(DER.SEQUENCE, derOid(OID_SERVER_AUTH));
+  const ekuExt = derWrap(DER.SEQUENCE, Buffer.concat([
+    derOid(OID_EXTENDED_KEY_USAGE),
+    derWrap(DER.OCTET_STRING, ekuValue),
+  ]));
+
+  // Subject Alternative Name
+  const sanEntries: Buffer[] = [];
+  for (const dns of sans.dns) {
+    // context tag [2] = dNSName
+    sanEntries.push(derWrap(0x82, Buffer.from(dns, 'ascii')));
+  }
+  for (const ip of sans.ips) {
+    // context tag [7] = iPAddress
+    const ipBuf = ip.includes(':')
+      ? Buffer.from(ip === '::1' ? '00000000000000000000000000000001' : ip.replace(/:/g, ''), 'hex')
+      : Buffer.from(ip.split('.').map(Number));
+    sanEntries.push(derWrap(0x87, ipBuf));
+  }
+  const sanValue = derWrap(DER.SEQUENCE, Buffer.concat(sanEntries));
+  const sanExt = derWrap(DER.SEQUENCE, Buffer.concat([
+    derOid(OID_SUBJECT_ALT_NAME),
+    derWrap(DER.OCTET_STRING, sanValue),
+  ]));
+
+  // Subject Key Identifier
+  const subjectKeyHash = crypto.createHash('sha1').update(serverKeyRaw).digest();
+  const skiExt = derWrap(DER.SEQUENCE, Buffer.concat([
+    derOid(OID_SUBJECT_KEY_IDENTIFIER),
+    derWrap(DER.OCTET_STRING, derWrap(DER.OCTET_STRING, subjectKeyHash)),
+  ]));
+
+  // Authority Key Identifier
+  const caKeyHash = crypto.createHash('sha1').update(caKeyRaw).digest();
+  const akiValue = derWrap(DER.SEQUENCE,
+    derWrap(0x80, caKeyHash),
+  );
+  const akiExt = derWrap(DER.SEQUENCE, Buffer.concat([
+    derOid(OID_AUTHORITY_KEY_IDENTIFIER),
+    derWrap(DER.OCTET_STRING, akiValue),
+  ]));
+
+  return derWrap(DER.CONTEXT_3, derWrap(DER.SEQUENCE,
+    Buffer.concat([bcExt, kuExt, ekuExt, sanExt, skiExt, akiExt])));
 }
 
 /** Generate a random serial number (20 bytes, positive). */
@@ -378,6 +450,98 @@ export function generateClientCertificate(
   const certPem = `-----BEGIN CERTIFICATE-----\n${cert.toString('base64').match(/.{1,64}/g)!.join('\n')}\n-----END CERTIFICATE-----\n`;
 
   return { certPem, keyPem: clientKeyPem, publicKeyRaw: clientPublicKeyRaw, expiry };
+}
+
+/**
+ * Generate a self-signed server certificate suitable for HTTPS.
+ *
+ * Creates a temporary CA and issues a server certificate with proper
+ * serverAuth EKU and SANs for localhost development.
+ *
+ * @param cn - Common Name (default: "localhost")
+ * @param validityDays - Certificate validity in days (default: 365)
+ */
+export function generateSelfSignedServerCert(
+  cn = 'localhost',
+  validityDays = 365,
+): { cert: string; key: string; ca: string } {
+  const ca = generateCaCert('arsenale-dev-ca', validityDays);
+  const server = generateServerCertificate(
+    ca.certPem,
+    ca.keyPem,
+    cn,
+    { dns: ['localhost'], ips: ['127.0.0.1', '::1'] },
+    validityDays,
+  );
+  return { cert: server.certPem, key: server.keyPem, ca: ca.certPem };
+}
+
+/**
+ * Generate an ED25519 server certificate signed by the given CA.
+ *
+ * Includes serverAuth EKU and Subject Alternative Names (DNS + IP).
+ *
+ * @param caCertPem - PEM-encoded CA certificate
+ * @param caKeyPem - PEM-encoded CA private key (PKCS#8)
+ * @param cn - Common Name for the server cert
+ * @param sans - Subject Alternative Names (DNS names and IP addresses)
+ * @param validityDays - Certificate validity in days (default: 365)
+ */
+export function generateServerCertificate(
+  caCertPem: string,
+  caKeyPem: string,
+  cn: string,
+  sans: { dns: string[]; ips: string[] },
+  validityDays = 365,
+): CertKeyPair {
+  const caPrivateKey = crypto.createPrivateKey(caKeyPem);
+  const caCert = new crypto.X509Certificate(caCertPem);
+
+  const caSpkiDer = caCert.publicKey.export({ type: 'spki', format: 'der' });
+  const caPublicKeyRaw = caSpkiDer.subarray(caSpkiDer.length - 32);
+
+  const caSubjectCn = extractCn(caCert.subject);
+  const caSubjectOrg = extractOrg(caCert.subject);
+  const issuerName = buildName(caSubjectCn, caSubjectOrg || undefined);
+
+  const { publicKey: serverPublicKey, privateKey: serverPrivateKey } = crypto.generateKeyPairSync('ed25519');
+  const serverSpki = serverPublicKey.export({ type: 'spki', format: 'der' });
+  const serverPublicKeyRaw = serverSpki.subarray(serverSpki.length - 32);
+  const serverKeyPem = serverPrivateKey.export({ type: 'pkcs8', format: 'pem' }) as string;
+
+  const now = new Date();
+  const expiry = new Date(now.getTime() + validityDays * 24 * 60 * 60 * 1000);
+
+  const subjectName = buildName(cn);
+  const version = derWrap(DER.CONTEXT_0, derInteger(2));
+  const serial = derInteger(randomSerial());
+  const validity = buildValidity(now, expiry);
+  const spki = buildSpki(serverPublicKeyRaw);
+  const extensions = buildServerExtensions(serverPublicKeyRaw, caPublicKeyRaw, sans);
+
+  const tbsCert = derWrap(DER.SEQUENCE, Buffer.concat([
+    version,
+    serial,
+    ED25519_ALGORITHM_ID,
+    issuerName,
+    validity,
+    subjectName,
+    spki,
+    extensions,
+  ]));
+
+  const signature = crypto.sign(null, tbsCert, caPrivateKey);
+  const signatureBits = derWrap(DER.BIT_STRING, Buffer.concat([Buffer.from([0x00]), signature]));
+
+  const cert = derWrap(DER.SEQUENCE, Buffer.concat([
+    tbsCert,
+    ED25519_ALGORITHM_ID,
+    signatureBits,
+  ]));
+
+  const certPem = `-----BEGIN CERTIFICATE-----\n${cert.toString('base64').match(/.{1,64}/g)!.join('\n')}\n-----END CERTIFICATE-----\n`;
+
+  return { certPem, keyPem: serverKeyPem, publicKeyRaw: serverPublicKeyRaw, expiry };
 }
 
 /**
