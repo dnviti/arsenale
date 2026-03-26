@@ -171,30 +171,48 @@ func main() {
 
 	log.Printf("[main] gRPC server listening on %s://%s", network, addr)
 
-	// HTTP health endpoint.
+	// HTTP(S) health endpoint.
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		status := map[string]interface{}{
-			"status":      "ok",
-			"memory_used": store.UsedMemory(),
-			"memory_max":  cfg.maxMemory,
-			"peers":       len(registry.GetAllPeers()),
+			"status":        "ok",
+			"memory_used":   store.UsedMemory(),
+			"memory_max":    cfg.maxMemory,
+			"peers":         len(registry.GetAllPeers()),
 			"healthy_peers": len(registry.GetHealthyPeers()),
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(status)
 	})
 	healthAddr := envOrDefault("CACHE_HEALTH_ADDR", fmt.Sprintf("localhost:%d", cfg.healthPort))
-	healthServer := &http.Server{
-		Addr:    healthAddr,
-		Handler: healthMux,
-	}
-	go func() {
-		log.Printf("[main] health endpoint on %s/health", healthAddr)
-		if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Printf("[main] health server error: %v", err)
+	certFile := os.Getenv("CACHE_TLS_CERT")
+	keyFile := os.Getenv("CACHE_TLS_KEY")
+	var healthServer *http.Server
+	if tlsConfig := buildTLSConfig(); tlsConfig != nil {
+		healthTLSConfig := tlsConfig.Clone()
+		// Health endpoint does not require client certs — it's a simple readiness probe
+		healthTLSConfig.ClientAuth = tls.NoClientCert
+		healthTLSConfig.ClientCAs = nil
+		healthServer = &http.Server{
+			Addr:      healthAddr,
+			Handler:   healthMux,
+			TLSConfig: healthTLSConfig,
 		}
-	}()
+		go func() {
+			log.Printf("[main] health endpoint (TLS) on https://%s/health", healthAddr)
+			if err := healthServer.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
+				log.Printf("[main] health server error: %v", err)
+			}
+		}()
+	} else {
+		healthServer = &http.Server{Addr: healthAddr, Handler: healthMux}
+		go func() {
+			log.Printf("[main] health endpoint (insecure) on http://%s/health", healthAddr)
+			if err := healthServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("[main] health server error: %v", err)
+			}
+		}()
+	}
 
 	// Start gRPC in background.
 	go func() {

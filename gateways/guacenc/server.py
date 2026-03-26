@@ -14,8 +14,10 @@ Endpoints:
   POST /cleanup           — Bulk-delete old video files from /recordings/
 """
 
+import hmac
 import json
 import os
+import ssl
 import subprocess
 import threading
 import time
@@ -280,12 +282,32 @@ def cleanup_video_files(max_age_days: int) -> dict:
 class GuacencHandler(BaseHTTPRequestHandler):
     job_store: JobStore
 
+    # ── Auth ──────────────────────────────────────────────────────────
+
+    def _check_auth(self):
+        """Validate bearer token if GUACENC_AUTH_TOKEN is set."""
+        expected = os.environ.get('GUACENC_AUTH_TOKEN', '')
+        if not expected:
+            return True
+        auth_header = self.headers.get('Authorization', '')
+        if not auth_header.startswith('Bearer '):
+            self.send_error(401, 'Authorization required')
+            return False
+        token = auth_header[7:]
+        if not hmac.compare_digest(token, expected):
+            self.send_error(403, 'Invalid token')
+            return False
+        return True
+
     # ── Routing ──────────────────────────────────────────────────────
 
     def do_GET(self):
         if self.path == "/health":
             self._handle_health()
-        elif self.path == "/conversions":
+            return
+        if not self._check_auth():
+            return
+        if self.path == "/conversions":
             self._handle_list_conversions()
         elif self.path.startswith("/status/"):
             job_id = self.path[len("/status/"):]
@@ -294,6 +316,8 @@ class GuacencHandler(BaseHTTPRequestHandler):
             self._json_response(404, {"error": "not found"})
 
     def do_POST(self):
+        if not self._check_auth():
+            return
         if self.path == "/convert":
             self._handle_convert()
         elif self.path == "/convert-asciicast":
@@ -304,6 +328,8 @@ class GuacencHandler(BaseHTTPRequestHandler):
             self._json_response(404, {"error": "not found"})
 
     def do_DELETE(self):
+        if not self._check_auth():
+            return
         if self.path == "/cache":
             self._handle_delete_cache()
         else:
@@ -495,6 +521,21 @@ if __name__ == "__main__":
     GuacencHandler.job_store = job_store
 
     server = HTTPServer(("0.0.0.0", PORT), GuacencHandler)
+
+    # TLS configuration
+    tls_cert = os.environ.get('GUACENC_TLS_CERT', '')
+    tls_key = os.environ.get('GUACENC_TLS_KEY', '')
+
+    if tls_cert and tls_key:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(tls_cert, tls_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        print(f"[guacenc] TLS enabled (cert={tls_cert})")
+    else:
+        print("[guacenc] WARNING: Running without TLS")
+
+    auth_token = os.environ.get('GUACENC_AUTH_TOKEN', '')
+    print(f"[guacenc] Bearer auth: {'enabled' if auth_token else 'disabled'}")
     print(f"[guacenc] Listening on port {PORT}")
     print(f"[guacenc] Max concurrent jobs: {MAX_CONCURRENT_JOBS}")
     print(f"[guacenc] Conversion timeout: {GUACENC_TIMEOUT}s")

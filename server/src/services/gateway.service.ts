@@ -700,6 +700,7 @@ async function ensureMtlsCerts(
     targetId: gatewayId,
     details: {
       mtlsCertsGenerated: true,
+      tenantId,
       caFingerprint: caFingerprintResult.slice(0, 16),
       clientCertExpiry: clientExpiry.toISOString(),
     },

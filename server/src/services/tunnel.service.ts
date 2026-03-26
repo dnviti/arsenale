@@ -632,7 +632,7 @@ export async function authenticateTunnelRequest(
   // Validate the client cert CN matches the gatewayId (already checked in handler, defence in depth)
   if (clientCertCn && clientCertCn !== gatewayId) {
     log.warn(`[tunnel] Auth failed: client cert CN "${clientCertCn}" != gatewayId "${gatewayId}"`);
-    auditService.log({ action: 'TUNNEL_MTLS_REJECTED', targetType: 'Gateway', targetId: gatewayId, details: { reason: 'cn_mismatch' } });
+    auditService.log({ action: 'TUNNEL_MTLS_REJECTED', targetType: 'Gateway', targetId: gatewayId, details: { reason: 'cn_mismatch', tenantId: gateway.tenantId } });
     return null;
   }
 
@@ -640,7 +640,7 @@ export async function authenticateTunnelRequest(
   if (clientCertPem && gateway.tunnelCaCert && gateway.tunnelClientCert) {
     if (!verifyCertChain(clientCertPem, gateway.tunnelCaCert)) {
       log.warn(`[tunnel] Auth failed: client cert for gateway ${gatewayId} does not chain to stored CA`);
-      auditService.log({ action: 'TUNNEL_MTLS_REJECTED', targetType: 'Gateway', targetId: gatewayId, details: { reason: 'ca_chain_validation_failed' } });
+      auditService.log({ action: 'TUNNEL_MTLS_REJECTED', targetType: 'Gateway', targetId: gatewayId, details: { reason: 'ca_chain_validation_failed', tenantId: gateway.tenantId } });
       return null;
     }
   }
@@ -826,6 +826,7 @@ export async function processCertRotations(): Promise<void> {
         targetId: gw.id,
         details: {
           certRotation: true,
+          tenantId: gw.tenantId,
           newExpiry: clientResult.expiry.toISOString(),
           previousExpiry: gw.tunnelClientCertExp?.toISOString(),
         },
