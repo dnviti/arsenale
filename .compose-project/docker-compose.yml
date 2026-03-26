@@ -168,7 +168,7 @@ services:
     volumes:
       - gocache_data:/data
       # Mount gocache mTLS certificates (optional — leave empty for insecure dev)
-      - ${CACHE_TLS_CERT_DIR:-./arsenale/infrastructure/gocache/certs}:/certs:ro
+      - ${CACHE_TLS_CERT_DIR:-./arsenale/dev-certs/gocache}:/certs:ro
     restart: always
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:6381/health || exit 1"]
