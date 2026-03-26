@@ -203,6 +203,7 @@ export async function getAuditTrail(req: AuthRequest, res: Response) {
 
   const logs = await prisma.auditLog.findMany({
     where: {
+      userId: req.user.userId,
       OR: [
         { details: { path: ['sessionId'], equals: recording.sessionId } },
         { details: { path: ['recordingId'], equals: recordingId } },

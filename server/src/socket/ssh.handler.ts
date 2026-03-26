@@ -426,7 +426,7 @@ export function setupSshHandler(io: Server) {
             prisma.sessionRecording.update({
               where: { id: recordingId },
               data: { sessionId },
-            }).catch(() => {});
+            }).catch((err) => { logger.error('Failed to link recording to session:', err); });
           }
         }).catch((err) => {
           logger.error('Failed to persist SSH session record:', err);
