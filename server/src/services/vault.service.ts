@@ -377,13 +377,24 @@ export async function revealPassword(
 export async function getVaultRecoveryStatus(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { vaultNeedsRecovery: true, encryptedVaultRecoveryKey: true },
+    select: {
+      vaultNeedsRecovery: true,
+      encryptedVaultRecoveryKey: true,
+      vaultRecoveryKeyIV: true,
+      vaultRecoveryKeyTag: true,
+      vaultRecoveryKeySalt: true,
+    },
   });
   if (!user) throw new AppError('User not found', 404);
 
   return {
     needsRecovery: user.vaultNeedsRecovery,
-    hasRecoveryKey: !!user.encryptedVaultRecoveryKey,
+    hasRecoveryKey: !!(
+      user.encryptedVaultRecoveryKey &&
+      user.vaultRecoveryKeyIV &&
+      user.vaultRecoveryKeyTag &&
+      user.vaultRecoveryKeySalt
+    ),
   };
 }
 
@@ -405,6 +416,11 @@ export async function recoverVaultWithKey(
   ) {
     throw new AppError('No recovery key available. You must reset your vault.', 400);
   }
+
+  // Verify current password before proceeding
+  if (!user.passwordHash) throw new AppError('No password set for this account', 400);
+  const passwordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+  if (!passwordValid) throw new AppError('Invalid password', 401);
 
   // Decrypt old master key using the recovery key
   let masterKey: Buffer;
@@ -496,6 +512,10 @@ export async function explicitVaultReset(userId: string, password: string) {
         totpSecretTag: null,
         totpSecret: null,
         totpEnabled: false,
+        // Clear encrypted domain password (master key changed)
+        encryptedDomainPassword: null,
+        domainPasswordIV: null,
+        domainPasswordTag: null,
       },
     });
 
@@ -509,10 +529,18 @@ export async function explicitVaultReset(userId: string, password: string) {
         encryptedUsername: null,
         usernameIV: null,
         usernameTag: null,
+        encryptedDomain: null,
+        domainIV: null,
+        domainTag: null,
       },
     });
 
-    // Wipe shared connection encrypted data
+    // Delete shared connections shared BY this user (recipients lose access)
+    await tx.sharedConnection.deleteMany({
+      where: { sharedByUserId: userId },
+    });
+
+    // Wipe shared connection encrypted data shared WITH this user
     await tx.sharedConnection.updateMany({
       where: { sharedWithUserId: userId },
       data: {
@@ -522,11 +550,17 @@ export async function explicitVaultReset(userId: string, password: string) {
         encryptedUsername: null,
         usernameIV: null,
         usernameTag: null,
+        encryptedDomain: null,
+        domainIV: null,
+        domainTag: null,
       },
     });
 
     // Delete vault secrets owned by this user
     await tx.vaultSecret.deleteMany({ where: { userId } });
+
+    // Delete shared secrets created BY this user
+    await tx.sharedSecret.deleteMany({ where: { sharedByUserId: userId } });
 
     // Delete shared secrets for this user
     await tx.sharedSecret.deleteMany({ where: { sharedWithUserId: userId } });

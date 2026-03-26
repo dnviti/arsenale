@@ -233,6 +233,7 @@ export async function completePasswordReset(params: {
           vaultRecoveryKeyIV: newRecovery.encrypted.iv,
           vaultRecoveryKeyTag: newRecovery.encrypted.tag,
           vaultRecoveryKeySalt: newRecovery.salt,
+          vaultNeedsRecovery: false,
           passwordResetTokenHash: null,
           passwordResetExpiry: null,
         },
