@@ -1,5 +1,6 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest, TenantRoleType } from '../types';
+import { hasPermission, type PermissionFlag } from '../services/rolePermission.service';
 
 const ROLE_HIERARCHY: Record<string, number> = {
   GUEST:      0.1,
@@ -63,6 +64,30 @@ export function requireTenantRoleAny(...allowedRoles: TenantRoleType[]) {
 export function hasAnyRole(role: string | undefined, ...allowedRoles: string[]): boolean {
   if (!role) return false;
   return allowedRoles.includes(role);
+}
+
+/**
+ * Requires the authenticated user to have ALL of the specified permission flags.
+ * Resolves per-user overrides on top of role defaults.
+ * Must be used AFTER `requireTenant`.
+ */
+export function requirePermission(...flags: PermissionFlag[]) {
+  return async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+    const user = req.user;
+    if (!user?.tenantId || !user?.userId) {
+      res.status(403).json({ error: 'Tenant membership required' });
+      return;
+    }
+
+    for (const flag of flags) {
+      const allowed = await hasPermission(user.userId, user.tenantId, flag);
+      if (!allowed) {
+        res.status(403).json({ error: `Permission denied: ${flag}` });
+        return;
+      }
+    }
+    next();
+  };
 }
 
 /**

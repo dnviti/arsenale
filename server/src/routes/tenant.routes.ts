@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireTenant, requireTenantRole, requireOwnTenant } from '../middleware/tenant.middleware';
+import { requireTenant, requireTenantRole, requireOwnTenant, requirePermission } from '../middleware/tenant.middleware';
 import { validate, validateUuidParam } from '../middleware/validate.middleware';
 import {
   createTenantSchema, updateTenantSchema, inviteUserSchema, updateRoleSchema,
@@ -34,16 +34,20 @@ router.get('/:id/mfa-stats', validateUuidParam(), requireTenant, requireOwnTenan
 // User management within tenant
 router.get('/:id/users', validateUuidParam(), requireTenant, requireOwnTenant, asyncHandler(tenantController.listUsers));
 router.get('/:id/users/:userId/profile', validateUuidParam(), requireTenant, requireOwnTenant, validateUuidParam('userId'), asyncHandler(tenantController.getUserProfile));
-router.post('/:id/invite', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validate(inviteUserSchema), asyncHandler(tenantController.inviteUser));
-router.put('/:id/users/:userId', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), validate(updateRoleSchema), asyncHandler(tenantController.updateUserRole));
-router.delete('/:id/users/:userId', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), asyncHandler(tenantController.removeUser));
-router.post('/:id/users', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validate(createUserSchema), asyncHandler(tenantController.createUser));
-router.patch('/:id/users/:userId/enabled', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), validate(toggleUserEnabledSchema), asyncHandler(tenantController.toggleUserEnabled));
-router.patch('/:id/users/:userId/expiry', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), validate(updateMembershipExpirySchema), asyncHandler(tenantController.updateMembershipExpiry));
+router.post('/:id/invite', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validate(inviteUserSchema), asyncHandler(tenantController.inviteUser));
+router.put('/:id/users/:userId', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), validate(updateRoleSchema), asyncHandler(tenantController.updateUserRole));
+router.delete('/:id/users/:userId', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), asyncHandler(tenantController.removeUser));
+router.post('/:id/users', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validate(createUserSchema), asyncHandler(tenantController.createUser));
+router.patch('/:id/users/:userId/enabled', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), validate(toggleUserEnabledSchema), asyncHandler(tenantController.toggleUserEnabled));
+router.patch('/:id/users/:userId/expiry', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), validate(updateMembershipExpirySchema), asyncHandler(tenantController.updateMembershipExpiry));
 
 // Admin identity-verified operations on users
-router.put('/:id/users/:userId/email', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), validate(adminChangeEmailSchema), asyncHandler(tenantController.adminChangeUserEmail));
-router.put('/:id/users/:userId/password', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), validateUuidParam('userId'), validate(adminChangePasswordSchema), asyncHandler(tenantController.adminChangeUserPassword));
+router.put('/:id/users/:userId/email', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), validate(adminChangeEmailSchema), asyncHandler(tenantController.adminChangeUserEmail));
+router.put('/:id/users/:userId/password', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), validate(adminChangePasswordSchema), asyncHandler(tenantController.adminChangeUserPassword));
+
+// Permission overrides management (admin only)
+router.get('/:id/users/:userId/permissions', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), asyncHandler(tenantController.getUserPermissions));
+router.put('/:id/users/:userId/permissions', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), requirePermission('canManageUsers'), validateUuidParam('userId'), asyncHandler(tenantController.updateUserPermissions));
 
 // IP allowlist management (admin only)
 router.get('/:id/ip-allowlist', validateUuidParam(), requireTenant, requireOwnTenant, requireTenantRole('ADMIN'), asyncHandler(tenantController.getIpAllowlist));

@@ -4,6 +4,7 @@ import bcrypt from 'bcrypt';
 import { TenantRoleType } from '../types';
 import { AppError } from '../middleware/error.middleware';
 import * as sshKeyService from './sshkey.service';
+import { invalidatePermissionCache } from './rolePermission.service';
 import * as auditService from './audit.service';
 import * as identityVerification from './identityVerification.service';
 import { logger } from '../utils/logger';
@@ -503,6 +504,8 @@ export async function updateUserRole(
     include: { user: { select: { id: true, email: true, username: true } } },
   });
 
+  invalidatePermissionCache(targetUserId, tenantId);
+
   return { id: updated.user.id, email: updated.user.email, username: updated.user.username, role: updated.role };
 }
 
@@ -540,6 +543,8 @@ export async function removeUser(tenantId: string, targetUserId: string, actingU
       where: { tenantId_userId: { tenantId, userId: targetUserId } },
     });
   });
+
+  invalidatePermissionCache(targetUserId, tenantId);
 
   return { removed: true };
 }
@@ -656,6 +661,8 @@ export async function toggleUserEnabled(
       where: { userId: targetUserId },
     });
   }
+
+  invalidatePermissionCache(targetUserId, tenantId);
 
   return { ...updated, role: membership.role };
 }

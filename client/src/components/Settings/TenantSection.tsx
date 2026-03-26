@@ -6,7 +6,7 @@ import {
   DialogActions, Alert, CircularProgress, Box, IconButton, FormControlLabel, Switch,
   Menu,
 } from '@mui/material';
-import { PersonAdd, GroupAdd, MoreVert, ContentCopy } from '@mui/icons-material';
+import { PersonAdd, GroupAdd, MoreVert, ContentCopy, TuneRounded } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { useTenantStore } from '../../store/tenantStore';
 import { getTenantMfaStats, adminChangeUserEmail, adminChangeUserPassword } from '../../api/tenant.api';
@@ -15,6 +15,7 @@ import InviteDialog from '../Dialogs/InviteDialog';
 import CreateUserDialog from '../Dialogs/CreateUserDialog';
 import IdentityVerification from '../common/IdentityVerification';
 import VaultProvidersSection from './VaultProvidersSection';
+import PermissionOverridesDialog from './PermissionOverridesDialog';
 import { extractApiError } from '../../utils/apiError';
 import { ALL_ROLES, ROLE_LABELS, isAdminOrAbove, type TenantRole } from '../../utils/roles';
 import { useNotificationStore } from '../../store/notificationStore';
@@ -117,6 +118,10 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
   const [changePwdLoading, setChangePwdLoading] = useState(false);
   const [changePwdError, setChangePwdError] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
+
+  // Permission overrides dialog
+  const [permDialogOpen, setPermDialogOpen] = useState(false);
+  const [permTarget, setPermTarget] = useState<{ id: string; name: string } | null>(null);
 
   // Membership expiry dialog
   const [expiryDialogOpen, setExpiryDialogOpen] = useState(false);
@@ -571,20 +576,34 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
                         </Box>
                       </TableCell>
                       <TableCell>
-                        {isAdmin && u.id !== user?.id ? (
-                          <Select
-                            value={u.role}
-                            size="small"
-                            onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                            sx={{ minWidth: 110 }}
-                          >
-                            {ALL_ROLES.map((r) => (
-                              <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
-                            ))}
-                          </Select>
-                        ) : (
-                          <Chip label={u.role} size="small" variant="outlined" />
-                        )}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          {isAdmin && u.id !== user?.id ? (
+                            <Select
+                              value={u.role}
+                              size="small"
+                              onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                              sx={{ minWidth: 110 }}
+                            >
+                              {ALL_ROLES.map((r) => (
+                                <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
+                              ))}
+                            </Select>
+                          ) : (
+                            <Chip label={u.role} size="small" variant="outlined" />
+                          )}
+                          {isAdmin && (
+                            <IconButton
+                              size="small"
+                              title="Edit permissions"
+                              onClick={() => {
+                                setPermTarget({ id: u.id, name: u.username || u.email });
+                                setPermDialogOpen(true);
+                              }}
+                            >
+                              <TuneRounded fontSize="small" />
+                            </IconButton>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         {u.totpEnabled || u.smsMfaEnabled ? (
@@ -1021,6 +1040,13 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
         open={!!menuAnchor}
         onClose={closeAdminMenu}
       >
+        <MenuItem onClick={() => {
+          if (menuTargetUser) {
+            setPermTarget({ id: menuTargetUser.id, name: menuTargetUser.name });
+            setPermDialogOpen(true);
+            closeAdminMenu();
+          }
+        }}>Permissions</MenuItem>
         <MenuItem onClick={openChangeEmail}>Change Email</MenuItem>
         <MenuItem onClick={openChangePwd}>Change Password</MenuItem>
         <MenuItem onClick={() => {
@@ -1252,6 +1278,17 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Permission overrides dialog */}
+      {tenant && permTarget && (
+        <PermissionOverridesDialog
+          open={permDialogOpen}
+          onClose={() => setPermDialogOpen(false)}
+          tenantId={tenant.id}
+          userId={permTarget.id}
+          userName={permTarget.name}
+        />
+      )}
 
     </>
   );
