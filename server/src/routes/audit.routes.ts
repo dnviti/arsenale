@@ -17,6 +17,7 @@ router.get('/connection/:connectionId/users', validate(connectionIdSchema, 'para
 router.get('/connection/:connectionId', validate({ params: connectionIdSchema, query: connectionAuditQuerySchema }), asyncHandler(auditController.listConnectionLogs));
 router.get('/countries', asyncHandler(auditController.listCountries));
 router.get('/gateways', asyncHandler(auditController.listGateways));
+router.get('/session/:sessionId/recording', asyncHandler(auditController.getSessionRecording));
 router.get('/', validate(auditQuerySchema, 'query'), asyncHandler(auditController.list));
 
 export default router;

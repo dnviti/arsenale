@@ -4,6 +4,7 @@ import fs from 'fs';
 import { AuthRequest, assertAuthenticated } from '../types';
 import * as recordingService from '../services/recording.service';
 import * as auditService from '../services/audit.service';
+import prisma from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
 import { validatedQuery } from '../middleware/validate.middleware';
 import { logger } from '../utils/logger';
@@ -31,7 +32,7 @@ export async function getRecording(req: AuthRequest, res: Response) {
     action: 'RECORDING_VIEW',
     targetType: 'Recording',
     targetId: recording.id,
-    details: { protocol: recording.protocol, connectionId: recording.connectionId },
+    details: { recordingId: recording.id, protocol: recording.protocol, connectionId: recording.connectionId },
     ipAddress: getClientIp(req),
   });
 
@@ -185,8 +186,33 @@ export async function exportVideo(req: AuthRequest, res: Response) {
     action: 'RECORDING_EXPORT_VIDEO',
     targetType: 'Recording',
     targetId: req.params.id as string,
+    details: { recordingId: req.params.id as string },
     ipAddress: getClientIp(req),
   });
+}
+
+export async function getAuditTrail(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const recordingId = req.params.id as string;
+  const recording = await recordingService.getRecording(recordingId, req.user.userId);
+  if (!recording) throw new AppError('Recording not found', 404);
+  if (!recording.sessionId) {
+    res.json({ data: [], total: 0 });
+    return;
+  }
+
+  const logs = await prisma.auditLog.findMany({
+    where: {
+      OR: [
+        { details: { path: ['sessionId'], equals: recording.sessionId } },
+        { details: { path: ['recordingId'], equals: recordingId } },
+      ],
+    },
+    orderBy: { createdAt: 'asc' },
+    take: 200,
+  });
+
+  res.json({ data: logs, total: logs.length });
 }
 
 export async function deleteRecording(req: AuthRequest, res: Response) {
@@ -199,6 +225,7 @@ export async function deleteRecording(req: AuthRequest, res: Response) {
     action: 'RECORDING_DELETE',
     targetType: 'Recording',
     targetId: req.params.id as string,
+    details: { recordingId: req.params.id as string },
     ipAddress: getClientIp(req),
   });
 
