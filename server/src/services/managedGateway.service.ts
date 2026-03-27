@@ -11,12 +11,12 @@ import * as auditService from './audit.service';
 import { logger } from '../utils/logger';
 import { findFreePort } from '../utils/freePort';
 import { decryptWithServerKey } from './crypto.service';
-import { pushKey as grpcPushKey, closeGatewayKeyClient } from '../utils/gatewayKeyClient';
 import {
   emitInstancesForGateway,
   emitScalingForGateway,
   emitGatewayData,
 } from './gatewayMonitor.service';
+import { publishGatewayEvent, GatewayEventType } from './gatewayEventBus.service';
 
 const MAX_REPLICAS = 20;
 const HEALTH_CHECK_FAILURE_THRESHOLD = 3;
@@ -330,10 +330,14 @@ export async function deployGatewayInstance(
 
   log.info(`Deployed instance ${instance.id} (container ${containerInfo.id}) for gateway ${gatewayId}`);
 
-  // Push real-time updates to connected clients
-  emitInstancesForGateway(gatewayId).catch(() => {});
-  emitGatewayData(gatewayId).catch(() => {});
-  emitScalingForGateway(gatewayId).catch(() => {});
+  // Publish event — handlers manage SSH key push + real-time emissions
+  publishGatewayEvent(GatewayEventType.INSTANCE_DEPLOYED, {
+    tenantId: gateway.tenantId,
+    gatewayId,
+    instanceId: instance.id,
+    host,
+    port,
+  }).catch(() => {});
 
   return {
     instanceId: instance.id,
@@ -385,10 +389,18 @@ export async function removeGatewayInstance(
 
   log.info(`Removed instance ${instanceId} (container ${instance.containerId})`);
 
-  // Push real-time updates to connected clients
-  emitInstancesForGateway(instance.gatewayId).catch(() => {});
-  emitGatewayData(instance.gatewayId).catch(() => {});
-  emitScalingForGateway(instance.gatewayId).catch(() => {});
+  // Publish event — handlers manage real-time emissions
+  const gwForEvent = await prisma.gateway.findUnique({
+    where: { id: instance.gatewayId },
+    select: { tenantId: true },
+  });
+  if (gwForEvent) {
+    publishGatewayEvent(GatewayEventType.INSTANCE_REMOVED, {
+      tenantId: gwForEvent.tenantId,
+      gatewayId: instance.gatewayId,
+      instanceId,
+    }).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -616,10 +628,11 @@ export async function reconcileGateway(gatewayId: string): Promise<void> {
     }
   }
 
-  // Push real-time updates to connected clients
-  emitInstancesForGateway(gatewayId).catch(() => {});
-  emitGatewayData(gatewayId).catch(() => {});
-  emitScalingForGateway(gatewayId).catch(() => {});
+  // Publish event — handlers manage real-time emissions
+  publishGatewayEvent(GatewayEventType.RECONCILE_COMPLETED, {
+    tenantId: gateway.tenantId,
+    gatewayId,
+  }).catch(() => {});
 }
 
 export async function reconcileAll(): Promise<void> {
@@ -686,31 +699,20 @@ export async function healthCheck(): Promise<void> {
           },
         });
 
-        // Instance recovered from failure — push SSH keys via gRPC
+        // Instance recovered from failure — publish event for SSH key auto-push
         if (instance.consecutiveFailures > 0) {
-          try {
-            const gw = await prisma.gateway.findUnique({
-              where: { id: instance.gatewayId },
-              select: { type: true, tenantId: true },
-            });
-            if (gw?.type === 'MANAGED_SSH') {
-              const keyPair = await prisma.sshKeyPair.findUnique({
-                where: { tenantId: gw.tenantId },
-                select: { publicKey: true },
-              });
-              if (keyPair) {
-                const grpcPort = config.gatewayGrpcPort;
-                const res = await grpcPushKey(instance.host, grpcPort, keyPair.publicKey);
-                if (res.ok) {
-                  log.info(`Auto-pushed SSH key to recovered instance ${instance.id} (${instance.host}:${grpcPort})`);
-                } else {
-                  log.warn(`SSH key push to recovered instance ${instance.id} failed: ${res.message}`);
-                }
-              }
-            }
-          } catch (pushErr) {
-            log.warn(`Failed to auto-push SSH key to recovered instance ${instance.id}: ${pushErr instanceof Error ? pushErr.message : 'Unknown error'}`);
-            closeGatewayKeyClient(instance.host, config.gatewayGrpcPort);
+          const gwForRecovery = await prisma.gateway.findUnique({
+            where: { id: instance.gatewayId },
+            select: { tenantId: true },
+          });
+          if (gwForRecovery) {
+            publishGatewayEvent(GatewayEventType.INSTANCE_RECOVERED, {
+              tenantId: gwForRecovery.tenantId,
+              gatewayId: instance.gatewayId,
+              instanceId: instance.id,
+              host: instance.host,
+              port: instance.port,
+            }).catch(() => {});
           }
         }
       } else {
@@ -743,6 +745,19 @@ export async function healthCheck(): Promise<void> {
                 consecutiveFailures: HEALTH_CHECK_FAILURE_THRESHOLD,
               },
             });
+            const gwForRestart = await prisma.gateway.findUnique({
+              where: { id: instance.gatewayId },
+              select: { tenantId: true },
+            });
+            if (gwForRestart) {
+              publishGatewayEvent(GatewayEventType.INSTANCE_RESTARTED, {
+                tenantId: gwForRestart.tenantId,
+                gatewayId: instance.gatewayId,
+                instanceId: instance.id,
+                host: instance.host,
+                port: instance.port,
+              }).catch(() => {});
+            }
           } catch (restartErr) {
             await prisma.managedGatewayInstance.update({
               where: { id: instance.id },
