@@ -62,7 +62,6 @@ function buildContainerConfig(
 
   // When tunnel is enabled, suppress host-port publishing (traffic flows via tunnel)
   const publishHostPort = tunnelEnv ? undefined : hostPort;
-  const publishApiHostPort = tunnelEnv ? undefined : apiHostPort;
 
   /** Build tunnel environment variable block (injected into both SSH and GUACD containers). */
   const tunnelEnvVars: Record<string, string> = tunnelEnv
