@@ -2,6 +2,10 @@ services:
   postgres:
     image: postgres:18
     container_name: postgres
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -39,6 +43,9 @@ services:
   guacd:
     image: guacamole/guacd:1.6.0
     container_name: guacd
+    read_only: true
+    tmpfs:
+      - /tmp
     command: ["-C", "${GUACD_SSL_CERT}", "-K", "${GUACD_SSL_KEY}"]
     volumes:
       - ${RECORDING_PATH:-./data/recordings}:/recordings
@@ -58,6 +65,9 @@ services:
       context: gateways/guacenc
       dockerfile: Dockerfile
     container_name: guacenc
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: always
     environment:
       RECORDING_PATH: ${GUACENC_RECORDING_PATH}
@@ -85,6 +95,9 @@ services:
       context: infrastructure/gocache
       dockerfile: Dockerfile
     container_name: gocache
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       CACHE_LISTEN: ${CACHE_LISTEN}
       CACHE_HEALTH_ADDR: ${CACHE_HEALTH_ADDR}
@@ -112,6 +125,7 @@ services:
       start_period: 5s
 
   server:
+    # read_only: false — dev mode requires writable FS for HMR/cache
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -352,16 +366,21 @@ networks:
   # Server<->PostgreSQL only
   net-db:
     name: arsenale-net-db
+    internal: true
   # Server<->guacd only
   net-guacd:
     name: arsenale-net-guacd
+    internal: true
   # Server<->guacenc only
   net-guacenc:
     name: arsenale-net-guacenc
+    internal: true
   # Server<->gocache + gocache peers
   net-cache:
     name: arsenale-net-cache
+    internal: true
   # Server<->gateways (SSH, tunnel, db-proxy, rdgw, client)
+  # Needs external access for client port binding and SSH gateway
   net-gateway:
     name: arsenale-net-gateway
 

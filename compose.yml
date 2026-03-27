@@ -1,6 +1,10 @@
 services:
   postgres:
     image: postgres:16
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
     security_opt:
       - label:disable
     env_file:
@@ -18,10 +22,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - arsenale_net
+      - arsenale-back
 
   guacd:
     image: ${ORCHESTRATOR_GUACD_IMAGE:-guacamole/guacd:1.6.0}
+    read_only: true
+    tmpfs:
+      - /tmp
     security_opt:
       - label:disable
     volumes:
@@ -35,12 +42,15 @@ services:
       retries: 3
       start_period: 10s
     networks:
-      - arsenale_net
+      - arsenale-back
 
   guacenc:
     build:
       context: gateways/guacenc
       dockerfile: Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp
     security_opt:
       - label:disable
     volumes:
@@ -57,7 +67,7 @@ services:
       retries: 3
       start_period: 5s
     networks:
-      - arsenale_net
+      - arsenale-back
 
   # ── In-memory cache sidecar (gRPC) ──────────────────────────────────────────
   gocache:
@@ -65,6 +75,9 @@ services:
       context: infrastructure/gocache
       dockerfile: Dockerfile
     container_name: arsenale-gocache
+    read_only: true
+    tmpfs:
+      - /tmp
     security_opt:
       - label:disable
     environment:
@@ -81,12 +94,15 @@ services:
       retries: 3
       start_period: 5s
     networks:
-      - arsenale_net
+      - arsenale-back
 
   server:
     build:
       context: .
       dockerfile: server/Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp
     user: "0:0" # rootless Podman maps UID 0 → host user (socket owner)
     cap_drop:
       - ALL
@@ -119,12 +135,18 @@ services:
       - /run/user/1000/podman/podman.sock:/run/user/1000/podman/podman.sock
     restart: always
     networks:
-      - arsenale_net
+      - arsenale-front
+      - arsenale-back
 
   client:
     build:
       context: .
       dockerfile: client/Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/cache/nginx
     security_opt:
       - label:disable
     ports:
@@ -140,7 +162,7 @@ services:
         condition: service_healthy
     restart: always
     networks:
-      - arsenale_net
+      - arsenale-front
 
   # SSH Gateway (optional — remove or comment out if not needed)
   # For multiple gateways, duplicate with different names and ports:
@@ -150,6 +172,9 @@ services:
     build:
       context: .
       dockerfile: gateways/ssh-gateway/Dockerfile
+    read_only: true
+    tmpfs:
+      - /tmp
     security_opt:
       - label:disable
     healthcheck:
@@ -163,7 +188,7 @@ services:
       - ./config/ssh-gateway/authorized_keys:/config/authorized_keys:ro,z
     restart: always
     networks:
-      - arsenale_net
+      - arsenale-back
 
 volumes:
   pgdata:
@@ -172,5 +197,9 @@ volumes:
   gocache_data:
 
 networks:
-  arsenale_net:
-    name: arsenale_net
+  arsenale-front:
+    name: arsenale-front
+    # External access needed for client port binding
+  arsenale-back:
+    name: arsenale-back
+    internal: true

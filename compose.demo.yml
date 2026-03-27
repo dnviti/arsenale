@@ -244,7 +244,10 @@ volumes:
 networks:
   proxy-net:
     name: proxy-net
+    # External access for website and client ports
   arsenale-front-net:
     name: arsenale-front-net
+    internal: true
   arsenale-back-net:
     name: arsenale-back-net
+    internal: true

@@ -390,15 +390,20 @@ networks:
   # Server↔PostgreSQL only
   net-db:
     name: arsenale-net-db
+    internal: true
   # Server↔guacd only
   net-guacd:
     name: arsenale-net-guacd
+    internal: true
   # Server↔guacenc only
   net-guacenc:
     name: arsenale-net-guacenc
+    internal: true
   # Server↔gocache + gocache peers
   net-cache:
     name: arsenale-net-cache
+    internal: true
   # Server↔gateways + client (user-facing)
+  # Needs external access for client port binding and SSH gateway
   net-gateway:
     name: arsenale-net-gateway
