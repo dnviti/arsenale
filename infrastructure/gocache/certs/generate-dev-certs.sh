@@ -50,8 +50,8 @@ openssl x509 -req -sha256 -in "$OUT/client.csr" -CA "$OUT/ca.pem" -CAkey "$OUT/c
 # Clean up CSRs and temporary files
 rm -f "$OUT"/*.csr "$OUT"/*.cnf "$OUT"/*.srl
 
-# Make key files readable by rootless container users (UID 10001)
-chmod 644 "$OUT"/*-key.pem
+# Private keys: strict permissions (containers mount certs dir :ro)
+chmod 600 "$OUT"/*-key.pem
 
 echo "==> Done. Certificates generated in: $OUT"
 echo "    CA:     ca.pem / ca-key.pem"

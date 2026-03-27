@@ -5,8 +5,17 @@ services:
     tmpfs:
       - /tmp
       - /run/postgresql
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     security_opt:
       - label:disable
+      - no-new-privileges:true
     env_file:
       - .env.prod
     volumes:
@@ -25,6 +34,8 @@ services:
       - arsenale-back
 
   guacd:
+    # NOTE: 1.6.0 is the latest release (as of 2026-03). Base image Alpine 3.18 is EOL.
+    # Track https://github.com/apache/guacamole-server/releases for a newer build.
     image: ${ORCHESTRATOR_GUACD_IMAGE:-guacamole/guacd:1.6.0}
     read_only: true
     tmpfs:
@@ -132,7 +143,6 @@ services:
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
-      - /run/user/1000/podman/podman.sock:/run/user/1000/podman/podman.sock
     restart: always
     networks:
       - arsenale-front

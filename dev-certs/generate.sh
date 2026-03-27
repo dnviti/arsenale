@@ -67,7 +67,7 @@ EOF
 echo "=== gocache mTLS ==="
 generate_server_cert "$CERT_DIR/gocache" "gocache" "DNS:gocache, DNS:localhost, IP:127.0.0.1, IP:::1" "clientAuth"
 generate_client_cert "$CERT_DIR/gocache" "arsenale-server"
-chmod 644 "$CERT_DIR/gocache"/*-key.pem  # Rootless container UID 10001
+chmod 600 "$CERT_DIR/gocache"/*-key.pem  # Rootless container UID 10001 — mounted :ro
 
 # 2. tunnel (mTLS server)
 echo "=== Tunnel mTLS ==="
@@ -81,23 +81,23 @@ chmod 600 "$CERT_DIR/postgres/server-key.pem"  # PostgreSQL requires strict perm
 # 4. guacenc sidecar
 echo "=== Guacenc HTTPS ==="
 generate_server_cert "$CERT_DIR/guacenc" "guacenc" "DNS:guacenc, DNS:localhost, IP:127.0.0.1"
-chmod 644 "$CERT_DIR/guacenc/server-key.pem"  # Rootless container needs read access
+chmod 600 "$CERT_DIR/guacenc/server-key.pem"  # Rootless container — mounted :ro
 
 # 5. guacd (Guacamole Daemon — TLS listener)
 echo "=== guacd TLS ==="
 generate_server_cert "$CERT_DIR/guacd" "guacd" "DNS:guacd, DNS:localhost, IP:127.0.0.1"
-chmod 644 "$CERT_DIR/guacd/server-key.pem"  # guacd container runs as non-root (guacd user)
+chmod 600 "$CERT_DIR/guacd/server-key.pem"  # guacd container — mounted :ro
 
 # 6. SSH Gateway gRPC mTLS (server cert for the gateway + client cert for the Arsenale server)
 echo "=== SSH Gateway gRPC mTLS ==="
 generate_server_cert "$CERT_DIR/ssh-gateway" "ssh-gateway" "DNS:ssh-gateway, DNS:arsenale-ssh-gateway, DNS:localhost, IP:127.0.0.1" "clientAuth"
 generate_client_cert "$CERT_DIR/ssh-gateway" "arsenale-server"
-chmod 644 "$CERT_DIR/ssh-gateway/server-key.pem"  # Rootless container needs read access
+chmod 600 "$CERT_DIR/ssh-gateway/server-key.pem"  # Rootless container — mounted :ro
 
 # 7. RD Gateway (MS-TSGU proxy)
 echo "=== RD Gateway HTTPS ==="
 generate_server_cert "$CERT_DIR/rdgw" "rdgw" "DNS:rdgw, DNS:arsenale-rdgw, DNS:localhost, IP:127.0.0.1"
-chmod 644 "$CERT_DIR/rdgw/server-key.pem"  # Rootless container needs read access
+chmod 600 "$CERT_DIR/rdgw/server-key.pem"  # Rootless container — mounted :ro
 
 # 8. Express + guacamole-lite
 echo "=== Dev Server HTTPS ==="

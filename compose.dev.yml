@@ -6,6 +6,16 @@ services:
     tmpfs:
       - /tmp
       - /run/postgresql
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -41,6 +51,8 @@ services:
       retries: 5
 
   guacd:
+    # NOTE: 1.6.0 is the latest release (as of 2026-03). Base image Alpine 3.18 is EOL.
+    # Track https://github.com/apache/guacamole-server/releases for a newer build.
     image: guacamole/guacd:1.6.0
     container_name: guacd
     read_only: true
@@ -125,7 +137,7 @@ services:
       start_period: 5s
 
   server:
-    # read_only: false — dev mode requires writable FS for HMR/cache
+    read_only: true
     build:
       context: .
       dockerfile: server/Dockerfile
@@ -133,13 +145,15 @@ services:
     container_name: arsenale-server
     working_dir: /app
     userns_mode: keep-id
+    tmpfs:
+      - /app/node_modules/.vite
+      - /app/server/dist
+      - /tmp
     command: >
       sh -c "npx prisma generate --schema=server/prisma/schema.prisma &&
              npx tsx watch server/src/index.ts"
     volumes:
-      - .:/app
-      # Podman socket for container orchestration (rootless)
-      - ${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/var/run/docker.sock:ro
+      - .:/app:ro
       # Dev certificates (read-only)
       - ./dev-certs:/app/dev-certs:ro
     env_file:
@@ -152,7 +166,6 @@ services:
       GUACD_SSL: ${GUACD_SSL}
       GUACD_CA_CERT: ${GUACD_CA_CERT_DOCKER}
       DOCKER_NETWORK: ${DOCKER_NETWORK}
-      DOCKER_SOCKET_PATH: ${DOCKER_SOCKET_PATH}
       NODE_ENV: ${NODE_ENV}
       NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS_DOCKER}
       # Server TLS (Express HTTPS + Guacamole WSS)
@@ -202,7 +215,7 @@ services:
       start_period: 30s
 
   client:
-    # read_only: false — dev mode requires writable FS for HMR/cache
+    read_only: true
     build:
       context: .
       dockerfile: client/Dockerfile
@@ -210,9 +223,13 @@ services:
     container_name: arsenale-client
     working_dir: /app/client
     userns_mode: keep-id
+    tmpfs:
+      - /app/client/dist
+      - /app/node_modules/.vite
+      - /tmp
     command: npx vite --host
     volumes:
-      - .:/app
+      - .:/app:ro
       - /app/node_modules
       - ./dev-certs:/app/dev-certs:ro
     ports:
@@ -316,6 +333,9 @@ services:
       context: .
       dockerfile: gateways/db-proxy/Dockerfile
     container_name: arsenale-db-proxy
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       DB_LISTEN_PORT: ${DB_LISTEN_PORT}
       TUNNEL_SERVER_URL: ${DB_PROXY_TUNNEL_SERVER_URL:-}
@@ -342,6 +362,9 @@ services:
       context: gateways/rdgw
       dockerfile: Dockerfile
     container_name: arsenale-rdgw
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       RDGW_LISTEN_ADDR: ${RDGW_LISTEN_ADDR}
       RDGW_TLS_CERT: ${RDGW_TLS_CERT_GW}
