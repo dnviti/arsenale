@@ -2,7 +2,35 @@
 
 Automated, secure Podman deployment of Arsenale with Ansible Vault for secret management.
 
-## Prerequisites
+## Quick Start (via Makefile)
+
+The preferred way to interact with Ansible is through the root `Makefile`. All commands are run from the repository root.
+
+**Prerequisites:** [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/)
+
+```bash
+# First-time setup
+make setup          # Install Ansible collections, generate vault + certs
+
+# Development
+make dev            # Start postgres + gocache, generate .env
+npm run dev         # Start server + client
+
+# Production
+make deploy         # Full stack deployment
+make status         # Check health
+
+# Operations
+make backup         # Database backup
+make rotate         # Rotate secrets
+make vault          # Edit Ansible Vault
+make certs          # Regenerate TLS certificates
+make help           # All available targets
+```
+
+## Prerequisites (manual usage)
+
+If running playbooks directly instead of via `make`:
 
 - **Ansible 2.15+** on the control node
 - **Ansible Collections** (install before first use):
@@ -12,7 +40,7 @@ Automated, secure Podman deployment of Arsenale with Ansible Vault for secret ma
 - **Target host**: Linux with systemd (Fedora, RHEL, Debian, Ubuntu)
 - **SSH access** to the target host with sudo privileges
 
-## Quick Start
+### Direct Playbook Usage
 
 ```bash
 cd deployment/ansible

@@ -10,8 +10,8 @@ source-files:
   - gateways/tunnel-agent/package.json
   - extra-clients/browser-extensions/package.json
   - .env.example
-  - compose.dev.yml
   - Makefile
+  - deployment/ansible/
   - README.md
 ---
 
@@ -107,21 +107,17 @@ See [Configuration](configuration.md) for the full list of OAuth, SAML, LDAP, an
 
 The `.env` file **must** live at the monorepo root, not inside `server/`. The Prisma CLI resolves its env path to `../.env` via `server/prisma.config.ts`.
 
-### 3. Start Docker Containers
+### 3. Start Dev Infrastructure
 
 ```bash
-npm run docker:dev
+make dev
 ```
 
-This starts:
+This starts via Ansible:
 - **PostgreSQL 16** -- Database on `127.0.0.1:5432`
-- **guacenc** -- Recording processor on port 3003
+- **gocache** -- Cache sidecar on `127.0.0.1:6380`
 
-Alternatively, the `predev` script handles this automatically:
-
-```bash
-npm run predev
-```
+It also auto-generates the `.env` file from Ansible templates. For first-time setup, run `make setup` first.
 
 ### 4. Generate Prisma Client
 

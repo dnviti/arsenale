@@ -42,10 +42,8 @@ npm run predev && npm run dev  # Start containers + server + client
 | `npm run dev:server` | Express with tsx watch, hot reload |
 | `npm run dev:client` | Vite dev server, proxies to server |
 | `npm run dev:client:wait` | Waits for server health check, then starts client |
-| `npm run docker:dev` | Start PostgreSQL + guacenc containers |
-| `npm run docker:dev:down` | Stop dev containers |
-| `npm run dev:docker` | Full Docker dev stack (build + run) |
-| `npm run dev:docker:detach` | Full Docker dev stack (detached mode) |
+| `make dev` | Start dev infrastructure (postgres + gocache via Ansible) |
+| `make dev-down` | Stop dev infrastructure |
 
 ### Database Operations
 
@@ -297,10 +295,9 @@ arsenale/
 │   └── ssh-gateway/                 # SSH bastion with tunnel
 ├── extra-clients/
 │   └── browser-extensions/          # Chrome extension
-├── compose.yml                      # Production Docker Compose
-├── compose.dev.yml                  # Development Docker Compose
+├── Makefile                         # Ansible deployment UX (make dev/deploy/etc.)
+├── deployment/ansible/              # Ansible playbooks, roles, and templates
 ├── .env.example                     # Environment template
 ├── eslint.config.mjs                # Shared ESLint config
-├── Makefile                         # Development shortcuts
 └── CLAUDE.md                        # AI assistant instructions
 ```

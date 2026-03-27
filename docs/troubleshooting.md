@@ -23,7 +23,7 @@ source-files:
 **Error:** `Can't reach database server at localhost:5432`
 
 **Causes and fixes:**
-1. PostgreSQL container not running: `npm run docker:dev`
+1. PostgreSQL container not running: `make dev`
 2. Wrong `DATABASE_URL` in `.env`: verify host, port, credentials
 3. Port conflict: `sudo lsof -i :5432` to check
 4. Docker/Podman not running: start Docker daemon
@@ -266,7 +266,7 @@ For Podman, ensure the socket path is correct: `PODMAN_SOCKET_PATH=$XDG_RUNTIME_
 
 **Cause:** Volume not persisted.
 
-**Fix:** Ensure `pgdata` volume is defined in compose file (it is by default in both `compose.yml` and `compose.dev.yml`).
+**Fix:** Ensure `pgdata` volume is defined in the compose template (managed by Ansible in `deployment/ansible/`).
 
 ## Network Issues
 

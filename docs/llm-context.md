@@ -50,9 +50,9 @@ npm run verify                  # typecheck -> lint -> audit -> build
 npm run db:generate             # Regenerate Prisma client
 npm run db:push                 # Sync schema to DB (no migration)
 npm run db:migrate              # Run Prisma migrations
-npm run docker:dev              # Start PostgreSQL + guacenc containers
-npm run docker:dev:down         # Stop dev containers
-npm run docker:prod             # Full production stack
+make dev                        # Start dev infrastructure (postgres + gocache via Ansible)
+make dev-down                   # Stop dev infrastructure
+make deploy                     # Full production deployment via Ansible
 npm run build                   # Build all workspaces
 npm run typecheck               # TypeScript type-check (both workspaces)
 npm run lint                    # ESLint (both workspaces)
