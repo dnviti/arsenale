@@ -1,0 +1,56 @@
+---
+- name: Wait for all containers to be healthy
+  command: >
+    podman compose -f {{ arsenale_home }}/docker-compose.yml
+    ps --format json
+  register: compose_status
+  retries: 24
+  delay: 5
+  until: >
+    (compose_status.stdout | from_json | selectattr('Health', 'equalto', 'healthy') | list | length) >= 5
+  changed_when: false
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ arsenale_uid }}"
+
+- name: Verify API health endpoint
+  uri:
+    url: "https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/health"
+    validate_certs: false
+    status_code: 200
+  retries: 12
+  delay: 5
+  register: health_check
+  until: health_check.status == 200
+
+- name: Verify secrets are NOT in container environment
+  command: >
+    podman inspect arsenale-server --format
+    '{% raw %}{{ range .Config.Env }}{{ println . }}{{ end }}{% endraw %}'
+  register: server_env
+  changed_when: false
+  failed_when: >
+    'JWT_SECRET=' in server_env.stdout or
+    'GUACAMOLE_SECRET=' in server_env.stdout or
+    'SERVER_ENCRYPTION_KEY=' in server_env.stdout
+
+- name: Verify Podman secrets are mounted in server
+  command: podman exec arsenale-server ls /run/secrets/
+  register: server_secrets
+  changed_when: false
+  failed_when: "'jwt_secret' not in server_secrets.stdout"
+
+- name: Verify postgres only has its own secret
+  command: podman exec arsenale-postgres ls /run/secrets/
+  register: postgres_secrets
+  changed_when: false
+  failed_when: >
+    'postgres_password' not in postgres_secrets.stdout or
+    'jwt_secret' in postgres_secrets.stdout
+
+- name: Display deployment status
+  debug:
+    msg: |
+      Arsenale deployed successfully!
+      Web UI: https://{{ arsenale_domain }}:{{ arsenale_client_port }}
+      SSH Gateway: ssh -p {{ arsenale_ssh_port }} tunnel@{{ arsenale_domain }}
+      Secrets: Managed via Podman secrets (not in container env)

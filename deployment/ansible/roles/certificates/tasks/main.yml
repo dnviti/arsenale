@@ -1,0 +1,92 @@
+---
+- name: Generate CA private key
+  community.crypto.openssl_privatekey:
+    path: "{{ arsenale_cert_dir }}/ca-key.pem"
+    type: ECC
+    curve: secp256r1
+    mode: "0600"
+  register: ca_key
+
+- name: Generate CA certificate
+  community.crypto.x509_certificate:
+    path: "{{ arsenale_cert_dir }}/ca-cert.pem"
+    privatekey_path: "{{ arsenale_cert_dir }}/ca-key.pem"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ arsenale_ca_validity_days }}d"
+    mode: "0644"
+  when: ca_key.changed
+
+- name: Define service certificates
+  set_fact:
+    cert_services:
+      - { name: server, cn: arsenale-server, san: "DNS:arsenale-server,DNS:localhost,IP:127.0.0.1" }
+      - { name: postgres, cn: arsenale-postgres, san: "DNS:arsenale-postgres,DNS:postgres,DNS:localhost" }
+      - { name: gocache, cn: arsenale-gocache, san: "DNS:arsenale-gocache,DNS:gocache,DNS:localhost" }
+      - { name: guacenc, cn: arsenale-guacenc, san: "DNS:arsenale-guacenc,DNS:guacenc,DNS:localhost" }
+      - { name: guacd, cn: arsenale-guacd, san: "DNS:arsenale-guacd,DNS:guacd,DNS:localhost" }
+      - { name: ssh-gateway, cn: arsenale-ssh-gateway, san: "DNS:arsenale-ssh-gateway,DNS:ssh-gateway,DNS:localhost" }
+
+- name: Create service cert directories
+  file:
+    path: "{{ arsenale_cert_dir }}/{{ item.name }}"
+    state: directory
+    mode: "0750"
+  loop: "{{ cert_services }}"
+
+- name: Generate service private keys
+  community.crypto.openssl_privatekey:
+    path: "{{ arsenale_cert_dir }}/{{ item.name }}/server-key.pem"
+    type: ECC
+    curve: secp256r1
+    mode: "0600"
+  loop: "{{ cert_services }}"
+
+- name: Generate service CSRs
+  community.crypto.openssl_csr:
+    path: "{{ arsenale_cert_dir }}/{{ item.name }}/server.csr"
+    privatekey_path: "{{ arsenale_cert_dir }}/{{ item.name }}/server-key.pem"
+    common_name: "{{ item.cn }}"
+    subject_alt_name: "{{ item.san.split(',') }}"
+  loop: "{{ cert_services }}"
+
+- name: Sign service certificates with CA
+  community.crypto.x509_certificate:
+    path: "{{ arsenale_cert_dir }}/{{ item.name }}/server-cert.pem"
+    csr_path: "{{ arsenale_cert_dir }}/{{ item.name }}/server.csr"
+    ownca_path: "{{ arsenale_cert_dir }}/ca-cert.pem"
+    ownca_privatekey_path: "{{ arsenale_cert_dir }}/ca-key.pem"
+    provider: ownca
+    ownca_not_after: "+{{ arsenale_cert_validity_days }}d"
+    mode: "0644"
+  loop: "{{ cert_services }}"
+
+- name: Copy CA cert to each service directory
+  copy:
+    src: "{{ arsenale_cert_dir }}/ca-cert.pem"
+    dest: "{{ arsenale_cert_dir }}/{{ item.name }}/ca.pem"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ cert_services }}"
+
+- name: Generate gocache client certificates (for server mTLS)
+  community.crypto.openssl_privatekey:
+    path: "{{ arsenale_cert_dir }}/gocache/client-key.pem"
+    type: ECC
+    curve: secp256r1
+    mode: "0600"
+
+- name: Generate gocache client CSR
+  community.crypto.openssl_csr:
+    path: "{{ arsenale_cert_dir }}/gocache/client.csr"
+    privatekey_path: "{{ arsenale_cert_dir }}/gocache/client-key.pem"
+    common_name: arsenale-server-cache-client
+
+- name: Sign gocache client certificate
+  community.crypto.x509_certificate:
+    path: "{{ arsenale_cert_dir }}/gocache/client-cert.pem"
+    csr_path: "{{ arsenale_cert_dir }}/gocache/client.csr"
+    ownca_path: "{{ arsenale_cert_dir }}/ca-cert.pem"
+    ownca_privatekey_path: "{{ arsenale_cert_dir }}/ca-key.pem"
+    provider: ownca
+    ownca_not_after: "+{{ arsenale_cert_validity_days }}d"
+    mode: "0644"

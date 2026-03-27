@@ -1,0 +1,24 @@
+---
+- name: Deploy Arsenale on Podman
+  hosts: arsenale-server
+  become: true
+  become_user: "{{ arsenale_user }}"
+
+  pre_tasks:
+    - name: Validate required vault secrets
+      assert:
+        that:
+          - vault_jwt_secret != 'CHANGE_ME'
+          - vault_guacamole_secret != 'CHANGE_ME'
+          - vault_server_encryption_key != 'CHANGE_ME'
+          - vault_postgres_password != 'CHANGE_ME'
+          - vault_guacenc_auth_token != 'CHANGE_ME'
+        fail_msg: "Run 'ansible-playbook playbooks/setup-vault.yml' first to generate secrets"
+
+  roles:
+    - prerequisites
+    - certificates
+    - podman_secrets
+    - deploy
+    - firewall
+    - healthcheck
