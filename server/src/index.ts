@@ -27,6 +27,7 @@ import { completeGuacRecording, cleanupExpiredRecordings } from './services/reco
 import { initGeoIp } from './services/geoip.service';
 import { setupTunnelHandler } from './socket/tunnel.handler';
 import { generateSelfSignedServerCert } from './utils/certGenerator';
+import { pushKeysToAllTenantGateways } from './services/gateway.service';
 import { startSshProxyServer, stopSshProxyServer, restartSshProxy } from './services/sshProxy.service';
 import { cleanupIdleTunnels } from './services/rdGateway.service';
 import { cleanupExpiredDeviceCodes } from './services/deviceAuth.service';
@@ -575,6 +576,16 @@ async function main() {
     logger.info(`HTTPS server running on port ${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
     markServerReady();
+
+    // Auto-push SSH keys to all managed gateways after startup
+    // Delay gives gateways time to start their gRPC servers
+    setTimeout(() => {
+      runIfLeader('scheduler', async () => {
+        await pushKeysToAllTenantGateways();
+      }).catch((err) => {
+        logger.error('Startup SSH key push failed:', err instanceof Error ? err.message : 'Unknown error');
+      });
+    }, 10_000);
   });
 
   // If the tunnel server is separate (TLS-enabled), start it on port+10
