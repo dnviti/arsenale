@@ -11,6 +11,7 @@ let ldapSyncTask: ScheduledTask | null = null;
 let membershipExpiryTask: ScheduledTask | null = null;
 let checkoutExpiryTask: ScheduledTask | null = null;
 let passwordRotationTask: ScheduledTask | null = null;
+let systemSecretRotationTask: ScheduledTask | null = null;
 
 export function startKeyRotationJob(): void {
   const cronExpr = config.keyRotationCron;
@@ -336,6 +337,36 @@ export function startPasswordRotationJob(): void {
   );
 }
 
+export function startSystemSecretRotationJob(): void {
+  const cronExpr = config.keyRotationCron;
+
+  if (!cron.validate(cronExpr)) {
+    logger.error(
+      `[scheduler] Invalid KEY_ROTATION_CRON expression: "${cronExpr}". ` +
+        'System secret rotation job will NOT run.',
+    );
+    return;
+  }
+
+  systemSecretRotationTask = cron.schedule(
+    cronExpr,
+    () => {
+      import('./systemSecrets.service').then((svc) =>
+        svc.processSecretRotations().catch((err) => {
+          logger.error('[scheduler] Unhandled error in processSecretRotations:', err instanceof Error ? err.message : 'Unknown error');
+        }),
+      ).catch((err) => {
+        logger.error('[scheduler] Failed to import systemSecrets.service:', err instanceof Error ? err.message : 'Unknown error');
+      });
+    },
+    { timezone: 'UTC' },
+  );
+
+  logger.info(
+    `[scheduler] System secret rotation job scheduled: "${cronExpr}" (UTC)`,
+  );
+}
+
 export function reloadKeyRotationJob(): void {
   if (rotationTask) { rotationTask.stop(); rotationTask = null; }
   startKeyRotationJob();
@@ -366,6 +397,10 @@ export function stopAllJobs(): void {
   if (passwordRotationTask) {
     passwordRotationTask.stop();
     passwordRotationTask = null;
+  }
+  if (systemSecretRotationTask) {
+    systemSecretRotationTask.stop();
+    systemSecretRotationTask = null;
   }
   logger.info('[scheduler] All scheduled jobs stopped.');
 }

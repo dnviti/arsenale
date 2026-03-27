@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import dotenv from 'dotenv';
 import path from 'path';
 import { parseExpiry } from './utils/format';
-import { readSecret, readRequiredSecret } from './utils/secrets';
+import { readSecret } from './utils/secrets';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
@@ -35,14 +35,14 @@ function resolveServerEncryptionKey(): Buffer {
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
   guacamoleWsPort: parseInt(process.env.GUACAMOLE_WS_PORT || '3002', 10),
-  jwtSecret: readRequiredSecret('jwt_secret', 'JWT_SECRET', 'JWT signing secret. Generate with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'),
+  jwtSecret: readSecret('jwt_secret', 'JWT_SECRET') || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '15m',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   guacdHost: process.env.GUACD_HOST || 'localhost',
   guacdPort: parseInt(process.env.GUACD_PORT || '4822', 10),
   guacdSsl: process.env.GUACD_SSL === 'true',
   guacdCaCert: process.env.GUACD_CA_CERT || '',
-  guacamoleSecret: readRequiredSecret('guacamole_secret', 'GUACAMOLE_SECRET', 'Guacamole encryption secret. Generate with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"'),
+  guacamoleSecret: readSecret('guacamole_secret', 'GUACAMOLE_SECRET') || '',
   serverEncryptionKey: resolveServerEncryptionKey(),
   // Gateway key management gRPC (mTLS — replaces old HTTP API + bearer token)
   gatewayGrpcPort: parseInt(process.env.GATEWAY_GRPC_PORT || '9022', 10),
@@ -207,17 +207,7 @@ export const config = {
   recordingVolume: process.env.RECORDING_VOLUME || '',
   recordingRetentionDays: parseInt(process.env.RECORDING_RETENTION_DAYS || '90', 10),
   // Guacenc video conversion sidecar
-  guacencAuthToken: (() => {
-    const token = readSecret('guacenc_auth_token', 'GUACENC_AUTH_TOKEN') || '';
-    if (!token && process.env.NODE_ENV === 'production') {
-      throw new Error('GUACENC_AUTH_TOKEN is required in production. Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
-    }
-    if (!token) {
-      // eslint-disable-next-line no-console
-      console.warn('[config] GUACENC_AUTH_TOKEN not set — guacenc sidecar requests will be unauthenticated');
-    }
-    return token;
-  })(),
+  guacencAuthToken: readSecret('guacenc_auth_token', 'GUACENC_AUTH_TOKEN') || '',
   guacencUseTls: process.env.GUACENC_USE_TLS === 'true',
   guacencTlsCa: process.env.GUACENC_TLS_CA || '',
   guacencServiceUrl: process.env.GUACENC_SERVICE_URL || 'http://guacenc:3003',
@@ -351,3 +341,8 @@ export const config = {
   cacheSidecarTlsCert: process.env.CACHE_SIDECAR_TLS_CERT || '',
   cacheSidecarTlsKey: process.env.CACHE_SIDECAR_TLS_KEY || '',
 };
+
+// Runtime setter for auto-managed system secrets (populated from DB after startup)
+export function setSystemSecret(key: 'jwtSecret' | 'guacamoleSecret' | 'guacencAuthToken', value: string): void {
+  (config as Record<string, unknown>)[key] = value;
+}

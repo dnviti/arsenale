@@ -1508,3 +1508,22 @@ model TenantAiConfig {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
+
+model SystemSecret {
+  id                     String    @id @default(uuid())
+  name                   String    @unique
+  currentVersion         Int       @default(1)
+  encryptedValue         String
+  valueIV                String
+  valueTag               String
+  previousEncryptedValue String?
+  previousValueIV        String?
+  previousValueTag       String?
+  rotatedAt              DateTime?
+  autoRotate             Boolean   @default(true)
+  rotationIntervalDays   Int       @default(90)
+  distributed            Boolean   @default(false)
+  targetService          String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}

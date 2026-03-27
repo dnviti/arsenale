@@ -10,7 +10,7 @@ import { initializePassport } from './config/passport';
 import { setupSocketIO } from './socket';
 import { logger, toGuacamoleLogLevel } from './utils/logger';
 import prisma from './lib/prisma';
-import { startKeyRotationJob, startLdapSyncJob, startMembershipExpiryJob, startCheckoutExpiryJob, startPasswordRotationJob, stopAllJobs } from './services/scheduler.service';
+import { startKeyRotationJob, startLdapSyncJob, startMembershipExpiryJob, startCheckoutExpiryJob, startPasswordRotationJob, startSystemSecretRotationJob, stopAllJobs } from './services/scheduler.service';
 import { startAllSyncJobs, stopAllSyncJobs } from './services/syncScheduler.service';
 import { startAllMonitors, stopAllMonitors } from './services/gatewayMonitor.service';
 import { cleanupExpiredShares } from './services/externalShare.service';
@@ -105,7 +105,7 @@ function checkProductionSecurityConfig(): void {
     logger.warn('[security] Gateway gRPC key push lacks mTLS — set GATEWAY_GRPC_TLS_CA/CERT/KEY');
   }
   if (!config.guacencAuthToken) {
-    logger.warn('[security] Guacenc sidecar has no auth token — set GUACENC_AUTH_TOKEN');
+    logger.warn('[security] Guacenc auth token not initialized — system secrets may have failed to load');
   }
   if (config.ldap.enabled && !config.ldap.starttls && !config.ldap.serverUrl.startsWith('ldaps://')) {
     logger.warn('[security] LDAP enabled without TLS — enable LDAP_STARTTLS or use ldaps:// URL');
@@ -141,6 +141,10 @@ async function main() {
   await runDatabaseMigrations();
   await runStartupMigrations();
   await applySystemSettings();
+
+  // Initialize auto-managed system secrets (JWT, Guacamole, guacenc)
+  const { ensureSystemSecrets } = await import('./services/systemSecrets.service');
+  await ensureSystemSecrets();
 
   // Check for insecure production configurations
   checkProductionSecurityConfig();
@@ -220,6 +224,7 @@ async function main() {
   startMembershipExpiryJob();
   startCheckoutExpiryJob();
   startPasswordRotationJob();
+  startSystemSecretRotationJob();
   startAllSyncJobs().catch((err) => {
     logger.error('Failed to start sync jobs:', err instanceof Error ? err.message : 'Unknown error');
   });
