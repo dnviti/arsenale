@@ -60,6 +60,10 @@ services:
   postgres:
     image: postgres:16
     container_name: arsenale-postgres
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run/postgresql
     env_file:
       - .env
     # POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB are read from .env
@@ -100,6 +104,9 @@ services:
   guacd:
     image: ${ORCHESTRATOR_GUACD_IMAGE:-guacamole/guacd:1.6.0}
     container_name: arsenale-guacd
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       # TLS encryption for guacd listener (Guacamole native protocol).
       # When enabled, all traffic between guacamole-lite and guacd is encrypted.
@@ -141,6 +148,9 @@ services:
       context: ./arsenale/gateways/guacenc
       dockerfile: Dockerfile
     container_name: arsenale-guacenc
+    read_only: true
+    tmpfs:
+      - /tmp
     volumes:
       # Same recordings volume as guacd — guacenc reads raw recordings and
       # writes converted video files back to the same directory.
@@ -169,6 +179,9 @@ services:
       context: ./arsenale/infrastructure/gocache
       dockerfile: Dockerfile
     container_name: arsenale-gocache
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       CACHE_LISTEN: "tcp://0.0.0.0:6380"
       CACHE_HEALTH_ADDR: "0.0.0.0:6381"
@@ -212,6 +225,9 @@ services:
       context: ./arsenale
       dockerfile: server/Dockerfile
     container_name: arsenale-server
+    read_only: true
+    tmpfs:
+      - /tmp
     # Security hardening: drop all capabilities, add only what's needed.
     cap_drop:
       - ALL
@@ -282,6 +298,11 @@ services:
       context: ./arsenale
       dockerfile: client/Dockerfile
     container_name: arsenale-client
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /run
+      - /var/cache/nginx
     ports:
       # Map container port 8080 (Nginx) to host port 3000.
       # Change the left side to use a different host port (e.g., "80:8080"
@@ -324,6 +345,9 @@ services:
       context: ./arsenale
       dockerfile: gateways/ssh-gateway/Dockerfile
     container_name: arsenale-ssh-gateway
+    read_only: true
+    tmpfs:
+      - /tmp
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost ${SSH_PORT:-2222} || exit 1"]
       interval: 10s
