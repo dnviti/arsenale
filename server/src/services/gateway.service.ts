@@ -572,6 +572,40 @@ export async function pushKeyToGateway(
   return results;
 }
 
+export async function pushKeysToAllTenantGateways(): Promise<void> {
+  const tenants = await prisma.sshKeyPair.findMany({
+    select: { tenantId: true, tenant: { select: { name: true } } },
+  });
+
+  if (tenants.length === 0) {
+    log.info('[startup] No tenants with SSH key pairs — skipping gateway key push');
+    return;
+  }
+
+  log.info(`[startup] Pushing SSH keys to all managed gateways for ${tenants.length} tenant(s)`);
+
+  let ok = 0;
+  let failed = 0;
+
+  for (const { tenantId, tenant } of tenants) {
+    try {
+      const results = await pushKeyToAllManagedGateways(tenantId);
+      const tenantOk = results.filter(r => r.ok).length;
+      const tenantFailed = results.filter(r => !r.ok).length;
+      if (tenantFailed > 0) {
+        log.warn(`[startup] Key push for tenant "${tenant.name}": ${tenantOk} ok, ${tenantFailed} failed`);
+      }
+      ok += tenantOk;
+      failed += tenantFailed;
+    } catch (err) {
+      failed++;
+      log.warn(`[startup] Key push failed for tenant "${tenant.name}": ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  log.info(`[startup] Gateway key push complete: ${ok} ok, ${failed} failed`);
+}
+
 // ---------------------------------------------------------------------------
 // Tunnel token management (delegates to tunnel.service)
 // ---------------------------------------------------------------------------
