@@ -221,7 +221,7 @@ async function main() {
   startCheckoutExpiryJob();
   startPasswordRotationJob();
   startAllSyncJobs().catch((err) => {
-    logger.error('Failed to start sync jobs:', err);
+    logger.error('Failed to start sync jobs:', err instanceof Error ? err.message : 'Unknown error');
   });
 
   // Register live-reload callbacks for system settings
@@ -528,13 +528,13 @@ async function main() {
               metadata.connectionId,
               protocol,
             ).catch((err: unknown) => {
-              logger.error('Failed to end session on guac close:', err);
+              logger.error('Failed to end session on guac close:', err instanceof Error ? err.message : 'Unknown error');
             });
 
             // Finalize recording if one was started
             if (metadata.recordingId) {
               completeGuacRecording(metadata.recordingId).catch((err: unknown) => {
-                logger.error('Failed to complete recording on guac close:', err);
+                logger.error('Failed to complete recording on guac close:', err instanceof Error ? err.message : 'Unknown error');
               });
             }
           }
@@ -610,7 +610,7 @@ async function main() {
         logger.info(`Closed ${closed} active session(s) on shutdown`);
       }
     } catch (err) {
-      logger.error('Failed to close sessions on shutdown:', err);
+      logger.error('Failed to close sessions on shutdown:', err instanceof Error ? err.message : 'Unknown error');
     }
 
     // Close all DB query executor pools

@@ -100,7 +100,7 @@ export async function register(email: string, password: string) {
 
   if (needsVerification && emailVerifyToken) {
     sendVerificationEmail(email, emailVerifyToken).catch((err) => {
-      log.error('Failed to send verification email:', err);
+      log.error('Failed to send verification email:', err instanceof Error ? err.message : 'Unknown error');
     });
   }
 

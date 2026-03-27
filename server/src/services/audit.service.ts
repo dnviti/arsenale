@@ -46,7 +46,7 @@ export function log(input: AuditLogInput): void {
       }
     })
     .catch((err) => {
-      logger.error('Failed to write audit log:', err);
+      logger.error('Failed to write audit log:', err instanceof Error ? err.message : 'Unknown error');
     });
 }
 
