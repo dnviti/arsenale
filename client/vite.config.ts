@@ -1,11 +1,12 @@
+import fs from 'fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // Allow overriding proxy targets via env vars (set by Docker Compose).
 // Defaults work for host-mode development (server on localhost).
-const apiTarget = process.env.VITE_API_TARGET || 'http://localhost:3001';
-const guacTarget = process.env.VITE_GUAC_TARGET || 'http://localhost:3002';
+const apiTarget = process.env.VITE_API_TARGET || 'https://localhost:3001';
+const guacTarget = process.env.VITE_GUAC_TARGET || 'https://localhost:3002';
 
 export default defineConfig({
   plugins: [
@@ -160,18 +161,81 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    headers: {
+      'X-Frame-Options': 'DENY',
+      'X-Content-Type-Options': 'nosniff',
+      'Strict-Transport-Security': 'max-age=31536000; includeSubDomains',
+      'Referrer-Policy': 'strict-origin-when-cross-origin',
+      'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      // NOTE: Vite dev server requires unsafe-inline/unsafe-eval for HMR to function.
+      // This is acceptable in development only. Production builds use Helmet CSP
+      // configured in server/src/app.ts with strict default-src 'self' (no unsafe-*).
+      'Content-Security-Policy':
+        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    },
+    fs: {
+      // Restrict file serving to the project workspace only — prevents /@fs path traversal
+      strict: true,
+      // Primary defense: only allow serving files from client/ and hoisted node_modules
+      allow: [
+        '.',                    // client/ directory only
+        '../node_modules',      // hoisted monorepo dependencies
+      ],
+      // Defense-in-depth: explicitly block sensitive files and non-client directories
+      deny: [
+        '.env',
+        '.env.*',
+        '.git/**',
+        'node_modules/.vite/deps/_metadata.json',
+        '**/*.pem',
+        '**/*.key',
+        // Block all non-client monorepo directories
+        '../server/**',
+        '../gateways/**',
+        '../infrastructure/**',
+        '../deployment/**',
+        '../dev-certs/**',
+        '../docs/**',
+        '../tasks/**',
+        '../.claude/**',
+        // Block infrastructure files
+        '../compose*.yml',
+        '../docker-compose*.yml',
+        '../Dockerfile*',
+        '../.env*',
+        '../*.sh',
+      ],
+    },
+    https: (() => {
+      // Use provided certs or fall back to auto-generated dev certs from the server
+      const certPath = process.env.VITE_TLS_CERT || '../dev-certs/server/server-cert.pem';
+      const keyPath = process.env.VITE_TLS_KEY || '../dev-certs/server/server-key.pem';
+      try {
+        return {
+          cert: fs.readFileSync(certPath),
+          key: fs.readFileSync(keyPath),
+        };
+      } catch {
+        // Certs not available yet — Vite will start without HTTPS.
+        // Run the dev cert generation script first, or set VITE_TLS_CERT/KEY.
+        return undefined as unknown as { cert: Buffer; key: Buffer };
+      }
+    })(),
     proxy: {
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+        secure: false, // accept self-signed certs from backend
       },
       '/socket.io': {
         target: apiTarget,
         ws: true,
+        secure: false,
       },
       '/guacamole': {
         target: guacTarget,
         ws: true,
+        secure: false,
         rewrite: (path) => path.replace(/^\/guacamole/, ''),
       },
     },

@@ -1,6 +1,13 @@
 # Build context: monorepo root (see compose.yml — context: .)
 # This allows copying gateways/tunnel-agent sources alongside the ssh-gateway files.
 
+# ── gRPC key management server build stage ──────────────────────────────────
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS grpc-builder
+
+WORKDIR /build
+COPY gateways/ssh-gateway/grpc-server/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /key-mgmt-server .
+
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
 FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
 
@@ -27,26 +34,16 @@ LABEL org.opencontainers.image.licenses="MIT"
 RUN apk add --no-cache openssh-server netcat-openbsd busybox-extras nodejs \
     && adduser -D -s /sbin/nologin tunnel \
     && sed -i 's/^tunnel:!/tunnel:*/' /etc/shadow \
-    && mkdir -p /home/tunnel/.ssh \
-    && chown tunnel:tunnel /home/tunnel/.ssh \
-    && chmod 700 /home/tunnel/.ssh \
     && mkdir -p /config
 
 COPY gateways/ssh-gateway/sshd_config /etc/ssh/sshd_config
 RUN sed -i 's/\r$//' /etc/ssh/sshd_config
 
-# Generate host keys at build time and make them readable by tunnel user
-RUN ssh-keygen -A \
-    && chown tunnel:tunnel /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
-    && chmod 600 /etc/ssh/ssh_host_*_key \
-    && chmod 644 /etc/ssh/ssh_host_*_key.pub
-
 COPY gateways/ssh-gateway/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
-RUN mkdir -p /var/www/cgi-bin
-COPY gateways/ssh-gateway/key-api.sh /var/www/cgi-bin/authorized-keys
-RUN sed -i 's/\r$//' /var/www/cgi-bin/authorized-keys && chmod +x /var/www/cgi-bin/authorized-keys
+# gRPC key management server (static binary — replaces Node.js key-api-server.js)
+COPY --from=grpc-builder /key-mgmt-server /usr/local/bin/key-mgmt-server
 
 # Embed pre-built tunnel agent
 COPY --from=tunnel-builder /tunnel-agent/dist /opt/tunnel-agent/dist
@@ -55,7 +52,7 @@ COPY --from=tunnel-builder /tunnel-agent/package.json /opt/tunnel-agent/package.
 
 USER tunnel
 
-EXPOSE 2222 8022
+EXPOSE 2222 9022
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
     CMD nc -z localhost ${SSH_PORT:-2222} || exit 1

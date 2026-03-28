@@ -50,7 +50,7 @@ export async function canViewConnection(
     where: { id: connectionId },
     include: {
       team: { select: { tenantId: true } },
-      gateway: { select: { id: true, type: true, host: true, port: true, isManaged: true, lbStrategy: true } },
+      gateway: { select: { id: true, type: true, host: true, port: true, isManaged: true, lbStrategy: true, tunnelEnabled: true } },
       credentialSecret: { select: { id: true, name: true, type: true, scope: true, teamId: true, tenantId: true, encryptedData: true, dataIV: true, dataTag: true } },
     },
   });
@@ -332,10 +332,11 @@ export async function canManageSecret(
   if (secret.scope === 'TENANT' && secret.tenantId) {
     const membership = await prisma.tenantMember.findUnique({
       where: { tenantId_userId: { tenantId: secret.tenantId, userId } },
-      select: { role: true },
+      select: { role: true, status: true },
     });
     if (
       membership &&
+      membership.status === 'ACCEPTED' &&
       (membership.role === 'OWNER' || membership.role === 'ADMIN')
     ) {
       return { allowed: true, secret, accessType: 'tenant' };

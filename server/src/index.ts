@@ -1,14 +1,16 @@
 import crypto from 'crypto';
 import { execSync, execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import http from 'http';
+import https from 'https';
 import app from './app';
 import { config } from './config';
 import { initializePassport } from './config/passport';
 import { setupSocketIO } from './socket';
 import { logger, toGuacamoleLogLevel } from './utils/logger';
 import prisma from './lib/prisma';
-import { startKeyRotationJob, startLdapSyncJob, startMembershipExpiryJob, startCheckoutExpiryJob, startPasswordRotationJob, stopAllJobs } from './services/scheduler.service';
+import { startKeyRotationJob, startLdapSyncJob, startMembershipExpiryJob, startCheckoutExpiryJob, startPasswordRotationJob, startSystemSecretRotationJob, stopAllJobs } from './services/scheduler.service';
 import { startAllSyncJobs, stopAllSyncJobs } from './services/syncScheduler.service';
 import { startAllMonitors, stopAllMonitors } from './services/gatewayMonitor.service';
 import { cleanupExpiredShares } from './services/externalShare.service';
@@ -24,6 +26,8 @@ import * as autoscalerService from './services/autoscaler.service';
 import { completeGuacRecording, cleanupExpiredRecordings } from './services/recording.service';
 import { initGeoIp } from './services/geoip.service';
 import { setupTunnelHandler } from './socket/tunnel.handler';
+import { generateSelfSignedServerCert } from './utils/certGenerator';
+import { startGatewayEventSubscriptions, publishGatewayEvent, GatewayEventType } from './services/gatewayEventBus.service';
 import { startSshProxyServer, stopSshProxyServer, restartSshProxy } from './services/sshProxy.service';
 import { cleanupIdleTunnels } from './services/rdGateway.service';
 import { cleanupExpiredDeviceCodes } from './services/deviceAuth.service';
@@ -88,14 +92,64 @@ async function runStartupMigrations() {
   }
 }
 
+function checkProductionSecurityConfig(): void {
+  if (config.nodeEnv !== 'production') return;
+
+  if (!config.guacdSsl) {
+    logger.warn('[security] guacd communication uses plaintext TCP — set GUACD_SSL=true and configure GUACD_CA_CERT');
+  }
+  if (!config.tunnelServerCert) {
+    logger.warn('[security] Tunnel endpoint running without TLS — mTLS enforcement requires TUNNEL_SERVER_CERT/KEY');
+  }
+  if (!config.gatewayGrpcTlsCa || !config.gatewayGrpcTlsCert || !config.gatewayGrpcTlsKey) {
+    logger.warn('[security] Gateway gRPC key push lacks mTLS — set GATEWAY_GRPC_TLS_CA/CERT/KEY');
+  }
+  if (!config.guacencAuthToken) {
+    logger.warn('[security] Guacenc auth token not initialized — system secrets may have failed to load');
+  }
+  if (config.ldap.enabled && !config.ldap.starttls && !config.ldap.serverUrl.startsWith('ldaps://')) {
+    logger.warn('[security] LDAP enabled without TLS — enable LDAP_STARTTLS or use ldaps:// URL');
+  }
+  if (process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('sslmode')) {
+    logger.warn('[security] DATABASE_URL lacks sslmode parameter — consider adding sslmode=require');
+  }
+
+  // Check OAuth callback URLs for HTTP (except localhost)
+  const oauthProviders = [
+    { name: 'Google', url: config.oauth.google.callbackUrl, enabled: config.oauth.google.enabled },
+    { name: 'Microsoft', url: config.oauth.microsoft.callbackUrl, enabled: config.oauth.microsoft.enabled },
+    { name: 'GitHub', url: config.oauth.github.callbackUrl, enabled: config.oauth.github.enabled },
+    { name: 'OIDC', url: config.oauth.oidc.callbackUrl, enabled: config.oauth.oidc.enabled },
+    { name: 'SAML', url: config.oauth.saml.callbackUrl, enabled: config.oauth.saml.enabled },
+  ];
+  for (const provider of oauthProviders) {
+    if (provider.enabled && provider.url.startsWith('http://') && !provider.url.includes('://localhost')) {
+      logger.warn(`[security] ${provider.name} OAuth callback URL uses HTTP — use HTTPS in production`);
+    }
+  }
+
+  if (!config.geoipDbPath) {
+    logger.info('[security] GeoIP database not configured — IP geolocation enrichment disabled. Set GEOIP_DB_PATH for offline lookups instead of http://ip-api.com');
+  }
+}
+
 async function main() {
-  // Kill stale processes from previous runs (e.g. tsx watch restart, debugger)
-  freePort(config.port);
-  freePort(config.guacamoleWsPort);
+  // Only do dev-time port cleanup for local watch/debug workflows.
+  if (config.nodeEnv === 'development') {
+    freePort(config.port);
+    freePort(config.guacamoleWsPort);
+  }
 
   await runDatabaseMigrations();
   await runStartupMigrations();
   await applySystemSettings();
+
+  // Initialize auto-managed system secrets (JWT, Guacamole, guacenc)
+  const { ensureSystemSecrets } = await import('./services/systemSecrets.service');
+  await ensureSystemSecrets();
+
+  // Check for insecure production configurations
+  checkProductionSecurityConfig();
 
   // Recover orphaned sessions from previous server instance
   const recovered = await sessionService.recoverOrphanedSessions();
@@ -106,13 +160,65 @@ async function main() {
   await initGeoIp();
   await initializePassport();
 
-  const server = http.createServer(app);
+  // ---------------------------------------------------------------------------
+  // TLS configuration — the main server ALWAYS uses HTTPS.
+  // When explicit certs are provided via SERVER_TLS_CERT/KEY, those are used.
+  // Otherwise, auto-generate self-signed certs for development.
+  // ---------------------------------------------------------------------------
+  let serverTlsOptions: https.ServerOptions;
+
+  if (config.serverTlsCert && config.serverTlsKey) {
+    serverTlsOptions = {
+      cert: fs.readFileSync(config.serverTlsCert),
+      key: fs.readFileSync(config.serverTlsKey),
+    };
+    logger.info('[tls] Main server using provided TLS certificates');
+  } else {
+    const devCert = generateSelfSignedServerCert();
+    serverTlsOptions = { cert: devCert.cert, key: devCert.key };
+    logger.info('[tls] Main server using auto-generated self-signed certificate (development only)');
+  }
+
+  const server = https.createServer(serverTlsOptions, app);
+
+  // Dedicated tunnel HTTPS server with mTLS (requestCert: true) on port+10.
+  // The main server does NOT require client certs — browsers connect to it.
+  let tunnelServer: http.Server | https.Server;
+  if (config.tunnelServerCert && config.tunnelServerKey) {
+    try {
+      if (config.tunnelStrictMtls && !config.tunnelServerCa) {
+        throw new Error('TUNNEL_SERVER_CA is required when TUNNEL_STRICT_MTLS=true');
+      }
+      const tunnelTlsOptions: https.ServerOptions = {
+        cert: fs.readFileSync(config.tunnelServerCert),
+        key: fs.readFileSync(config.tunnelServerKey),
+        requestCert: true,
+        rejectUnauthorized: config.tunnelStrictMtls,
+      };
+      if (config.tunnelServerCa) {
+        tunnelTlsOptions.ca = fs.readFileSync(config.tunnelServerCa);
+      }
+      tunnelServer = https.createServer(tunnelTlsOptions, app);
+      logger.info(
+        config.tunnelStrictMtls
+          ? '[tunnel] TLS enabled for tunnel endpoint — strict mTLS client certificate verification is active'
+          : '[tunnel] TLS enabled for tunnel endpoint — client certificates will be authorized in-app',
+      );
+    } catch (err) {
+      logger.error('[tunnel] Failed to load tunnel TLS certificates:', err instanceof Error ? err.message : 'Unknown error');
+      logger.warn('[tunnel] Falling back to main HTTPS server for tunnel endpoint — mTLS enforcement disabled');
+      tunnelServer = server;
+    }
+  } else {
+    logger.warn('[tunnel] TUNNEL_SERVER_CERT/KEY not configured — tunnel shares main HTTPS server, mTLS enforcement disabled');
+    tunnelServer = server;
+  }
 
   // Setup Socket.io for SSH
   const io = setupSocketIO(server);
 
-  // Setup zero-trust tunnel WebSocket endpoint
-  setupTunnelHandler(server);
+  // Setup zero-trust tunnel WebSocket endpoint (on the TLS-enabled server when available)
+  setupTunnelHandler(tunnelServer);
 
   // Start SSH protocol proxy (if enabled)
   startSshProxyServer();
@@ -126,8 +232,9 @@ async function main() {
   startMembershipExpiryJob();
   startCheckoutExpiryJob();
   startPasswordRotationJob();
+  startSystemSecretRotationJob();
   startAllSyncJobs().catch((err) => {
-    logger.error('Failed to start sync jobs:', err);
+    logger.error('Failed to start sync jobs:', err instanceof Error ? err.message : 'Unknown error');
   });
 
   // Register live-reload callbacks for system settings
@@ -149,6 +256,9 @@ async function main() {
 
   // Start gateway health monitors
   startAllMonitors();
+
+  // Start gateway event bus (must subscribe before events are published)
+  await startGatewayEventSubscriptions();
 
   // Detect and initialize container orchestrator
   const orchestrator = await detectOrchestrator();
@@ -282,6 +392,59 @@ async function main() {
   let guacServer: any = null;
   if (config.nodeEnv !== 'test') {
     try {
+      // -----------------------------------------------------------------------
+      // Monkey-patch GuacdClient to support TLS connections to guacd.
+      // guacamole-lite uses Net.connect() (plain TCP) internally. When
+      // GUACD_SSL=true, we replace the module export with a subclass that
+      // upgrades the connection to TLS before the Guacamole handshake starts.
+      // -----------------------------------------------------------------------
+      if (config.guacdSsl) {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const tls = require('tls');
+        const guacdClientPath = require.resolve('guacamole-lite/lib/GuacdClient');
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const OrigGuacdClient = require(guacdClientPath);
+
+        const guacdTlsCa = config.guacdCaCert ? fs.readFileSync(config.guacdCaCert) : undefined;
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        class TlsGuacdClient extends OrigGuacdClient {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          constructor(guacdOptions: any, ...rest: any[]) {
+            super(guacdOptions, ...rest);
+
+            // The parent created a plain TCP socket and attached listeners.
+            // Destroy it immediately (before async connect fires) and replace
+            // with a TLS socket.
+            this.guacdConnection.removeAllListeners();
+            this.guacdConnection.destroy();
+
+            this.guacdConnection = tls.connect({
+              host: guacdOptions.host,
+              port: guacdOptions.port,
+              ca: guacdTlsCa,
+              rejectUnauthorized: !!guacdTlsCa,
+            });
+
+            this.guacdConnection.on('secureConnect', this.processConnectionOpen.bind(this));
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            this.guacdConnection.on('data', (data: any) => {
+              this.processReceivedData(data.toString());
+            });
+            this.guacdConnection.on('close', (hadError: boolean) => {
+              this.close(hadError ? new Error('TLS connection closed unexpectedly') : undefined);
+            });
+            this.guacdConnection.on('error', (error: Error) => {
+              this.emit('error', error);
+              this.close(error);
+            });
+          }
+        }
+
+        require.cache[guacdClientPath]!.exports = TlsGuacdClient;
+        logger.info('[tls] GuacdClient patched to use TLS connections to guacd');
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const GuacamoleLite = require('guacamole-lite');
       // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -304,8 +467,9 @@ async function main() {
         return JSON.parse(decrypted);
       };
 
+      const guacTlsServer = https.createServer(serverTlsOptions);
       guacServer = new GuacamoleLite(
-        { port: config.guacamoleWsPort },
+        { server: guacTlsServer },
         {
           host: config.guacdHost,
           port: config.guacdPort,
@@ -320,6 +484,9 @@ async function main() {
           },
         }
       );
+      guacTlsServer.listen(config.guacamoleWsPort, () => {
+        logger.info(`Guacamole WSS server listening on port ${config.guacamoleWsPort}`);
+      });
 
       // Monkey-patch Server.js decryptToken to support AES-256-GCM auth tags
       guacServer.decryptToken = function (encryptedToken: string) {
@@ -374,13 +541,13 @@ async function main() {
               metadata.connectionId,
               protocol,
             ).catch((err: unknown) => {
-              logger.error('Failed to end session on guac close:', err);
+              logger.error('Failed to end session on guac close:', err instanceof Error ? err.message : 'Unknown error');
             });
 
             // Finalize recording if one was started
             if (metadata.recordingId) {
               completeGuacRecording(metadata.recordingId).catch((err: unknown) => {
-                logger.error('Failed to complete recording on guac close:', err);
+                logger.error('Failed to complete recording on guac close:', err instanceof Error ? err.message : 'Unknown error');
               });
             }
           }
@@ -413,9 +580,6 @@ async function main() {
         );
       }
 
-      logger.info(
-        `Guacamole WebSocket server listening on port ${config.guacamoleWsPort}`
-      );
     } catch (err) {
       logger.warn(
         'guacamole-lite not available. RDP connections will not work.',
@@ -425,10 +589,26 @@ async function main() {
   }
 
   server.listen(config.port, () => {
-    logger.info(`Server running on port ${config.port}`);
+    logger.info(`HTTPS server running on port ${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
     markServerReady();
+
+    // Publish server-ready event — event bus handles SSH key push with delay
+    publishGatewayEvent(GatewayEventType.SERVER_READY, {
+      tenantId: '*',
+      gatewayId: '*',
+    }).catch((err) => {
+      logger.error('Failed to publish SERVER_READY event:', err instanceof Error ? err.message : 'Unknown error');
+    });
   });
+
+  // If the tunnel server is separate (TLS-enabled), start it on port+10
+  if (tunnelServer !== server) {
+    const tunnelPort = config.port + 10;
+    tunnelServer.listen(tunnelPort, () => {
+      logger.info(`[tunnel] TLS tunnel server listening on port ${tunnelPort}`);
+    });
+  }
 
   const shutdown = async () => {
     logger.info('Shutting down...');
@@ -443,7 +623,7 @@ async function main() {
         logger.info(`Closed ${closed} active session(s) on shutdown`);
       }
     } catch (err) {
-      logger.error('Failed to close sessions on shutdown:', err);
+      logger.error('Failed to close sessions on shutdown:', err instanceof Error ? err.message : 'Unknown error');
     }
 
     // Close all DB query executor pools
@@ -461,8 +641,14 @@ async function main() {
       }
     }
 
+    if (tunnelServer !== server) {
+      tunnelServer.close(() => {
+        logger.info('[tunnel] TLS tunnel server closed.');
+      });
+    }
+
     server.close(() => {
-      logger.info('HTTP server closed.');
+      logger.info('HTTPS server closed.');
       process.exit(0);
     });
   };

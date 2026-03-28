@@ -1,3 +1,4 @@
+import fs from 'fs';
 import prisma, { ManagedInstanceStatus } from '../lib/prisma';
 import {
   getOrchestrator,
@@ -16,6 +17,7 @@ import {
   emitScalingForGateway,
   emitGatewayData,
 } from './gatewayMonitor.service';
+import { publishGatewayEvent, GatewayEventType } from './gatewayEventBus.service';
 
 const MAX_REPLICAS = 20;
 const HEALTH_CHECK_FAILURE_THRESHOLD = 3;
@@ -42,6 +44,33 @@ interface TunnelEnvOptions {
   gatewayId: string;
   caCert?: string;
   clientCert?: string;
+  clientKey?: string;
+}
+
+function buildManagedSshGrpcEnv(): Record<string, string> {
+  const { gatewayGrpcTlsCa, gatewayGrpcTlsCert, gatewayGrpcTlsKey } = config;
+  if (!gatewayGrpcTlsCa || !gatewayGrpcTlsCert || !gatewayGrpcTlsKey) {
+    throw new AppError(
+      'Managed SSH gateways require GATEWAY_GRPC_TLS_CA/CERT/KEY to enable mTLS key management.',
+      500,
+    );
+  }
+
+  try {
+    return {
+      GATEWAY_GRPC_TLS_CA: '/tmp/arsenale-grpc/ca.pem',
+      GATEWAY_GRPC_TLS_CERT: '/tmp/arsenale-grpc/cert.pem',
+      GATEWAY_GRPC_TLS_KEY: '/tmp/arsenale-grpc/key.pem',
+      GATEWAY_GRPC_TLS_CA_PEM: fs.readFileSync(gatewayGrpcTlsCa, 'utf8'),
+      GATEWAY_GRPC_TLS_CERT_PEM: fs.readFileSync(gatewayGrpcTlsCert, 'utf8'),
+      GATEWAY_GRPC_TLS_KEY_PEM: fs.readFileSync(gatewayGrpcTlsKey, 'utf8'),
+    };
+  } catch (err) {
+    throw new AppError(
+      `Failed to load managed SSH gRPC mTLS material: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      500,
+    );
+  }
 }
 
 function buildContainerConfig(
@@ -51,6 +80,7 @@ function buildContainerConfig(
   hostPort?: number,
   apiHostPort?: number,
   tunnelEnv?: TunnelEnvOptions,
+  managedSshGrpcEnv?: Record<string, string>,
 ): ContainerConfig {
   const suffix = `${gateway.id.slice(0, 8)}-${instanceIndex}`;
   const tenantSlug = gateway.tenantId.slice(0, 8);
@@ -60,7 +90,6 @@ function buildContainerConfig(
 
   // When tunnel is enabled, suppress host-port publishing (traffic flows via tunnel)
   const publishHostPort = tunnelEnv ? undefined : hostPort;
-  const publishApiHostPort = tunnelEnv ? undefined : apiHostPort;
 
   /** Build tunnel environment variable block (injected into both SSH and GUACD containers). */
   const tunnelEnvVars: Record<string, string> = tunnelEnv
@@ -68,9 +97,11 @@ function buildContainerConfig(
         TUNNEL_SERVER_URL:  tunnelEnv.serverUrl,
         TUNNEL_TOKEN:       tunnelEnv.token,
         TUNNEL_GATEWAY_ID:  tunnelEnv.gatewayId,
+        TUNNEL_LOCAL_HOST:  '127.0.0.1',
         TUNNEL_LOCAL_PORT:  gateway.type === 'MANAGED_SSH' ? '2222' : gateway.type === 'DB_PROXY' ? '5432' : '4822',
         ...(tunnelEnv.caCert      ? { TUNNEL_CA_CERT:     tunnelEnv.caCert }      : {}),
         ...(tunnelEnv.clientCert  ? { TUNNEL_CLIENT_CERT: tunnelEnv.clientCert }  : {}),
+        ...(tunnelEnv.clientKey   ? { TUNNEL_CLIENT_KEY:  tunnelEnv.clientKey }   : {}),
       }
     : {};
 
@@ -81,12 +112,11 @@ function buildContainerConfig(
       namespace: k8sNamespace,
       env: {
         ...(publicKey ? { SSH_AUTHORIZED_KEYS: publicKey } : {}),
-        ...(config.gatewayApiToken ? { GATEWAY_API_TOKEN: config.gatewayApiToken } : {}),
+        ...(managedSshGrpcEnv ?? {}),
         ...tunnelEnvVars,
       },
       ports: [
         { container: 2222, ...(publishHostPort != null ? { host: publishHostPort } : {}) },
-        ...(publishApiHostPort != null ? [{ container: 8022, host: publishApiHostPort }] : []),
       ],
       labels: {
         'arsenale.managed': 'true',
@@ -224,12 +254,27 @@ export async function deployGatewayInstance(
         );
       }
 
+      // Decrypt client key if available
+      let clientKey: string | undefined;
+      if (gateway.tunnelClientKey && gateway.tunnelClientKeyIV && gateway.tunnelClientKeyTag) {
+        try {
+          clientKey = decryptWithServerKey({
+            ciphertext: gateway.tunnelClientKey,
+            iv: gateway.tunnelClientKeyIV,
+            tag: gateway.tunnelClientKeyTag,
+          });
+        } catch (keyErr) {
+          log.warn(`Failed to decrypt client key for gateway ${gatewayId}: ${(keyErr as Error).message}`);
+        }
+      }
+
       tunnelEnvOptions = {
         serverUrl: tunnelServerUrl,
         token: plainToken,
         gatewayId: gateway.id,
-        ...(gateway.tunnelCaCert ? { caCert: gateway.tunnelCaCert } : {}),
+        ...(gateway.tenant.tunnelCaCert ? { caCert: gateway.tenant.tunnelCaCert } : {}),
         ...(gateway.tunnelClientCert ? { clientCert: gateway.tunnelClientCert } : {}),
+        ...(clientKey ? { clientKey } : {}),
       };
 
       log.info(`Tunnel enabled for gateway ${gatewayId} — injecting tunnel env vars, suppressing port mapping`);
@@ -238,7 +283,19 @@ export async function deployGatewayInstance(
     }
   }
 
-  const containerConfig = buildContainerConfig(gateway, existingCount, publicKey, hostPort, apiHostPort, tunnelEnvOptions);
+  const managedSshGrpcEnv = gateway.type === 'MANAGED_SSH'
+    ? buildManagedSshGrpcEnv()
+    : undefined;
+
+  const containerConfig = buildContainerConfig(
+    gateway,
+    existingCount,
+    publicKey,
+    hostPort,
+    apiHostPort,
+    tunnelEnvOptions,
+    managedSshGrpcEnv,
+  );
   log.debug(`Container config for gateway ${gatewayId}: image=${containerConfig.image}, name=${containerConfig.name}`);
 
   let containerInfo;
@@ -287,7 +344,7 @@ export async function deployGatewayInstance(
       containerName: containerInfo.name,
       host,
       port,
-      apiPort: apiHostPort ?? (gateway.type === 'MANAGED_SSH' && config.gatewayApiToken ? 8022 : null),
+      apiPort: apiHostPort ?? (gateway.type === 'MANAGED_SSH' ? config.gatewayGrpcPort : null),
       status: ManagedInstanceStatus.RUNNING,
       orchestratorType: orchestrator.type,
       healthStatus: 'healthy',
@@ -312,10 +369,14 @@ export async function deployGatewayInstance(
 
   log.info(`Deployed instance ${instance.id} (container ${containerInfo.id}) for gateway ${gatewayId}`);
 
-  // Push real-time updates to connected clients
-  emitInstancesForGateway(gatewayId).catch(() => {});
-  emitGatewayData(gatewayId).catch(() => {});
-  emitScalingForGateway(gatewayId).catch(() => {});
+  // Publish event — handlers manage SSH key push + real-time emissions
+  publishGatewayEvent(GatewayEventType.INSTANCE_DEPLOYED, {
+    tenantId: gateway.tenantId,
+    gatewayId,
+    instanceId: instance.id,
+    host,
+    port,
+  }).catch(() => {});
 
   return {
     instanceId: instance.id,
@@ -367,10 +428,18 @@ export async function removeGatewayInstance(
 
   log.info(`Removed instance ${instanceId} (container ${instance.containerId})`);
 
-  // Push real-time updates to connected clients
-  emitInstancesForGateway(instance.gatewayId).catch(() => {});
-  emitGatewayData(instance.gatewayId).catch(() => {});
-  emitScalingForGateway(instance.gatewayId).catch(() => {});
+  // Publish event — handlers manage real-time emissions
+  const gwForEvent = await prisma.gateway.findUnique({
+    where: { id: instance.gatewayId },
+    select: { tenantId: true },
+  });
+  if (gwForEvent) {
+    publishGatewayEvent(GatewayEventType.INSTANCE_REMOVED, {
+      tenantId: gwForEvent.tenantId,
+      gatewayId: instance.gatewayId,
+      instanceId,
+    }).catch(() => {});
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -598,10 +667,11 @@ export async function reconcileGateway(gatewayId: string): Promise<void> {
     }
   }
 
-  // Push real-time updates to connected clients
-  emitInstancesForGateway(gatewayId).catch(() => {});
-  emitGatewayData(gatewayId).catch(() => {});
-  emitScalingForGateway(gatewayId).catch(() => {});
+  // Publish event — handlers manage real-time emissions
+  publishGatewayEvent(GatewayEventType.RECONCILE_COMPLETED, {
+    tenantId: gateway.tenantId,
+    gatewayId,
+  }).catch(() => {});
 }
 
 export async function reconcileAll(): Promise<void> {
@@ -667,6 +737,23 @@ export async function healthCheck(): Promise<void> {
             errorMessage: null,
           },
         });
+
+        // Instance recovered from failure — publish event for SSH key auto-push
+        if (instance.consecutiveFailures > 0) {
+          const gwForRecovery = await prisma.gateway.findUnique({
+            where: { id: instance.gatewayId },
+            select: { tenantId: true },
+          });
+          if (gwForRecovery) {
+            publishGatewayEvent(GatewayEventType.INSTANCE_RECOVERED, {
+              tenantId: gwForRecovery.tenantId,
+              gatewayId: instance.gatewayId,
+              instanceId: instance.id,
+              host: instance.host,
+              port: instance.port,
+            }).catch(() => {});
+          }
+        }
       } else {
         unhealthy++;
         const newFailures = instance.consecutiveFailures + 1;
@@ -697,6 +784,19 @@ export async function healthCheck(): Promise<void> {
                 consecutiveFailures: HEALTH_CHECK_FAILURE_THRESHOLD,
               },
             });
+            const gwForRestart = await prisma.gateway.findUnique({
+              where: { id: instance.gatewayId },
+              select: { tenantId: true },
+            });
+            if (gwForRestart) {
+              publishGatewayEvent(GatewayEventType.INSTANCE_RESTARTED, {
+                tenantId: gwForRestart.tenantId,
+                gatewayId: instance.gatewayId,
+                instanceId: instance.id,
+                host: instance.host,
+                port: instance.port,
+              }).catch(() => {});
+            }
           } catch (restartErr) {
             await prisma.managedGatewayInstance.update({
               where: { id: instance.id },
@@ -813,14 +913,15 @@ export async function pushSshKeyToInstances(
 
 /**
  * Perform a rolling restart of all RUNNING instances for a managed gateway
- * so that they pick up a newly rotated mTLS client certificate.
+ * so that they pick up newly rotated mTLS client credentials.
  *
  * Instances are restarted one at a time to avoid total service interruption.
- * Each instance receives the updated TUNNEL_CLIENT_CERT env var before restart.
+ * Each instance receives the updated tunnel cert/key env vars before restart.
  */
 export async function rollingRestartForCertRotation(
   gatewayId: string,
   newClientCert: string,
+  newClientKey: string,
 ): Promise<void> {
   const orchestrator = getOrchestrator();
   if (orchestrator.type === OrchestratorType.NONE) {
@@ -848,9 +949,11 @@ export async function rollingRestartForCertRotation(
 
   for (const instance of instances) {
     try {
-      // Inject the new client cert into the container's environment
+      // Inject the new client cert and key into the container environment.
+      // Both must rotate together or the next mTLS handshake will fail.
       await orchestrator.updateContainerEnv(instance.containerId, {
         TUNNEL_CLIENT_CERT: newClientCert,
+        TUNNEL_CLIENT_KEY: newClientKey,
       });
 
       await orchestrator.restartContainer(instance.containerId);

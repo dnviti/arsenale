@@ -1,12 +1,17 @@
+import crypto from 'crypto';
 import prisma, { ManagedInstanceStatus } from '../lib/prisma';
 import type { GatewayType } from '../lib/prisma';
 import { AppError } from '../middleware/error.middleware';
-import { encrypt, decrypt, requireMasterKey } from './crypto.service';
+import { encrypt, decrypt, requireMasterKey, encryptWithServerKey, decryptWithServerKey } from './crypto.service';
 import { config } from '../config';
 import { tcpProbe } from '../utils/tcpProbe';
+import { buildGatewaySpiffeId } from '../utils/spiffe';
 import { startMonitor, startInstanceMonitor, stopMonitor, restartMonitor } from './gatewayMonitor.service';
 import { logger } from '../utils/logger';
 import { generateTunnelToken, revokeTunnelToken, isTunnelConnected, deregisterTunnel, getTunnelInfo } from './tunnel.service';
+import { generateCaCert, generateClientCertificate, certFingerprint } from '../utils/certGenerator';
+import * as auditService from './audit.service';
+import { pushKey as grpcPushKey, closeGatewayKeyClient } from '../utils/gatewayKeyClient';
 
 const log = logger.child('gateway');
 import { removeGatewayInstance } from './managedGateway.service';
@@ -87,7 +92,7 @@ const publicSelect = {
 export async function getDefaultGateway(tenantId: string, type: GatewayType) {
   return prisma.gateway.findFirst({
     where: { tenantId, type, isDefault: true },
-    select: { id: true, type: true, host: true, port: true, isManaged: true, lbStrategy: true },
+    select: { id: true, type: true, host: true, port: true, isManaged: true, lbStrategy: true, tunnelEnabled: true },
   });
 }
 
@@ -194,7 +199,7 @@ export async function createGateway(
         port: input.port,
         description: input.description ?? null,
         isDefault: input.isDefault ?? false,
-        apiPort: input.type === 'MANAGED_SSH' ? (input.apiPort ?? null) : null,
+        apiPort: input.type === 'MANAGED_SSH' ? (input.apiPort ?? config.gatewayGrpcPort) : null,
         monitoringEnabled: input.monitoringEnabled ?? true,
         monitorIntervalMs: input.monitorIntervalMs ?? 5000,
         inactivityTimeoutSeconds: input.inactivityTimeoutSeconds ?? 3600,
@@ -488,11 +493,6 @@ export async function pushKeyToGateway(
     throw new AppError('Push key is only supported for MANAGED_SSH gateways', 400);
   }
 
-  const token = config.gatewayApiToken;
-  if (!token) {
-    throw new AppError('GATEWAY_API_TOKEN is not configured on the server', 500);
-  }
-
   const keyPair = await prisma.sshKeyPair.findUnique({
     where: { tenantId },
     select: { publicKey: true },
@@ -501,55 +501,63 @@ export async function pushKeyToGateway(
     throw new AppError('No SSH key pair found for this tenant. Generate one first.', 404);
   }
 
+  const grpcPort = config.gatewayGrpcPort;
+
   const instances = await prisma.managedGatewayInstance.findMany({
     where: {
       gatewayId,
       status: ManagedInstanceStatus.RUNNING,
-      apiPort: { not: null },
     },
-    select: { id: true, host: true, apiPort: true },
+    select: { id: true, host: true },
   });
 
   if (instances.length === 0) {
-    throw new AppError('No running instances with an API port found for this gateway', 400);
+    // No managed instances — try direct push to the gateway host.
+    // This handles static containers (Ansible dev compose) and external gateways.
+    const directGw = await prisma.gateway.findFirst({
+      where: { id: gatewayId, tenantId },
+      select: { host: true, apiPort: true },
+    });
+
+    if (directGw?.host) {
+      const directPort = directGw.apiPort || grpcPort;
+      log.info(`No managed instances — pushing key directly to gateway ${gatewayId} at ${directGw.host}:${directPort}`);
+
+      try {
+        const result = await grpcPushKey(directGw.host, directPort, keyPair.publicKey);
+        if (!result.ok) {
+          throw new AppError(`Key push failed: ${result.message}`, 502);
+        }
+        return [{ instanceId: 'direct', ok: true }];
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        closeGatewayKeyClient(directGw.host, directPort);
+        throw new AppError(`Key push to ${directGw.host}:${directPort} failed: ${(err as Error).message}`, 502);
+      }
+    }
+
+    throw new AppError('No running instances and no host configured for this gateway', 400);
   }
 
-  log.info(`Pushing SSH key to gateway ${gatewayId} (${instances.length} instances)`);
+  log.info(`Pushing SSH key to gateway ${gatewayId} via gRPC (${instances.length} instances)`);
 
   const results: PushKeyInstanceResult[] = [];
 
   for (const instance of instances) {
-    const url = `http://${instance.host}:${instance.apiPort}/cgi-bin/authorized-keys`;
-    const ac = new AbortController();
-    const timeout = setTimeout(() => ac.abort(), 5000);
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ publicKey: keyPair.publicKey }),
-        signal: ac.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        const body = await response.text();
-        const error = `HTTP ${response.status}: ${body}`;
-        log.debug(`Key push to instance ${instance.id} (${instance.host}:${instance.apiPort}) failed: ${error}`);
-        results.push({ instanceId: instance.id, ok: false, error });
-      } else {
-        log.debug(`Key push to instance ${instance.id} (${instance.host}:${instance.apiPort}) succeeded`);
+      const res = await grpcPushKey(instance.host, grpcPort, keyPair.publicKey);
+      if (res.ok) {
+        log.debug(`gRPC key push to instance ${instance.id} (${instance.host}:${grpcPort}) succeeded`);
         results.push({ instanceId: instance.id, ok: true });
+      } else {
+        log.debug(`gRPC key push to instance ${instance.id} (${instance.host}:${grpcPort}) failed: ${res.message}`);
+        results.push({ instanceId: instance.id, ok: false, error: res.message });
       }
     } catch (err) {
-      clearTimeout(timeout);
-      const msg = (err as Error).name === 'AbortError'
-        ? 'Request timed out (5s)'
-        : (err as Error).message;
-      log.debug(`Key push to instance ${instance.id} (${instance.host}:${instance.apiPort}) failed: ${msg}`);
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      log.debug(`gRPC key push to instance ${instance.id} (${instance.host}:${grpcPort}) failed: ${msg}`);
+      // Invalidate the cached client on connection errors
+      closeGatewayKeyClient(instance.host, grpcPort);
       results.push({ instanceId: instance.id, ok: false, error: msg });
     }
   }
@@ -565,6 +573,40 @@ export async function pushKeyToGateway(
   return results;
 }
 
+export async function pushKeysToAllTenantGateways(): Promise<void> {
+  const tenants = await prisma.sshKeyPair.findMany({
+    select: { tenantId: true, tenant: { select: { name: true } } },
+  });
+
+  if (tenants.length === 0) {
+    log.info('[startup] No tenants with SSH key pairs — skipping gateway key push');
+    return;
+  }
+
+  log.info(`[startup] Pushing SSH keys to all managed gateways for ${tenants.length} tenant(s)`);
+
+  let ok = 0;
+  let failed = 0;
+
+  for (const { tenantId, tenant } of tenants) {
+    try {
+      const results = await pushKeyToAllManagedGateways(tenantId);
+      const tenantOk = results.filter(r => r.ok).length;
+      const tenantFailed = results.filter(r => !r.ok).length;
+      if (tenantFailed > 0) {
+        log.warn(`[startup] Key push for tenant "${tenant.name}": ${tenantOk} ok, ${tenantFailed} failed`);
+      }
+      ok += tenantOk;
+      failed += tenantFailed;
+    } catch (err) {
+      failed++;
+      log.warn(`[startup] Key push failed for tenant "${tenant.name}": ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  }
+
+  log.info(`[startup] Gateway key push complete: ${ok} ok, ${failed} failed`);
+}
+
 // ---------------------------------------------------------------------------
 // Tunnel token management (delegates to tunnel.service)
 // ---------------------------------------------------------------------------
@@ -574,13 +616,145 @@ export async function generateGatewayTunnelToken(
   gatewayId: string,
   operatorUserId: string,
 ): Promise<{ token: string; tunnelEnabled: boolean }> {
-  const existing = await prisma.gateway.findFirst({
+  const gateway = await prisma.gateway.findFirst({
     where: { id: gatewayId, tenantId },
-    select: { id: true },
+    select: {
+      id: true,
+      tenantId: true,
+      tunnelClientCert: true,
+      tenant: {
+        select: {
+          tunnelCaCert: true,
+        },
+      },
+    },
   });
-  if (!existing) throw new AppError('Gateway not found', 404);
+  if (!gateway) throw new AppError('Gateway not found', 404);
+
+  // Auto-generate mTLS certificates if not already present
+  if (!gateway.tenant.tunnelCaCert || !gateway.tunnelClientCert) {
+    await ensureMtlsCerts(tenantId, gatewayId, operatorUserId);
+  }
 
   return generateTunnelToken(gatewayId, operatorUserId);
+}
+
+/**
+ * Ensure a tenant CA and gateway leaf certificate exist.
+ * The tenant CA is generated once at tenant creation; this method also performs
+ * a lazy backfill for pre-existing tenants that do not yet have CA material.
+ */
+async function ensureMtlsCerts(
+  tenantId: string,
+  gatewayId: string,
+  operatorUserId: string,
+): Promise<void> {
+  const { caFingerprintResult, clientExpiry, tenantCaGenerated } = await prisma.$transaction(async (tx) => {
+    // Serialize tenant-CA backfill to avoid duplicate CAs for older tenants.
+    const lockKey = BigInt('0x' + crypto.createHash('md5').update(tenantId).digest('hex').slice(0, 15));
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`;
+
+    const tenant = await tx.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        tunnelCaCert: true,
+        tunnelCaKey: true,
+        tunnelCaKeyIV: true,
+        tunnelCaKeyTag: true,
+        tunnelCaCertFingerprint: true,
+      },
+    });
+    if (!tenant) throw new AppError('Tenant not found', 404);
+
+    let caCertPem: string;
+    let caKeyPem: string;
+    let caFingerprint: string;
+    let tenantCaGenerated = false;
+
+    if (tenant.tunnelCaCert && tenant.tunnelCaKey && tenant.tunnelCaKeyIV && tenant.tunnelCaKeyTag) {
+      caCertPem = tenant.tunnelCaCert;
+      caKeyPem = decryptTenantCaKey(tenant);
+      caFingerprint = tenant.tunnelCaCertFingerprint ?? certFingerprint(caCertPem);
+    } else {
+      const ca = generateCaCert(`arsenale-tenant-${tenantId}`);
+      caCertPem = ca.certPem;
+      caKeyPem = ca.keyPem;
+      caFingerprint = certFingerprint(caCertPem);
+      tenantCaGenerated = true;
+
+      const encCaKey = encryptWithServerKey(caKeyPem);
+      await tx.tenant.update({
+        where: { id: tenantId },
+        data: {
+          tunnelCaCert: caCertPem,
+          tunnelCaKey: encCaKey.ciphertext,
+          tunnelCaKeyIV: encCaKey.iv,
+          tunnelCaKeyTag: encCaKey.tag,
+          tunnelCaCertFingerprint: caFingerprint,
+        },
+      });
+
+      log.info(`[tunnel] Generated tenant CA for tenant ${tenantId} during gateway ${gatewayId} enrollment`);
+    }
+
+    const client = generateClientCertificate(
+      caCertPem,
+      caKeyPem,
+      gatewayId,
+      buildGatewaySpiffeId(config.spiffeTrustDomain, gatewayId),
+      90,
+    );
+    const encClientKey = encryptWithServerKey(client.keyPem);
+
+    await tx.gateway.update({
+      where: { id: gatewayId },
+      data: {
+        tunnelClientCert: client.certPem,
+        tunnelClientKey: encClientKey.ciphertext,
+        tunnelClientKeyIV: encClientKey.iv,
+        tunnelClientKeyTag: encClientKey.tag,
+        tunnelClientCertExp: client.expiry,
+      },
+    });
+
+    return {
+      caFingerprintResult: caFingerprint,
+      clientExpiry: client.expiry,
+      tenantCaGenerated,
+    };
+  }, { isolationLevel: 'Serializable' });
+
+  auditService.log({
+    userId: operatorUserId,
+    action: 'TUNNEL_TOKEN_GENERATE',
+    targetType: 'Gateway',
+    targetId: gatewayId,
+    details: {
+      mtlsCertsGenerated: true,
+      tenantId,
+      tenantCaGenerated,
+      caFingerprint: caFingerprintResult.slice(0, 16),
+      clientCertExpiry: clientExpiry.toISOString(),
+    },
+  });
+
+  log.info(`[tunnel] mTLS certs generated for gateway ${gatewayId} (client cert expires ${clientExpiry.toISOString()})`);
+}
+
+/** Helper to decrypt an encrypted tenant CA key. */
+function decryptTenantCaKey(tenant: {
+  tunnelCaKey: string | null;
+  tunnelCaKeyIV: string | null;
+  tunnelCaKeyTag: string | null;
+}): string {
+  if (!tenant.tunnelCaKey || !tenant.tunnelCaKeyIV || !tenant.tunnelCaKeyTag) {
+    throw new Error('Tenant CA key material is incomplete');
+  }
+  return decryptWithServerKey({
+    ciphertext: tenant.tunnelCaKey,
+    iv: tenant.tunnelCaKeyIV,
+    tag: tenant.tunnelCaKeyTag,
+  });
 }
 
 export async function revokeGatewayTunnelToken(
