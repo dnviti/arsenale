@@ -124,6 +124,7 @@ export async function getOrCreatePool(params: PoolParams): Promise<ManagedPool> 
 
 function pickDbSettingsFields(meta: Record<string, unknown>): Partial<DbSettings> {
   const fields: Partial<DbSettings> = {};
+  if (meta.sslMode) fields.sslMode = meta.sslMode as DbSettings['sslMode'];
   // Oracle
   if (meta.oracleConnectionType) fields.oracleConnectionType = meta.oracleConnectionType as OracleConnectionType;
   if (meta.oracleSid) fields.oracleSid = meta.oracleSid as string;

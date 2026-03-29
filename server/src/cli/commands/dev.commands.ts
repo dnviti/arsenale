@@ -266,9 +266,10 @@ export function registerDevCommands(program: Command): void {
         for (const spec of specs) {
           printSuccess(`  ${spec.type} gateway: ${spec.name} (${spec.id})`);
         }
+        process.exit(0);
       } catch (err) {
         printError(err instanceof Error ? err.message : 'Development bootstrap failed');
-        process.exitCode = 1;
+        process.exit(1);
       }
     });
 }

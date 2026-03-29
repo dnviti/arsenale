@@ -138,6 +138,7 @@ export type OracleRole = 'normal' | 'sysdba' | 'sysoper' | 'sysasm' | 'sysbackup
 export interface DbSettings {
   protocol: DbProtocol;
   databaseName?: string;
+  sslMode?: 'disable' | 'prefer' | 'require' | 'verify-ca' | 'verify-full';
   /** Oracle: connection mode (defaults to 'basic' for backward compat). */
   oracleConnectionType?: OracleConnectionType;
   /** Oracle Basic: SID for the target instance (mutually exclusive with serviceName). */

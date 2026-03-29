@@ -14,8 +14,6 @@ RUN npm run build && npm prune --omit=dev
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM node:22-alpine
 
-RUN apk update && apk upgrade --no-cache
-
 LABEL org.opencontainers.image.title="Arsenale Tunnel Agent"
 LABEL org.opencontainers.image.description="Zero-trust tunnel agent for non-managed gateways"
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"

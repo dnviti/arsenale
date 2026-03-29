@@ -37,7 +37,7 @@ A web-based application for managing and accessing remote SSH and RDP connection
 
 | Layer | Technologies |
 |-------|-------------|
-| **Server** | Express, TypeScript, Prisma, Socket.IO, ssh2, guacamole-lite |
+| **Server** | Express/TypeScript today; Go service refactor foundation under `backend/` |
 | **Client** | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
 | **Database** | PostgreSQL 16 |
 | **Infrastructure** | Docker / Podman / Kubernetes, Nginx, guacd, ssh-gateway |
@@ -45,6 +45,7 @@ A web-based application for managing and accessing remote SSH and RDP connection
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 22+
+- [Go](https://go.dev/) 1.25+
 - [Docker](https://www.docker.com/) (required for RDP support via `guacd`)
 - npm 9+
 
@@ -109,7 +110,12 @@ Key variables — see [docs/environment.md](docs/environment.md) for the full re
 
 ```
 arsenale/
-├── server/                        # Express backend
+├── backend/                       # New Go backend monorepo (control, agent, runtime services)
+│   ├── cmd/                      # Service entrypoints (API, controller, brokers, agent services)
+│   ├── internal/                 # Internal Go packages
+│   └── pkg/                      # Shared Go contracts and workload spec
+│
+├── server/                        # Current Express backend (compatibility layer during migration)
 │   ├── src/
 │   │   ├── index.ts              # Entry point (HTTP + Socket.IO + Guacamole WS)
 │   │   ├── app.ts                # Express app setup
@@ -151,7 +157,8 @@ npm run dev:server          # Server only (Express on :3001)
 npm run dev:client          # Client only (Vite on :3000)
 
 # Build
-npm run build               # Build both server and client
+npm run build               # Build the Go backend plus the current server/client
+npm run backend:build       # Build the Go backend module
 npm run build -w server     # Server only
 npm run build -w client     # Client only
 
@@ -165,6 +172,9 @@ make setup                  # First-time setup (Ansible collections, vault)
 make dev                    # Start dev infrastructure (postgres + gocache)
 make dev-down               # Stop dev infrastructure
 make deploy                 # Full production deployment
+
+# Go backend checks
+npm run backend:test        # Run Go backend tests
 ```
 
 ## Production Deployment

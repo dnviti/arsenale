@@ -725,7 +725,7 @@ export function createTcpProxy(
 
     server.once('close', () => clearTimeout(idleTimer));
 
-    server.listen(0, '127.0.0.1', () => {
+    server.listen(0, config.tunnelTcpProxyBindHost, () => {
       const addr = server.address();
       if (!addr || typeof addr === 'string') {
         server.close();

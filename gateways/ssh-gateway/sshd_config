@@ -12,6 +12,9 @@ PermitRootLogin no
 PasswordAuthentication no
 PubkeyAuthentication yes
 AuthorizedKeysFile /tmp/.ssh/authorized_keys
+# The gateway runs read-only with tmpfs-backed authorized_keys under /tmp.
+# Disable strict parent-path checks so OpenSSH accepts that layout.
+StrictModes no
 
 AllowTcpForwarding yes
 GatewayPorts no

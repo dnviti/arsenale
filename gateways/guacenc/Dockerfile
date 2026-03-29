@@ -48,8 +48,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /usr/local/b
 # ── Runtime stage ─────────────────────────────────────────────────────
 FROM alpine:3.18
 
-RUN apk update && apk upgrade --no-cache
-
 RUN apk add --no-cache \
     ffmpeg-libs ffmpeg libpng cairo libjpeg-turbo libuuid curl \
     fontconfig font-dejavu font-liberation

@@ -23,6 +23,7 @@ import { checkLateralMovement } from '../services/lateralMovement.service';
 import { logger } from '../utils/logger';
 import { getClientIp } from '../utils/ip';
 import type { SessionInput } from '../schemas/session.schemas';
+import { startSshSession } from '../services/goTerminalBroker.service';
 
 const DEFAULT_RDP_WIDTH = 1024;
 const DEFAULT_RDP_HEIGHT = 768;
@@ -95,21 +96,23 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
 
     if (gateway.isManaged) {
       const inst = await selectInstance(gateway.id, gateway.lbStrategy);
-      if (!inst) {
+      if (!inst && !gateway.tunnelEnabled) {
         throw new AppError(
           'No healthy gateway instances available. The gateway may be scaling — please try again.',
           503,
         );
       }
-      guacdHost = inst.host;
-      guacdPort = inst.port;
-      selectedInstanceId = inst.id;
-      selectedContainerName = inst.containerName;
-      routingDecision = {
-        strategy: inst.strategy,
-        candidateCount: inst.candidateCount,
-        selectedSessionCount: inst.selectedSessionCount,
-      };
+      if (inst) {
+        guacdHost = inst.host;
+        guacdPort = inst.port;
+        selectedInstanceId = inst.id;
+        selectedContainerName = inst.containerName;
+        routingDecision = {
+          strategy: inst.strategy,
+          candidateCount: inst.candidateCount,
+          selectedSessionCount: inst.selectedSessionCount,
+        };
+      }
     }
 
     // Tunnel routing: when the gateway has a zero-trust tunnel connected,
@@ -118,9 +121,9 @@ export async function createRdpSession(req: AuthRequest, res: Response, next: Ne
       if (!isTunnelConnected(gateway.id)) {
         throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
       }
-      const { server, localPort } = await createTcpProxy(gateway.id, guacdHost, guacdPort);
+      const { server, localPort } = await createTcpProxy(gateway.id, '127.0.0.1', guacdPort);
       tunnelProxyServer = server;
-      guacdHost = '127.0.0.1';
+      guacdHost = config.goDesktopBrokerEnabled ? config.internalServerHost : '127.0.0.1';
       guacdPort = localPort;
     }
 
@@ -351,21 +354,23 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
 
     if (gateway.isManaged) {
       const inst = await selectInstance(gateway.id, gateway.lbStrategy);
-      if (!inst) {
+      if (!inst && !gateway.tunnelEnabled) {
         throw new AppError(
           'No healthy gateway instances available. The gateway may be scaling — please try again.',
           503,
         );
       }
-      guacdHost = inst.host;
-      guacdPort = inst.port;
-      selectedInstanceId = inst.id;
-      selectedContainerName = inst.containerName;
-      routingDecision = {
-        strategy: inst.strategy,
-        candidateCount: inst.candidateCount,
-        selectedSessionCount: inst.selectedSessionCount,
-      };
+      if (inst) {
+        guacdHost = inst.host;
+        guacdPort = inst.port;
+        selectedInstanceId = inst.id;
+        selectedContainerName = inst.containerName;
+        routingDecision = {
+          strategy: inst.strategy,
+          candidateCount: inst.candidateCount,
+          selectedSessionCount: inst.selectedSessionCount,
+        };
+      }
     }
 
     // Tunnel routing: when the gateway has a zero-trust tunnel connected,
@@ -374,9 +379,9 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
       if (!isTunnelConnected(gateway.id)) {
         throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
       }
-      const { server, localPort } = await createTcpProxy(gateway.id, guacdHost, guacdPort);
+      const { server, localPort } = await createTcpProxy(gateway.id, '127.0.0.1', guacdPort);
       tunnelProxyServer = server;
-      guacdHost = '127.0.0.1';
+      guacdHost = config.goDesktopBrokerEnabled ? config.internalServerHost : '127.0.0.1';
       guacdPort = localPort;
     }
 
@@ -500,15 +505,72 @@ export async function createVncSession(req: AuthRequest, res: Response, next: Ne
 
 export async function validateSshAccess(req: AuthRequest, res: Response) {
   assertAuthenticated(req);
-  const { connectionId } = req.body as SessionInput;
-  const conn = await getConnection(req.user.userId, connectionId, req.user.tenantId);
+  const parsed = req.body as SessionInput;
+  const clientIp = getClientIp(req);
 
-  if (conn.type !== 'SSH') {
-    throw new AppError('Not an SSH connection', 400);
+  const lmResult = await checkLateralMovement(req.user.userId, parsed.connectionId, clientIp);
+  if (!lmResult.allowed) {
+    throw new AppError(
+      'Session denied: anomalous lateral movement detected. ' +
+      `${lmResult.distinctTargets} distinct targets in ${lmResult.windowMinutes} min ` +
+      `(threshold: ${lmResult.threshold}). Your account has been temporarily suspended.`,
+      403,
+    );
   }
 
-  // SSH sessions are handled via Socket.io, we just validate access here
-  res.json({ connectionId, type: 'SSH' });
+  try {
+    const result = await startSshSession({
+      userId: req.user.userId,
+      tenantId: req.user.tenantId,
+      connectionId: parsed.connectionId,
+      username: parsed.username,
+      password: parsed.password,
+      credentialMode: parsed.credentialMode,
+      ipAddress: clientIp,
+    });
+
+    const forwardedProto = req.get?.('x-forwarded-proto')?.split(',')[0]?.trim();
+    const forwardedHost = req.get?.('x-forwarded-host')?.split(',')[0]?.trim();
+    const host = forwardedHost || req.get?.('host') || req.headers?.host || 'localhost';
+    const wsProtocol = forwardedProto === 'https' || req.protocol === 'https' ? 'wss' : 'ws';
+
+    if (result.transport === 'terminal-broker') {
+      res.json({
+        ...result,
+        webSocketPath: '/ws/terminal',
+        webSocketUrl: `${wsProtocol}://${host}/ws/terminal?token=${encodeURIComponent(result.token)}`,
+      });
+      return;
+    }
+
+    res.json(result);
+  } catch (error) {
+    auditService.log({
+      userId: req.user.userId,
+      action: 'SESSION_ERROR',
+      targetType: 'Connection',
+      targetId: parsed.connectionId,
+      details: {
+        protocol: 'SSH',
+        error: error instanceof Error ? error.message : 'Failed to issue SSH session',
+      },
+      ipAddress: clientIp,
+    });
+    throw error;
+  }
+}
+
+export async function sshEnd(req: AuthRequest, res: Response) {
+  assertAuthenticated(req);
+  const sessionId = req.params.sessionId as string;
+  const session = await prisma.activeSession.findUnique({
+    where: { id: sessionId },
+  });
+  if (!session || session.userId !== req.user.userId) {
+    throw new AppError('Session not found', 404);
+  }
+  await sessionService.endSession(sessionId, 'client_disconnect');
+  res.json({ ok: true });
 }
 
 // ---- RDP heartbeat ----

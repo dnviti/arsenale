@@ -1,0 +1,11 @@
+go 1.25.0
+
+use (
+	./backend
+	./gateways/gateway-core
+	./gateways/guacenc
+	./gateways/rdgw
+	./gateways/ssh-gateway/grpc-server
+	./infrastructure/gocache
+	./tools/arsenale-cli
+)

@@ -11,8 +11,12 @@ arsenale_db_name: arsenale
 
 # Networking
 arsenale_trust_proxy: false
-arsenale_allow_local_network: false
+arsenale_allow_local_network: true
 arsenale_cookie_secure: true
+arsenale_dev_bootstrap_admin_email: admin@example.com
+arsenale_dev_bootstrap_admin_username: admin
+arsenale_dev_bootstrap_admin_password: DevAdmin123!
+arsenale_dev_bootstrap_tenant_name: Development Environment
 
 # Features
 arsenale_self_signup_enabled: false
@@ -24,6 +28,8 @@ arsenale_email_provider: smtp
 arsenale_build_images: true  # false = pull from registry
 arsenale_registry: ghcr.io/dnviti/arsenale
 arsenale_image_tag: latest
+arsenale_postgres_image: "quay.io/sclorg/postgresql-16-c10s"
+arsenale_postgres_data_dir: "/var/lib/pgsql/data"
 arsenale_guacd_image: "guacamole/guacd:1.6.0"
 
 # TLS
@@ -55,6 +61,7 @@ arsenale_resource_limits:
   gocache_pubsub: { cpus: "1.0", memory: "512m", pids: 256 }
   server: { cpus: "2.0", memory: "1536m", pids: 512 }
   client: { cpus: "0.75", memory: "256m", pids: 256 }
+  go_service: { cpus: "0.5", memory: "256m", pids: 128 }
   ssh_gateway: { cpus: "0.5", memory: "256m", pids: 128 }
   db_proxy: { cpus: "0.5", memory: "256m", pids: 128 }
 

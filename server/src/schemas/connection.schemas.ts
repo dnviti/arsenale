@@ -4,6 +4,7 @@ import { sshTerminalConfigSchema, rdpSettingsSchema, vncSettingsSchema, dlpPolic
 const dbSettingsSchema = z.object({
   protocol: z.enum(['postgresql', 'mysql', 'mongodb', 'oracle', 'mssql', 'db2']),
   databaseName: z.string().max(255).optional(),
+  sslMode: z.enum(['disable', 'prefer', 'require', 'verify-ca', 'verify-full']).optional(),
   // Oracle
   oracleConnectionType: z.enum(['basic', 'tns', 'custom']).optional(),
   oracleSid: z.string().max(255).optional(),

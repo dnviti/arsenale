@@ -9,6 +9,7 @@ import { getDefaultGateway } from './gateway.service';
 import { isTunnelConnected, createTcpProxy, closeTcpProxy } from './tunnel.service';
 import { logger } from '../utils/logger';
 import type { DbSettings, DbSessionConfig } from '../types';
+import { config } from '../config';
 
 const log = logger.child('db-proxy');
 
@@ -54,6 +55,7 @@ export async function createDbProxySession(params: {
     const dbSettings = (conn.dbSettings as DbSettings | null) ?? { protocol: 'postgresql' };
     const dbProtocol = dbSettings.protocol ?? 'postgresql';
     const databaseName = dbSettings.databaseName;
+    const useDirectPostgresPath = config.goQueryRunnerEnabled && dbProtocol === 'postgresql';
 
     // Resolve gateway: explicit > tenant default > none
     const explicitGw = conn.gateway;
@@ -82,32 +84,38 @@ export async function createDbProxySession(params: {
 
       if (gateway.isManaged) {
         const inst = await selectInstance(gateway.id, gateway.lbStrategy);
-        if (!inst) {
+        if (!inst && !gateway.tunnelEnabled) {
           throw new AppError(
             'No healthy DB proxy instances available. The gateway may be scaling — please try again.',
             503,
           );
         }
-        proxyHost = inst.host;
-        proxyPort = inst.port;
-        selectedInstanceId = inst.id;
-        routingDecision = {
-          strategy: inst.strategy,
-          candidateCount: inst.candidateCount,
-          selectedSessionCount: inst.selectedSessionCount,
-        };
+        if (inst) {
+          proxyHost = inst.host;
+          proxyPort = inst.port;
+          selectedInstanceId = inst.id;
+          routingDecision = {
+            strategy: inst.strategy,
+            candidateCount: inst.candidateCount,
+            selectedSessionCount: inst.selectedSessionCount,
+          };
+        }
       }
 
-      // Tunnel routing
-      if (gateway.tunnelEnabled) {
+      // During the Go query-runner migration, PostgreSQL sessions connect
+      // directly to the target database while keeping the gateway selection
+      // metadata for control-plane visibility and future placement.
+      if (useDirectPostgresPath) {
+        proxyHost = conn.host;
+        proxyPort = conn.port;
+      } else if (gateway.tunnelEnabled) {
         if (!isTunnelConnected(gateway.id)) {
           throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
         }
-        const targetHost = proxyHost;
         const targetPort = proxyPort;
-        const { server, localPort } = await createTcpProxy(gateway.id, targetHost, targetPort);
+        const { server, localPort } = await createTcpProxy(gateway.id, '127.0.0.1', targetPort);
         tunnelProxyServer = server;
-        proxyHost = '127.0.0.1';
+        proxyHost = config.goQueryRunnerEnabled ? config.internalServerHost : '127.0.0.1';
         proxyPort = localPort;
       }
     } else {
@@ -161,6 +169,8 @@ export async function createDbProxySession(params: {
         username,
         resolvedHost: proxyHost,
         resolvedPort: proxyPort,
+        usesOverrideCredentials: Boolean(overrideUsername && overridePassword),
+        ...(dbSettings.sslMode && { sslMode: dbSettings.sslMode }),
         // Propagate DB-specific settings so pool creation can reconstruct DbSettings
         ...(dbSettings.oracleConnectionType && { oracleConnectionType: dbSettings.oracleConnectionType }),
         ...(dbSettings.oracleSid && { oracleSid: dbSettings.oracleSid }),
@@ -193,6 +203,7 @@ export async function createDbProxySession(params: {
           username,
           resolvedHost: proxyHost,
           resolvedPort: proxyPort,
+          ...(dbSettings.sslMode && { sslMode: dbSettings.sslMode }),
           ...(dbSettings.oracleConnectionType && { oracleConnectionType: dbSettings.oracleConnectionType }),
           ...(dbSettings.oracleSid && { oracleSid: dbSettings.oracleSid }),
           ...(dbSettings.oracleServiceName && { oracleServiceName: dbSettings.oracleServiceName }),

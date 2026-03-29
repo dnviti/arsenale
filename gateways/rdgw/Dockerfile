@@ -11,7 +11,7 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o rdgw-proxy .
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM alpine:3.21
 
-RUN apk update && apk upgrade --no-cache && apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates
 
 LABEL org.opencontainers.image.title="Arsenale RD Gateway"
 LABEL org.opencontainers.image.description="MS-TSGU RD Gateway proxy for native RDP client access"

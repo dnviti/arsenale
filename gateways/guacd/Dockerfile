@@ -25,8 +25,6 @@ FROM guacamole/guacd:1.6.0
 
 USER root
 
-RUN apk update && apk upgrade --no-cache
-
 LABEL org.opencontainers.image.title="Arsenale guacd"
 LABEL org.opencontainers.image.description="guacd with embedded zero-trust tunnel agent"
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"

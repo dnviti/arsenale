@@ -12,14 +12,16 @@ services:
   # PostgreSQL — Primary database
   # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16
+    image: {{ arsenale_postgres_image }}
     container_name: arsenale-postgres
+    user: "0:0"
     read_only: true
     cpus: "{{ arsenale_resource_limits.postgres.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.postgres.memory }}"
     pids_limit: {{ arsenale_resource_limits.postgres.pids }}
     tmpfs:
       - /tmp
+      - /var/lib/pgsql
       - /run/postgresql
     environment:
       POSTGRES_USER: "{{ arsenale_db_user }}"
@@ -28,7 +30,7 @@ services:
     secrets:
       - postgres_password
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:{{ arsenale_postgres_data_dir | default('/var/lib/pgsql/data') }}
       - {{ _home }}{% if not (_is_dev | default(false) | bool) %}/arsenale{% endif %}/infrastructure/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
       - {{ arsenale_cert_dir }}/postgres:/certs:ro
       - {{ _home }}{% if not (_is_dev | default(false) | bool) %}/arsenale{% endif %}/infrastructure/postgres/entrypoint.sh:/usr/local/bin/arsenale-postgres-entrypoint.sh:ro
@@ -246,6 +248,500 @@ services:
     networks:
       - net-cache
 
+{% if _is_dev | default(false) | bool %}
+  # ---------------------------------------------------------------------------
+  # Go backend foundation services — staged replacement for the Node monolith
+  # ---------------------------------------------------------------------------
+  control-plane-api-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: control-plane-api
+    container_name: arsenale-control-plane-api-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      PORT: "8080"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  control-plane-controller-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: control-plane-controller
+    container_name: arsenale-control-plane-controller-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      PORT: "8081"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      RUNTIME_AGENT_URL: "http://runtime-agent-go:8095"
+    ports:
+      - "127.0.0.1:18081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      runtime-agent-go:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  authz-pdp-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: authz-pdp
+    container_name: arsenale-authz-pdp-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PORT: "8082"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+    ports:
+      - "127.0.0.1:18082:8082"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8082/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+
+  model-gateway-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: model-gateway
+    container_name: arsenale-model-gateway-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+      - server_encryption_key
+    environment:
+      PORT: "8083"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
+    ports:
+      - "127.0.0.1:18083:8083"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  terminal-broker-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: terminal-broker
+    container_name: arsenale-terminal-broker-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+      - guacamole_secret
+    environment:
+      PORT: "8090"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
+    ports:
+      - "127.0.0.1:18090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      terminal-target:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  tool-gateway-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: tool-gateway
+    container_name: arsenale-tool-gateway-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PORT: "8084"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      TERMINAL_BROKER_URL: "http://terminal-broker-go:8090"
+      PUBLIC_TERMINAL_BROKER_URL: "ws://127.0.0.1:18090"
+      QUERY_RUNNER_URL: "http://query-runner-go:8093"
+      MEMORY_SERVICE_URL: "http://memory-service-go:8086"
+    ports:
+      - "127.0.0.1:18084:8084"
+    depends_on:
+      terminal-broker-go:
+        condition: service_healthy
+      query-runner-go:
+        condition: service_healthy
+      memory-service-go:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8084/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+
+  query-runner-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: query-runner
+    container_name: arsenale-query-runner-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      PORT: "8093"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+    ports:
+      - "127.0.0.1:18093:8093"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8093/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  desktop-broker-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: desktop-broker
+    container_name: arsenale-desktop-broker-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+      - guacamole_secret
+    environment:
+      PORT: "8091"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
+      GUACD_HOST: guacd
+      GUACD_PORT: "4822"
+      GUACD_SSL: "true"
+      GUACD_CA_CERT: /certs/ca/ca.pem
+    ports:
+      - "127.0.0.1:18091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      guacd:
+        condition: service_healthy
+    volumes:
+      - arsenale_recordings:/recordings
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+      - {{ arsenale_cert_dir }}:/certs/ca:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8091/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-guacd
+      - net-db
+
+  memory-service-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: memory-service
+    container_name: arsenale-memory-service-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      PORT: "8086"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+    ports:
+      - "127.0.0.1:18086:8086"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  agent-orchestrator-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: agent-orchestrator
+    container_name: arsenale-agent-orchestrator-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      PORT: "8085"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+    ports:
+      - "127.0.0.1:18085:8085"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8085/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  runtime-agent-go:
+    build:
+      context: {{ _home }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: runtime-agent
+    container_name: arsenale-runtime-agent-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PORT: "8095"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+    ports:
+      - "127.0.0.1:18095:8095"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8095/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+
+  terminal-target:
+    build:
+      context: {{ _home }}
+      dockerfile: infrastructure/dev/terminal-target/Dockerfile
+    container_name: arsenale-terminal-target
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "128m"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+      - /run
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 2224 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      net-edge: {}
+      net-gateway:
+        aliases:
+          - terminal-target
+
+{% endif %}
+
   # ---------------------------------------------------------------------------
   # Server — Express.js API + WebSocket backend
   # ---------------------------------------------------------------------------
@@ -301,6 +797,10 @@ services:
       NODE_EXTRA_CA_CERTS: /certs/ca.pem
       CLI_ENABLED: "{{ 'true' if (_is_dev | default(false) | bool) else 'false' }}"
       DEV_TUNNEL_CERT_DIR: "{{ '/certs' if (_is_dev | default(false) | bool) else '' }}"
+      DEV_BOOTSTRAP_ADMIN_EMAIL: "{{ arsenale_dev_bootstrap_admin_email }}"
+      DEV_BOOTSTRAP_ADMIN_USERNAME: "{{ arsenale_dev_bootstrap_admin_username }}"
+      DEV_BOOTSTRAP_ADMIN_PASSWORD: "{{ arsenale_dev_bootstrap_admin_password }}"
+      DEV_BOOTSTRAP_TENANT_NAME: "{{ arsenale_dev_bootstrap_tenant_name }}"
       LOG_LEVEL: "{{ arsenale_log_level | default('info') }}"
       LOG_HTTP_REQUESTS: "{{ arsenale_log_http_requests | default('false') }}"
       LOG_GUACAMOLE: "{{ arsenale_log_guacamole | default('false') }}"
@@ -340,6 +840,11 @@ services:
       GATEWAY_GRPC_TLS_CA: /certs/ca.pem
       GATEWAY_GRPC_TLS_CERT: /certs/ssh-gateway/client-cert.pem
       GATEWAY_GRPC_TLS_KEY: /certs/ssh-gateway/client-key.pem
+      GO_QUERY_RUNNER_ENABLED: "true"
+      GO_QUERY_RUNNER_URL: "http://query-runner-go:8093"
+      GO_DESKTOP_BROKER_ENABLED: "true"
+      INTERNAL_SERVER_HOST: "server"
+      TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
@@ -369,6 +874,8 @@ services:
       gocache-cache:
         condition: service_healthy
       gocache-pubsub:
+        condition: service_healthy
+      desktop-broker-go:
         condition: service_healthy
     restart: always
     networks:
@@ -413,8 +920,7 @@ services:
 {% if _is_dev | default(false) | bool %}
     volumes:
       - {{ arsenale_cert_dir }}/client:/certs:ro
-      - {{ _home }}/client/nginx.dev.conf:/etc/nginx/conf.d/default.conf:ro
-    entrypoint: ["nginx", "-g", "daemon off;"]
+      - {{ _home }}/client/nginx.dev.conf:/etc/nginx/templates/default.conf.template:ro
 {% endif %}
     healthcheck:
 {% if _is_dev | default(false) | bool %}
@@ -428,6 +934,8 @@ services:
       start_period: 5s
     depends_on:
       server:
+        condition: service_healthy
+      desktop-broker-go:
         condition: service_healthy
     restart: always
     networks:

@@ -1,3 +1,4 @@
+import fs from 'fs';
 import pg from 'pg';
 import { config } from '../../config';
 import type { DbSettings, DbSessionConfig } from '../../types';
@@ -6,17 +7,41 @@ import type { DriverPool, ExplainResult, IntrospectionResult } from './types';
 
 export async function createPool(
   host: string, port: number, username: string, password: string,
-  databaseName: string | undefined, _dbSettings: DbSettings | undefined,
+  databaseName: string | undefined, dbSettings: DbSettings | undefined,
   sessionConfig?: DbSessionConfig,
 ): Promise<DriverPool> {
   // If sessionConfig.activeDatabase is set, override the pool-level database
   const effectiveDb = sessionConfig?.activeDatabase || databaseName;
-  const pool = new pg.Pool({
-    host, port, user: username, password, database: effectiveDb,
+  const poolConfig: pg.PoolConfig = {
     max: config.dbPoolMaxConnections,
     idleTimeoutMillis: config.dbPoolIdleTimeoutMs,
     statement_timeout: config.dbQueryTimeoutMs,
-  });
+  };
+
+  if (dbSettings?.sslMode) {
+    const connectionUrl = new URL('postgresql://placeholder');
+    connectionUrl.username = username;
+    connectionUrl.password = password;
+    connectionUrl.hostname = host;
+    connectionUrl.port = String(port);
+    if (effectiveDb) connectionUrl.pathname = `/${effectiveDb}`;
+    connectionUrl.searchParams.set('sslmode', dbSettings.sslMode);
+    poolConfig.connectionString = connectionUrl.toString();
+
+    if ((dbSettings.sslMode === 'verify-ca' || dbSettings.sslMode === 'verify-full') && process.env.DATABASE_SSL_ROOT_CERT) {
+      poolConfig.ssl = {
+        ca: fs.readFileSync(process.env.DATABASE_SSL_ROOT_CERT, 'utf8'),
+      };
+    }
+  } else {
+    poolConfig.host = host;
+    poolConfig.port = port;
+    poolConfig.user = username;
+    poolConfig.password = password;
+    poolConfig.database = effectiveDb;
+  }
+
+  const pool = new pg.Pool(poolConfig);
 
   // Apply session config to every new connection via pool event
   if (sessionConfig) {

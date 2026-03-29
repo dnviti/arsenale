@@ -23,6 +23,7 @@ router.post('/vnc/:sessionId/end', asyncHandler(sessionController.rdpEnd));
 
 // SSH session validation (existing, unchanged)
 router.post('/ssh', sessionRateLimiter, validate(sessionSchema), asyncHandler(sessionController.validateSshAccess));
+router.post('/ssh/:sessionId/end', asyncHandler(sessionController.sshEnd));
 
 // Admin: active session monitoring
 router.get('/active', requireTenant, requireTenantRoleAny('ADMIN', 'OWNER', 'AUDITOR', 'OPERATOR'), requirePermission('canManageSessions'), asyncHandler(sessionController.listActiveSessions));

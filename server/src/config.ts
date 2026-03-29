@@ -187,6 +187,12 @@ export const config = {
   // Database query execution
   dbQueryTimeoutMs: parseInt(process.env.DB_QUERY_TIMEOUT_MS || '30000', 10),
   dbQueryMaxRows: parseInt(process.env.DB_QUERY_MAX_ROWS || '10000', 10),
+  goQueryRunnerEnabled: process.env.GO_QUERY_RUNNER_ENABLED === 'true',
+  goQueryRunnerUrl: process.env.GO_QUERY_RUNNER_URL || 'http://query-runner-go:8093',
+  goTerminalBrokerUrl: process.env.GO_TERMINAL_BROKER_URL || process.env.TERMINAL_BROKER_URL || 'http://terminal-broker-go:8090',
+  goDesktopBrokerEnabled: process.env.GO_DESKTOP_BROKER_ENABLED === 'true',
+  internalServerHost: process.env.INTERNAL_SERVER_HOST || 'server',
+  tunnelTcpProxyBindHost: process.env.TUNNEL_TCP_PROXY_BIND_HOST || '127.0.0.1',
   // Database query rate limiting (token bucket)
   dbRateLimitDefaultWindowMs: parseInt(process.env.DB_RATE_LIMIT_DEFAULT_WINDOW_MS || '60000', 10),
   dbRateLimitDefaultMaxQueries: parseInt(process.env.DB_RATE_LIMIT_DEFAULT_MAX_QUERIES || '100', 10),

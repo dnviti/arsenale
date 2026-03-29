@@ -353,7 +353,7 @@ export function setupSshHandler(io: Server) {
             socket.emit('session:error', { message: msg });
             return;
           }
-          const tunnelSock = await openStream(gateway.id, bastionHost, bastionPort);
+          const tunnelSock = await openStream(gateway.id, '127.0.0.1', bastionPort);
           session = await createSshConnectionViaBastion({
             bastionHost,
             bastionPort,

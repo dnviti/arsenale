@@ -73,8 +73,6 @@ RUN npm ci --omit=dev && \
 # ---------------------------------------------------------------------------
 FROM node:22-alpine
 
-RUN apk upgrade --no-cache
-
 WORKDIR /app
 
 # Production node_modules (with Prisma client generated)

@@ -21,11 +21,41 @@
   set_fact:
     _compose_cmd: "{{ container_runtime | default('podman') }} compose -f {{ _home }}/docker-compose.yml"
 
-- name: Build images from source
+- name: Load rendered compose definition
+  set_fact:
+    compose_definition: "{{ lookup('file', _home + '/docker-compose.yml') | from_yaml }}"
+  when: _state == 'present' and _build | bool
+
+- name: Select services with build configuration
+  set_fact:
+    compose_services_for_build: >-
+      {{
+        compose_definition.services
+        | dict2items
+        | selectattr('value.build', 'defined')
+        | map(attribute='key')
+        | list
+      }}
+  when: _state == 'present' and _build | bool
+
+- name: Build images from source sequentially
   command: >
-    {{ _compose_cmd }} build --no-cache
+    {{ _compose_cmd }} build {{ item }}
   when: _state == 'present' and _build | bool
   changed_when: true
+  loop: "{{ compose_services_for_build }}"
+  register: compose_build_result
+  retries: 3
+  delay: 5
+  until: compose_build_result.rc == 0
+  environment: "{{ _compose_env }}"
+  vars:
+    _compose_env: >-
+      {{
+        {}
+        if (_is_dev | default(false) | bool)
+        else {'XDG_RUNTIME_DIR': '/run/user/' + (arsenale_uid | default('1000') | string)}
+      }}
 
 - name: Pull pre-built images
   command: >
@@ -34,6 +64,21 @@
   changed_when: false
 
 # --- Deploy / Teardown ---
+
+- name: Reset development stack before rebuilding
+  command: >
+    {{ _compose_cmd }} down --remove-orphans
+  when: _state == 'present' and _build | bool and (_is_dev | default(false) | bool)
+  changed_when: true
+  failed_when: false
+  environment: "{{ _compose_env }}"
+  vars:
+    _compose_env: >-
+      {{
+        {}
+        if (_is_dev | default(false) | bool)
+        else {'XDG_RUNTIME_DIR': '/run/user/' + (arsenale_uid | default('1000') | string)}
+      }}
 
 - name: Deploy Arsenale stack
   command: >

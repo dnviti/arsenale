@@ -1,4 +1,6 @@
 import api from './client';
+import type { ResolvedDlpPolicy } from './connections.api';
+import type { SshTerminalConfig } from '../constants/terminalThemes';
 
 export interface GatewaySessionCount {
   gatewayId: string;
@@ -35,4 +37,35 @@ export interface SshProxyStatus {
 export async function getSshProxyStatus(): Promise<SshProxyStatus> {
   const { data } = await api.get('/sessions/ssh-proxy/status');
   return data;
+}
+
+export interface StartSshSessionInput {
+  connectionId: string;
+  username?: string;
+  password?: string;
+  domain?: string;
+  credentialMode?: 'saved' | 'domain' | 'manual';
+}
+
+export interface TerminalBrokerSshSessionResponse {
+  transport: 'terminal-broker';
+  sessionId: string;
+  token: string;
+  expiresAt: string;
+  webSocketPath: string;
+  webSocketUrl: string;
+  dlpPolicy: ResolvedDlpPolicy;
+  enforcedSshSettings: Partial<SshTerminalConfig> | null;
+  sftpSupported: false;
+}
+
+export type StartSshSessionResponse = TerminalBrokerSshSessionResponse;
+
+export async function startSshSession(payload: StartSshSessionInput): Promise<StartSshSessionResponse> {
+  const { data } = await api.post('/sessions/ssh', payload);
+  return data;
+}
+
+export async function endSshSession(sessionId: string): Promise<void> {
+  await api.post(`/sessions/ssh/${sessionId}/end`, {});
 }

@@ -64,6 +64,9 @@ vi.mock('../services/recording.service', () => ({
 vi.mock('../services/lateralMovement.service', () => ({
   checkLateralMovement: vi.fn().mockResolvedValue({ allowed: true }),
 }));
+vi.mock('../services/goTerminalBroker.service', () => ({
+  startSshSession: vi.fn(),
+}));
 vi.mock('../utils/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), debug: vi.fn(), warn: vi.fn() },
 }));
@@ -81,6 +84,7 @@ import {
   createRdpSession,
   createVncSession,
   validateSshAccess,
+  sshEnd,
   rdpHeartbeat,
   rdpEnd,
   listActiveSessions,
@@ -92,6 +96,7 @@ import prisma from '../lib/prisma';
 import { getConnection, getConnectionCredentials } from '../services/connection.service';
 import { resolveDomainCredentials } from '../services/domain.service';
 import { checkLateralMovement } from '../services/lateralMovement.service';
+import { startSshSession } from '../services/goTerminalBroker.service';
 import * as sessionService from '../services/session.service';
 import * as auditService from '../services/audit.service';
 import { forceDisconnectSession } from '../services/sessionCleanup.service';
@@ -400,24 +405,107 @@ describe('session.controller', () => {
   // ==================== validateSshAccess ====================
 
   describe('validateSshAccess', () => {
-    it('validates SSH access and returns connectionId', async () => {
+    it('issues a terminal-broker SSH session response', async () => {
       const req = mockAuthRequest({ body: { connectionId: 'conn-ssh' } });
       const res = mockResponse();
 
-      vi.mocked(getConnection).mockResolvedValue({ ...baseConnection, type: 'SSH', id: 'conn-ssh' } as never);
+      vi.mocked(startSshSession).mockResolvedValue({
+        transport: 'terminal-broker',
+        sessionId: 'ssh-session-1',
+        token: 'grant-token',
+        expiresAt: '2030-01-01T00:00:00.000Z',
+        dlpPolicy: {
+          disableCopy: false,
+          disablePaste: false,
+          disableDownload: false,
+          disableUpload: false,
+        },
+        enforcedSshSettings: null,
+        sftpSupported: false,
+      } as never);
 
       await validateSshAccess(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ connectionId: 'conn-ssh', type: 'SSH' });
+      expect(startSshSession).toHaveBeenCalledWith(expect.objectContaining({
+        userId: 'user-1',
+        connectionId: 'conn-ssh',
+      }));
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        transport: 'terminal-broker',
+        sessionId: 'ssh-session-1',
+        token: 'grant-token',
+        webSocketPath: '/ws/terminal',
+      }));
     });
 
-    it('rejects non-SSH connections', async () => {
+    it('returns legacy transport for tunnel-backed SSH sessions', async () => {
       const req = mockAuthRequest({ body: { connectionId: 'conn-1' } });
       const res = mockResponse();
 
-      vi.mocked(getConnection).mockResolvedValue(baseConnection as never);
+      vi.mocked(startSshSession).mockResolvedValue({
+        transport: 'legacy-socketio',
+        connectionId: 'conn-1',
+        dlpPolicy: {
+          disableCopy: false,
+          disablePaste: false,
+          disableDownload: false,
+          disableUpload: false,
+        },
+        enforcedSshSettings: null,
+        sftpSupported: true,
+        reason: 'tunnel_gateway',
+      } as never);
 
-      await expect(validateSshAccess(req, res)).rejects.toThrow('Not an SSH connection');
+      await validateSshAccess(req, res);
+
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+        transport: 'legacy-socketio',
+        connectionId: 'conn-1',
+      }));
+    });
+
+    it('rejects lateral movement anomalies before SSH grant issuance', async () => {
+      const req = mockAuthRequest({ body: { connectionId: 'conn-1' } });
+      const res = mockResponse();
+
+      vi.mocked(checkLateralMovement).mockResolvedValueOnce({
+        allowed: false,
+        distinctTargets: 15,
+        windowMinutes: 5,
+        threshold: 10,
+      } as never);
+
+      await expect(validateSshAccess(req, res)).rejects.toThrow('Session denied: anomalous lateral movement detected.');
+      expect(startSshSession).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sshEnd', () => {
+    it('ends an owned SSH session', async () => {
+      const req = mockAuthRequest({ params: { sessionId: 'ssh-sess-1' } });
+      const res = mockResponse();
+
+      vi.mocked(prisma.activeSession.findUnique).mockResolvedValue({
+        id: 'ssh-sess-1',
+        userId: 'user-1',
+      } as never);
+
+      await sshEnd(req, res);
+
+      expect(sessionService.endSession).toHaveBeenCalledWith('ssh-sess-1', 'client_disconnect');
+      expect(res.json).toHaveBeenCalledWith({ ok: true });
+    });
+
+    it('rejects ending a session owned by another user', async () => {
+      const req = mockAuthRequest({ params: { sessionId: 'ssh-sess-1' } });
+      const res = mockResponse();
+
+      vi.mocked(prisma.activeSession.findUnique).mockResolvedValue({
+        id: 'ssh-sess-1',
+        userId: 'other-user',
+      } as never);
+
+      await expect(sshEnd(req, res)).rejects.toThrow('Session not found');
     });
   });
 

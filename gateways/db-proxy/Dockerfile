@@ -35,8 +35,6 @@ LABEL org.opencontainers.image.description="Database protocol gateway with zero-
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
 LABEL org.opencontainers.image.licenses="BUSL-1.1"
 
-RUN apk update && apk upgrade --no-cache
-
 # Enterprise database driver dependencies:
 #   - libaio, libnsl: Oracle Instant Client runtime requirements
 #   - unixodbc:       ODBC driver manager for MSSQL (FreeTDS/msodbcsql)

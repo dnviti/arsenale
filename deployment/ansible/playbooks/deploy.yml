@@ -113,16 +113,499 @@
         name: healthcheck
       when: _is_dev | bool and _state == 'present'
 
-    - name: Wait for development readiness endpoint
+    - name: Verify Go foundation services in development
       uri:
-        url: "https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/ready"
-        validate_certs: true
-        ca_path: "{{ arsenale_cert_dir }}/client/ca.pem"
+        url: "http://127.0.0.1:{{ item.port }}{{ item.path }}"
         status_code: 200
+      loop:
+        - { port: 18080, path: "/v1/meta/service" }
+        - { port: 18080, path: "/v1/orchestrators" }
+        - { port: 18081, path: "/v1/meta/service" }
+        - { port: 18081, path: "/v1/reconcile/schema" }
+        - { port: 18082, path: "/v1/meta/service" }
+        - { port: 18083, path: "/v1/providers" }
+        - { port: 18084, path: "/v1/capabilities" }
+        - { port: 18090, path: "/v1/session-protocol" }
+        - { port: 18091, path: "/v1/meta/service" }
+        - { port: 18093, path: "/v1/meta/service" }
+        - { port: 18085, path: "/v1/meta/service" }
+        - { port: 18086, path: "/v1/memory/schema" }
+        - { port: 18095, path: "/v1/meta/service" }
+      retries: 24
+      delay: 5
+      register: go_service_checks
+      until: go_service_checks.status == 200
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go read-only query execution in development
+      command: >
+        curl --silent --show-error --fail
+        -H "content-type: application/json"
+        -d '{"sql":"select current_database() as database_name","maxRows":1}'
+        http://127.0.0.1:18093/v1/query-runs:execute
+      retries: 24
+      delay: 5
+      register: query_runner_check
+      until: query_runner_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go explain execution in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"sql":"select current_database() as database_name"}' \
+          http://127.0.0.1:18093/v1/query-plans:explain \
+          | jq -e '.supported == true and .format == "json"' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: query_runner_explain_check
+      until: query_runner_explain_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go introspection execution in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"type":"database_version","db":{"protocol":"postgresql","host":"postgres","port":5432,"database":"{{ arsenale_db_name }}","sslMode":"require","username":"{{ arsenale_db_user }}","password":"{{ vault_postgres_password }}"}}' \
+          http://127.0.0.1:18093/v1/introspection:run \
+          | jq -e '.supported == true and (.data.version | type == "string")' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: query_runner_introspection_check
+      until: query_runner_introspection_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go schema fetch execution in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"target":{"protocol":"postgresql","host":"postgres","port":5432,"database":"{{ arsenale_db_name }}","sslMode":"require","username":"{{ arsenale_db_user }}","password":"{{ vault_postgres_password }}"}}' \
+          http://127.0.0.1:18093/v1/schema:fetch \
+          | jq -e '.tables | length > 0' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: query_runner_schema_check
+      until: query_runner_schema_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go tool execution path in development
+      command: >
+        curl --silent --show-error --fail
+        -H "content-type: application/json"
+        -d '{"capability":"db.query.execute.readonly","authz":{"subject":{"type":"system","id":"dev-bootstrap"},"resource":{"type":"database","id":"control-plane"}},"input":{"sql":"select current_database() as database_name","maxRows":1}}'
+        http://127.0.0.1:18084/v1/tool-calls:execute
+      retries: 24
+      delay: 5
+      register: tool_gateway_execute_check
+      until: tool_gateway_execute_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go schema capability execution path in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"capability":"db.schema.read","authz":{"subject":{"type":"system","id":"dev-bootstrap"},"resource":{"type":"database","id":"dev-postgres"}},"input":{"target":{"protocol":"postgresql","host":"postgres","port":5432,"database":"{{ arsenale_db_name }}","sslMode":"require","username":"{{ arsenale_db_user }}","password":"{{ vault_postgres_password }}"}}}' \
+          http://127.0.0.1:18084/v1/tool-calls:execute \
+          | jq -e '.decision.effect == "allow" and (.output.tables | length > 0)' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: tool_gateway_schema_check
+      until: tool_gateway_schema_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go introspection capability execution path in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"capability":"db.introspection.read","authz":{"subject":{"type":"system","id":"dev-bootstrap"},"resource":{"type":"database","id":"dev-postgres"}},"input":{"type":"database_version","db":{"protocol":"postgresql","host":"postgres","port":5432,"database":"{{ arsenale_db_name }}","sslMode":"require","username":"{{ arsenale_db_user }}","password":"{{ vault_postgres_password }}"}}}' \
+          http://127.0.0.1:18084/v1/tool-calls:execute \
+          | jq -e '.decision.effect == "allow" and (.output.data.version | type == "string")' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: tool_gateway_introspection_check
+      until: tool_gateway_introspection_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go controller reconcile planning path in development
+      shell: |
+        set -euo pipefail
+        orchestrator_name="$(curl --silent --show-error --fail http://127.0.0.1:18080/v1/orchestrators | jq -r '.connections[0].name')"
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d "{\"connectionName\":\"${orchestrator_name}\",\"workload\":{\"name\":\"ansible-acceptance-workload\",\"image\":\"ghcr.io/example/app:latest\",\"env\":{\"MODE\":\"dev\"},\"ports\":[{\"container\":8080,\"protocol\":\"tcp\"}],\"healthcheck\":{\"command\":[\"/bin/true\"],\"intervalSec\":10,\"timeoutSec\":5,\"retries\":3},\"oci\":{\"network\":\"bridge\"}}}" \
+          http://127.0.0.1:18081/v1/reconcile:plan \
+          | jq -e '.accepted == true and .connection.name == "'"${orchestrator_name}"'"' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: controller_reconcile_check
+      until: controller_reconcile_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go authz decision path in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"subject":{"type":"agent_run","id":"ansible-bootstrap"},"action":"db.query.execute.write","resource":{"type":"database","id":"dev-postgres"}}' \
+          http://127.0.0.1:18082/v1/decide \
+          | jq -e '.effect == "deny" and (.obligations | any(.type == "require_approval"))' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: authz_decision_check
+      until: authz_decision_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go model-gateway persistence path in development
+      shell: |
+        set -euo pipefail
+        api_base="https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api"
+        ca_cert="{{ arsenale_cert_dir }}/client/ca.pem"
+        login_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H 'content-type: application/json' \
+          -d '{"email":"{{ arsenale_dev_bootstrap_admin_email }}","password":"{{ arsenale_dev_bootstrap_admin_password }}"}' \
+          "${api_base}/auth/login")"
+        tenant_id="$(printf '%s' "${login_json}" | jq -r '.user.tenantId')"
+        if [ -z "${tenant_id}" ] || [ "${tenant_id}" = "null" ]; then
+          echo "login did not return a tenantId" >&2
+          exit 1
+        fi
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d "{\"config\":{\"tenantId\":\"${tenant_id}\",\"provider\":\"openai\",\"modelId\":\"gpt-4o\",\"maxTokensPerRequest\":2048,\"dailyRequestLimit\":50,\"enabled\":true},\"apiKeyConfigured\":false}" \
+          http://127.0.0.1:18083/v1/provider-configs:validate \
+          | jq -e '.valid == false and (.errors | any(. == "provider requires an API key"))' >/dev/null
+        curl --silent --show-error --fail \
+          -X PUT \
+          -H "content-type: application/json" \
+          -d '{"provider":"openai","apiKey":"ansible-key","modelId":"gpt-4o-mini","maxTokensPerRequest":2048,"dailyRequestLimit":50,"enabled":true}' \
+          "http://127.0.0.1:18083/v1/provider-configs/${tenant_id}" \
+          | jq -e '.config.provider == "openai" and .config.hasApiKey == true and .config.modelId == "gpt-4o-mini"' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: model_gateway_check
+      until: model_gateway_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go runtime-agent validation path in development
+      shell: |
+        set -euo pipefail
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"kind":"podman","workload":{"name":"ansible-runtime-check","image":"ghcr.io/example/app:latest","env":{"MODE":"dev"},"ports":[{"container":8080,"protocol":"tcp"}],"healthcheck":{"command":["/bin/true"],"intervalSec":10,"timeoutSec":5,"retries":3},"oci":{"network":"bridge"}}}' \
+          http://127.0.0.1:18095/v1/runtime/workloads:validate \
+          | jq -e '.valid == true' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: runtime_agent_check
+      until: runtime_agent_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go terminal-broker SSH grant path in development
+      shell: |
+        set -euo pipefail
+        terminal_grant_json="$(curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"capability":"connection.connect.ssh","authz":{"subject":{"type":"agent_run","id":"ansible-bootstrap"},"resource":{"type":"connection","id":"terminal-target"},"context":{"approved":"true"}},"input":{"sessionId":"ansible-terminal","connectionId":"terminal-target","userId":"ansible","expiresAt":"2030-01-01T00:00:00Z","target":{"host":"terminal-target","port":2224,"username":"acceptance","password":"acceptance"},"terminal":{"term":"xterm-256color","cols":80,"rows":24}}}' \
+          http://127.0.0.1:18084/v1/tool-calls:execute)"
+        printf '%s' "${terminal_grant_json}" | jq -e '.decision.effect == "allow" and (.output.webSocketUrl | startswith("ws://"))' >/dev/null
+        terminal_ws_url="$(printf '%s' "${terminal_grant_json}" | jq -r '.output.webSocketUrl')"
+        TERMINAL_WS_URL="${terminal_ws_url}" node <<'NODE'
+        const WebSocket = require('ws');
+
+        const ws = new WebSocket(process.env.TERMINAL_WS_URL);
+        let ready = false;
+        let sawOutput = false;
+        let buffer = '';
+        const timeout = setTimeout(() => {
+          console.error('terminal broker websocket timed out');
+          process.exit(1);
+        }, 15000);
+
+        ws.on('message', (raw) => {
+          const message = JSON.parse(raw.toString());
+          if (message.type === 'ready' && !ready) {
+            ready = true;
+            ws.send(JSON.stringify({ type: 'input', data: 'echo ansible-terminal && exit\n' }));
+            return;
+          }
+
+          if (message.type === 'data') {
+            buffer += message.data || '';
+            if (buffer.includes('ansible-terminal')) {
+              sawOutput = true;
+            }
+            return;
+          }
+
+          if (message.type === 'error') {
+            clearTimeout(timeout);
+            console.error(message.message || message.code || 'terminal broker error');
+            process.exit(1);
+          }
+
+          if (message.type === 'closed') {
+            clearTimeout(timeout);
+            process.exit(sawOutput ? 0 : 1);
+          }
+        });
+
+        ws.on('error', (err) => {
+          clearTimeout(timeout);
+          console.error(err.message);
+          process.exit(1);
+        });
+
+        ws.on('close', () => {
+          clearTimeout(timeout);
+          process.exit(sawOutput ? 0 : 1);
+        });
+        NODE
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: terminal_broker_check
+      until: terminal_broker_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go memory-service persistence path in development
+      shell: |
+        set -euo pipefail
+        namespace_key="$(curl --silent --show-error --fail \
+          -X PUT \
+          -H "content-type: application/json" \
+          -d '{"tenantId":"ansible","scope":"agent","agentId":"bootstrap-agent","type":"episodic","name":"default"}' \
+          http://127.0.0.1:18086/v1/memory/namespaces \
+          | jq -r '.namespace.key')"
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"namespace":{"tenantId":"ansible","scope":"agent","agentId":"bootstrap-agent","type":"episodic","name":"default"},"content":"ansible validation event","summary":"ansible memory validation","metadata":{"source":"ansible"}}' \
+          http://127.0.0.1:18086/v1/memory/items \
+          | jq -e '.item.namespaceKey == "'"${namespace_key}"'"' >/dev/null
+        curl --silent --show-error --fail \
+          "http://127.0.0.1:18086/v1/memory/items?namespaceKey=${namespace_key}" \
+          | jq -e '.items | length >= 1' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: memory_service_check
+      until: memory_service_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go tool-gateway memory capability path in development
+      shell: |
+        set -euo pipefail
+        namespace_key="tenant=ansible/scope=agent/type=episodic/name=default/agent=bootstrap-agent"
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"capability":"memory.write","authz":{"subject":{"type":"agent_run","id":"ansible-bootstrap"},"resource":{"type":"memory_namespace","id":"agent/default"},"context":{"approved":"true"}},"input":{"namespace":{"tenantId":"ansible","scope":"agent","agentId":"bootstrap-agent","type":"episodic","name":"default"},"content":"ansible gateway memory validation","summary":"tool gateway memory validation","metadata":{"source":"ansible-tool"}}}' \
+          http://127.0.0.1:18084/v1/tool-calls:execute \
+          | jq -e '.decision.effect == "allow" and .output.item.namespaceKey == "'"${namespace_key}"'"' >/dev/null
+        curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d "{\"capability\":\"memory.read\",\"authz\":{\"subject\":{\"type\":\"agent_run\",\"id\":\"ansible-bootstrap\"},\"resource\":{\"type\":\"memory_namespace\",\"id\":\"${namespace_key}\"}},\"input\":{\"namespaceKey\":\"${namespace_key}\"}}" \
+          http://127.0.0.1:18084/v1/tool-calls:execute \
+          | jq -e '.decision.effect == "allow" and (.output.items | length >= 1)' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: tool_gateway_memory_check
+      until: tool_gateway_memory_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify Go agent-orchestrator persistence path in development
+      shell: |
+        set -euo pipefail
+        agent_run_id="$(curl --silent --show-error --fail \
+          -H "content-type: application/json" \
+          -d '{"tenantId":"ansible","definitionId":"ops-agent","trigger":"bootstrap","goals":["validate dev deployment"],"requestedCapabilities":["db.schema.read","gateway.scale"]}' \
+          http://127.0.0.1:18085/v1/agent-runs \
+          | jq -r '.run.id')"
+        curl --silent --show-error --fail \
+          "http://127.0.0.1:18085/v1/agent-runs/${agent_run_id}" \
+          | jq -e '.run.requiresApproval == true and .run.status == "queued"' >/dev/null
+        curl --silent --show-error --fail \
+          "http://127.0.0.1:18085/v1/agent-runs?tenantId=ansible" \
+          | jq -e '.runs | any(.id == "'"${agent_run_id}"'")' >/dev/null
+      args:
+        executable: /bin/bash
+      retries: 24
+      delay: 5
+      register: agent_orchestrator_check
+      until: agent_orchestrator_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Verify database session query API delegates PostgreSQL read-only execution in development
+      shell: |
+        set -euo pipefail
+
+        api_base="https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api"
+        ca_cert="{{ arsenale_cert_dir }}/client/ca.pem"
+        connection_name="Dev Go Query Runner Validation $(date +%s)"
+        access_token=""
+        connection_id=""
+        session_id=""
+
+        cleanup() {
+          if [ -n "${session_id}" ]; then
+            curl --silent --show-error --fail \
+              --cacert "${ca_cert}" \
+              -H "authorization: Bearer ${access_token}" \
+              -H "content-type: application/json" \
+              -d '{}' \
+              "${api_base}/sessions/database/${session_id}/end" >/dev/null || true
+          fi
+
+          if [ -n "${connection_id}" ]; then
+            curl --silent --show-error --fail \
+              --cacert "${ca_cert}" \
+              -H "authorization: Bearer ${access_token}" \
+              -X DELETE \
+              "${api_base}/connections/${connection_id}" >/dev/null || true
+          fi
+        }
+        trap cleanup EXIT
+
+        login_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H 'content-type: application/json' \
+          -d '{"email":"{{ arsenale_dev_bootstrap_admin_email }}","password":"{{ arsenale_dev_bootstrap_admin_password }}"}' \
+          "${api_base}/auth/login")"
+
+        access_token="$(printf '%s' "${login_json}" | jq -r '.accessToken')"
+        if [ -z "${access_token}" ] || [ "${access_token}" = "null" ]; then
+          echo "login did not return an access token" >&2
+          exit 1
+        fi
+
+        create_connection_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          -H 'content-type: application/json' \
+          -d "{\"name\":\"${connection_name}\",\"type\":\"DATABASE\",\"host\":\"postgres\",\"port\":5432,\"username\":\"{{ arsenale_db_user }}\",\"password\":\"{{ vault_postgres_password }}\",\"dbSettings\":{\"protocol\":\"postgresql\",\"databaseName\":\"{{ arsenale_db_name }}\",\"sslMode\":\"require\"}}" \
+          "${api_base}/connections")"
+
+        connection_id="$(printf '%s' "${create_connection_json}" | jq -r '.id')"
+        if [ -z "${connection_id}" ] || [ "${connection_id}" = "null" ]; then
+          echo "connection creation did not return an id" >&2
+          exit 1
+        fi
+
+        create_session_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          -H 'content-type: application/json' \
+          -d "{\"connectionId\":\"${connection_id}\"}" \
+          "${api_base}/sessions/database")"
+
+        session_id="$(printf '%s' "${create_session_json}" | jq -r '.sessionId')"
+        if [ -z "${session_id}" ] || [ "${session_id}" = "null" ]; then
+          echo "session creation did not return a sessionId" >&2
+          exit 1
+        fi
+
+        query_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          -H 'content-type: application/json' \
+          -d '{"sql":"select current_database() as database_name"}' \
+          "${api_base}/sessions/database/${session_id}/query")"
+
+        printf '%s' "${query_json}" | jq -e '.rowCount == 1 and .rows[0].database_name == "{{ arsenale_db_name }}"' >/dev/null
+
+        explain_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          -H 'content-type: application/json' \
+          -d '{"sql":"select current_database() as database_name"}' \
+          "${api_base}/sessions/database/${session_id}/explain")"
+
+        printf '%s' "${explain_json}" | jq -e '.supported == true and .format == "json"' >/dev/null
+
+        introspect_version_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          -H 'content-type: application/json' \
+          -d '{"type":"database_version"}' \
+          "${api_base}/sessions/database/${session_id}/introspect")"
+
+        printf '%s' "${introspect_version_json}" | jq -e '.supported == true and (.data.version | type == "string")' >/dev/null
+
+        introspect_schema_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          -H 'content-type: application/json' \
+          -d '{"type":"table_schema","target":"orchestrator_connections"}' \
+          "${api_base}/sessions/database/${session_id}/introspect")"
+
+        printf '%s' "${introspect_schema_json}" | jq -e '.supported == true and (.data | length > 0)' >/dev/null
+
+        schema_json="$(curl --silent --show-error --fail \
+          --cacert "${ca_cert}" \
+          -H "authorization: Bearer ${access_token}" \
+          "${api_base}/sessions/database/${session_id}/schema")"
+
+        printf '%s' "${schema_json}" | jq -e '.tables | length > 0' >/dev/null
+      args:
+        executable: /bin/bash
+      register: go_db_session_check
+      retries: 24
+      delay: 5
+      until: go_db_session_check.rc == 0
+      changed_when: false
+      when: _is_dev | bool and _state == 'present'
+
+    - name: Wait for development readiness endpoint
+      command: >
+        curl --silent --show-error --fail
+        --cacert {{ arsenale_cert_dir }}/client/ca.pem
+        https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/ready
       retries: 24
       delay: 5
       register: dev_ready_check
-      until: dev_ready_check.status == 200
+      until: dev_ready_check.rc == 0
+      changed_when: false
       when: _is_dev | bool and _state == 'present'
 
     - name: Development ready
