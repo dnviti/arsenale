@@ -26,7 +26,7 @@ import (
 
 const (
 	devBootstrapIP        = "127.0.0.1"
-	devBootstrapUserAgent = "arsenale-control-plane-api-go/dev-bootstrap"
+	devBootstrapUserAgent = "arsenale-control-plane-api/dev-bootstrap"
 )
 
 type devBootstrapOptions struct {

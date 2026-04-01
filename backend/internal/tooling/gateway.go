@@ -409,21 +409,21 @@ func queryRunnerURL() string {
 	if value := strings.TrimSpace(os.Getenv("QUERY_RUNNER_URL")); value != "" {
 		return value
 	}
-	return "http://query-runner-go:8093"
+	return "http://query-runner:8093"
 }
 
 func memoryServiceURL() string {
 	if value := strings.TrimSpace(os.Getenv("MEMORY_SERVICE_URL")); value != "" {
 		return value
 	}
-	return "http://memory-service-go:8086"
+	return "http://memory-service:8086"
 }
 
 func terminalBrokerURL() string {
 	if value := strings.TrimSpace(os.Getenv("TERMINAL_BROKER_URL")); value != "" {
 		return value
 	}
-	return "http://terminal-broker-go:8090"
+	return "http://terminal-broker:8090"
 }
 
 func publicTerminalBrokerURL() string {

@@ -189,6 +189,10 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	gatewayGRPCClientCA := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_CLIENT_CA"))
 	gatewayGRPCServerCert := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_SERVER_CERT"))
 	gatewayGRPCServerKey := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_SERVER_KEY"))
+	guacdTLSCert := strings.TrimSpace(os.Getenv("ORCHESTRATOR_GUACD_TLS_CERT"))
+	guacdTLSKey := strings.TrimSpace(os.Getenv("ORCHESTRATOR_GUACD_TLS_KEY"))
+	orchestratorResolvConfPath := strings.TrimSpace(os.Getenv("ORCHESTRATOR_RESOLV_CONF_PATH"))
+	orchestratorEgressNetwork := strings.TrimSpace(os.Getenv("ORCHESTRATOR_EGRESS_NETWORK"))
 	if gatewayGRPCClientCA == "" && gatewayGRPCTLSCert != "" {
 		candidate := filepath.Join(filepath.Dir(gatewayGRPCTLSCert), "client-ca.pem")
 		if _, statErr := os.Stat(candidate); statErr == nil {
@@ -207,33 +211,34 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			gatewayGRPCServerKey = candidate
 		}
 	}
+	if guacdTLSCert == "" {
+		candidate := "/certs/guacd/server-cert.pem"
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			guacdTLSCert = candidate
+		}
+	}
+	if guacdTLSKey == "" {
+		candidate := "/certs/guacd/server-key.pem"
+		if _, statErr := os.Stat(candidate); statErr == nil {
+			guacdTLSKey = candidate
+		}
+	}
 
 	store := orchestration.NewStore(db)
-	if err := store.EnsureSchema(ctx); err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
-		return nil, err
-	}
 	modelGatewayStore := modelgateway.NewStore(db)
-	if err := modelGatewayStore.EnsureSchema(ctx); err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
-		return nil, err
-	}
 
 	sessionStore := sessions.NewStore(db)
 	tenantAuthService := tenantauth.Service{DB: db}
 	vaultTTL := time.Duration(parseInt(getenv("VAULT_TTL_MINUTES", "30"), 30)) * time.Minute
+	orchestratorDNSServers := parseCSV(os.Getenv("ORCHESTRATOR_DNS_SERVERS"))
 	sshSessionService := sshsessions.Service{
 		DB:                  db,
 		Redis:               redisClient,
 		SessionStore:        sessionStore,
 		TenantAuth:          tenantAuthService,
 		ServerEncryptionKey: serverEncryptionKey,
-		TerminalBrokerURL:   getenv("TERMINAL_BROKER_URL", "http://terminal-broker-go:8090"),
-		TunnelBrokerURL:     getenv("GO_TUNNEL_BROKER_URL", "http://tunnel-broker-go:8092"),
+		TerminalBrokerURL:   getenv("TERMINAL_BROKER_URL", "http://terminal-broker:8090"),
+		TunnelBrokerURL:     getenv("GO_TUNNEL_BROKER_URL", "http://tunnel-broker:8092"),
 	}
 	authService := authservice.Service{
 		DB:               db,
@@ -322,11 +327,16 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			GatewayGRPCTLSKey:     gatewayGRPCTLSKey,
 			GatewayGRPCServerCert: gatewayGRPCServerCert,
 			GatewayGRPCServerKey:  gatewayGRPCServerKey,
-			TunnelBrokerURL:       getenv("GO_TUNNEL_BROKER_URL", getenv("TUNNEL_BROKER_URL", "http://tunnel-broker-go:8092")),
+			GuacdTLSCert:          guacdTLSCert,
+			GuacdTLSKey:           guacdTLSKey,
+			TunnelBrokerURL:       getenv("GO_TUNNEL_BROKER_URL", getenv("TUNNEL_BROKER_URL", "http://tunnel-broker:8092")),
 			TunnelTrustDomain:     getenv("SPIFFE_TRUST_DOMAIN", "arsenale.local"),
 			OrchestratorType:      strings.TrimSpace(os.Getenv("ORCHESTRATOR_TYPE")),
 			DockerSocketPath:      getenv("DOCKER_SOCKET_PATH", "/var/run/docker.sock"),
 			PodmanSocketPath:      getenv("PODMAN_SOCKET_PATH", "/run/podman/podman.sock"),
+			DNSServers:            orchestratorDNSServers,
+			ResolvConfPath:        orchestratorResolvConfPath,
+			EgressNetwork:         orchestratorEgressNetwork,
 			EdgeNetwork:           getenv("ORCHESTRATOR_EDGE_NETWORK", "arsenale-net-edge"),
 			DBNetwork:             getenv("ORCHESTRATOR_DB_NETWORK", "arsenale-net-db"),
 			GuacdNetwork:          getenv("ORCHESTRATOR_GUACD_NETWORK", "arsenale-net-guacd"),

@@ -206,19 +206,16 @@
         else {'XDG_RUNTIME_DIR': '/run/user/' + (arsenale_uid | default('1000') | string)}
       }}
 
-- name: Bootstrap PostgreSQL schema when missing
-  command: "{{ _repo_root }}/scripts/bootstrap-db-schema.sh"
+- name: Run database migrations
+  command: >
+    {{ _compose_cmd }} run --rm migrate up
   when: _state == 'present'
   register: schema_bootstrap
-  changed_when: "'schema-bootstrap: applied' in schema_bootstrap.stdout"
+  changed_when: "'applied_now=0' not in schema_bootstrap.stdout or 'stamped legacy database' in schema_bootstrap.stdout"
   retries: 12
   delay: 5
   until: schema_bootstrap.rc == 0
   environment:
-    CONTAINER_RUNTIME: "{{ container_runtime | default('podman') }}"
-    ARSENALE_POSTGRES_CONTAINER: "arsenale-postgres"
-    ARSENALE_DB_USER: "{{ arsenale_db_user }}"
-    ARSENALE_DB_NAME: "{{ arsenale_db_name }}"
     XDG_RUNTIME_DIR: "{{ omit if (_is_dev | default(false) | bool) else '/run/user/' + (arsenale_uid | default('1000') | string) }}"
 
 - name: Deploy Arsenale stack

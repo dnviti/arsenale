@@ -57,6 +57,8 @@ type managedContainerConfig struct {
 	Labels        map[string]string
 	Healthcheck   *managedContainerHealthcheck
 	Networks      []string
+	DNSServers    []string
+	ResolvConf    string
 	Binds         []string
 	User          string
 	RestartPolicy string
@@ -65,6 +67,8 @@ type managedContainerConfig struct {
 type managedContainerInfo struct {
 	ID             string
 	Name           string
+	IPAddress      string
+	NetworkIPs     map[string]string
 	Status         string
 	Health         string
 	ContainerPorts map[int]int
@@ -132,6 +136,7 @@ func (c *dockerSocketClient) deployContainer(ctx context.Context, cfg managedCon
 	}
 
 	networks := normalizedStrings(cfg.Networks)
+	dnsServers := normalizedStrings(cfg.DNSServers)
 	primaryNetwork := ""
 	if len(networks) > 0 {
 		primaryNetwork = networks[0]
@@ -190,6 +195,9 @@ func (c *dockerSocketClient) deployContainer(ctx context.Context, cfg managedCon
 	}
 	if primaryNetwork != "" {
 		payload["HostConfig"].(map[string]any)["NetworkMode"] = primaryNetwork
+	}
+	if len(dnsServers) > 0 {
+		payload["HostConfig"].(map[string]any)["Dns"] = dnsServers
 	}
 	if cfg.Healthcheck != nil {
 		payload["Healthcheck"] = map[string]any{
@@ -250,10 +258,22 @@ func (c *dockerSocketClient) inspectContainer(ctx context.Context, containerID s
 	info := managedContainerInfo{
 		ID:             payload.ID,
 		Name:           strings.TrimPrefix(payload.Name, "/"),
+		NetworkIPs:     make(map[string]string),
 		Status:         strings.ToLower(strings.TrimSpace(payload.State.Status)),
 		Health:         "none",
 		ContainerPorts: make(map[int]int),
 		PublishedPorts: make(map[int]int),
+	}
+	for networkName, network := range payload.NetworkSettings.Networks {
+		if ip := strings.TrimSpace(network.IPAddress); ip != "" {
+			info.NetworkIPs[networkName] = ip
+		}
+	}
+	for _, networkName := range sortedKeys(info.NetworkIPs) {
+		if ip := strings.TrimSpace(info.NetworkIPs[networkName]); ip != "" {
+			info.IPAddress = ip
+			break
+		}
 	}
 	if payload.State.Health != nil && strings.TrimSpace(payload.State.Health.Status) != "" {
 		info.Health = strings.ToLower(strings.TrimSpace(payload.State.Health.Status))
@@ -393,6 +413,9 @@ type dockerContainerInspect struct {
 			HostIP   string `json:"HostIp"`
 			HostPort string `json:"HostPort"`
 		} `json:"Ports"`
+		Networks map[string]struct {
+			IPAddress string `json:"IPAddress"`
+		} `json:"Networks"`
 	} `json:"NetworkSettings"`
 }
 
@@ -503,6 +526,15 @@ func (s Service) managedGatewayNetworks(record gatewayRecord) []string {
 	}
 }
 
+func (s Service) managedGatewayAttachNetworks(record gatewayRecord) []string {
+	networks := make([]string, 0, 4)
+	if egressNetwork := strings.TrimSpace(s.EgressNetwork); egressNetwork != "" {
+		networks = append(networks, egressNetwork)
+	}
+	networks = append(networks, s.managedGatewayNetworks(record)...)
+	return normalizedStrings(networks)
+}
+
 func (s Service) managedGatewayImageCandidates(gatewayType string) []string {
 	switch strings.ToUpper(strings.TrimSpace(gatewayType)) {
 	case "MANAGED_SSH":
@@ -583,6 +615,13 @@ func (s Service) buildManagedGatewayContainerConfig(ctx context.Context, record 
 		}
 
 	case "GUACD":
+		guacdEnv, err := s.buildManagedGuacdTLSEnv()
+		if err != nil {
+			return nil, err
+		}
+		for key, value := range guacdEnv {
+			env[key] = value
+		}
 	case "DB_PROXY":
 		env["DB_LISTEN_PORT"] = "5432"
 	default:
@@ -604,7 +643,7 @@ func (s Service) buildManagedGatewayContainerConfig(ctx context.Context, record 
 		"arsenale.gateway-type": strings.ToUpper(strings.TrimSpace(record.Type)),
 	}
 
-	networks := s.managedGatewayNetworks(record)
+	networks := s.managedGatewayAttachNetworks(record)
 	ports, err := s.managedGatewayPublishedPorts(record)
 	if err != nil {
 		return nil, err
@@ -616,7 +655,12 @@ func (s Service) buildManagedGatewayContainerConfig(ctx context.Context, record 
 		Ports:         ports,
 		Labels:        labels,
 		Networks:      networks,
+		DNSServers:    normalizedStrings(s.DNSServers),
+		ResolvConf:    strings.TrimSpace(s.ResolvConfPath),
 		RestartPolicy: "always",
+	}
+	if baseConfig.ResolvConf != "" {
+		baseConfig.Binds = append(baseConfig.Binds, fmt.Sprintf("%s:/etc/resolv.conf:ro", baseConfig.ResolvConf))
 	}
 
 	switch strings.ToUpper(strings.TrimSpace(record.Type)) {
@@ -744,6 +788,27 @@ func (s Service) buildManagedSSHGRPCEnv() (map[string]string, error) {
 	}, nil
 }
 
+func (s Service) buildManagedGuacdTLSEnv() (map[string]string, error) {
+	if strings.TrimSpace(s.GuacdTLSCert) == "" || strings.TrimSpace(s.GuacdTLSKey) == "" {
+		return nil, &requestError{status: http.StatusInternalServerError, message: "Managed GUACD gateways require ORCHESTRATOR_GUACD_TLS_CERT/KEY so desktop-broker TLS can reach guacd"}
+	}
+
+	certPEM, err := os.ReadFile(s.GuacdTLSCert)
+	if err != nil {
+		return nil, fmt.Errorf("read managed guacd certificate: %w", err)
+	}
+	keyPEM, err := os.ReadFile(s.GuacdTLSKey)
+	if err != nil {
+		return nil, fmt.Errorf("read managed guacd private key: %w", err)
+	}
+
+	return map[string]string{
+		"GUACD_SSL":          "true",
+		"GUACD_SSL_CERT_PEM": strings.TrimSpace(string(certPEM)),
+		"GUACD_SSL_KEY_PEM":  strings.TrimSpace(string(keyPEM)),
+	}, nil
+}
+
 func buildManagedGatewayContainerName(record gatewayRecord, instanceIndex int) string {
 	tenantSlug := sanitizeGatewayName(record.TenantID)
 	if len(tenantSlug) > 8 {
@@ -763,12 +828,12 @@ func buildManagedGatewayContainerName(record gatewayRecord, instanceIndex int) s
 func buildManagedTunnelConnectURL(rawBaseURL string) string {
 	rawBaseURL = strings.TrimSpace(rawBaseURL)
 	if rawBaseURL == "" {
-		return "ws://tunnel-broker-go:8092/api/tunnel/connect"
+		return "ws://tunnel-broker:8092/api/tunnel/connect"
 	}
 
 	parsed, err := url.Parse(rawBaseURL)
 	if err != nil {
-		return "ws://tunnel-broker-go:8092/api/tunnel/connect"
+		return "ws://tunnel-broker:8092/api/tunnel/connect"
 	}
 
 	switch parsed.Scheme {
@@ -856,6 +921,15 @@ func normalizedStrings(values []string) []string {
 		result = append(result, value)
 	}
 	return result
+}
+
+func sortedKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func firstNonEmpty(values ...string) string {

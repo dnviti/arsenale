@@ -27,7 +27,7 @@ type healthCheck struct {
 
 func checkAPIReadiness(ctx context.Context, db *pgxpool.Pool) readinessResult {
 	database := checkDatabase(ctx, db)
-	desktopBroker := checkHTTPService(ctx, getenv("DESKTOP_BROKER_HEALTH_URL", "http://desktop-broker-go:8091/healthz"))
+	desktopBroker := checkHTTPService(ctx, getenv("DESKTOP_BROKER_HEALTH_URL", "http://desktop-broker:8091/healthz"))
 
 	status := "ok"
 	if !database.OK || !desktopBroker.OK {

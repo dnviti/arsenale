@@ -54,6 +54,40 @@ services:
     networks:
       - net-db
 
+  migrate:
+    build:
+      context: {{ (_home if (_is_dev | default(false) | bool) else (_home + '/arsenale')) }}
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: control-plane-api
+    container_name: arsenale-migrate
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["up"]
+    read_only: true
+    cpus: "0.25"
+    mem_limit: "256m"
+    pids_limit: 64
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      ARSENALE_SKIP_MIGRATION_CHECK: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    restart: "no"
+    networks:
+      - net-db
+
   # ---------------------------------------------------------------------------
   # Apache Guacamole Daemon (guacd) — RDP/VNC protocol handler
   # ---------------------------------------------------------------------------
@@ -172,13 +206,13 @@ services:
   # ---------------------------------------------------------------------------
   # Go backend foundation services required in production
   # ---------------------------------------------------------------------------
-  control-plane-api-go:
+  control-plane-api:
     build:
       context: {{ _home }}/arsenale
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-api
-    container_name: arsenale-control-plane-api-go
+    container_name: arsenale-control-plane-api
     entrypoint:
       - /bin/sh
       - -lc
@@ -242,19 +276,20 @@ services:
       start_period: 5s
     restart: always
     networks:
+      - net-egress
       - net-edge
       - net-db
       - net-cache
       - net-guacd
       - net-gateway
 
-  tunnel-broker-go:
+  tunnel-broker:
     build:
       context: {{ _home }}/arsenale/
       dockerfile: backend/Dockerfile
       args:
         SERVICE: tunnel-broker
-    container_name: arsenale-tunnel-broker-go
+    container_name: arsenale-tunnel-broker
     read_only: true
     cpus: "0.5"
     mem_limit: "256m"
@@ -276,7 +311,7 @@ services:
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
-      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker-go"
+      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker"
     ports:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:18092:8092"
     depends_on:
@@ -296,13 +331,13 @@ services:
       - net-db
       - net-gateway
 
-  query-runner-go:
+  query-runner:
     build:
       context: {{ _home }}/arsenale
       dockerfile: backend/Dockerfile
       args:
         SERVICE: query-runner
-    container_name: arsenale-query-runner-go
+    container_name: arsenale-query-runner
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -338,13 +373,13 @@ services:
       - net-edge
       - net-db
 
-  desktop-broker-go:
+  desktop-broker:
     build:
       context: {{ _home }}/arsenale
       dockerfile: backend/Dockerfile
       args:
         SERVICE: desktop-broker
-    container_name: arsenale-desktop-broker-go
+    container_name: arsenale-desktop-broker
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -396,13 +431,13 @@ services:
   # ---------------------------------------------------------------------------
   # Go backend foundation services — active public runtime
   # ---------------------------------------------------------------------------
-  control-plane-api-go:
+  control-plane-api:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-api
-    container_name: arsenale-control-plane-api-go
+    container_name: arsenale-control-plane-api
     entrypoint:
       - /bin/sh
       - -lc
@@ -434,13 +469,18 @@ services:
       WEBAUTHN_RP_ORIGIN: "{{ _public_url }}"
       ORCHESTRATOR_TYPE: "podman"
       PODMAN_SOCKET_PATH: "/run/podman/podman.sock"
+      ORCHESTRATOR_EGRESS_NETWORK: "arsenale-net-egress"
       ORCHESTRATOR_EDGE_NETWORK: "arsenale-net-edge"
       ORCHESTRATOR_DB_NETWORK: "arsenale-net-db"
       ORCHESTRATOR_GUACD_NETWORK: "arsenale-net-guacd"
       ORCHESTRATOR_GATEWAY_NETWORK: "arsenale-net-gateway"
       ORCHESTRATOR_SSH_GATEWAY_IMAGE: "localhost/arsenale_ssh-gateway:latest"
       ORCHESTRATOR_GUACD_IMAGE: "localhost/arsenale_guacd:latest"
+      ORCHESTRATOR_GUACD_TLS_CERT: /certs/guacd/server-cert.pem
+      ORCHESTRATOR_GUACD_TLS_KEY: /certs/guacd/server-key.pem
       ORCHESTRATOR_DB_PROXY_IMAGE: "localhost/arsenale_db-proxy:latest"
+      ORCHESTRATOR_DNS_SERVERS: "{{ (arsenale_container_dns_servers | default([])) | join(',') }}"
+      ORCHESTRATOR_RESOLV_CONF_PATH: "{{ arsenale_cert_dir }}/orchestrator/resolv.conf"
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       DEV_BOOTSTRAP_ADMIN_EMAIL: "{{ arsenale_dev_bootstrap_admin_email }}"
       DEV_BOOTSTRAP_ADMIN_USERNAME: "{{ arsenale_dev_bootstrap_admin_username }}"
@@ -480,7 +520,9 @@ services:
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
+      - /run/user/{{ arsenale_uid | default('1000') }}/podman/podman.sock:/run/podman/podman.sock
       - {{ arsenale_cert_dir }}/ca.pem:/certs/ca.pem:ro
+      - {{ arsenale_cert_dir }}/guacd:/certs/guacd:ro
       - {{ arsenale_cert_dir }}/ssh-gateway:/certs/ssh-gateway:ro
 {% if _is_dev | default(false) | bool %}
       - {{ arsenale_cert_dir }}/ca-key.pem:/certs/ca-key.pem:ro
@@ -506,13 +548,13 @@ services:
       - net-guacd
       - net-gateway
 
-  control-plane-controller-go:
+  control-plane-controller:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-controller
-    container_name: arsenale-control-plane-controller-go
+    container_name: arsenale-control-plane-controller
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -530,13 +572,13 @@ services:
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
-      RUNTIME_AGENT_URL: "http://runtime-agent-go:8095"
+      RUNTIME_AGENT_URL: "http://runtime-agent:8095"
     ports:
       - "127.0.0.1:18081:8081"
     depends_on:
       postgres:
         condition: service_healthy
-      runtime-agent-go:
+      runtime-agent:
         condition: service_healthy
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
@@ -551,13 +593,13 @@ services:
       - net-edge
       - net-db
 
-  authz-pdp-go:
+  authz-pdp:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: authz-pdp
-    container_name: arsenale-authz-pdp-go
+    container_name: arsenale-authz-pdp
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -583,13 +625,13 @@ services:
     networks:
       - net-edge
 
-  model-gateway-go:
+  model-gateway:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: model-gateway
-    container_name: arsenale-model-gateway-go
+    container_name: arsenale-model-gateway
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -627,13 +669,13 @@ services:
       - net-edge
       - net-db
 
-  terminal-broker-go:
+  terminal-broker:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: terminal-broker
-    container_name: arsenale-terminal-broker-go
+    container_name: arsenale-terminal-broker
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -673,7 +715,7 @@ services:
       - net-edge
       - net-db
 
-  tunnel-broker-go:
+  tunnel-broker:
     build:
       context: {{ _home }}{% if not (_is_dev | default(false) | bool) %}/arsenale{% endif %}/
       dockerfile: backend/Dockerfile
@@ -683,7 +725,7 @@ services:
 {% if not (_is_dev | default(false) | bool) %}
     pull_policy: always
 {% endif %}
-    container_name: arsenale-tunnel-broker-go
+    container_name: arsenale-tunnel-broker
     read_only: true
     cpus: "0.5"
     mem_limit: "256m"
@@ -705,7 +747,7 @@ services:
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
-      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker-go"
+      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker"
     ports:
       - "127.0.0.1:18092:8092"
     depends_on:
@@ -725,13 +767,13 @@ services:
       - net-db
       - net-gateway
 
-  tool-gateway-go:
+  tool-gateway:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: tool-gateway
-    container_name: arsenale-tool-gateway-go
+    container_name: arsenale-tool-gateway
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -745,18 +787,18 @@ services:
     environment:
       PORT: "8084"
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
-      TERMINAL_BROKER_URL: "http://terminal-broker-go:8090"
+      TERMINAL_BROKER_URL: "http://terminal-broker:8090"
       PUBLIC_TERMINAL_BROKER_URL: "ws://127.0.0.1:18090"
-      QUERY_RUNNER_URL: "http://query-runner-go:8093"
-      MEMORY_SERVICE_URL: "http://memory-service-go:8086"
+      QUERY_RUNNER_URL: "http://query-runner:8093"
+      MEMORY_SERVICE_URL: "http://memory-service:8086"
     ports:
       - "127.0.0.1:18084:8084"
     depends_on:
-      terminal-broker-go:
+      terminal-broker:
         condition: service_healthy
-      query-runner-go:
+      query-runner:
         condition: service_healthy
-      memory-service-go:
+      memory-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8084/healthz >/dev/null || exit 1"]
@@ -768,13 +810,13 @@ services:
     networks:
       - net-edge
 
-  query-runner-go:
+  query-runner:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: query-runner
-    container_name: arsenale-query-runner-go
+    container_name: arsenale-query-runner
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -810,13 +852,13 @@ services:
       - net-edge
       - net-db
 
-  desktop-broker-go:
+  desktop-broker:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: desktop-broker
-    container_name: arsenale-desktop-broker-go
+    container_name: arsenale-desktop-broker
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -863,13 +905,13 @@ services:
       - net-guacd
       - net-db
 
-  memory-service-go:
+  memory-service:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: memory-service
-    container_name: arsenale-memory-service-go
+    container_name: arsenale-memory-service
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -905,13 +947,13 @@ services:
       - net-edge
       - net-db
 
-  agent-orchestrator-go:
+  agent-orchestrator:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: agent-orchestrator
-    container_name: arsenale-agent-orchestrator-go
+    container_name: arsenale-agent-orchestrator
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -947,13 +989,13 @@ services:
       - net-edge
       - net-db
 
-  runtime-agent-go:
+  runtime-agent:
     build:
       context: {{ _home }}
       dockerfile: backend/Dockerfile
       args:
         SERVICE: runtime-agent
-    container_name: arsenale-runtime-agent-go
+    container_name: arsenale-runtime-agent
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
     mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
@@ -1052,9 +1094,9 @@ services:
       retries: 3
       start_period: 5s
     depends_on:
-      control-plane-api-go:
+      control-plane-api:
         condition: service_healthy
-      desktop-broker-go:
+      desktop-broker:
         condition: service_healthy
     restart: always
     networks:
@@ -1134,7 +1176,7 @@ services:
       - no-new-privileges:true
     environment:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
+      TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
       TUNNEL_TOKEN: "${DEV_TUNNEL_MANAGED_SSH_TOKEN}"
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_MANAGED_SSH_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
@@ -1152,7 +1194,7 @@ services:
       - {{ arsenale_cert_dir }}/ssh-gateway:/certs:ro
       - {{ arsenale_cert_dir }}/tunnel-managed-ssh:/tunnel-certs:ro
     depends_on:
-      tunnel-broker-go:
+      tunnel-broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
@@ -1183,7 +1225,10 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
+      GUACD_SSL: "true"
+      GUACD_SSL_CERT: /certs/server-cert.pem
+      GUACD_SSL_KEY: /certs/server-key.pem
+      TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
       TUNNEL_TOKEN: "${DEV_TUNNEL_GUACD_TOKEN}"
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_GUACD_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
@@ -1192,9 +1237,10 @@ services:
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
     volumes:
+      - {{ arsenale_cert_dir }}/guacd:/certs:ro
       - {{ arsenale_cert_dir }}/tunnel-guacd:/tunnel-certs:ro
     depends_on:
-      tunnel-broker-go:
+      tunnel-broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const net=require('net');const socket=net.connect({host:'127.0.0.1',port:4822});socket.on('connect',()=>{socket.end();process.exit(0);});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000);\""]
@@ -1227,7 +1273,7 @@ services:
       - no-new-privileges:true
     environment:
       DB_LISTEN_PORT: "5432"
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
+      TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
       TUNNEL_TOKEN: "${DEV_TUNNEL_DB_PROXY_TOKEN}"
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_DB_PROXY_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
@@ -1238,7 +1284,7 @@ services:
     volumes:
       - {{ arsenale_cert_dir }}/tunnel-db-proxy:/tunnel-certs:ro
     depends_on:
-      tunnel-broker-go:
+      tunnel-broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const net=require('net');const socket=net.connect({host:'127.0.0.1',port:5432});socket.on('connect',()=>{socket.end();process.exit(0);});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000);\""]
@@ -1321,6 +1367,8 @@ networks:
   net-cache:
     name: arsenale-net-cache
     internal: true
+  net-egress:
+    name: arsenale-net-egress
   net-edge:
     name: arsenale-net-edge
     internal: true

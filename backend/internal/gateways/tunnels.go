@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	defaultTunnelBrokerAddress = "http://tunnel-broker-go:8092"
+	defaultTunnelBrokerAddress = "http://tunnel-broker:8092"
 	defaultTunnelTrustDomain   = "arsenale.local"
 	tunnelTokenBytes           = 32
 	tunnelCAValidityDays       = 3650

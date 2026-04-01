@@ -62,7 +62,7 @@ func TestExecuteToolCallTerminalGrant(t *testing.T) {
 	defer server.Close()
 
 	t.Setenv("TERMINAL_BROKER_URL", server.URL)
-	t.Setenv("PUBLIC_TERMINAL_BROKER_URL", "ws://terminal-broker-go:8090")
+	t.Setenv("PUBLIC_TERMINAL_BROKER_URL", "ws://terminal-broker:8090")
 
 	input, err := json.Marshal(contracts.TerminalSessionGrant{
 		Target: contracts.TerminalEndpoint{
@@ -96,7 +96,7 @@ func TestExecuteToolCallTerminalGrant(t *testing.T) {
 	if !ok {
 		t.Fatalf("response.Output type = %T, want map[string]any", response.Output)
 	}
-	if output["webSocketUrl"] != "ws://terminal-broker-go:8090/ws/terminal?token=terminal-token" {
+	if output["webSocketUrl"] != "ws://terminal-broker:8090/ws/terminal?token=terminal-token" {
 		t.Fatalf("webSocketUrl = %v", output["webSocketUrl"])
 	}
 }

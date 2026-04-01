@@ -54,6 +54,40 @@ services:
     networks:
       - net-db
 
+  migrate:
+    build:
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: control-plane-api
+    container_name: arsenale-migrate
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["up"]
+    read_only: true
+    cpus: "0.25"
+    mem_limit: "256m"
+    pids_limit: 64
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      ARSENALE_SKIP_MIGRATION_CHECK: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+    restart: "no"
+    networks:
+      - net-db
+
   # ---------------------------------------------------------------------------
   # Apache Guacamole Daemon (guacd) — RDP/VNC protocol handler
   # ---------------------------------------------------------------------------
@@ -164,13 +198,13 @@ services:
   # ---------------------------------------------------------------------------
   # Go backend foundation services — active public runtime
   # ---------------------------------------------------------------------------
-  control-plane-api-go:
+  control-plane-api:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-api
-    container_name: arsenale-control-plane-api-go
+    container_name: arsenale-control-plane-api
     entrypoint:
       - /bin/sh
       - -lc
@@ -202,13 +236,18 @@ services:
       WEBAUTHN_RP_ORIGIN: "https://arsenale.home.arpa.viti"
       ORCHESTRATOR_TYPE: "podman"
       PODMAN_SOCKET_PATH: "/run/podman/podman.sock"
+      ORCHESTRATOR_EGRESS_NETWORK: "arsenale-net-egress"
       ORCHESTRATOR_EDGE_NETWORK: "arsenale-net-edge"
       ORCHESTRATOR_DB_NETWORK: "arsenale-net-db"
       ORCHESTRATOR_GUACD_NETWORK: "arsenale-net-guacd"
       ORCHESTRATOR_GATEWAY_NETWORK: "arsenale-net-gateway"
       ORCHESTRATOR_SSH_GATEWAY_IMAGE: "localhost/arsenale_ssh-gateway:latest"
       ORCHESTRATOR_GUACD_IMAGE: "localhost/arsenale_guacd:latest"
+      ORCHESTRATOR_GUACD_TLS_CERT: /certs/guacd/server-cert.pem
+      ORCHESTRATOR_GUACD_TLS_KEY: /certs/guacd/server-key.pem
       ORCHESTRATOR_DB_PROXY_IMAGE: "localhost/arsenale_db-proxy:latest"
+      ORCHESTRATOR_DNS_SERVERS: "192.168.254.1,192.168.254.3"
+      ORCHESTRATOR_RESOLV_CONF_PATH: "/home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/orchestrator/resolv.conf"
       SPIFFE_TRUST_DOMAIN: "arsenale.local"
       DEV_BOOTSTRAP_ADMIN_EMAIL: "admin@example.com"
       DEV_BOOTSTRAP_ADMIN_USERNAME: "admin"
@@ -248,7 +287,9 @@ services:
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
+      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca.pem:/certs/ca.pem:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacd:/certs/guacd:ro
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs/ssh-gateway:ro
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca-key.pem:/certs/ca-key.pem:ro
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
@@ -270,13 +311,13 @@ services:
       - net-guacd
       - net-gateway
 
-  control-plane-controller-go:
+  control-plane-controller:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-controller
-    container_name: arsenale-control-plane-controller-go
+    container_name: arsenale-control-plane-controller
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -294,13 +335,13 @@ services:
       ARSENALE_VERSION: "latest"
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
-      RUNTIME_AGENT_URL: "http://runtime-agent-go:8095"
+      RUNTIME_AGENT_URL: "http://runtime-agent:8095"
     ports:
       - "127.0.0.1:18081:8081"
     depends_on:
       postgres:
         condition: service_healthy
-      runtime-agent-go:
+      runtime-agent:
         condition: service_healthy
     volumes:
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
@@ -315,13 +356,13 @@ services:
       - net-edge
       - net-db
 
-  authz-pdp-go:
+  authz-pdp:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: authz-pdp
-    container_name: arsenale-authz-pdp-go
+    container_name: arsenale-authz-pdp
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -347,13 +388,13 @@ services:
     networks:
       - net-edge
 
-  model-gateway-go:
+  model-gateway:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: model-gateway
-    container_name: arsenale-model-gateway-go
+    container_name: arsenale-model-gateway
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -391,13 +432,13 @@ services:
       - net-edge
       - net-db
 
-  terminal-broker-go:
+  terminal-broker:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: terminal-broker
-    container_name: arsenale-terminal-broker-go
+    container_name: arsenale-terminal-broker
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -437,14 +478,14 @@ services:
       - net-edge
       - net-db
 
-  tunnel-broker-go:
+  tunnel-broker:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../
       dockerfile: backend/Dockerfile
       args:
         SERVICE: tunnel-broker
     image: ghcr.io/dnviti/arsenale/tunnel-broker-go:latest
-    container_name: arsenale-tunnel-broker-go
+    container_name: arsenale-tunnel-broker
     read_only: true
     cpus: "0.5"
     mem_limit: "256m"
@@ -466,7 +507,7 @@ services:
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
       SPIFFE_TRUST_DOMAIN: "arsenale.local"
       TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
-      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker-go"
+      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker"
     ports:
       - "127.0.0.1:18092:8092"
     depends_on:
@@ -486,13 +527,13 @@ services:
       - net-db
       - net-gateway
 
-  tool-gateway-go:
+  tool-gateway:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: tool-gateway
-    container_name: arsenale-tool-gateway-go
+    container_name: arsenale-tool-gateway
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -506,18 +547,18 @@ services:
     environment:
       PORT: "8084"
       ARSENALE_VERSION: "latest"
-      TERMINAL_BROKER_URL: "http://terminal-broker-go:8090"
+      TERMINAL_BROKER_URL: "http://terminal-broker:8090"
       PUBLIC_TERMINAL_BROKER_URL: "ws://127.0.0.1:18090"
-      QUERY_RUNNER_URL: "http://query-runner-go:8093"
-      MEMORY_SERVICE_URL: "http://memory-service-go:8086"
+      QUERY_RUNNER_URL: "http://query-runner:8093"
+      MEMORY_SERVICE_URL: "http://memory-service:8086"
     ports:
       - "127.0.0.1:18084:8084"
     depends_on:
-      terminal-broker-go:
+      terminal-broker:
         condition: service_healthy
-      query-runner-go:
+      query-runner:
         condition: service_healthy
-      memory-service-go:
+      memory-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8084/healthz >/dev/null || exit 1"]
@@ -529,13 +570,13 @@ services:
     networks:
       - net-edge
 
-  query-runner-go:
+  query-runner:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: query-runner
-    container_name: arsenale-query-runner-go
+    container_name: arsenale-query-runner
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -571,13 +612,13 @@ services:
       - net-edge
       - net-db
 
-  desktop-broker-go:
+  desktop-broker:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: desktop-broker
-    container_name: arsenale-desktop-broker-go
+    container_name: arsenale-desktop-broker
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -624,13 +665,13 @@ services:
       - net-guacd
       - net-db
 
-  memory-service-go:
+  memory-service:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: memory-service
-    container_name: arsenale-memory-service-go
+    container_name: arsenale-memory-service
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -666,13 +707,13 @@ services:
       - net-edge
       - net-db
 
-  agent-orchestrator-go:
+  agent-orchestrator:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: agent-orchestrator
-    container_name: arsenale-agent-orchestrator-go
+    container_name: arsenale-agent-orchestrator
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -708,13 +749,13 @@ services:
       - net-edge
       - net-db
 
-  runtime-agent-go:
+  runtime-agent:
     build:
       context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: runtime-agent
-    container_name: arsenale-runtime-agent-go
+    container_name: arsenale-runtime-agent
     read_only: true
     cpus: "0.5"
     mem_limit: "512m"
@@ -797,9 +838,9 @@ services:
       retries: 3
       start_period: 5s
     depends_on:
-      control-plane-api-go:
+      control-plane-api:
         condition: service_healthy
-      desktop-broker-go:
+      desktop-broker:
         condition: service_healthy
     restart: always
     networks:
@@ -865,7 +906,7 @@ services:
       - no-new-privileges:true
     environment:
       SPIFFE_TRUST_DOMAIN: "arsenale.local"
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
+      TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
       TUNNEL_TOKEN: "${DEV_TUNNEL_MANAGED_SSH_TOKEN}"
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_MANAGED_SSH_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
@@ -883,7 +924,7 @@ services:
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs:ro
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-managed-ssh:/tunnel-certs:ro
     depends_on:
-      tunnel-broker-go:
+      tunnel-broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
@@ -910,7 +951,10 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
+      GUACD_SSL: "true"
+      GUACD_SSL_CERT: /certs/server-cert.pem
+      GUACD_SSL_KEY: /certs/server-key.pem
+      TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
       TUNNEL_TOKEN: "${DEV_TUNNEL_GUACD_TOKEN}"
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_GUACD_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
@@ -919,9 +963,10 @@ services:
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
     volumes:
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacd:/certs:ro
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-guacd:/tunnel-certs:ro
     depends_on:
-      tunnel-broker-go:
+      tunnel-broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const net=require('net');const socket=net.connect({host:'127.0.0.1',port:4822});socket.on('connect',()=>{socket.end();process.exit(0);});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000);\""]
@@ -950,7 +995,7 @@ services:
       - no-new-privileges:true
     environment:
       DB_LISTEN_PORT: "5432"
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
+      TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
       TUNNEL_TOKEN: "${DEV_TUNNEL_DB_PROXY_TOKEN}"
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_DB_PROXY_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
@@ -961,7 +1006,7 @@ services:
     volumes:
       - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-db-proxy:/tunnel-certs:ro
     depends_on:
-      tunnel-broker-go:
+      tunnel-broker:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "node -e \"const net=require('net');const socket=net.connect({host:'127.0.0.1',port:5432});socket.on('connect',()=>{socket.end();process.exit(0);});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000);\""]
@@ -1043,6 +1088,8 @@ networks:
   net-cache:
     name: arsenale-net-cache
     internal: true
+  net-egress:
+    name: arsenale-net-egress
   net-edge:
     name: arsenale-net-edge
     internal: true

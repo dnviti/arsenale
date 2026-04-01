@@ -591,11 +591,11 @@ cleanup() {
   fi
 
   if [[ -n "${seed_recording_file_path}" ]]; then
-    "${container_runtime}" exec arsenale-control-plane-api-go rm -f "${seed_recording_file_path}" "${seed_recording_file_path}.mp4" >/dev/null 2>&1 || true
+    "${container_runtime}" exec arsenale-control-plane-api rm -f "${seed_recording_file_path}" "${seed_recording_file_path}.mp4" >/dev/null 2>&1 || true
   fi
 
   if [[ -n "${seed_guac_recording_file_path}" ]]; then
-    "${container_runtime}" exec arsenale-control-plane-api-go rm -f "${seed_guac_recording_file_path}" "${seed_guac_recording_file_path}.m4v" >/dev/null 2>&1 || true
+    "${container_runtime}" exec arsenale-control-plane-api rm -f "${seed_guac_recording_file_path}" "${seed_guac_recording_file_path}.m4v" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -4835,12 +4835,12 @@ cat > "${recording_stream_expected}" <<'EOF'
 [0.0,"o","hello from acceptance\r\n"]
 EOF
 
-"${container_runtime}" exec arsenale-control-plane-api-go sh -lc "cat > '${seed_recording_file_path}' <<'EOF'
+"${container_runtime}" exec arsenale-control-plane-api sh -lc "cat > '${seed_recording_file_path}' <<'EOF'
 {\"version\":2,\"width\":80,\"height\":24,\"timestamp\":1700000000,\"env\":{\"TERM\":\"xterm-256color\"}}
 [0.0,\"o\",\"hello from acceptance\\r\\n\"]
 EOF"
 
-"${container_runtime}" exec arsenale-control-plane-api-go sh -lc "cat > '${seed_guac_recording_file_path}' <<'EOF'
+"${container_runtime}" exec arsenale-control-plane-api sh -lc "cat > '${seed_guac_recording_file_path}' <<'EOF'
 4.size,1.0,2.80,2.24;
 4.sync,1.0;
 EOF"

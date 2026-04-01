@@ -33,6 +33,7 @@
     _cookie_secure: "{{ true if _is_dev | bool else (arsenale_cookie_secure | default(true)) }}"
     _client_bind_host: "{{ arsenale_client_bind_host | default('0.0.0.0') }}"
     _public_url: "{{ arsenale_public_url | default('https://' ~ arsenale_domain ~ ('' if (arsenale_client_port | int) == 443 else ':' ~ (arsenale_client_port | string))) }}"
+    _dev_client_url: "{{ 'https://localhost:' ~ (arsenale_client_port | string) }}"
     _build: "{{ true if _is_dev | bool else (arsenale_build_images | default(true)) }}"
     arsenale_cert_dir: "{{ (_home + '/dev-certs') if _is_dev | bool else (_home + '/certs') }}"
 
@@ -60,6 +61,44 @@
         container_runtime: "{{ 'podman' if (podman_check.rc | default(1)) == 0 else 'docker' }}"
       when: _is_dev | bool
 
+    - name: Detect upstream DNS servers for containers
+      shell: |
+        set -euo pipefail
+        source_file=/etc/resolv.conf
+        if [ -f /run/systemd/resolve/resolv.conf ]; then
+          source_file=/run/systemd/resolve/resolv.conf
+        fi
+        awk '/^nameserver / {print $2}' "$source_file" \
+          | grep -vE '^(127\\.|::1$|0\\.0\\.0\\.0$)' \
+          | awk '!seen[$0]++'
+      args:
+        executable: /bin/bash
+      changed_when: false
+      register: container_dns_servers_raw
+      when: _state == 'present'
+
+    - name: Set upstream DNS servers for managed containers
+      set_fact:
+        arsenale_container_dns_servers: "{{ container_dns_servers_raw.stdout_lines | default([]) }}"
+      when: _state == 'present'
+
+    - name: Ensure managed container resolver directory exists
+      file:
+        path: "{{ arsenale_cert_dir }}/orchestrator"
+        state: directory
+        mode: "0755"
+      when: _state == 'present'
+
+    - name: Write managed container resolv.conf
+      copy:
+        dest: "{{ arsenale_cert_dir }}/orchestrator/resolv.conf"
+        mode: "0644"
+        content: |
+          {% for dns_server in (arsenale_container_dns_servers | default([])) %}
+          nameserver {{ dns_server }}
+          {% endfor %}
+      when: _state == 'present'
+
     - name: "Environment: {{ arsenale_env | default('production') }}"
       debug:
         msg: |
@@ -69,6 +108,8 @@
           Build:      {{ _build }}
           Firewall:   {{ arsenale_firewall_enabled }}
           Certs:      {{ arsenale_cert_dir }}
+          ResolvConf: {{ arsenale_cert_dir }}/orchestrator/resolv.conf
+          DNS:        {{ (arsenale_container_dns_servers | default([])) | join(', ') }}
           State:      {{ _state }}
 
   roles:
@@ -89,7 +130,7 @@
       command: >
         {{ container_runtime | default('podman') }} exec
         --user 0
-        arsenale-control-plane-api-go
+        arsenale-control-plane-api
         /usr/local/bin/service dev-bootstrap
       when: _is_dev | bool and _state == 'present'
       changed_when: true
@@ -130,10 +171,10 @@
     - name: Verify Go setup status endpoints in development
       shell: |
         set -euo pipefail
-        curl --silent --show-error --fail https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/setup/status \
+        curl --silent --show-error --fail {{ _dev_client_url }}/api/setup/status \
           --cacert {{ arsenale_cert_dir }}/client/ca.pem \
           | jq -e '.required == false' >/dev/null
-        curl --silent --show-error https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/setup/db-status \
+        curl --silent --show-error {{ _dev_client_url }}/api/setup/db-status \
           --cacert {{ arsenale_cert_dir }}/client/ca.pem \
           | tee /tmp/arsenale-setup-db-status.json \
           | jq -e '.error == "Setup has already been completed"' >/dev/null
@@ -149,7 +190,7 @@
     - name: Verify Go auth public config endpoint in development
       shell: |
         set -euo pipefail
-        curl --silent --show-error --fail https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/auth/config \
+        curl --silent --show-error --fail {{ _dev_client_url }}/api/auth/config \
           --cacert {{ arsenale_cert_dir }}/client/ca.pem \
           | jq -e '.selfSignupEnabled == false and .features.databaseProxyEnabled == true and .features.connectionsEnabled == true and .features.keychainEnabled == true' >/dev/null
       args:
@@ -609,7 +650,7 @@
       shell: |
         set -euo pipefail
 
-        api_base="https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api"
+        api_base="{{ _dev_client_url }}/api"
         ca_cert="{{ arsenale_cert_dir }}/client/ca.pem"
         connection_name="Dev Go Query Runner Validation $(date +%s)"
         token_file="/tmp/arsenale-dev-access-token"
@@ -769,7 +810,7 @@
       command: >
         curl --silent --show-error --fail
         --cacert {{ arsenale_cert_dir }}/client/ca.pem
-        https://{{ arsenale_domain }}:{{ arsenale_client_port }}/api/ready
+        {{ _dev_client_url }}/api/ready
       retries: 24
       delay: 5
       register: dev_ready_check

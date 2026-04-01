@@ -31,12 +31,12 @@ func main() {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	broker := tunnelbroker.NewBroker(tunnelbroker.BrokerConfig{
-		Store:              tunnelbroker.NewPostgresStore(db),
-		Logger:             logger,
+		Store:               tunnelbroker.NewPostgresStore(db),
+		Logger:              logger,
 		ServerEncryptionKey: key,
-		SpiffeTrustDomain:  getenv("SPIFFE_TRUST_DOMAIN", "arsenale.local"),
-		ProxyBindHost:      getenv("TUNNEL_TCP_PROXY_BIND_HOST", "0.0.0.0"),
-		ProxyAdvertiseHost: getenv("TUNNEL_TCP_PROXY_ADVERTISE_HOST", "tunnel-broker-go"),
+		SpiffeTrustDomain:   getenv("SPIFFE_TRUST_DOMAIN", "arsenale.local"),
+		ProxyBindHost:       getenv("TUNNEL_TCP_PROXY_BIND_HOST", "0.0.0.0"),
+		ProxyAdvertiseHost:  getenv("TUNNEL_TCP_PROXY_ADVERTISE_HOST", "tunnel-broker"),
 	})
 
 	service := app.StaticService{

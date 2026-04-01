@@ -40,9 +40,6 @@ func main() {
 	}
 
 	store := orchestration.NewStore(db)
-	if err := store.EnsureSchema(ctx); err != nil {
-		panic(err)
-	}
 
 	service := app.StaticService{
 		Descriptor: catalog.MustService(contracts.ServiceControlController),
@@ -147,5 +144,5 @@ func runtimeAgentURL() string {
 	if value := strings.TrimSpace(os.Getenv("RUNTIME_AGENT_URL")); value != "" {
 		return value
 	}
-	return "http://runtime-agent-go:8095"
+	return "http://runtime-agent:8095"
 }

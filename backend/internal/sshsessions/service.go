@@ -316,7 +316,7 @@ func defaultTerminalBrokerURL() string {
 	if value := strings.TrimSpace(os.Getenv("TERMINAL_BROKER_URL")); value != "" {
 		return value
 	}
-	return "http://terminal-broker-go:8090"
+	return "http://terminal-broker:8090"
 }
 
 func defaultTunnelBrokerURL() string {
@@ -326,7 +326,7 @@ func defaultTunnelBrokerURL() string {
 	if value := strings.TrimSpace(os.Getenv("TUNNEL_BROKER_URL")); value != "" {
 		return value
 	}
-	return "http://tunnel-broker-go:8092"
+	return "http://tunnel-broker:8092"
 }
 
 func parseEnvBool(key string, fallback bool) bool {

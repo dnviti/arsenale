@@ -24,7 +24,7 @@
   retries: 24
   delay: 5
   until: >
-    (compose_status.stdout | from_json | list | length) >= (compose_services.stdout_lines | length)
+    (compose_status.stdout | from_json | list | length) >= (compose_services.stdout_lines | reject('equalto', 'migrate') | list | length)
     and
     (
       compose_status.stdout
@@ -32,8 +32,32 @@
       | selectattr('Status', 'search', '\\(healthy\\)')
       | list
       | length
-    ) >= (compose_services.stdout_lines | length)
+    ) >= (compose_services.stdout_lines | reject('equalto', 'migrate') | list | length)
   changed_when: false
+  environment: "{{ _hc_env }}"
+  vars:
+    _hc_env: >-
+      {{
+        {}
+        if (_is_dev | default(false) | bool)
+        else {'XDG_RUNTIME_DIR': '/run/user/' + (arsenale_uid | default('1000') | string)}
+      }}
+
+- name: Verify migrate did not fail
+  command: >
+    {{ _hc_compose_cmd }} ps --format json
+  register: migrate_status
+  changed_when: false
+  failed_when: >
+    (
+      migrate_status.stdout
+      | from_json
+      | selectattr('Names.0', 'equalto', 'arsenale-migrate')
+      | selectattr('State', 'equalto', 'exited')
+      | rejectattr('ExitCode', 'equalto', 0)
+      | list
+      | length
+    ) > 0
   environment: "{{ _hc_env }}"
   vars:
     _hc_env: >-
@@ -57,7 +81,7 @@
 
 - name: Verify secrets are NOT in container environment
   command: >
-    {{ container_runtime | default('podman') }} inspect arsenale-control-plane-api-go --format
+    {{ container_runtime | default('podman') }} inspect arsenale-control-plane-api --format
     '{% raw %}{{ range .Config.Env }}{{ println . }}{{ end }}{% endraw %}'
   register: control_plane_env
   changed_when: false
@@ -66,8 +90,8 @@
     'GUACAMOLE_SECRET=' in control_plane_env.stdout or
     'SERVER_ENCRYPTION_KEY=' in control_plane_env.stdout
 
-- name: Verify Podman secrets are mounted in control-plane-api-go
-  command: "{{ container_runtime | default('podman') }} exec arsenale-control-plane-api-go ls /run/secrets/"
+- name: Verify Podman secrets are mounted in control-plane-api
+  command: "{{ container_runtime | default('podman') }} exec arsenale-control-plane-api ls /run/secrets/"
   register: control_plane_secrets
   changed_when: false
   failed_when: "'jwt_secret' not in control_plane_secrets.stdout"
