@@ -140,6 +140,10 @@ LIMIT $2
 }
 
 func (s Service) insertAuditLog(ctx context.Context, userID, secretID string, details map[string]any, ipAddress string) error {
+	return s.insertAuditAction(ctx, userID, "SECRET_UPDATE", secretID, details, ipAddress)
+}
+
+func (s Service) insertAuditAction(ctx context.Context, userID, action, secretID string, details map[string]any, ipAddress string) error {
 	if s.DB == nil {
 		return errors.New("database is unavailable")
 	}
@@ -149,8 +153,8 @@ func (s Service) insertAuditLog(ctx context.Context, userID, secretID string, de
 	}
 	if _, err := s.DB.Exec(ctx, `
 INSERT INTO "AuditLog" (id, "userId", action, "targetType", "targetId", details, "ipAddress")
-VALUES ($1, $2, 'SECRET_UPDATE'::"AuditAction", 'VaultSecret', $3, $4::jsonb, NULLIF($5, ''))
-`, uuid.NewString(), userID, secretID, string(rawDetails), ipAddress); err != nil {
+VALUES ($1, $2, $3::"AuditAction", 'VaultSecret', $4, $5::jsonb, NULLIF($6, ''))
+`, uuid.NewString(), userID, action, secretID, string(rawDetails), ipAddress); err != nil {
 		return fmt.Errorf("insert audit log: %w", err)
 	}
 	return nil

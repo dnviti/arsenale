@@ -12,7 +12,7 @@ The client is built with:
 - **Material-UI (MUI) v7** — component library and theming
 - **Zustand** — state management (14 stores with localStorage persistence for UI preferences)
 - **Axios** — HTTP client with JWT auto-refresh
-- **Socket.IO Client** — real-time SSH terminals, notifications, gateway monitoring
+- **WebSocket / Guacamole clients** — real-time SSH terminals, desktop sessions, and broker transport
 - **XTerm.js** — SSH terminal emulation
 - **guacamole-common-js** — RDP/VNC remote desktop rendering
 

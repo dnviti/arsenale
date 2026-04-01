@@ -26,11 +26,10 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/connections"
 	"github.com/dnviti/arsenale/backend/internal/rediscompat"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
-
-var ErrLegacyImportExportFlow = errors.New("legacy import/export flow required")
 
 type Service struct {
 	DB                  *pgxpool.Pool
@@ -131,9 +130,6 @@ func (s Service) HandleExport(w http.ResponseWriter, r *http.Request, claims aut
 func (s Service) HandleImport(w http.ResponseWriter, r *http.Request, claims authn.Claims) error {
 	result, err := s.ImportConnections(r.Context(), r, claims)
 	if err != nil {
-		if errors.Is(err, ErrLegacyImportExportFlow) {
-			return err
-		}
 		writeError(w, err)
 		return nil
 	}
@@ -215,8 +211,9 @@ func (s Service) ImportConnections(ctx context.Context, r *http.Request, claims 
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		return importResult{}, &requestError{status: http.StatusBadRequest, message: "invalid multipart form"}
 	}
-	if strings.TrimSpace(r.FormValue("columnMapping")) != "" {
-		return importResult{}, ErrLegacyImportExportFlow
+	mapping, err := parseColumnMapping(r.FormValue("columnMapping"))
+	if err != nil {
+		return importResult{}, err
 	}
 
 	file, header, err := r.FormFile("file")
@@ -233,11 +230,14 @@ func (s Service) ImportConnections(ctx context.Context, r *http.Request, claims 
 	format := detectFormat(header, r.FormValue("format"))
 	switch format {
 	case "CSV":
-		return s.importCSV(ctx, claims, header.Filename, content, normalizeDuplicateStrategy(r.FormValue("duplicateStrategy")), requestIP(r))
+		return s.importCSV(ctx, claims, header.Filename, content, mapping, normalizeDuplicateStrategy(r.FormValue("duplicateStrategy")), requestIP(r))
 	case "JSON":
 		return s.importJSON(ctx, claims, header.Filename, content, normalizeDuplicateStrategy(r.FormValue("duplicateStrategy")), requestIP(r))
 	case "MREMOTENG", "RDP":
-		return importResult{}, ErrLegacyImportExportFlow
+		if format == "MREMOTENG" {
+			return s.importMRemoteNG(ctx, claims, header.Filename, content, normalizeDuplicateStrategy(r.FormValue("duplicateStrategy")), requestIP(r))
+		}
+		return s.importRDP(ctx, claims, header.Filename, content, normalizeDuplicateStrategy(r.FormValue("duplicateStrategy")), requestIP(r))
 	default:
 		return importResult{}, &requestError{status: http.StatusBadRequest, message: "Unsupported format"}
 	}
@@ -349,9 +349,6 @@ func (s Service) importJSON(ctx context.Context, claims authn.Claims, filename s
 			continue
 		}
 		if err := s.importOne(ctx, claims, record, duplicateStrategy, ip); err != nil {
-			if errors.Is(err, ErrLegacyImportExportFlow) {
-				return importResult{}, err
-			}
 			if reqErr, ok := err.(*requestError); ok {
 				row := idx + 1
 				if reqErr.status == http.StatusConflict {
@@ -381,7 +378,7 @@ func (s Service) importJSON(ctx context.Context, claims authn.Claims, filename s
 	return result, nil
 }
 
-func (s Service) importCSV(ctx context.Context, claims authn.Claims, filename string, content []byte, duplicateStrategy string, ip *string) (importResult, error) {
+func (s Service) importCSV(ctx context.Context, claims authn.Claims, filename string, content []byte, mapping columnMapping, duplicateStrategy string, ip *string) (importResult, error) {
 	reader := csv.NewReader(bytes.NewReader(content))
 	reader.FieldsPerRecord = -1
 	rows, err := reader.ReadAll()
@@ -400,7 +397,7 @@ func (s Service) importCSV(ctx context.Context, claims authn.Claims, filename st
 
 	result := importResult{Errors: make([]importResultError, 0)}
 	for idx, row := range rows[1:] {
-		record, err := normalizeCSVRecord(normalized, row)
+		record, err := normalizeCSVRecord(normalized, row, mapping)
 		if err != nil {
 			line := idx + 2
 			result.Failed++
@@ -408,9 +405,6 @@ func (s Service) importCSV(ctx context.Context, claims authn.Claims, filename st
 			continue
 		}
 		if err := s.importOne(ctx, claims, record, duplicateStrategy, ip); err != nil {
-			if errors.Is(err, ErrLegacyImportExportFlow) {
-				return importResult{}, err
-			}
 			line := idx + 2
 			var reqErr *requestError
 			if errors.As(err, &reqErr) && reqErr.status == http.StatusConflict {
@@ -435,9 +429,111 @@ func (s Service) importCSV(ctx context.Context, claims authn.Claims, filename st
 	return result, nil
 }
 
+func (s Service) importMRemoteNG(ctx context.Context, claims authn.Claims, filename string, content []byte, duplicateStrategy string, ip *string) (importResult, error) {
+	parsed, err := parseMRemoteNGXML(string(content))
+	if err != nil {
+		return importResult{}, &requestError{status: http.StatusBadRequest, message: err.Error()}
+	}
+
+	result := importResult{Errors: make([]importResultError, 0)}
+	for idx, item := range parsed {
+		connType := mapMRemoteProtocol(item.Protocol)
+		if connType == "" {
+			result.Skipped++
+			continue
+		}
+
+		record, err := validateImportRecord(importRecord{
+			Name:        item.Name,
+			Type:        connType,
+			Host:        item.Hostname,
+			Port:        parsePort(item.Port, 22),
+			Username:    item.Username,
+			Password:    item.Password,
+			Description: normalizeStringPointer(item.Description),
+			FolderName:  normalizeStringPointer(item.Panel),
+		})
+		if err != nil {
+			line := idx + 1
+			result.Failed++
+			result.Errors = append(result.Errors, importResultError{Row: &line, Filename: filename, Error: err.Error()})
+			continue
+		}
+
+		if err := s.importOne(ctx, claims, record, duplicateStrategy, ip); err != nil {
+			line := idx + 1
+			var reqErr *requestError
+			if errors.As(err, &reqErr) && reqErr.status == http.StatusConflict {
+				result.Skipped++
+			} else {
+				result.Failed++
+				result.Errors = append(result.Errors, importResultError{Row: &line, Filename: filename, Error: err.Error()})
+			}
+			continue
+		}
+		result.Imported++
+	}
+
+	if err := s.insertAuditLog(ctx, claims.UserID, "IMPORT_CONNECTIONS", "", map[string]any{
+		"format":   "MREMOTENG",
+		"imported": result.Imported,
+		"skipped":  result.Skipped,
+		"failed":   result.Failed,
+	}, ip); err != nil {
+		return importResult{}, err
+	}
+	return result, nil
+}
+
+func (s Service) importRDP(ctx context.Context, claims authn.Claims, filename string, content []byte, duplicateStrategy string, ip *string) (importResult, error) {
+	parsed := parseRDPFile(string(content))
+	record, err := validateImportRecord(importRecord{
+		Name:     firstNonEmpty(parsed.Hostname, "RDP Connection"),
+		Type:     "RDP",
+		Host:     parsed.Hostname,
+		Port:     parsed.Port,
+		Username: parsed.Username,
+	})
+	if err != nil {
+		return importResult{
+			Failed: 1,
+			Errors: []importResultError{{Row: intPtr(1), Filename: filename, Error: err.Error()}},
+		}, nil
+	}
+
+	result := importResult{Errors: make([]importResultError, 0)}
+	if err := s.importOne(ctx, claims, record, duplicateStrategy, ip); err != nil {
+		var reqErr *requestError
+		switch {
+		case errors.As(err, &reqErr) && reqErr.status == http.StatusConflict:
+			result.Skipped = 1
+		default:
+			result.Failed = 1
+			result.Errors = append(result.Errors, importResultError{Row: intPtr(1), Filename: filename, Error: err.Error()})
+		}
+	} else {
+		result.Imported = 1
+	}
+
+	if err := s.insertAuditLog(ctx, claims.UserID, "IMPORT_CONNECTIONS", "", map[string]any{
+		"format":   "RDP",
+		"imported": result.Imported,
+		"skipped":  result.Skipped,
+		"failed":   result.Failed,
+	}, ip); err != nil {
+		return importResult{}, err
+	}
+	return result, nil
+}
+
 func (s Service) importOne(ctx context.Context, claims authn.Claims, record importRecord, duplicateStrategy string, ip *string) error {
+	var folderID *string
 	if record.FolderName != nil && strings.TrimSpace(*record.FolderName) != "" {
-		return ErrLegacyImportExportFlow
+		resolvedFolderID, err := s.findOrCreateFolder(ctx, claims.UserID, *record.FolderName)
+		if err != nil {
+			return err
+		}
+		folderID = &resolvedFolderID
 	}
 
 	if duplicateStrategy == "SKIP" {
@@ -489,9 +585,42 @@ func (s Service) importOne(ctx context.Context, claims authn.Claims, record impo
 		Username:    record.Username,
 		Password:    record.Password,
 		Domain:      record.Domain,
+		FolderID:    folderID,
 		Description: record.Description,
 	}, ip)
 	return err
+}
+
+func (s Service) findOrCreateFolder(ctx context.Context, userID, name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", &requestError{status: http.StatusBadRequest, message: "folder name is required"}
+	}
+
+	var folderID string
+	err := s.DB.QueryRow(ctx, `
+SELECT id
+FROM "Folder"
+WHERE "userId" = $1
+  AND name = $2
+  AND "parentId" IS NULL
+LIMIT 1
+`, userID, trimmed).Scan(&folderID)
+	if err == nil {
+		return folderID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("find folder: %w", err)
+	}
+
+	folderID = uuid.NewString()
+	if _, err := s.DB.Exec(ctx, `
+INSERT INTO "Folder" (id, name, "parentId", "userId", "teamId", "sortOrder", "createdAt", "updatedAt")
+VALUES ($1, $2, NULL, $3, NULL, 0, NOW(), NOW())
+`, folderID, trimmed, userID); err != nil {
+		return "", fmt.Errorf("create folder: %w", err)
+	}
+	return folderID, nil
 }
 
 func (s Service) checkDuplicate(ctx context.Context, userID, host string, port int, connectionType string) (bool, error) {
@@ -712,7 +841,7 @@ func normalizeJSONRecord(item map[string]any) (importRecord, error) {
 	return validateImportRecord(record)
 }
 
-func normalizeCSVRecord(headers, row []string) (importRecord, error) {
+func normalizeCSVRecord(headers, row []string, mapping columnMapping) (importRecord, error) {
 	values := make(map[string]string, len(headers))
 	for idx, header := range headers {
 		if idx < len(row) {
@@ -720,20 +849,20 @@ func normalizeCSVRecord(headers, row []string) (importRecord, error) {
 		}
 	}
 	record := importRecord{
-		Name:     values["name"],
-		Type:     values["type"],
-		Host:     values["host"],
-		Port:     parsePort(values["port"], 22),
-		Username: values["username"],
-		Password: values["password"],
+		Name:     values[mapping.resolve("name", "name")],
+		Type:     firstNonEmpty(values[mapping.resolve("type", "type")], "SSH"),
+		Host:     values[mapping.resolve("host", "host")],
+		Port:     parsePort(values[mapping.resolve("port", "port")], 22),
+		Username: values[mapping.resolve("username", "username")],
+		Password: values[mapping.resolve("password", "password")],
 	}
-	if description := values["description"]; description != "" {
+	if description := values[mapping.resolve("description", "description")]; description != "" {
 		record.Description = &description
 	}
-	if folderName := values["folder"]; folderName != "" {
+	if folderName := values[mapping.resolve("folder", "folder")]; folderName != "" {
 		record.FolderName = &folderName
 	}
-	if domain := values["domain"]; domain != "" {
+	if domain := values[mapping.resolve("domain", "domain")]; domain != "" {
 		record.Domain = &domain
 	}
 	return validateImportRecord(record)
@@ -899,6 +1028,18 @@ func normalizeStringPtr(value *string) *string {
 		return nil
 	}
 	return &trimmed
+}
+
+func normalizeStringPointer(value string) *string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
+func intPtr(value int) *int {
+	return &value
 }
 
 func zeroBytes(value []byte) {

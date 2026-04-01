@@ -4,14 +4,9 @@ import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaf
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getTenantGeoSummary, type GeoSummaryPoint } from '../../api/audit.api';
+import { ensureLeafletDefaultIcon } from '../../lib/leafletMarkerIcon';
 
-// Fix default marker icons in Leaflet (broken with bundlers)
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+ensureLeafletDefaultIcon();
 
 interface AuditGeoMapProps {
   onSelectCountry?: (country: string) => void;
@@ -92,6 +87,7 @@ export default function AuditGeoMap({ onSelectCountry }: AuditGeoMapProps) {
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          subdomains={['a', 'b', 'c']}
         />
         <FitBounds points={points} />
         {points.map((point, idx) => {

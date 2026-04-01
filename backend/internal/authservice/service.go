@@ -1,7 +1,6 @@
 package authservice
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -19,6 +18,7 @@ type Service struct {
 	EmailVerify      bool
 	RefreshCookie    string
 	CSRFCookie       string
+	BrowserSession   string
 	CookieSecure     bool
 	CookieSameSite   http.SameSite
 	RefreshCookieTTL time.Duration
@@ -36,6 +36,8 @@ type loginMembership struct {
 	JoinedAt                 time.Time
 	MFARequired              bool
 	IPAllowlistEnabled       bool
+	IPAllowlistMode          string
+	IPAllowlistEntries       []string
 	JWTExpiresInSeconds      *int
 	JWTRefreshExpiresSeconds *int
 	AccountLockoutThreshold  *int
@@ -86,10 +88,6 @@ type encryptedField struct {
 	IV         string `json:"iv"`
 	Tag        string `json:"tag"`
 }
-
-var ErrLegacyLogin = errors.New("legacy login required")
-var ErrLegacyRegister = errors.New("legacy register required")
-var ErrLegacyEmailFlow = errors.New("legacy email flow required")
 
 type loginFlow struct {
 	issued           *issuedLogin

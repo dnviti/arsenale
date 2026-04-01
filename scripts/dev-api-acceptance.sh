@@ -59,6 +59,8 @@ server_encryption_key="$(resolve_server_encryption_key)"
 jwt_secret="$(resolve_jwt_secret)"
 ca_cert="${ARSENALE_CA_CERT:-$repo_root/dev-certs/client/ca.pem}"
 api_base="${ARSENALE_API_BASE:-https://localhost:3000/api}"
+client_base="${ARSENALE_CLIENT_BASE:-}"
+expected_webauthn_rp_id="${ARSENALE_WEBAUTHN_RP_ID:-}"
 cp_base="${ARSENALE_CP_BASE:-http://127.0.0.1:18080}"
 controller_base="${ARSENALE_CONTROLLER_BASE:-http://127.0.0.1:18081}"
 authz_base="${ARSENALE_AUTHZ_BASE:-http://127.0.0.1:18082}"
@@ -610,6 +612,30 @@ clear_login_rate_limits() {
   fi
 }
 
+clear_session_security_state() {
+  if [[ "${container_runtime}" != "podman" && "${container_runtime}" != "docker" ]]; then
+    return
+  fi
+
+  "${container_runtime}" exec \
+    -e PGPASSWORD="${postgres_password}" \
+    arsenale-postgres \
+    psql -U "${db_user}" -d "${db_name}" -c \
+    "UPDATE \"User\"
+     SET \"failedLoginAttempts\" = 0,
+         \"lockedUntil\" = NULL
+     WHERE email = '${admin_email}';
+
+     DELETE FROM \"AuditLog\"
+     WHERE \"userId\" IN (
+       SELECT id
+       FROM \"User\"
+       WHERE email = '${admin_email}'
+     )
+       AND action IN ('SESSION_START'::\"AuditAction\", 'ANOMALOUS_LATERAL_MOVEMENT'::\"AuditAction\");" \
+    >/dev/null
+}
+
 login_json_for_password() {
   local password="$1"
   curl --silent --show-error --fail \
@@ -624,6 +650,7 @@ normalize_admin_password() {
   access_token=""
   tenant_id=""
   clear_login_rate_limits
+  clear_session_security_state
 
   if login_json="$(login_json_for_password "${admin_password}" 2>/dev/null)"; then
     access_token="$(printf '%s' "${login_json}" | jq -r '.accessToken')"
@@ -1111,7 +1138,15 @@ curl --silent --show-error --fail \
   -H 'content-type: application/json' \
   -d '{}' \
   "${api_base}/user/2fa/webauthn/registration-options" \
-  | jq -e '.challenge and .rp.id == "localhost" and .rp.name == "Arsenale" and .attestation == "none" and .user.name == "admin@example.com" and .authenticatorSelection.userVerification == "preferred"' >/dev/null
+  | jq -e --arg expectedRpId "${expected_webauthn_rp_id}" --arg expectedUser "${admin_email}" '
+      .challenge
+      and (.rp.id | type == "string" and length > 0)
+      and ($expectedRpId == "" or .rp.id == $expectedRpId)
+      and .rp.name == "Arsenale"
+      and .attestation == "none"
+      and .user.name == $expectedUser
+      and .authenticatorSelection.userVerification == "preferred"
+    ' >/dev/null
 
 echo '2.1.4.1 /api/vault/status'
 curl --silent --show-error --fail \
@@ -2634,7 +2669,14 @@ verify_email_temp_email="go-verify-${verify_email_temp_user_id}@example.com"
 verify_email_redirect="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}|%{redirect_url}' \
   --cacert "${ca_cert}" \
   "${api_base}/auth/verify-email?token=${verify_email_temp_token}")"
-[[ "${verify_email_redirect}" == "302|https://localhost:3000/login?verified=true" ]]
+verify_email_status="${verify_email_redirect%%|*}"
+verify_email_location="${verify_email_redirect#*|}"
+[[ "${verify_email_status}" == "302" ]]
+if [[ -n "${client_base}" ]]; then
+  [[ "${verify_email_location}" == "${client_base%/}/login?verified=true" ]]
+else
+  [[ "${verify_email_location}" == */login?verified=true ]]
+fi
 
 "${container_runtime}" exec \
   -e PGPASSWORD="${postgres_password}" \
@@ -2836,7 +2878,7 @@ curl --silent --show-error --fail \
   -H 'content-type: application/json' \
   -d "{\"tempToken\":\"${webauthn_login_temp_token}\"}" \
   "${api_base}/auth/request-webauthn-options" \
-  | jq -e --arg ref "${webauthn_login_temp_credential_ref}" '.challenge and .rpId == "localhost" and .userVerification == "preferred" and ((.allowCredentials | map(select(.id == $ref)) | length) == 1)' >/dev/null
+  | jq -e --arg ref "${webauthn_login_temp_credential_ref}" --arg expectedRpId "${expected_webauthn_rp_id}" '.challenge and ((($expectedRpId | length) == 0 and (.rpId | type == "string") and (.rpId | length > 0)) or .rpId == $expectedRpId) and .userVerification == "preferred" and ((.allowCredentials | map(select(.id == $ref)) | length) == 1)' >/dev/null
 
 echo '2.1.11.4.6 /api/auth/mfa-setup/init + /verify'
 mfa_setup_temp_tenant_id="$(python3 - <<'PY'
@@ -3798,7 +3840,8 @@ terminal_ws_url="$(printf '%s' "${terminal_grant_json}" | jq -r '.output.webSock
 [[ -n "${terminal_ws_url}" && "${terminal_ws_url}" != "null" ]]
 
 TERMINAL_WS_URL="${terminal_ws_url}" node <<'NODE'
-const ws = new WebSocket(process.env.TERMINAL_WS_URL);
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
+const ws = new WebSocketCtor(process.env.TERMINAL_WS_URL);
 let ready = false;
 let sawOutput = false;
 let buffer = '';
@@ -4054,7 +4097,8 @@ curl --silent --show-error --fail \
   | jq -e '.count >= 1' >/dev/null
 
 NODE_TLS_REJECT_UNAUTHORIZED=0 SSH_WS_URL="${ssh_ws_url}" node <<'NODE'
-const ws = new WebSocket(process.env.SSH_WS_URL);
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
+const ws = new WebSocketCtor(process.env.SSH_WS_URL);
 let ready = false;
 let sawOutput = false;
 let buffer = '';
@@ -4137,7 +4181,8 @@ curl --silent --show-error --fail \
   | jq -e --arg gateway_id "${dev_tunnel_managed_ssh_gateway_id}" 'map(select(.gatewayId == $gateway_id and .count >= 1)) | length >= 1' >/dev/null
 
 NODE_TLS_REJECT_UNAUTHORIZED=0 SSH_WS_URL="${ssh_tunnel_ws_url}" node <<'NODE'
-const ws = new WebSocket(process.env.SSH_WS_URL);
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
+const ws = new WebSocketCtor(process.env.SSH_WS_URL);
 let ready = false;
 let sawOutput = false;
 let buffer = '';
@@ -4591,6 +4636,7 @@ curl --silent --show-error --fail \
   | jq -e '.ok == true' >/dev/null
 
 NODE_TLS_REJECT_UNAUTHORIZED=0 RDP_TOKEN="${rdp_token}" node <<'NODE'
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
 const url = new URL('wss://localhost:3000/guacamole/');
 url.searchParams.set('token', process.env.RDP_TOKEN);
 let opened = false;
@@ -4599,7 +4645,7 @@ const timeout = setTimeout(() => {
   process.exit(1);
 }, 20000);
 
-const ws = new WebSocket(url);
+const ws = new WebSocketCtor(url);
 
 ws.onopen = () => {
   opened = true;

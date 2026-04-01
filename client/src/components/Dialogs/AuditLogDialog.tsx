@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import {
   Dialog, AppBar, Toolbar, Typography, Box, IconButton, Card, CardContent,
   Table, TableHead, TableBody, TableRow, TableCell, TablePagination,
@@ -23,6 +23,8 @@ import {
   getDbAuditLogs, getDbAuditConnections, getDbAuditUsers,
   DbAuditLogEntry, DbAuditLogParams, DbAuditConnection, DbAuditUser, DbQueryType,
 } from '../../api/dbAudit.api';
+import type { AuditStreamSnapshot, DbAuditStreamSnapshot } from '../../api/live.api';
+import { connectSSE } from '../../api/sse';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useAuthStore } from '../../store/authStore';
 import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS, TARGET_TYPES } from '../Audit/auditConstants';
@@ -39,8 +41,6 @@ interface AuditLogDialogProps {
   onClose: () => void;
   onGeoIpClick?: (ip: string) => void;
 }
-
-const AUTO_REFRESH_INTERVAL_MS = 10_000;
 
 const QUERY_TYPE_LABELS: Record<DbQueryType, string> = {
   SELECT: 'SELECT',
@@ -64,6 +64,7 @@ const ALL_QUERY_TYPES: DbQueryType[] = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 
 
 export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLogDialogProps) {
   const user = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const hasTenant = Boolean(user?.tenantId);
   const auditLogAction = useUiPreferencesStore((s) => s.auditLogAction);
   const auditLogSearch = useUiPreferencesStore((s) => s.auditLogSearch);
@@ -204,22 +205,102 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
     }
   }, [open, fetchDbLogs, activeTab, hasTenant]);
 
-  // Auto-refresh
-  const fetchLogsRef = useRef(fetchLogs);
-  fetchLogsRef.current = fetchLogs;
-  const fetchDbLogsRef = useRef(fetchDbLogs);
-  fetchDbLogsRef.current = fetchDbLogs;
+  useEffect(() => {
+    if (!open || !accessToken || autoRefreshPaused || activeTab !== 'general' || page !== 0) return undefined;
+
+    const params = new URLSearchParams({
+      page: '1',
+      limit: String(rowsPerPage),
+      sortBy: auditLogSortBy as string,
+      sortOrder: auditLogSortOrder as string,
+    });
+    if (auditLogAction) params.set('action', auditLogAction);
+    if (auditLogSearch) params.set('search', auditLogSearch);
+    if (auditLogTargetType) params.set('targetType', auditLogTargetType);
+    if (auditLogGatewayId) params.set('gatewayId', auditLogGatewayId);
+    if (ipAddress) params.set('ipAddress', ipAddress);
+    if (geoCountry) params.set('geoCountry', geoCountry);
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    if (flaggedOnly) params.set('flaggedOnly', 'true');
+
+    return connectSSE({
+      url: `/api/audit/stream?${params.toString()}`,
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        const snapshot = data as AuditStreamSnapshot;
+        setLogs(snapshot.data);
+        setTotal(snapshot.total);
+        setLoading(false);
+        setError('');
+      },
+    });
+  }, [
+    open,
+    accessToken,
+    autoRefreshPaused,
+    activeTab,
+    page,
+    rowsPerPage,
+    auditLogAction,
+    auditLogSearch,
+    auditLogTargetType,
+    auditLogGatewayId,
+    auditLogSortBy,
+    auditLogSortOrder,
+    ipAddress,
+    geoCountry,
+    startDate,
+    endDate,
+    flaggedOnly,
+  ]);
 
   useEffect(() => {
-    if (!open || autoRefreshPaused) return;
-    if (activeTab === 'general' && page !== 0) return;
-    if (activeTab === 'sql' && dbPage !== 0) return;
-    const id = setInterval(() => {
-      if (activeTab === 'general') fetchLogsRef.current();
-      else if (activeTab === 'sql') fetchDbLogsRef.current();
-    }, AUTO_REFRESH_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [open, autoRefreshPaused, page, dbPage, activeTab]);
+    if (!open || !accessToken || !hasTenant || autoRefreshPaused || activeTab !== 'sql' || dbPage !== 0) return undefined;
+
+    const params = new URLSearchParams({
+      page: '1',
+      limit: String(dbRowsPerPage),
+      sortBy: 'createdAt',
+      sortOrder: 'desc',
+    });
+    if (dbSearch) params.set('search', dbSearch);
+    if (dbQueryType) params.set('queryType', dbQueryType);
+    if (dbConnectionId) params.set('connectionId', dbConnectionId);
+    if (dbUserId) params.set('userId', dbUserId);
+    if (dbBlocked === 'true' || dbBlocked === 'false') params.set('blocked', dbBlocked);
+    if (dbStartDate) params.set('startDate', dbStartDate);
+    if (dbEndDate) params.set('endDate', dbEndDate);
+
+    return connectSSE({
+      url: `/api/db-audit/logs/stream?${params.toString()}`,
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        const snapshot = data as DbAuditStreamSnapshot;
+        setDbLogs(snapshot.data);
+        setDbTotal(snapshot.total);
+        setDbLoading(false);
+        setDbError('');
+      },
+    });
+  }, [
+    open,
+    accessToken,
+    hasTenant,
+    autoRefreshPaused,
+    activeTab,
+    dbPage,
+    dbRowsPerPage,
+    dbSearch,
+    dbQueryType,
+    dbConnectionId,
+    dbUserId,
+    dbBlocked,
+    dbStartDate,
+    dbEndDate,
+  ]);
 
   const handleChangePage = (_: unknown, newPage: number) => {
     setPage(newPage);

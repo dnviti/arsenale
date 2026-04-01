@@ -2,6 +2,7 @@ package gateways
 
 import (
 	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -9,10 +10,30 @@ import (
 )
 
 type Service struct {
-	DB                  *pgxpool.Pool
-	Redis               *redis.Client
-	ServerEncryptionKey []byte
-	DefaultGRPCPort     int
+	DB                    *pgxpool.Pool
+	Redis                 *redis.Client
+	ServerEncryptionKey   []byte
+	DefaultGRPCPort       int
+	GatewayGRPCTLSCA      string
+	GatewayGRPCClientCA   string
+	GatewayGRPCTLSCert    string
+	GatewayGRPCTLSKey     string
+	GatewayGRPCServerCert string
+	GatewayGRPCServerKey  string
+	HTTPClient            *http.Client
+	TunnelBrokerURL       string
+	TunnelTrustDomain     string
+	OrchestratorType      string
+	DockerSocketPath      string
+	PodmanSocketPath      string
+	EdgeNetwork           string
+	DBNetwork             string
+	GuacdNetwork          string
+	GatewayNetwork        string
+	SSHGatewayImage       string
+	GuacdImage            string
+	DBProxyImage          string
+	RecordingPath         string
 }
 
 type gatewayResponse struct {
@@ -21,6 +42,7 @@ type gatewayResponse struct {
 	Type                     string     `json:"type"`
 	Host                     string     `json:"host"`
 	Port                     int        `json:"port"`
+	DeploymentMode           string     `json:"deploymentMode"`
 	Description              *string    `json:"description"`
 	IsDefault                bool       `json:"isDefault"`
 	HasSSHKey                bool       `json:"hasSshKey"`
@@ -53,6 +75,13 @@ type gatewayResponse struct {
 	TunnelConnected          bool       `json:"tunnelConnected"`
 	TunnelConnectedAt        *time.Time `json:"tunnelConnectedAt"`
 	TunnelClientCertExp      *time.Time `json:"tunnelClientCertExp"`
+	EncryptedTunnelToken     *string
+	TunnelTokenIV            *string
+	TunnelTokenTag           *string
+	TunnelClientCert         *string
+	TunnelClientKey          *string
+	TunnelClientKeyIV        *string
+	TunnelClientKeyTag       *string
 }
 
 type gatewayRecord struct {
@@ -61,6 +90,7 @@ type gatewayRecord struct {
 	Type                     string
 	Host                     string
 	Port                     int
+	DeploymentMode           string
 	Description              *string
 	IsDefault                bool
 	EncryptedUsername        *string
@@ -96,8 +126,15 @@ type gatewayRecord struct {
 	LastScaleAction          *time.Time
 	TemplateID               *string
 	TunnelEnabled            bool
+	EncryptedTunnelToken     *string
+	TunnelTokenIV            *string
+	TunnelTokenTag           *string
 	TunnelConnected          bool
 	TunnelConnectedAt        *time.Time
+	TunnelClientCert         *string
+	TunnelClientKey          *string
+	TunnelClientKeyIV        *string
+	TunnelClientKeyTag       *string
 	TunnelClientCertExp      *time.Time
 	TotalInstances           int
 	RunningInstances         int
@@ -108,6 +145,7 @@ type createPayload struct {
 	Type                     string  `json:"type"`
 	Host                     string  `json:"host"`
 	Port                     int     `json:"port"`
+	DeploymentMode           *string `json:"deploymentMode"`
 	Description              *string `json:"description"`
 	IsDefault                *bool   `json:"isDefault"`
 	Username                 *string `json:"username"`
@@ -182,6 +220,7 @@ type updatePayload struct {
 	Name                     optionalString `json:"name"`
 	Host                     optionalString `json:"host"`
 	Port                     optionalInt    `json:"port"`
+	DeploymentMode           optionalString `json:"deploymentMode"`
 	Description              optionalString `json:"description"`
 	IsDefault                optionalBool   `json:"isDefault"`
 	Username                 optionalString `json:"username"`

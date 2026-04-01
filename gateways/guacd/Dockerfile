@@ -8,7 +8,7 @@
 # TUNNEL_GATEWAY_ID environment variables are set.
 
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
+FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS tunnel-builder
 
 WORKDIR /tunnel-agent
 
@@ -21,7 +21,7 @@ COPY gateways/tunnel-agent/src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
 # ── guacd runtime + tunnel agent ─────────────────────────────────────────────
-FROM guacamole/guacd:1.6.0
+FROM docker.io/library/alpine:3.21
 
 USER root
 
@@ -30,8 +30,14 @@ LABEL org.opencontainers.image.description="guacd with embedded zero-trust tunne
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
 LABEL org.opencontainers.image.licenses="BUSL-1.1"
 
-# Install Node.js runtime (Alpine-based guacd image, so use apk)
-RUN apk add --no-cache nodejs
+RUN apk add --no-cache \
+    guacamole-server \
+    guacamole-server-rdp \
+    guacamole-server-vnc \
+    guacamole-server-ssh \
+    guacamole-server-libs \
+    nodejs \
+    netcat-openbsd
 
 # Embed pre-built tunnel agent
 COPY --from=tunnel-builder /tunnel-agent/dist /opt/tunnel-agent/dist
@@ -41,8 +47,7 @@ COPY --from=tunnel-builder /tunnel-agent/package.json /opt/tunnel-agent/package.
 COPY gateways/guacd/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# guacd runs as daemon user (uid 1000 in the official image)
-USER daemon
+USER guacd
 
 EXPOSE 4822
 

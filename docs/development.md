@@ -5,15 +5,12 @@ generated-by: claw-docs
 generated-at: 2026-03-27T12:00:00Z
 source-files:
   - package.json
-  - server/package.json
   - client/package.json
   - gateways/tunnel-agent/package.json
   - extra-clients/browser-extensions/package.json
   - eslint.config.mjs
-  - server/vitest.config.ts
   - client/vitest.config.ts
   - client/vite.config.ts
-  - server/tsconfig.json
   - client/tsconfig.json
   - Makefile
   - CLAUDE.md
@@ -21,11 +18,13 @@ source-files:
 
 ## 🏗 Monorepo Structure
 
-Arsenale uses **npm workspaces** to manage four packages:
+> Runtime note: `backend/` contains the active Go services used by the running application. The legacy Node `server/` implementation has been removed; runtime flows are now fully Go-first.
+
+Arsenale uses npm workspaces for the active JavaScript packages and a separate Go module for the backend:
 
 | Workspace | Path | Technology |
 |-----------|------|-----------|
-| Server | `server/` | Express 5 + TypeScript + Prisma |
+| Backend | `backend/` | Go 1.25 | Active control plane, brokers, orchestration, AI |
 | Client | `client/` | React 19 + Vite + MUI v7 + Zustand |
 | Tunnel Agent | `gateways/tunnel-agent/` | Node.js + TypeScript |
 | Browser Extension | `extra-clients/browser-extensions/` | Chrome MV3 + React |
@@ -65,8 +64,8 @@ gitgraph
 
 ### Framework
 
-- **Vitest** for all workspaces
-- Server: Node environment, fork pool for isolation
+- **Vitest** for the frontend and JS workspaces
+- Go tests for the active backend services
 - Client: jsdom environment for DOM simulation
 - Globals enabled across all workspaces
 
@@ -74,7 +73,7 @@ gitgraph
 
 ```bash
 npm run test              # Run all tests
-npm run test -w server    # Server tests only
+npm run backend:test      # Go backend tests
 npm run test -w client    # Client tests only
 npm run test:watch        # Watch mode (re-runs on change)
 ```
@@ -86,14 +85,11 @@ Test files follow the pattern `**/*.test.{ts,tsx}` and are colocated with source
 ### Writing Tests
 
 ```typescript
-// server/src/utils/ip.test.ts
-import { describe, it, expect } from 'vitest';
-import { isPrivateIP } from './ip';
+import { describe, expect, it } from 'vitest';
 
-describe('isPrivateIP', () => {
-  it('returns true for RFC 1918 addresses', () => {
-    expect(isPrivateIP('10.0.0.1')).toBe(true);
-    expect(isPrivateIP('192.168.1.1')).toBe(true);
+describe('example', () => {
+  it('keeps behavior explicit', () => {
+    expect(true).toBe(true);
   });
 });
 ```
@@ -102,8 +98,7 @@ describe('isPrivateIP', () => {
 
 ### TypeScript
 
-- **Strict mode** enabled in all workspaces
-- Server: ES2022, CommonJS modules
+- **Strict mode** enabled in all active TypeScript workspaces
 - Client: ES2022, ESNext modules (Vite handles bundling)
 
 ```bash
@@ -114,7 +109,6 @@ npm run typecheck         # Check all workspaces
 
 Flat config format (`eslint.config.mjs`):
 - TypeScript strict rules + security plugin
-- Server: warns on `console.*` (use logger instead)
 - Client: React hooks rules, refresh detection
 - Tests: relaxed rules
 
@@ -142,10 +136,7 @@ This must pass before closing any task.
 
 | Layer | Pattern | Example |
 |-------|---------|---------|
-| Server routes | `*.routes.ts` | `auth.routes.ts` |
-| Server controllers | `*.controller.ts` | `auth.controller.ts` |
-| Server services | `*.service.ts` | `auth.service.ts` |
-| Server middleware | `*.middleware.ts` | `auth.middleware.ts` |
+| Go packages | directory by responsibility | `backend/internal/authservice` |
 | Client stores | `*Store.ts` | `authStore.ts` |
 | Client API | `*.api.ts` | `connections.api.ts` |
 | Client hooks | `use*.ts` | `useAuth.ts` |
@@ -153,13 +144,12 @@ This must pass before closing any task.
 
 ## 🧱 Architecture Patterns
 
-### Server: Routes -> Controllers -> Services -> Prisma
+### Backend: Routes -> Services -> Stores / SQL
 
 ```
-routes/auth.routes.ts         # HTTP binding, middleware chain
-controllers/auth.controller.ts # Request/response transformation
-services/auth.service.ts       # Business logic
-lib/prisma.ts                  # Database access
+backend/cmd/control-plane-api/routes_*.go  # HTTP binding
+backend/internal/*                          # Service logic by domain
+backend/internal/*/store.go                 # SQL-backed persistence
 ```
 
 ### Client: Pages -> Components -> Stores -> API
@@ -200,26 +190,20 @@ All UI layout state uses `uiPreferencesStore` (Zustand + `arsenale-ui-preference
 ```
 Env var set    -> used as-is, UI field read-only
 Env var unset  -> UI setting editable, persisted to DB
-New features   -> define env var in server/src/config.ts first
+New features   -> define env var in the active Go config or settings registry first
 ```
 
 ## 🗄 Database
 
-### Schema
+### Schema bootstrap
 
-Prisma schema at `server/prisma/schema.prisma` defines 32+ models. Key commands:
+The active empty-database bootstrap snapshot lives at `backend/schema/bootstrap.sql`. Key commands:
 
 ```bash
-npm run db:generate       # Regenerate Prisma client types
-npm run db:push           # Sync schema (no migration, for prototyping)
-npm run db:migrate        # Create and apply migration
+npm run db:bootstrap      # Apply schema snapshot when DB is empty
+npm run db:push           # Alias
+npm run db:migrate        # Alias
 ```
-
-When modifying `schema.prisma`, always run `npm run db:migrate` before closing the task.
-
-### Prisma Config
-
-`server/prisma.config.ts` resolves `.env` to `../../.env` (monorepo root). Never add a separate `server/.env`.
 
 ## 🐳 Container Standards
 
@@ -233,7 +217,7 @@ All Dockerfiles must be:
 
 ### Logging
 
-Never log sensitive data in clear text. Use the logger from `server/src/utils/logger.ts`:
+Never log sensitive data in clear text.
 
 ```typescript
 // Correct
@@ -261,9 +245,9 @@ logger.error('Login failed', { password, token });
 
 | Path | Target | Protocol |
 |------|--------|----------|
-| `/api` | `https://localhost:3001` | HTTPS |
-| `/socket.io` | `https://localhost:3001` | WSS |
-| `/guacamole` | `https://localhost:3002` | WSS |
+| `/api` | `http://localhost:18080` | HTTP |
+| `/ws/terminal` | `http://localhost:18090` | WSS |
+| `/guacamole` | `http://localhost:18091` | WSS |
 
 ## 📱 Browser Extension
 
@@ -293,12 +277,12 @@ npm run test          # Vitest
 npm run build         # TypeScript compile
 ```
 
-### Go Services (gocache, guacenc)
+### Gateway Go Modules
 
 ```bash
-cd infrastructure/gocache
-go test ./...         # Run tests
-go build              # Build binary
+cd gateways/guacenc && go test ./...
+cd gateways/db-proxy && go test ./...
+cd gateways/rdgw && go test ./...
 ```
 
 ## 📐 Version Bumping
@@ -307,9 +291,9 @@ When releasing, update version in all locations:
 
 | File | Field |
 |------|-------|
-| `package.json` (root, client, server, tunnel-agent, browser-extension) | `"version"` |
+| `package.json` (root, client, tunnel-agent, browser-extension) | `"version"` |
 | `extra-clients/browser-extensions/manifest.json` | `"version"` |
-| `server/src/cli.ts` | `.version('X.Y.Z')` |
+| `backend/cmd/control-plane-api/main.go` | `ARSENALE_VERSION` default / release wiring |
 | `LICENSE` | `Licensed Work: Arsenale X.Y.Z` |
 | `docs/index.md` | `Version:` line |
 

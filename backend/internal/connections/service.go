@@ -2,14 +2,11 @@ package connections
 
 import (
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
-
-var ErrLegacyConnectionFlow = errors.New("legacy connection flow required")
 
 type Service struct {
 	DB                  *pgxpool.Pool
@@ -68,6 +65,7 @@ type ImportPayload struct {
 	Username    string
 	Password    string
 	Domain      *string
+	FolderID    *string
 	Description *string
 }
 
@@ -220,4 +218,17 @@ type accessResult struct {
 
 type rowScanner interface {
 	Scan(dest ...any) error
+}
+
+func normalizeListResponse(resp listResponse) listResponse {
+	if resp.Own == nil {
+		resp.Own = []connectionResponse{}
+	}
+	if resp.Shared == nil {
+		resp.Shared = []connectionResponse{}
+	}
+	if resp.Team == nil {
+		resp.Team = []connectionResponse{}
+	}
+	return resp
 }

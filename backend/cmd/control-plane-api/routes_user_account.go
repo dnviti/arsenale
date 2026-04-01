@@ -1,11 +1,9 @@
 package main
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
-	"github.com/dnviti/arsenale/backend/internal/users"
 )
 
 func (d *apiDependencies) registerUserAccountRoutes(mux *http.ServeMux) {
@@ -19,10 +17,6 @@ func (d *apiDependencies) registerUserAccountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.userService.HandleInitiatePasswordChange(w, r, claims); err != nil {
-			if errors.Is(err, users.ErrLegacyPasswordChangeInitiation) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})
@@ -33,10 +27,6 @@ func (d *apiDependencies) registerUserAccountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.userService.HandleInitiateIdentity(w, r, claims); err != nil {
-			if errors.Is(err, users.ErrLegacyIdentityVerification) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})
@@ -47,10 +37,6 @@ func (d *apiDependencies) registerUserAccountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.userService.HandleConfirmIdentity(w, r, claims); err != nil {
-			if errors.Is(err, users.ErrLegacyIdentityVerification) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})
@@ -61,10 +47,6 @@ func (d *apiDependencies) registerUserAccountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.userService.HandleInitiateEmailChange(w, r, claims); err != nil {
-			if errors.Is(err, users.ErrLegacyEmailChangeFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})
@@ -75,10 +57,6 @@ func (d *apiDependencies) registerUserAccountRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.userService.HandleConfirmEmailChange(w, r, claims); err != nil {
-			if errors.Is(err, users.ErrLegacyEmailChangeFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})

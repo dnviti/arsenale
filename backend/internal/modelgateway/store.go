@@ -49,6 +49,21 @@ CREATE TABLE IF NOT EXISTS "TenantAiConfig" (
 		return fmt.Errorf("ensure TenantAiConfig schema: %w", err)
 	}
 
+	_, err = s.db.Exec(ctx, `
+CREATE TABLE IF NOT EXISTS "AiDailyUsage" (
+  id TEXT PRIMARY KEY,
+  "tenantId" TEXT NOT NULL,
+  date DATE NOT NULL,
+  count INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+  "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+  UNIQUE ("tenantId", date)
+)
+`)
+	if err != nil {
+		return fmt.Errorf("ensure AiDailyUsage schema: %w", err)
+	}
+
 	return nil
 }
 

@@ -4,31 +4,22 @@ description: Complete REST API endpoint reference for all Arsenale domains
 generated-by: claw-docs
 generated-at: 2026-03-27T12:00:00Z
 source-files:
-  - server/src/routes/auth.routes.ts
-  - server/src/routes/connections.routes.ts
-  - server/src/routes/sessions.routes.ts
-  - server/src/routes/vault.routes.ts
-  - server/src/routes/secrets.routes.ts
-  - server/src/routes/gateway.routes.ts
-  - server/src/routes/tenants.routes.ts
-  - server/src/routes/teams.routes.ts
-  - server/src/routes/audit.routes.ts
-  - server/src/routes/recordings.routes.ts
-  - server/src/routes/database.routes.ts
-  - server/src/routes/admin.routes.ts
-  - server/src/routes/notification.routes.ts
-  - server/src/routes/oauth.routes.ts
-  - server/src/routes/cli.routes.ts
-  - server/src/routes/health.routes.ts
-  - server/src/types/index.ts
+  - backend/cmd/control-plane-api/routes_auth.go
+  - backend/cmd/control-plane-api/routes_public.go
+  - backend/cmd/control-plane-api/routes_resources.go
+  - backend/cmd/control-plane-api/routes_sessions.go
+  - backend/cmd/control-plane-api/routes_secrets.go
+  - backend/cmd/control-plane-api/routes_operations.go
   - client/src/api/client.ts
 ---
 
 ## 🎯 Overview
 
-Arsenale exposes 200+ REST API endpoints across 40+ route files. All endpoints are served over HTTPS on port 3001 (default) under the `/api` prefix.
+Arsenale exposes 200+ REST API endpoints across the public `/api` surface. The active public edge is the Go control plane, typically reached through the client at `https://localhost:3000/api` or directly at `http://localhost:18080/api` in local development.
 
-**Base URL:** `https://localhost:3001/api`
+> Source note: the public `/api` surface is now owned by the Go control plane. Historical `server/` route shapes were preserved where practical, but the active route inventory now lives under `backend/cmd/control-plane-api/routes_*.go`.
+
+**Base URL:** `https://localhost:3000/api`
 
 **Authentication:** Most endpoints require a JWT access token via `Authorization: Bearer <token>`. State-changing requests (POST/PUT/PATCH/DELETE) also require a CSRF token via the `X-CSRF-Token` header matching the `arsenale-csrf` cookie.
 

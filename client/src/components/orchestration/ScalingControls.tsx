@@ -11,6 +11,7 @@ import {
 } from '@mui/icons-material';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { GatewayData } from '../../api/gateway.api';
+import { isGatewayGroup } from '../../utils/gatewayMode';
 
 interface ScalingControlsProps {
   gatewayId: string;
@@ -26,6 +27,8 @@ const recommendationColor: Record<string, 'success' | 'info' | 'warning'> = {
 export default function ScalingControls({ gatewayId, gateway }: ScalingControlsProps) {
   const scalingStatus = useGatewayStore((s) => s.scalingStatus[gatewayId]);
   const fetchScalingStatus = useGatewayStore((s) => s.fetchScalingStatus);
+  const watchScalingStatus = useGatewayStore((s) => s.watchScalingStatus);
+  const unwatchScalingStatus = useGatewayStore((s) => s.unwatchScalingStatus);
   const deployGatewayAction = useGatewayStore((s) => s.deployGateway);
   const undeployGatewayAction = useGatewayStore((s) => s.undeployGateway);
   const scaleGatewayAction = useGatewayStore((s) => s.scaleGateway);
@@ -40,13 +43,19 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
   const [undeployOpen, setUndeployOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const isGroup = isGatewayGroup(gateway);
 
   // Initial fetch on mount — real-time updates arrive via Socket.IO (scaling:updated)
   useEffect(() => {
-    if (gateway.isManaged) {
-      fetchScalingStatus(gatewayId);
-    }
-  }, [gatewayId, gateway.isManaged, fetchScalingStatus]);
+    if (!isGroup) return undefined;
+
+    watchScalingStatus(gatewayId);
+    void fetchScalingStatus(gatewayId);
+
+    return () => {
+      unwatchScalingStatus(gatewayId);
+    };
+  }, [gatewayId, isGroup, fetchScalingStatus, watchScalingStatus, unwatchScalingStatus]);
 
   // Sync local form state only when server-side config fields change
   // (not on health probe updates which change lastHealthStatus, lastLatencyMs, etc.)
@@ -138,7 +147,7 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
 
       {/* Deploy / Undeploy */}
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-        {!gateway.isManaged ? (
+        {!isGroup ? (
           <Button
             variant="contained"
             startIcon={<DeployIcon />}
@@ -163,7 +172,7 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
       </Stack>
 
       {/* Replicas slider (only when managed and auto-scale is off) */}
-      {gateway.isManaged && !gateway.autoScale && (
+      {isGroup && !gateway.autoScale && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <Typography variant="subtitle2" gutterBottom>Manual Scaling</Typography>
           <Stack direction="row" spacing={2} alignItems="center">
@@ -193,7 +202,7 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
       )}
 
       {/* Auto-Scale config (only when managed) */}
-      {gateway.isManaged && (
+      {isGroup && (
         <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
           <FormControlLabel
             control={
@@ -258,7 +267,7 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
       )}
 
       {/* Scaling status */}
-      {scalingStatus && gateway.isManaged && (
+      {scalingStatus && isGroup && (
         <Paper variant="outlined" sx={{ p: 2 }}>
           <Typography variant="subtitle2" gutterBottom>Scaling Status</Typography>
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">

@@ -2,14 +2,14 @@
 # This allows copying gateways/tunnel-agent sources alongside the ssh-gateway files.
 
 # ── gRPC key management server build stage ──────────────────────────────────
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS grpc-builder
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.25-alpine AS grpc-builder
 
 WORKDIR /build
 COPY gateways/ssh-gateway/grpc-server/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /key-mgmt-server .
 
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
+FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS tunnel-builder
 
 WORKDIR /tunnel-agent
 
@@ -22,7 +22,7 @@ COPY gateways/tunnel-agent/src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
 # ── SSH gateway runtime ───────────────────────────────────────────────────────
-FROM alpine:3.21
+FROM docker.io/library/alpine:3.21
 
 LABEL org.opencontainers.image.title="Arsenale SSH Gateway"
 LABEL org.opencontainers.image.description="Lightweight SSH tunnel for TCP port forwarding (no shell access)"

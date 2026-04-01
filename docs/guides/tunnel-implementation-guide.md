@@ -2,6 +2,8 @@
 
 > Auto-generated on 2026-03-15 by `/docs create guides`.
 
+> Runtime note: the public tunnel path now terminates in the Go control plane and tunnel broker. `server/src` references below are historical implementation notes retained for protocol context.
+
 This guide is for backend/fullstack developers who need to understand, extend, or debug the zero-trust tunnel and Attribute-Based Access Control (ABAC) systems in Arsenale. It covers the binary frame protocol, server-side broker, agent-side forwarder, session integration for SSH/RDP/VNC, the ABAC policy evaluation engine, health monitoring, certificate rotation, and security hardening.
 
 ---
@@ -485,10 +487,9 @@ After this, `guacdHost` and `guacdPort` point to `127.0.0.1:<ephemeral>`, and th
 
 ## ABAC Policy System
 
-The Attribute-Based Access Control system evaluates policies before sessions are granted. It is implemented across two service files:
+The Attribute-Based Access Control system evaluates policies before sessions are granted. In the active runtime, evaluation and CRUD now live in the Go access-policy service:
 
-- `server/src/services/abac.service.ts` -- policy evaluation engine
-- `server/src/services/accessPolicy.service.ts` -- CRUD operations
+- `backend/internal/accesspolicies/service.go` -- policy evaluation and CRUD operations
 
 ### Data Model
 
@@ -809,8 +810,7 @@ To complete the cert rotation stub:
 |------------------------|-------------------------------------------------------|
 | TunnelBroker           | `server/src/services/tunnel.service.ts`               |
 | WSS Upgrade Handler    | `server/src/socket/tunnel.handler.ts`                 |
-| ABAC Evaluation        | `server/src/services/abac.service.ts`                 |
-| ABAC CRUD              | `server/src/services/accessPolicy.service.ts`         |
+| ABAC Evaluation / CRUD | `backend/internal/accesspolicies/service.go`          |
 | Session Controller     | `server/src/controllers/session.controller.ts`        |
 | SSH Service            | `server/src/services/ssh.service.ts`                  |
 | Gateway Monitor        | `server/src/services/gatewayMonitor.service.ts`       |

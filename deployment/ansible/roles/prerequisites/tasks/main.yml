@@ -24,17 +24,6 @@
     state: present
   when: ansible_os_family == 'Archlinux'
 
-- name: Enable Podman socket for user
-  become: true
-  become_user: root
-  systemd:
-    name: "podman.socket"
-    scope: user
-    enabled: true
-    state: started
-  environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ arsenale_uid | default(1000) }}"
-
 - name: Create arsenale user
   become: true
   become_user: root
@@ -56,6 +45,18 @@
   command: loginctl enable-linger {{ arsenale_user }}
   changed_when: false
 
+- name: Start systemd user manager for arsenale
+  become: true
+  become_user: root
+  systemd:
+    name: "user@{{ arsenale_uid }}.service"
+    state: started
+
+- name: Enable Podman socket for user
+  command: systemctl --user enable --now podman.socket
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ arsenale_uid }}"
+
 - name: Create deployment directories
   file:
     path: "{{ item }}"
@@ -68,13 +69,20 @@
     - "{{ arsenale_cert_dir }}"
     - "{{ arsenale_backup_dir }}"
 
+- name: Check whether the application source tree already exists
+  stat:
+    path: "{{ arsenale_home }}/arsenale"
+  register: _arsenale_source_tree
+
 - name: Clone Arsenale repository
   git:
     repo: "{{ arsenale_repo }}"
     dest: "{{ arsenale_home }}/arsenale"
     version: "{{ arsenale_version }}"
     force: false
-  when: _build | default(true) | bool
+  when:
+    - _build | default(true) | bool
+    - not _arsenale_source_tree.stat.exists
 
 - name: Create empty authorized_keys
   file:

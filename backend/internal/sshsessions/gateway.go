@@ -5,33 +5,58 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dnviti/arsenale/backend/internal/authn"
 )
 
-func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access connectionAccess) (map[string]any, string, error) {
+type managedGatewayInstance struct {
+	ID             string
+	Host           string
+	Port           int
+	CreatedAt      time.Time
+	ActiveSessions int
+}
+
+func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access connectionAccess) (map[string]any, string, string, error) {
 	if access.Connection.GatewayID == nil || strings.TrimSpace(*access.Connection.GatewayID) == "" {
-		return nil, "", nil
+		return nil, "", "", nil
 	}
 
 	gateway, err := s.loadGateway(ctx, *access.Connection.GatewayID)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	switch gateway.Type {
 	case "SSH_BASTION", "MANAGED_SSH":
 	default:
-		return nil, "", &requestError{status: http.StatusBadRequest, message: "Connection gateway must be SSH_BASTION or MANAGED_SSH for SSH connections"}
+		return nil, "", "", &requestError{status: http.StatusBadRequest, message: "Connection gateway must be SSH_BASTION or MANAGED_SSH for SSH connections"}
 	}
 
 	host := gateway.Host
 	port := gateway.Port
+	instanceID := ""
+	if gateway.Type == "MANAGED_SSH" && strings.EqualFold(strings.TrimSpace(gateway.DeploymentMode), "MANAGED_GROUP") {
+		selected, err := s.selectManagedGatewayInstance(ctx, gateway.ID, gateway.LBStrategy)
+		if err != nil {
+			return nil, "", "", err
+		}
+		if selected == nil && !gateway.TunnelEnabled {
+			return nil, "", "", &requestError{status: http.StatusServiceUnavailable, message: "No healthy SSH gateway instances available. The gateway may be scaling — please try again."}
+		}
+		if selected != nil {
+			instanceID = selected.ID
+			host = selected.Host
+			port = selected.Port
+		}
+	}
 	if gateway.TunnelEnabled {
 		proxy, err := s.createTunnelProxy(ctx, gateway.ID, "127.0.0.1", port)
 		if err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 		host = proxy.Host
 		port = proxy.Port
@@ -40,19 +65,19 @@ func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access
 	if gateway.Type == "MANAGED_SSH" {
 		privateKey, err := s.loadTenantPrivateKey(ctx, gateway.TenantID)
 		if err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 		return map[string]any{
 			"host":       host,
 			"port":       port,
 			"username":   "tunnel",
 			"privateKey": privateKey,
-		}, gateway.ID, nil
+		}, gateway.ID, instanceID, nil
 	}
 
 	credentials, err := s.loadGatewayCredentials(ctx, claims.UserID, gateway)
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 
 	bastion := map[string]any{
@@ -66,7 +91,7 @@ func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access
 	if credentials.PrivateKey != "" {
 		bastion["privateKey"] = credentials.PrivateKey
 	}
-	return bastion, gateway.ID, nil
+	return bastion, gateway.ID, instanceID, nil
 }
 
 func (s Service) loadGateway(ctx context.Context, gatewayID string) (gatewayRecord, error) {
@@ -79,7 +104,9 @@ SELECT
 	port,
 	"tenantId",
 	"isManaged",
+	"deploymentMode"::text,
 	"tunnelEnabled",
+	COALESCE("lbStrategy"::text, 'ROUND_ROBIN'),
 	"encryptedUsername",
 	"usernameIV",
 	"usernameTag",
@@ -98,7 +125,9 @@ WHERE id = $1
 		&record.Port,
 		&record.TenantID,
 		&record.IsManaged,
+		&record.DeploymentMode,
 		&record.TunnelEnabled,
+		&record.LBStrategy,
 		&record.EncryptedUsername,
 		&record.UsernameIV,
 		&record.UsernameTag,
@@ -112,6 +141,80 @@ WHERE id = $1
 		return gatewayRecord{}, fmt.Errorf("load gateway: %w", err)
 	}
 	return record, nil
+}
+
+func (s Service) selectManagedGatewayInstance(ctx context.Context, gatewayID, strategy string) (*managedGatewayInstance, error) {
+	rows, err := s.DB.Query(ctx, `
+SELECT
+	i.id,
+	COALESCE(NULLIF(i."containerName", ''), i.host) AS host,
+	CASE
+		WHEN NULLIF(i."containerName", '') IS NOT NULL THEN g.port
+		ELSE i.port
+	END AS port,
+	i."createdAt",
+	COUNT(sess.id)::int AS active_sessions
+FROM "ManagedGatewayInstance" i
+JOIN "Gateway" g
+	ON g.id = i."gatewayId"
+LEFT JOIN "ActiveSession" sess
+	ON sess."instanceId" = i.id
+	AND sess.status <> 'CLOSED'::"SessionStatus"
+WHERE i."gatewayId" = $1
+  AND i.status = 'RUNNING'::"ManagedInstanceStatus"
+  AND COALESCE(i."healthStatus", '') = 'healthy'
+GROUP BY i.id, i.host, i.port, i."containerName", i."createdAt", g.port
+ORDER BY i."createdAt" ASC
+`, gatewayID)
+	if err != nil {
+		return nil, fmt.Errorf("load managed ssh gateway instances: %w", err)
+	}
+	defer rows.Close()
+
+	instances := make([]managedGatewayInstance, 0)
+	for rows.Next() {
+		var item managedGatewayInstance
+		if err := rows.Scan(&item.ID, &item.Host, &item.Port, &item.CreatedAt, &item.ActiveSessions); err != nil {
+			return nil, fmt.Errorf("scan managed ssh gateway instance: %w", err)
+		}
+		instances = append(instances, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate managed ssh gateway instances: %w", err)
+	}
+	if len(instances) == 0 {
+		return nil, nil
+	}
+
+	selected := instances[0]
+	if strings.EqualFold(strings.TrimSpace(strategy), "LEAST_CONNECTIONS") {
+		for _, instance := range instances[1:] {
+			if instance.ActiveSessions < selected.ActiveSessions {
+				selected = instance
+			}
+		}
+		return &selected, nil
+	}
+
+	minSessions := selected.ActiveSessions
+	for _, instance := range instances[1:] {
+		if instance.ActiveSessions < minSessions {
+			minSessions = instance.ActiveSessions
+		}
+	}
+	candidates := make([]managedGatewayInstance, 0, len(instances))
+	for _, instance := range instances {
+		if instance.ActiveSessions == minSessions {
+			candidates = append(candidates, instance)
+		}
+	}
+	if len(candidates) == 1 {
+		return &candidates[0], nil
+	}
+
+	picker := rand.New(rand.NewSource(time.Now().UnixNano()))
+	chosen := candidates[picker.Intn(len(candidates))]
+	return &chosen, nil
 }
 
 func (s Service) loadGatewayCredentials(ctx context.Context, userID string, gateway gatewayRecord) (resolvedCredentials, error) {

@@ -16,20 +16,14 @@ import {
   Storage as HostingIcon,
 } from '@mui/icons-material';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../../api/client';
 import { countryFlag } from './IpGeoCell';
 import { SlideUp } from '../common/SlideUp';
 import { extractApiError } from '../../utils/apiError';
+import { ensureLeafletDefaultIcon } from '../../lib/leafletMarkerIcon';
 
-// Fix default marker icons in Leaflet (broken with bundlers)
-delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
+ensureLeafletDefaultIcon();
 
 interface IpApiData {
   status: 'success' | 'fail';
@@ -225,6 +219,7 @@ export default function GeoIpDialog({ open, onClose, ipAddress }: GeoIpDialogPro
                   <TileLayer
                     attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                     url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    subdomains={['a', 'b', 'c']}
                   />
                   <Marker position={[data.lat ?? 0, data.lon ?? 0]}>
                     <Popup>

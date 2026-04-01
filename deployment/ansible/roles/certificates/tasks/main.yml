@@ -14,6 +14,7 @@
   set_fact:
     _ca_cert_path: "{{ arsenale_cert_dir }}/{{ 'ca.pem' if _ca_check_short.stat.exists else 'ca-cert.pem' }}"
     _ca_key_path: "{{ arsenale_cert_dir }}/ca-key.pem"
+    _ca_csr_path: "{{ arsenale_cert_dir }}/ca.csr"
     _certs_exist: "{{ _ca_check_short.stat.exists or _ca_check_long.stat.exists }}"
 
 - name: Set runtime private key mode
@@ -21,12 +22,93 @@
     _runtime_key_mode: "{{ '0644' if (_is_dev | default(false) | bool) else '0600' }}"
     _spiffe_trust_domain: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
 
+- name: Derive development client extra IPv4 SANs
+  set_fact:
+    _dev_client_extra_ipv4s: "{{ (ansible_all_ipv4_addresses | default([])) | difference(['127.0.0.1']) | unique | sort }}"
+  when: _is_dev | default(false) | bool
+
+- name: Build client certificate SAN entries
+  set_fact:
+    _client_san_entries: >-
+      {{
+        (
+          ['DNS:arsenale-client', 'DNS:localhost', 'IP:127.0.0.1', 'IP:::1']
+          + (
+            []
+            if (arsenale_domain | default('localhost') | trim) in ['', 'localhost']
+            else [
+              (
+                'IP:' ~ (arsenale_domain | trim)
+              ) if (arsenale_domain | trim is match('^\\d+\\.\\d+\\.\\d+\\.\\d+$'))
+                else ('DNS:' ~ (arsenale_domain | trim))
+            ]
+          )
+          + ((_dev_client_extra_ipv4s | default([])) | map('regex_replace', '^', 'IP:') | list)
+        ) | unique
+      }}
+
 - name: Inspect ssh-gateway server certificate SANs in development
   command: openssl x509 -in "{{ arsenale_cert_dir }}/ssh-gateway/server-cert.pem" -noout -ext subjectAltName
   register: _dev_ssh_gateway_cert_sans
   changed_when: false
   failed_when: false
   when: _is_dev | default(false) | bool
+
+- name: Inspect client certificate SANs in development
+  command: openssl x509 -in "{{ arsenale_cert_dir }}/client/server-cert.pem" -noout -ext subjectAltName
+  register: _dev_client_cert_sans
+  changed_when: false
+  failed_when: false
+  when: _is_dev | default(false) | bool
+
+- name: Determine missing development client SANs
+  set_fact:
+    _dev_client_missing_sans: >-
+      {{
+        (
+          (
+            []
+            if (arsenale_domain | default('localhost') | trim) in ['', 'localhost']
+            else [
+              (
+                'IP Address:' ~ (arsenale_domain | trim)
+              ) if (arsenale_domain | trim is match('^\\d+\\.\\d+\\.\\d+\\.\\d+$'))
+                else ('DNS:' ~ (arsenale_domain | trim))
+            ]
+          )
+          + ((_dev_client_extra_ipv4s | default([])) | map('regex_replace', '^', 'IP Address:') | list)
+        )
+        | reject('in', _dev_client_cert_sans.stdout | default(''))
+        | list
+      }}
+  when: _is_dev | default(false) | bool
+
+- name: Inspect existing CA certificate extensions
+  command: openssl x509 -in "{{ _ca_cert_path }}" -noout -text
+  register: _ca_cert_text
+  changed_when: false
+  failed_when: false
+  when: _certs_exist
+
+- name: Flag malformed CA certificate for regeneration
+  set_fact:
+    _regenerate_root_ca: "{{ _certs_exist and (_ca_cert_text.rc != 0 or 'CA:TRUE' not in _ca_cert_text.stdout or 'Certificate Sign' not in _ca_cert_text.stdout) }}"
+  when: _certs_exist
+
+- name: Remove malformed root CA artifacts
+  file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ _ca_cert_path }}"
+    - "{{ _ca_key_path }}"
+    - "{{ _ca_csr_path }}"
+  when: _regenerate_root_ca | default(false) | bool
+
+- name: Mark CA as missing after malformed root cleanup
+  set_fact:
+    _certs_exist: false
+  when: _regenerate_root_ca | default(false) | bool
 
 - name: Remove stale dev ssh-gateway certificate missing tunnel SAN
   file:
@@ -41,6 +123,19 @@
     - _dev_ssh_gateway_cert_sans.rc == 0
     - "'DNS:dev-tunnel-ssh-gateway' not in _dev_ssh_gateway_cert_sans.stdout"
 
+- name: Remove stale dev client certificate missing host SANs
+  file:
+    path: "{{ arsenale_cert_dir }}/client/{{ item }}"
+    state: absent
+  loop:
+    - server-cert.pem
+    - server-key.pem
+    - server.csr
+  when:
+    - _is_dev | default(false) | bool
+    - _dev_client_cert_sans.rc == 0
+    - (_dev_client_missing_sans | default([]) | length) > 0
+
 - name: Generate CA private key
   community.crypto.openssl_privatekey:
     path: "{{ _ca_key_path }}"
@@ -50,9 +145,26 @@
   register: ca_key
   when: not _certs_exist
 
+- name: Generate CA CSR
+  community.crypto.openssl_csr:
+    path: "{{ _ca_csr_path }}"
+    privatekey_path: "{{ _ca_key_path }}"
+    common_name: arsenale-root-ca
+    organization_name: Arsenale
+    use_common_name_for_san: false
+    basic_constraints:
+      - CA:TRUE
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+  when: not _certs_exist
+
 - name: Generate CA certificate
   community.crypto.x509_certificate:
     path: "{{ _ca_cert_path }}"
+    csr_path: "{{ _ca_csr_path }}"
     privatekey_path: "{{ _ca_key_path }}"
     provider: selfsigned
     selfsigned_not_after: "+{{ arsenale_ca_validity_days }}d"
@@ -68,12 +180,19 @@
 - name: Define service certificates
   set_fact:
     cert_services:
-      - { name: client, cn: arsenale-client, san: "DNS:arsenale-client,DNS:localhost,IP:127.0.0.1,IP:::1", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/client", eku: ["serverAuth"], key_mode: "{{ _runtime_key_mode }}" }
-      - { name: server, cn: arsenale-server, san: "DNS:arsenale-server,DNS:server,DNS:localhost,IP:127.0.0.1", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/server", eku: ["serverAuth"], key_mode: "{{ _runtime_key_mode }}" }
+      - { name: client, cn: arsenale-client, san: "{{ _client_san_entries | join(',') }}", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/client", eku: ["serverAuth"], key_mode: "{{ _runtime_key_mode }}" }
+      - { name: control-plane-api, cn: arsenale-control-plane-api, san: "DNS:arsenale-control-plane-api,DNS:localhost,IP:127.0.0.1", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/control-plane-api", eku: ["serverAuth"], key_mode: "{{ _runtime_key_mode }}" }
       - { name: postgres, cn: arsenale-postgres, san: "DNS:arsenale-postgres,DNS:postgres,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/postgres", eku: ["serverAuth"], key_mode: "0600" }
       - { name: guacenc, cn: arsenale-guacenc, san: "DNS:arsenale-guacenc,DNS:guacenc,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/guacenc", eku: ["serverAuth"], key_mode: "{{ _runtime_key_mode }}" }
       - { name: guacd, cn: arsenale-guacd, san: "DNS:arsenale-guacd,DNS:guacd,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/guacd", eku: ["serverAuth"], key_mode: "{{ _runtime_key_mode }}" }
       - { name: ssh-gateway, cn: arsenale-ssh-gateway, san: "DNS:arsenale-ssh-gateway,DNS:ssh-gateway,DNS:dev-tunnel-ssh-gateway,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/ssh-gateway", eku: ["serverAuth", "clientAuth"], key_mode: "{{ _runtime_key_mode }}" }
+
+- name: Remove service certificates signed by malformed root CA
+  file:
+    path: "{{ arsenale_cert_dir }}/{{ item.0.name }}/{{ item.1 }}"
+    state: absent
+  loop: "{{ cert_services | product(['server-cert.pem', 'server.csr', 'ca.pem']) | list }}"
+  when: _regenerate_root_ca | default(false) | bool
 
 - name: Check which service certs already exist
   stat:
@@ -270,7 +389,7 @@
     selfsigned_not_after: "+{{ arsenale_ca_validity_days }}d"
     mode: "0644"
 
-- name: Generate SSH gateway client certificate (for server key-management mTLS)
+- name: Generate SSH gateway client certificate (for control-plane API key-management mTLS)
   community.crypto.openssl_privatekey:
     path: "{{ arsenale_cert_dir }}/ssh-gateway/client-key.pem"
     type: ECC
@@ -281,10 +400,10 @@
   community.crypto.openssl_csr:
     path: "{{ arsenale_cert_dir }}/ssh-gateway/client.csr"
     privatekey_path: "{{ arsenale_cert_dir }}/ssh-gateway/client-key.pem"
-    common_name: arsenale-server
+    common_name: arsenale-control-plane-api
     subject_alt_name:
-      - DNS:arsenale-server
-      - URI:spiffe://{{ _spiffe_trust_domain }}/service/server
+      - DNS:arsenale-control-plane-api
+      - URI:spiffe://{{ _spiffe_trust_domain }}/service/control-plane-api
     key_usage:
       - digitalSignature
       - keyEncipherment

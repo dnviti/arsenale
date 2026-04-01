@@ -15,7 +15,7 @@
 #   TUNNEL_LOCAL_PORT   — (optional) local port for tunnel (default: 5432)
 
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
+FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS tunnel-builder
 
 WORKDIR /tunnel-agent
 
@@ -28,7 +28,7 @@ COPY gateways/tunnel-agent/src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
 # ── DB proxy runtime ─────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM docker.io/library/node:22-alpine
 
 LABEL org.opencontainers.image.title="Arsenale DB Proxy"
 LABEL org.opencontainers.image.description="Database protocol gateway with zero-trust tunnel support"

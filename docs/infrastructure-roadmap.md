@@ -1,6 +1,6 @@
 # Infrastructure Roadmap
 
-> **Status:** Planned for a future release. This document describes the architectural evolution from the current monolithic server to a decomposed, horizontally scalable infrastructure.
+> **Status:** Historical roadmap. The runtime decomposition described here has largely been completed by the Go control plane and companion services; remaining references to the former monolithic server are archival.
 
 ## Current Architecture
 

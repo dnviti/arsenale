@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, CircularProgress, Typography } from '@mui/material';
-import axios from 'axios';
 import { getConnection, ConnectionData } from '../api/connections.api';
+import { restoreSessionApi } from '../api/auth.api';
 import { useAuthStore } from '../store/authStore';
 import SshTerminal from '../components/Terminal/SshTerminal';
 import RdpViewer from '../components/RDP/RdpViewer';
@@ -26,25 +26,20 @@ export default function ConnectionViewerPage() {
       setAuthReady(true);
       return;
     }
-    if (isAuthenticated) {
-      const csrfToken = useAuthStore.getState().csrfToken;
-      axios.post('/api/auth/refresh', {}, {
-        withCredentials: true,
-        headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+    restoreSessionApi()
+      .then((res) => {
+        setAccessToken(res.accessToken);
+        if (res.csrfToken) useAuthStore.getState().setCsrfToken(res.csrfToken);
+        setAuthReady(true);
       })
-        .then((res) => {
-          setAccessToken(res.data.accessToken);
-          if (res.data.csrfToken) useAuthStore.getState().setCsrfToken(res.data.csrfToken);
-          setAuthReady(true);
-        })
-        .catch(() => {
+      .catch(() => {
+        if (isAuthenticated) {
           setError('Authentication failed. Please log in again.');
-          setLoading(false);
-        });
-    } else {
-      setError('Not authenticated. Please log in.');
-      setLoading(false);
-    }
+        } else {
+          setError('Not authenticated. Please log in.');
+        }
+        setLoading(false);
+      });
   }, [accessToken, isAuthenticated, setAccessToken]);
   /* eslint-enable react-hooks/set-state-in-effect */
 

@@ -1,4 +1,4 @@
-FROM alpine:3.22
+FROM docker.io/library/alpine:3.22
 
 RUN apk add --no-cache bash openssh shadow netcat-openbsd && \
     adduser -D -s /bin/sh acceptance && \

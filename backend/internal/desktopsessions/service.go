@@ -1,14 +1,20 @@
 package desktopsessions
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
+	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/internal/connections"
 	"github.com/dnviti/arsenale/backend/internal/desktopbroker"
 	"github.com/dnviti/arsenale/backend/internal/sessions"
+	"github.com/dnviti/arsenale/backend/internal/sshsessions"
+	"github.com/dnviti/arsenale/backend/internal/tenantauth"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type GrantIssueRequest struct {
@@ -43,8 +49,24 @@ type OwnedSessionRequest struct {
 }
 
 type Service struct {
-	Secret string
-	Store  *sessions.Store
+	Secret             string
+	Store              *sessions.Store
+	DB                 *pgxpool.Pool
+	TenantAuth         tenantauth.Service
+	Connections        connections.Service
+	ConnectionResolver sshsessions.Service
+	RecordingPath      string
+	DriveBasePath      string
+	RecordingEnabled   bool
+}
+
+type requestError struct {
+	status  int
+	message string
+}
+
+func (e *requestError) Error() string {
+	return e.message
 }
 
 func (s Service) HandleIssue(w http.ResponseWriter, r *http.Request) {
@@ -59,41 +81,18 @@ func (s Service) HandleIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	protocol := strings.ToUpper(strings.TrimSpace(req.Protocol))
-	_, err := s.Store.CloseStaleSessionsForConnection(r.Context(), req.UserID, req.ConnectionID, protocol)
+	result, err := s.IssueGrant(r.Context(), req)
 	if err != nil {
+		var reqErr *requestError
+		if errors.As(err, &reqErr) {
+			app.ErrorJSON(w, reqErr.status, reqErr.message)
+			return
+		}
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 
-	tokenValue, err := desktopbroker.EncryptToken(s.Secret, buildConnectionToken(protocol, req.Token))
-	if err != nil {
-		app.ErrorJSON(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	sessionID, err := s.Store.StartSession(r.Context(), sessions.StartSessionParams{
-		UserID:          req.UserID,
-		ConnectionID:    req.ConnectionID,
-		GatewayID:       req.GatewayID,
-		InstanceID:      req.InstanceID,
-		Protocol:        protocol,
-		GuacTokenHash:   desktopbroker.HashToken(tokenValue),
-		IPAddress:       req.IPAddress,
-		Metadata:        normalizeMetadata(req.SessionMetadata),
-		RoutingDecision: req.RoutingDecision,
-		RecordingID:     req.RecordingID,
-	})
-	if err != nil {
-		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
-
-	app.WriteJSON(w, http.StatusOK, GrantIssueResponse{
-		Token:       tokenValue,
-		SessionID:   sessionID,
-		RecordingID: req.RecordingID,
-	})
+	app.WriteJSON(w, http.StatusOK, result)
 }
 
 func (s Service) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {
@@ -132,6 +131,52 @@ func (s Service) HandleEnd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	app.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s Service) IssueGrant(ctx context.Context, req GrantIssueRequest) (GrantIssueResponse, error) {
+	if err := validateGrantIssueRequest(req); err != nil {
+		return GrantIssueResponse{}, &requestError{status: http.StatusBadRequest, message: err.Error()}
+	}
+
+	protocol := strings.ToUpper(strings.TrimSpace(req.Protocol))
+	if _, err := s.Store.CloseStaleSessionsForConnection(ctx, req.UserID, req.ConnectionID, protocol); err != nil {
+		return GrantIssueResponse{}, err
+	}
+
+	tokenValue, err := desktopbroker.EncryptToken(s.Secret, buildConnectionToken(protocol, req.Token))
+	if err != nil {
+		return GrantIssueResponse{}, &requestError{status: http.StatusBadRequest, message: err.Error()}
+	}
+
+	sessionID, err := s.Store.StartSession(ctx, sessions.StartSessionParams{
+		UserID:          req.UserID,
+		ConnectionID:    req.ConnectionID,
+		GatewayID:       req.GatewayID,
+		InstanceID:      req.InstanceID,
+		Protocol:        protocol,
+		GuacTokenHash:   desktopbroker.HashToken(tokenValue),
+		IPAddress:       req.IPAddress,
+		Metadata:        normalizeMetadata(req.SessionMetadata),
+		RoutingDecision: req.RoutingDecision,
+		RecordingID:     req.RecordingID,
+	})
+	if err != nil {
+		return GrantIssueResponse{}, err
+	}
+
+	return GrantIssueResponse{
+		Token:       tokenValue,
+		SessionID:   sessionID,
+		RecordingID: req.RecordingID,
+	}, nil
+}
+
+func (s Service) HandleCreateRDP(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+	s.handleCreateDesktopSession(w, r, claims, "RDP")
+}
+
+func (s Service) HandleCreateVNC(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+	s.handleCreateDesktopSession(w, r, claims, "VNC")
 }
 
 func (s Service) writeLifecycleError(w http.ResponseWriter, err error, heartbeat bool) {

@@ -65,7 +65,7 @@ ORDER BY name ASC
 	}
 	defer rows.Close()
 
-	var connections []contracts.OrchestratorConnection
+	connections := make([]contracts.OrchestratorConnection, 0)
 	for rows.Next() {
 		connection, err := scanConnection(rows)
 		if err != nil {

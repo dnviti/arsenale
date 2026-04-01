@@ -7,7 +7,6 @@ source-files:
   - README.md
   - CLAUDE.md
   - package.json
-  - server/package.json
   - client/package.json
 ---
 
@@ -39,22 +38,22 @@ git clone https://github.com/dnviti/arsenale.git
 cd arsenale
 npm install
 make setup     # First time: vault + certs
-npm run dev    # Start everything
+npm run dev    # Start the Go dev stack + local Vite
 ```
 
-Open `https://localhost:3000` and complete the Setup Wizard.
+Open `https://localhost:3000` for the containerized app, or `https://localhost:3005` when using the local Vite dev server.
 
 ## 🧩 Technology Stack
 
 | Layer | Technologies |
 |-------|-------------|
 | Frontend | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
-| Backend | Express 5, TypeScript, Prisma 7, Socket.IO, Passport |
+| Backend | Go split services (`backend/`) |
 | Database | PostgreSQL 16 (SSL/TLS) |
 | Remote Access | SSH (ssh2), RDP/VNC (guacd), Database Proxy |
 | Security | JWT + refresh tokens, Argon2, AES-256-GCM, WebAuthn, TOTP, mTLS |
 | Auth Providers | Google, Microsoft, GitHub, OIDC, SAML, LDAP/AD |
-| Infrastructure | Ansible, Podman/Docker, GoCacheKV (Go), Nginx |
+| Infrastructure | Ansible, Podman/Docker, Redis, Nginx |
 | CI/CD | GitHub Actions, CodeQL, Trivy |
 | Browser Extension | Chrome Manifest V3, React |
 
@@ -63,13 +62,14 @@ Open `https://localhost:3000` and complete the Setup Wizard.
 ```mermaid
 flowchart LR
     Browser["Browser"] --> Nginx["Nginx\n:8080"]
-    Nginx --> Server["Express\n:3001"]
-    Nginx --> GuacWS["guacamole-lite\n:3002"]
-    Server --> DB["PostgreSQL\n:5432"]
-    Server --> Cache["GoCacheKV\n:6380"]
-    Server --> Guacd["guacd\n:4822"]
-    Server --> SSHGw["SSH Gateway\n:2222"]
-    GuacWS --> Guacd
+    Nginx --> API["control-plane-api-go\n:8080"]
+    Nginx --> Desktop["desktop-broker-go\n:8091"]
+    Nginx --> Terminal["terminal-broker-go\n:8090"]
+    API --> DB["PostgreSQL\n:5432"]
+    API --> Cache["Redis\n:6379"]
+    API --> Guacd["guacd\n:4822"]
+    API --> SSHGw["SSH Gateway\n:2222"]
+    Desktop --> Guacd
     Guacd --> Targets["RDP/VNC Targets"]
     SSHGw --> SSHTargets["SSH Targets"]
 ```
@@ -89,7 +89,7 @@ flowchart LR
 
 ```
 arsenale/
-├── server/                    # Express API (TypeScript)
+├── backend/                   # Go split services (API, brokers, orchestration, AI)
 ├── client/                    # React SPA (Vite + MUI)
 ├── gateways/
 │   ├── tunnel-agent/          # Zero-trust tunnel client
@@ -100,7 +100,8 @@ arsenale/
 ├── extra-clients/
 │   └── browser-extensions/    # Chrome extension
 ├── infrastructure/
-│   └── gocache/               # In-memory cache sidecar
+│   ├── dev/                   # Dev support containers and fixtures
+│   └── postgres/              # Database bootstrap assets
 └── deployment/
     └── ansible/               # Deployment automation
 ```

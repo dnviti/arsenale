@@ -3,6 +3,8 @@
 > Auto-generated on 2026-03-15 by /docs create security.
 > Source of truth is the codebase. Run /docs update security after code changes.
 
+> Runtime note: the active auth runtime is in `backend/internal/authservice`, `backend/internal/mfaapi`, and related Go packages. Older `server/src` references are archival.
+
 ## Vault Session Management
 
 ### Session Lifecycle

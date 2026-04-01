@@ -54,9 +54,6 @@ func (s Service) VerifyTOTP(ctx context.Context, tempToken, code, ipAddress, use
 		}
 		return issuedLogin{}, err
 	}
-	if user.ActiveTenant != nil && user.ActiveTenant.IPAllowlistEnabled {
-		return issuedLogin{}, ErrLegacyLogin
-	}
 
 	mfaUser, err := s.loadMFAUser(ctx, user.ID)
 	if err != nil {
@@ -74,11 +71,16 @@ func (s Service) VerifyTOTP(ctx context.Context, tempToken, code, ipAddress, use
 		return issuedLogin{}, &requestError{status: http.StatusUnauthorized, message: "Invalid TOTP code"}
 	}
 
+	allowlistDecision := evaluateIPAllowlist(user.ActiveTenant, ipAddress)
+	if allowlistDecision.Blocked {
+		return issuedLogin{}, s.rejectBlockedIPAllowlist(ctx, user.ID, ipAddress)
+	}
+
 	result, err := s.issueTokens(ctx, user, ipAddress, userAgent)
 	if err != nil {
 		return issuedLogin{}, err
 	}
-	_ = s.insertStandaloneAuditLog(ctx, &user.ID, "LOGIN_TOTP", map[string]any{}, ipAddress)
+	_ = s.insertStandaloneAuditLogWithFlags(ctx, &user.ID, "LOGIN_TOTP", map[string]any{}, ipAddress, allowlistDecision.Flags())
 	return result, nil
 }
 
@@ -165,7 +167,7 @@ func (s Service) resolveTOTPSecret(ctx context.Context, user mfaUser) (string, e
 		return "", err
 	}
 	if len(masterKey) == 0 {
-		return "", ErrLegacyLogin
+		return "", &requestError{status: http.StatusUnauthorized, message: "2FA verification failed"}
 	}
 	defer zeroBytes(masterKey)
 

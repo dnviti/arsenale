@@ -1,6 +1,6 @@
 ---
 - name: Backup Arsenale database
-  hosts: arsenale-server
+  hosts: arsenale-control-plane
   become: true
   become_user: "{{ arsenale_user }}"
 

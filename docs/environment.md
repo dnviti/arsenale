@@ -5,11 +5,12 @@
 
 ## Overview
 
-All environment variables are loaded from a single `.env` file at the **monorepo root**. The server's `server/src/config.ts` uses `dotenv` to load from `../../.env` relative to the compiled output. Never create a separate `server/.env`.
+All environment variables are loaded from a single `.env` file at the monorepo root. The active Go services and supporting JS tooling read from that shared root configuration. Never create a separate service-local `.env`.
 
 In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 
 <!-- manual-start -->
+> Runtime note: the active public edge is the Go control plane behind the client on `https://localhost:3000`, with direct local development access on `http://localhost:18080`. Legacy-only variables are still preserved here when historically relevant, but new runtime work should target the Go services.
 <!-- manual-end -->
 
 ## Variable Reference
@@ -19,10 +20,10 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
 | `DATABASE_URL` | string | — | Yes | Both | PostgreSQL connection string |
-| `PORT` | number | `3001` | No | Both | Express server port |
+| `PORT` | number | `8080` | No | Both | Go control-plane API port |
 | `GUACAMOLE_WS_PORT` | number | `3002` | No | Both | Guacamole WebSocket port |
 | `NODE_ENV` | string | `development` | No | Both | Environment mode |
-| `CLIENT_URL` | string | `http://localhost:3000` | No | Both | Client URL (CORS, OAuth redirects, emails) |
+| `CLIENT_URL` | string | `https://localhost:3000` | No | Both | Client URL (CORS, OAuth redirects, emails) |
 | `CLI_ENABLED` | boolean | `false` | No | Both | Enable the `arsenale` CLI inside the container |
 
 ### Authentication
@@ -53,7 +54,7 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
-| `TRUST_PROXY` | boolean/number/string | `false` | No | Prod | Express `trust proxy` setting. `false` = disabled, `true` = trust all, number = hop count, string = trusted subnets |
+| `TRUST_PROXY` | boolean/number/string | `false` | No | Prod | Public-edge proxy trust setting. `false` = disabled, `true` = trust all, number = hop count, string = trusted subnets |
 | `ALLOW_LOCAL_NETWORK` | boolean | `false` | No | Both | Allow connections to private/local network addresses |
 
 ### Logging
@@ -125,13 +126,13 @@ Leave `CLIENT_ID` empty to disable a provider.
 |----------|---------|-------------|
 | `GOOGLE_CLIENT_ID` | — | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
-| `GOOGLE_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/google/callback` | Google OAuth callback URL |
+| `GOOGLE_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/google/callback` | Google OAuth callback URL |
 | `MICROSOFT_CLIENT_ID` | — | Microsoft OAuth client ID |
 | `MICROSOFT_CLIENT_SECRET` | — | Microsoft OAuth client secret |
-| `MICROSOFT_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/microsoft/callback` | Microsoft OAuth callback URL |
+| `MICROSOFT_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/microsoft/callback` | Microsoft OAuth callback URL |
 | `GITHUB_CLIENT_ID` | — | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth client secret |
-| `GITHUB_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/github/callback` | GitHub OAuth callback URL |
+| `GITHUB_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/github/callback` | GitHub OAuth callback URL |
 
 ### Generic OIDC
 
@@ -141,7 +142,7 @@ Leave `CLIENT_ID` empty to disable a provider.
 | `OIDC_ISSUER_URL` | — | OIDC issuer URL (discovery endpoint) |
 | `OIDC_CLIENT_ID` | — | OIDC client ID (leave empty to disable) |
 | `OIDC_CLIENT_SECRET` | — | OIDC client secret |
-| `OIDC_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/oidc/callback` | OIDC callback URL |
+| `OIDC_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/oidc/callback` | OIDC callback URL |
 | `OIDC_SCOPES` | `openid profile email` | OIDC scopes to request |
 
 ### SAML 2.0
@@ -151,7 +152,7 @@ Leave `CLIENT_ID` empty to disable a provider.
 | `SAML_PROVIDER_NAME` | `SAML SSO` | Display name |
 | `SAML_ENTRY_POINT` | — | IdP SSO URL (leave empty to disable) |
 | `SAML_ISSUER` | `arsenale` | SP entity ID |
-| `SAML_CALLBACK_URL` | `http://localhost:3001/api/auth/saml/callback` | SAML ACS URL |
+| `SAML_CALLBACK_URL` | `http://localhost:3000/api/auth/saml/callback` | SAML ACS URL |
 | `SAML_CERT` | — | IdP signing certificate (PEM, no headers) |
 | `SAML_METADATA_URL` | — | IdP metadata URL (for auto-config) |
 | `SAML_WANT_AUTHN_RESPONSE_SIGNED` | `true` | Require signed SAML responses |

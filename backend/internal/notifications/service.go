@@ -20,18 +20,18 @@ type Service struct {
 }
 
 type notificationEntry struct {
-	ID        string     `json:"id"`
-	Type      string     `json:"type"`
-	Message   string     `json:"message"`
-	Read      bool       `json:"read"`
-	RelatedID *string    `json:"relatedId"`
-	CreatedAt time.Time  `json:"createdAt"`
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Message   string    `json:"message"`
+	Read      bool      `json:"read"`
+	RelatedID *string   `json:"relatedId"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type notificationsResponse struct {
 	Data        []notificationEntry `json:"data"`
-	Total       int                `json:"total"`
-	UnreadCount int                `json:"unreadCount"`
+	Total       int                 `json:"total"`
+	UnreadCount int                 `json:"unreadCount"`
 }
 
 type notificationPreference struct {
@@ -79,9 +79,9 @@ var validTypeSet = func() map[string]struct{} {
 }()
 
 var emailDefaultTrue = map[string]struct{}{
-	"IMPOSSIBLE_TRAVEL_DETECTED":        {},
-	"LATERAL_MOVEMENT_ALERT":            {},
-	"SECRET_EXPIRING":                   {},
+	"IMPOSSIBLE_TRAVEL_DETECTED":          {},
+	"LATERAL_MOVEMENT_ALERT":              {},
+	"SECRET_EXPIRING":                     {},
 	"SESSION_TERMINATED_POLICY_VIOLATION": {},
 }
 

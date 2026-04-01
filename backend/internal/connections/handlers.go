@@ -63,9 +63,6 @@ func (s Service) HandleCreate(w http.ResponseWriter, r *http.Request, claims aut
 
 	created, err := s.CreateConnection(r.Context(), claims, payload, requestIP(r))
 	if err != nil {
-		if errors.Is(err, ErrLegacyConnectionFlow) {
-			return err
-		}
 		var reqErr *requestError
 		if errors.As(err, &reqErr) {
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
@@ -106,9 +103,6 @@ func (s Service) HandleUpdate(w http.ResponseWriter, r *http.Request, claims aut
 
 	updated, err := s.UpdateConnection(r.Context(), claims, r.PathValue("id"), payload, requestIP(r))
 	if err != nil {
-		if errors.Is(err, ErrLegacyConnectionFlow) {
-			return err
-		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			app.ErrorJSON(w, http.StatusNotFound, "Connection not found")
 			return nil

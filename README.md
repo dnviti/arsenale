@@ -3,15 +3,13 @@
 </div>
 
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
-[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/verify-server.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/verify-server.yml)
-[![Verify Client](https://github.com/dnviti/arsenale/actions/workflows/verify-client.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/verify-client.yml)
 [![Version](https://img.shields.io/badge/version-1.7.1-green.svg)](CHANGELOG.md)
 
 A web-based application for managing and accessing remote SSH and RDP connections from your browser. Organize connections in folders, share them with team members, and keep credentials encrypted at rest with a personal vault.
 
 ## Features
 
-- **SSH Terminal** — Interactive terminal sessions powered by XTerm.js and Socket.IO, with integrated SFTP file browser
+- **SSH Terminal** — Interactive terminal sessions powered by XTerm.js and Go WebSocket brokers, with integrated SFTP file browser
 - **RDP Viewer** — Remote desktop connections via Apache Guacamole with clipboard sync and drive redirection
 - **VNC Viewer** — VNC sessions via the Guacamole protocol
 - **Encrypted Vault** — All credentials encrypted at rest with AES-256-GCM; master key derived from your password via Argon2id
@@ -37,7 +35,7 @@ A web-based application for managing and accessing remote SSH and RDP connection
 
 | Layer | Technologies |
 |-------|-------------|
-| **Server** | Express/TypeScript today; Go service refactor foundation under `backend/` |
+| **Backend** | Go split services under `backend/` (control plane, brokers, orchestration, AI, runtime) |
 | **Client** | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
 | **Database** | PostgreSQL 16 |
 | **Infrastructure** | Docker / Podman / Kubernetes, Nginx, guacd, ssh-gateway |
@@ -45,8 +43,8 @@ A web-based application for managing and accessing remote SSH and RDP connection
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 22+
-- [Go](https://go.dev/) 1.25+
-- [Docker](https://www.docker.com/) (required for RDP support via `guacd`)
+- [Go](https://go.dev/) 1.25+ or a container runtime for the bundled Go fallback
+- [Docker](https://www.docker.com/) or [Podman](https://podman.io/) (required for the local stack)
 - npm 9+
 
 ## Getting Started
@@ -75,15 +73,14 @@ Edit `.env` as needed — see [Environment Variables](#environment-variables) be
 ### 4. Run in development
 
 ```bash
-# Full setup: starts guacd, generates Prisma client, syncs DB schema, then runs dev servers
-npm run predev && npm run dev
+# Full setup: starts the local Go stack via Ansible, then runs Vite against it
+npm run dev
 ```
 
 This starts:
-- PostgreSQL 16 on port 5432 (Docker)
-- guacd container on port 4822 (Docker)
-- Express API server on `http://localhost:3001`
-- Vite dev server on `http://localhost:3000` (proxies API and WebSocket requests)
+- The full local Go stack via `make dev` (PostgreSQL, Redis, guacd, Go control plane, brokers, gateways)
+- The containerized HTTPS app on `https://localhost:3000`
+- A local Vite dev server on `https://localhost:3005` that proxies to the Go services on `:18080`, `:18090`, and `:18091`
 
 ## Environment Variables
 
@@ -99,11 +96,12 @@ Key variables — see [docs/environment.md](docs/environment.md) for the full re
 | `GUACD_PORT` | `4822` | Guacamole daemon port |
 | `GUACAMOLE_SECRET` | `dev-guac-secret` | Guacamole token encryption key (**must be strong in production**) |
 | `SERVER_ENCRYPTION_KEY` | Auto-generated | 32-byte hex key for server-level encryption (**required in production**) |
-| `PORT` | `3001` | Express server port |
-| `GUACAMOLE_WS_PORT` | `3002` | Guacamole WebSocket port |
 | `NODE_ENV` | `development` | Environment mode |
 | `VAULT_TTL_MINUTES` | `30` | Vault session auto-lock timeout (minutes) |
 | `CLIENT_URL` | `http://localhost:3000` | Client URL (CORS, OAuth redirects, emails) |
+| `VITE_API_TARGET` | `http://localhost:18080` | Local Vite proxy target for `/api` |
+| `VITE_GUAC_TARGET` | `http://localhost:18091` | Local Vite proxy target for `/guacamole` |
+| `VITE_TERMINAL_TARGET` | `http://localhost:18090` | Local Vite proxy target for `/ws/terminal` |
 | `RECORDING_ENABLED` | `false` | Enable session recording |
 
 ## Project Structure
@@ -114,20 +112,6 @@ arsenale/
 │   ├── cmd/                      # Service entrypoints (API, controller, brokers, agent services)
 │   ├── internal/                 # Internal Go packages
 │   └── pkg/                      # Shared Go contracts and workload spec
-│
-├── server/                        # Current Express backend (compatibility layer during migration)
-│   ├── src/
-│   │   ├── index.ts              # Entry point (HTTP + Socket.IO + Guacamole WS)
-│   │   ├── app.ts                # Express app setup
-│   │   ├── routes/               # REST API route definitions
-│   │   ├── controllers/          # Request handling and validation
-│   │   ├── services/             # Business logic and database operations
-│   │   ├── socket/               # Socket.IO handlers (SSH, notifications, gateway monitor)
-│   │   ├── middleware/           # Auth, CSRF, rate limiting, error handling
-│   │   ├── orchestrator/         # Container orchestration (Docker/Podman/Kubernetes)
-│   │   └── types/                # Shared TypeScript types
-│   └── prisma/
-│       └── schema.prisma         # Database schema (32 models)
 │
 ├── client/                        # React frontend
 │   ├── src/
@@ -152,20 +136,18 @@ arsenale/
 
 ```bash
 # Development
-npm run dev                 # Run server + client concurrently
-npm run dev:server          # Server only (Express on :3001)
-npm run dev:client          # Client only (Vite on :3000)
+npm run dev                 # Start the Go dev stack and local Vite on :3005
+npm run dev:client          # Client only (Vite on :3005)
 
 # Build
-npm run build               # Build the Go backend plus the current server/client
+npm run build               # Build the active Go/backend + client workspaces
 npm run backend:build       # Build the Go backend module
-npm run build -w server     # Server only
 npm run build -w client     # Client only
 
 # Database
-npm run db:generate         # Generate Prisma client types
-npm run db:push             # Sync schema to DB (no migration)
-npm run db:migrate          # Run Prisma migrations
+npm run db:bootstrap        # Apply backend/schema/bootstrap.sql when DB is empty
+npm run db:push             # Alias of db:bootstrap
+npm run db:migrate          # Alias of db:bootstrap
 
 # Infrastructure (via Makefile + Ansible)
 make setup                  # First-time setup (Ansible collections, vault)
@@ -193,7 +175,9 @@ This deploys the full container stack via Ansible:
 - **PostgreSQL 16** — Production database
 - **guacd** — Apache Guacamole daemon for RDP/VNC
 - **guacenc** — Recording-to-video conversion sidecar
-- **Server** — Express API + Guacamole WebSocket (runs migrations on startup)
+- **control-plane-api-go** — Public API edge
+- **desktop-broker-go / terminal-broker-go / tunnel-broker-go** — Session and transport brokers
+- **query-runner-go / model-gateway-go / control-plane-controller-go** — Query execution, AI, and orchestration services
 - **Client** — Nginx serving the React app with reverse proxy to the API
 - **Redis** — Distributed coordination backend
 - **ssh-gateway** — Optional SSH gateway container (port 2222)
@@ -202,15 +186,14 @@ See [deployment/ansible/README.md](deployment/ansible/README.md) for detailed co
 
 ## Architecture
 
-### Server
+### Backend
 
-Layered architecture during migration: **Routes → Controllers → Services → Prisma ORM / Go services**
+The public edge is now Go-first: control-plane, desktop, terminal, tunnel, query, AI, and orchestration services run from `backend/`.
 
-- 238+ REST endpoints across 29 route groups
-- Browser SSH and desktop runtime are being migrated to direct Go WebSocket brokers
-- Guacamole WebSocket server (port 3002) for RDP/VNC tunneling
-- Background jobs: SSH key rotation, gateway health checks, session cleanup, secret expiry notifications
-- Container orchestration: Docker, Podman, and Kubernetes providers
+- The public `/api` surface is handled by `control-plane-api-go`
+- Browser SSH and desktop runtime terminate in direct Go brokers
+- Database sessions, orchestration, gateway management, and AI flows are verified against the Go services
+- Legacy `server/` code is no longer part of the default runtime or top-level build path
 
 ### Client
 

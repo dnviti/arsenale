@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -66,9 +67,6 @@ func (s Service) ResendVerification(ctx context.Context, email string) error {
 	if s.DB == nil {
 		return fmt.Errorf("postgres is not configured")
 	}
-	if emailFlowConfigured() {
-		return ErrLegacyEmailFlow
-	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
 	if _, err := mail.ParseAddress(email); err != nil {
@@ -76,8 +74,8 @@ func (s Service) ResendVerification(ctx context.Context, email string) error {
 	}
 
 	var (
-		userID          string
-		emailVerified   bool
+		userID            string
+		emailVerified     bool
 		emailVerifyExpiry *time.Time
 	)
 	err := s.DB.QueryRow(ctx, `
@@ -119,7 +117,9 @@ WHERE id = $1
 		return fmt.Errorf("update email verification token: %w", err)
 	}
 
-	s.logVerificationEmail(email, token)
+	if err := s.sendVerificationEmail(ctx, email, token); err != nil {
+		slog.Warn("failed to resend verification email", "userId", userID, "email", email, "error", err)
+	}
 	return nil
 }
 

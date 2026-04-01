@@ -249,6 +249,37 @@ func (s Service) insertStandaloneAuditLog(ctx context.Context, userID *string, a
 	return nil
 }
 
+func (s Service) insertStandaloneAuditLogWithFlags(ctx context.Context, userID *string, action string, details map[string]any, ipAddress string, flags []string) error {
+	if len(flags) == 0 {
+		return s.insertStandaloneAuditLog(ctx, userID, action, details, ipAddress)
+	}
+	if s.DB == nil {
+		return nil
+	}
+
+	rawDetails, err := json.Marshal(details)
+	if err != nil {
+		return fmt.Errorf("marshal audit details: %w", err)
+	}
+	if _, err := s.DB.Exec(
+		ctx,
+		`INSERT INTO "AuditLog" (
+			id, "userId", action, details, "ipAddress", flags
+		) VALUES (
+			$1, $2, $3::"AuditAction", $4::jsonb, NULLIF($5, ''), $6::text[]
+		)`,
+		uuid.NewString(),
+		userID,
+		action,
+		string(rawDetails),
+		ipAddress,
+		flags,
+	); err != nil {
+		return fmt.Errorf("insert audit log: %w", err)
+	}
+	return nil
+}
+
 func insertAuditLog(ctx context.Context, tx pgx.Tx, userID *string, action string, details map[string]any, ipAddress string) error {
 	rawDetails, err := json.Marshal(details)
 	if err != nil {

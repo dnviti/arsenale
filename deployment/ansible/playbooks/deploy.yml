@@ -12,7 +12,7 @@
 # =============================================================================
 
 - name: "Deploy Arsenale ({{ arsenale_env | default('production') }})"
-  hosts: "{{ 'localhost' if (arsenale_env | default('production')) == 'development' else 'arsenale-server' }}"
+  hosts: "{{ 'localhost' if (arsenale_env | default('production')) == 'development' else 'arsenale-control-plane' }}"
   connection: "{{ 'local' if (arsenale_env | default('production')) == 'development' else 'ssh' }}"
   become: "{{ (arsenale_env | default('production')) != 'development' }}"
   become_user: "{{ arsenale_user | default('arsenale') }}"
@@ -31,7 +31,8 @@
     arsenale_firewall_enabled: "{{ false if _is_dev | bool else true }}"
     arsenale_trust_proxy_effective: "{{ 1 if _is_dev | bool else (arsenale_trust_proxy | default(false)) }}"
     _cookie_secure: "{{ true if _is_dev | bool else (arsenale_cookie_secure | default(true)) }}"
-    _client_bind_host: "{{ '127.0.0.1' if _is_dev | bool else (arsenale_client_bind_host | default('0.0.0.0')) }}"
+    _client_bind_host: "{{ arsenale_client_bind_host | default('0.0.0.0') }}"
+    _public_url: "{{ arsenale_public_url | default('https://' ~ arsenale_domain ~ ('' if (arsenale_client_port | int) == 443 else ':' ~ (arsenale_client_port | string))) }}"
     _build: "{{ true if _is_dev | bool else (arsenale_build_images | default(true)) }}"
     arsenale_cert_dir: "{{ (_home + '/dev-certs') if _is_dev | bool else (_home + '/certs') }}"
 
@@ -84,23 +85,12 @@
       when: _state == 'present' and not (_is_dev | bool)
 
   post_tasks:
-    - name: Generate Prisma client (dev)
-      command: npm run db:generate
-      args:
-        chdir: "{{ _home }}"
-      environment:
-        DATABASE_URL: "{{ vault_database_url }}"
-      when: _is_dev | bool and _state == 'present'
-      changed_when: true
-
     - name: Bootstrap development gateways and tunnel fixtures
       command: >
         {{ container_runtime | default('podman') }} exec
         --user 0
-        -e CLI_ENABLED=true
-        -e DEV_TUNNEL_CERT_DIR=/certs
-        arsenale-server
-        arsenale dev bootstrap
+        arsenale-control-plane-api-go
+        /usr/local/bin/service dev-bootstrap
       when: _is_dev | bool and _state == 'present'
       changed_when: true
       register: dev_bootstrap

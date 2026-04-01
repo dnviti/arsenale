@@ -10,8 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var ErrLegacySessionAdminFlow = errors.New("legacy session admin flow required")
-
 type ActiveSessionFilter struct {
 	TenantID  string
 	Protocol  string
@@ -250,10 +248,6 @@ func (s *Store) TerminateTenantSession(ctx context.Context, sessionID, tenantID,
 	record, err := scanSessionRecord(row)
 	if err != nil {
 		return nil, err
-	}
-
-	if record.Protocol == "DB_TUNNEL" {
-		return nil, ErrLegacySessionAdminFlow
 	}
 
 	if record.Status != "CLOSED" {

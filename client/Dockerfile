@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Install dependencies (with native build tools for monorepo deps)
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS deps
+FROM docker.io/library/node:22-alpine AS deps
 
 RUN apk add --no-cache python3 make g++
 
@@ -9,7 +9,6 @@ WORKDIR /app
 
 COPY .npmrc* ./
 COPY package.json package-lock.json ./
-COPY server/package.json server/
 COPY client/package.json client/
 
 RUN npm ci
@@ -17,7 +16,7 @@ RUN npm ci
 # ---------------------------------------------------------------------------
 # Stage: Dev target (deps only — source bind-mounted at runtime)
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS dev
+FROM docker.io/library/node:22-alpine AS dev
 
 WORKDIR /app
 
@@ -29,7 +28,7 @@ USER node
 # ---------------------------------------------------------------------------
 # Stage 2: Build static assets
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS build
+FROM docker.io/library/node:22-alpine AS build
 
 WORKDIR /app
 
@@ -43,7 +42,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # Stage 3: Serve with nginx (rootless)
 # ---------------------------------------------------------------------------
-FROM nginx:1.28-alpine
+FROM docker.io/library/nginx:1.28-alpine
 
 RUN apk add --no-cache curl
 RUN rm -f /etc/nginx/conf.d/default.conf

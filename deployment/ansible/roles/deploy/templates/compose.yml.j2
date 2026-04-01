@@ -58,7 +58,13 @@ services:
   # Apache Guacamole Daemon (guacd) — RDP/VNC protocol handler
   # ---------------------------------------------------------------------------
   guacd:
+{% if _build | bool %}
+    build:
+      context: {{ (_home if (_is_dev | default(false) | bool) else (_home + '/arsenale')) }}
+      dockerfile: gateways/guacd/Dockerfile
+{% else %}
     image: {{ arsenale_guacd_image }}
+{% endif %}
     container_name: arsenale-guacd
     read_only: true
     cpus: "{{ arsenale_resource_limits.guacd.cpus }}"
@@ -122,7 +128,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --show-error --fail --cacert /certs/ca.pem https://localhost:3003/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://127.0.0.1:3003/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -137,6 +143,10 @@ services:
   redis:
     image: quay.io/sclorg/redis-7-c9s
     container_name: arsenale-redis
+    command:
+      - run-redis
+      - --appendonly
+      - "yes"
     cpus: "0.5"
     mem_limit: "256m"
     pids_limit: 256
@@ -147,6 +157,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    volumes:
+      - arsenale_redis:/var/lib/redis/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
       interval: 10s
@@ -156,9 +168,233 @@ services:
     networks:
       - net-cache
 
+{% if not (_is_dev | default(false) | bool) %}
+  # ---------------------------------------------------------------------------
+  # Go backend foundation services required in production
+  # ---------------------------------------------------------------------------
+  control-plane-api-go:
+    build:
+      context: {{ _home }}/arsenale
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: control-plane-api
+    container_name: arsenale-control-plane-api-go
+    entrypoint:
+      - /bin/sh
+      - -lc
+      - mkdir -p /guacd-drive /recordings && chmod 1777 /guacd-drive /recordings && exec /usr/local/bin/service
+    user: "0:0"
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+      - guacamole_secret
+      - guacenc_auth_token
+      - jwt_secret
+      - server_encryption_key
+    environment:
+      PORT: "8080"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      GO_QUERY_RUNNER_ENABLED: "true"
+      HIBP_FAIL_OPEN: "true"
+      DRIVE_BASE_PATH: "/guacd-drive"
+      FILE_UPLOAD_MAX_SIZE: "10485760"
+      USER_DRIVE_QUOTA: "104857600"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      REDIS_URL: "redis://redis:6379/0"
+      RECORDING_PATH: "/recordings"
+      GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
+      GUACENC_AUTH_TOKEN_FILE: /run/secrets/guacenc_auth_token
+      GUACENC_SERVICE_URL: "https://guacenc:3003"
+      GUACENC_USE_TLS: "true"
+      GUACENC_TLS_CA: /certs/guacenc/ca.pem
+      GUACENC_TIMEOUT_MS: "120000"
+      GUACENC_RECORDING_PATH: "/recordings"
+      ASCIICAST_CONVERTER_URL: "https://guacenc:3003"
+      JWT_SECRET_FILE: /run/secrets/jwt_secret
+      SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
+    ports:
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:18080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - arsenale_drive:/guacd-drive
+      - arsenale_recordings:/recordings
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+      - {{ arsenale_cert_dir }}/guacenc:/certs/guacenc:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+      - net-cache
+      - net-guacd
+      - net-gateway
+
+  tunnel-broker-go:
+    build:
+      context: {{ _home }}/arsenale/
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: tunnel-broker
+    container_name: arsenale-tunnel-broker-go
+    read_only: true
+    cpus: "0.5"
+    mem_limit: "256m"
+    pids_limit: 128
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+      - server_encryption_key
+    environment:
+      PORT: "8092"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
+      SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
+      TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
+      TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker-go"
+    ports:
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:18092:8092"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8092/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+      - net-gateway
+
+  query-runner-go:
+    build:
+      context: {{ _home }}/arsenale
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: query-runner
+    container_name: arsenale-query-runner-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+    environment:
+      PORT: "8093"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+    ports:
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:18093:8093"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8093/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-db
+
+  desktop-broker-go:
+    build:
+      context: {{ _home }}/arsenale
+      dockerfile: backend/Dockerfile
+      args:
+        SERVICE: desktop-broker
+    container_name: arsenale-desktop-broker-go
+    read_only: true
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "{{ arsenale_resource_limits.go_service.memory }}"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    secrets:
+      - database_url
+      - guacamole_secret
+    environment:
+      PORT: "8091"
+      ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
+      GUACD_HOST: guacd
+      GUACD_PORT: "4822"
+      GUACD_SSL: "true"
+      GUACD_CA_CERT: /certs/ca/ca.pem
+    ports:
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:18091:8091"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      guacd:
+        condition: service_healthy
+    volumes:
+      - arsenale_recordings:/recordings
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+      - {{ arsenale_cert_dir }}:/certs/ca:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8091/healthz >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: always
+    networks:
+      - net-edge
+      - net-guacd
+      - net-db
+{% endif %}
+
 {% if _is_dev | default(false) | bool %}
   # ---------------------------------------------------------------------------
-  # Go backend foundation services — staged replacement for the Node monolith
+  # Go backend foundation services — active public runtime
   # ---------------------------------------------------------------------------
   control-plane-api-go:
     build:
@@ -191,7 +427,26 @@ services:
     environment:
       PORT: "8080"
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      GO_QUERY_RUNNER_ENABLED: "true"
       HIBP_FAIL_OPEN: "true"
+      CLIENT_URL: "{{ _public_url }}"
+      WEBAUTHN_RP_ID: "{{ arsenale_domain }}"
+      WEBAUTHN_RP_ORIGIN: "{{ _public_url }}"
+      ORCHESTRATOR_TYPE: "podman"
+      PODMAN_SOCKET_PATH: "/run/podman/podman.sock"
+      ORCHESTRATOR_EDGE_NETWORK: "arsenale-net-edge"
+      ORCHESTRATOR_DB_NETWORK: "arsenale-net-db"
+      ORCHESTRATOR_GUACD_NETWORK: "arsenale-net-guacd"
+      ORCHESTRATOR_GATEWAY_NETWORK: "arsenale-net-gateway"
+      ORCHESTRATOR_SSH_GATEWAY_IMAGE: "localhost/arsenale_ssh-gateway:latest"
+      ORCHESTRATOR_GUACD_IMAGE: "localhost/arsenale_guacd:latest"
+      ORCHESTRATOR_DB_PROXY_IMAGE: "localhost/arsenale_db-proxy:latest"
+      SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
+      DEV_BOOTSTRAP_ADMIN_EMAIL: "{{ arsenale_dev_bootstrap_admin_email }}"
+      DEV_BOOTSTRAP_ADMIN_USERNAME: "{{ arsenale_dev_bootstrap_admin_username }}"
+      DEV_BOOTSTRAP_ADMIN_PASSWORD: "{{ arsenale_dev_bootstrap_admin_password }}"
+      DEV_BOOTSTRAP_TENANT_NAME: "{{ arsenale_dev_bootstrap_tenant_name }}"
+      DEV_TUNNEL_CERT_DIR: "{{ '/certs' if (_is_dev | default(false) | bool) else '' }}"
       DRIVE_BASE_PATH: "/guacd-drive"
       FILE_UPLOAD_MAX_SIZE: "10485760"
       USER_DRIVE_QUOTA: "104857600"
@@ -209,8 +464,12 @@ services:
       ASCIICAST_CONVERTER_URL: "https://guacenc:3003"
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
-      LEGACY_NODE_API_URL: "https://server:3001"
-      LEGACY_NODE_API_CA_CERT: /certs/ca.pem
+      GATEWAY_GRPC_TLS_CA: /certs/ca.pem
+      GATEWAY_GRPC_CLIENT_CA: /certs/ssh-gateway/client-ca.pem
+      GATEWAY_GRPC_TLS_CERT: /certs/ssh-gateway/client-cert.pem
+      GATEWAY_GRPC_TLS_KEY: /certs/ssh-gateway/client-key.pem
+      GATEWAY_GRPC_SERVER_CERT: /certs/ssh-gateway/server-cert.pem
+      GATEWAY_GRPC_SERVER_KEY: /certs/ssh-gateway/server-key.pem
     ports:
       - "127.0.0.1:18080:8080"
     depends_on:
@@ -218,14 +477,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      server:
-        condition: service_healthy
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
-      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
       - {{ arsenale_cert_dir }}/ca.pem:/certs/ca.pem:ro
+      - {{ arsenale_cert_dir }}/ssh-gateway:/certs/ssh-gateway:ro
+{% if _is_dev | default(false) | bool %}
+      - {{ arsenale_cert_dir }}/ca-key.pem:/certs/ca-key.pem:ro
+{% endif %}
+      - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
       - {{ arsenale_cert_dir }}/guacenc:/certs/guacenc:ro
+{% if _is_dev | default(false) | bool %}
+      - {{ arsenale_cert_dir }}/tunnel-managed-ssh:/certs/tunnel-managed-ssh:ro
+      - {{ arsenale_cert_dir }}/tunnel-guacd:/certs/tunnel-guacd:ro
+      - {{ arsenale_cert_dir }}/tunnel-db-proxy:/certs/tunnel-db-proxy:ro
+{% endif %}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -739,148 +1005,6 @@ services:
           - terminal-target
 
 {% endif %}
-
-  # ---------------------------------------------------------------------------
-  # Server — Express.js API + WebSocket backend
-  # ---------------------------------------------------------------------------
-  server:
-{% if _build | bool %}
-    build:
-      context: {{ _home }}{% if not (_is_dev | default(false) | bool) %}/arsenale{% endif %}
-
-      dockerfile: server/Dockerfile
-{% else %}
-    image: {{ arsenale_registry }}/server:{{ arsenale_image_tag }}
-{% endif %}
-{% if arsenale_server_replicas | default(1) | int <= 1 %}
-    container_name: arsenale-server
-{% endif %}
-{% if arsenale_server_replicas | default(1) | int > 1 %}
-    deploy:
-      replicas: {{ arsenale_server_replicas }}
-{% endif %}
-    read_only: true
-    cpus: "{{ arsenale_resource_limits.server.cpus }}"
-    mem_limit: "{{ arsenale_resource_limits.server.memory }}"
-    pids_limit: {{ arsenale_resource_limits.server.pids }}
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    secrets:
-      - jwt_secret
-      - guacamole_secret
-      - server_encryption_key
-      - database_url
-      - guacenc_auth_token
-      - smtp_pass
-      - sendgrid_api_key
-      - ses_secret_access_key
-      - resend_api_key
-      - mailgun_api_key
-      - twilio_auth_token
-      - sns_secret_access_key
-      - vonage_api_secret
-      - google_client_secret
-      - microsoft_client_secret
-      - github_client_secret
-      - oidc_client_secret
-      - ldap_bind_password
-      - ai_api_key
-    environment:
-      NODE_ENV: "{{ arsenale_node_env }}"
-      HIBP_FAIL_OPEN: "true"
-      SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
-      NODE_EXTRA_CA_CERTS: /certs/ca.pem
-      CLI_ENABLED: "{{ 'true' if (_is_dev | default(false) | bool) else 'false' }}"
-      DEV_TUNNEL_CERT_DIR: "{{ '/certs' if (_is_dev | default(false) | bool) else '' }}"
-      DEV_BOOTSTRAP_ADMIN_EMAIL: "{{ arsenale_dev_bootstrap_admin_email }}"
-      DEV_BOOTSTRAP_ADMIN_USERNAME: "{{ arsenale_dev_bootstrap_admin_username }}"
-      DEV_BOOTSTRAP_ADMIN_PASSWORD: "{{ arsenale_dev_bootstrap_admin_password }}"
-      DEV_BOOTSTRAP_TENANT_NAME: "{{ arsenale_dev_bootstrap_tenant_name }}"
-      LOG_LEVEL: "{{ arsenale_log_level | default('info') }}"
-      LOG_HTTP_REQUESTS: "{{ arsenale_log_http_requests | default('false') }}"
-      LOG_GUACAMOLE: "{{ arsenale_log_guacamole | default('false') }}"
-      PORT: "3001"
-      GUACAMOLE_WS_PORT: "3002"
-      DATABASE_URL: ""
-      CLIENT_URL: "https://{{ arsenale_domain }}:{{ arsenale_client_port }}"
-      TRUST_PROXY: "{{ arsenale_trust_proxy_effective | string | lower }}"
-      RATE_LIMIT_WHITELIST_CIDRS: "127.0.0.1/32,::1/128"
-      COOKIE_SECURE: "{{ _cookie_secure | string | lower }}"
-      GUACD_HOST: guacd
-      GUACD_PORT: "4822"
-      GUACD_SSL: "true"
-      GUACD_CA_CERT: /certs/ca.pem
-      GUACENC_SERVICE_URL: "https://guacenc:3003"
-      GUACENC_USE_TLS: "true"
-      GUACENC_TLS_CA: /certs/guacenc/ca.pem
-      REDIS_URL: "redis://redis:6379/0"
-      SERVER_TLS_CERT: /certs/server/server-cert.pem
-      SERVER_TLS_KEY: /certs/server/server-key.pem
-      TUNNEL_SERVER_CERT: /certs/server/server-cert.pem
-      TUNNEL_SERVER_KEY: /certs/server/server-key.pem
-      TUNNEL_SERVER_CA: /certs/ca.pem
-      TUNNEL_STRICT_MTLS: "{{ 'true' if (_is_dev | default(false) | bool) else 'false' }}"
-      RECORDING_ENABLED: "{{ arsenale_recording_enabled | string | lower }}"
-      RECORDING_PATH: /recordings
-      ALLOW_LOCAL_NETWORK: "{{ arsenale_allow_local_network | string | lower }}"
-      LATERAL_MOVEMENT_DETECTION_ENABLED: "false"
-      SELF_SIGNUP_ENABLED: "{{ arsenale_self_signup_enabled | string | lower }}"
-      EMAIL_PROVIDER: "{{ arsenale_email_provider }}"
-      GATEWAY_GRPC_TLS_CA: /certs/ca.pem
-      GATEWAY_GRPC_TLS_CERT: /certs/ssh-gateway/client-cert.pem
-      GATEWAY_GRPC_TLS_KEY: /certs/ssh-gateway/client-key.pem
-      GO_QUERY_RUNNER_ENABLED: "true"
-      GO_CONTROL_PLANE_API_URL: "http://control-plane-api-go:8080"
-      GO_QUERY_RUNNER_URL: "http://query-runner-go:8093"
-      GO_TUNNEL_BROKER_ENABLED: "true"
-      GO_TUNNEL_BROKER_URL: "http://tunnel-broker-go:8092"
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
-      GO_DESKTOP_BROKER_ENABLED: "true"
-      INTERNAL_SERVER_HOST: "server"
-      TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
-    volumes:
-      - arsenale_drive:/guacd-drive
-      - arsenale_recordings:/recordings
-      - {{ arsenale_cert_dir }}/ca.pem:/certs/ca.pem:ro
-{% if _is_dev | default(false) | bool %}
-      - {{ arsenale_cert_dir }}/ca-key.pem:/certs/ca-key.pem:ro
-      - {{ arsenale_cert_dir }}/tunnel-managed-ssh:/certs/tunnel-managed-ssh:ro
-      - {{ arsenale_cert_dir }}/tunnel-guacd:/certs/tunnel-guacd:ro
-      - {{ arsenale_cert_dir }}/tunnel-db-proxy:/certs/tunnel-db-proxy:ro
-{% endif %}
-      - {{ arsenale_cert_dir }}/server:/certs/server:ro
-      - {{ arsenale_cert_dir }}/guacenc:/certs/guacenc:ro
-      - {{ arsenale_cert_dir }}/ssh-gateway:/certs/ssh-gateway:ro
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"const fs=require('fs');const http=require('http');const https=require('https');const useTls=Boolean(process.env.SERVER_TLS_CERT&&process.env.SERVER_TLS_KEY);const request=useTls?https:http;const options=useTls?{hostname:'localhost',port:3001,path:'/api/health',ca:fs.readFileSync('/certs/ca.pem')}:{hostname:'localhost',port:3001,path:'/api/health'};request.get(options,res=>{res.resume();process.exit(res.statusCode===200?0:1);}).on('error',()=>process.exit(1));\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      guacd:
-        condition: service_healthy
-      desktop-broker-go:
-        condition: service_healthy
-      tunnel-broker-go:
-        condition: service_healthy
-    restart: always
-    networks:
-      - net-db
-      - net-guacd
-      - net-guacenc
-      - net-cache
-      - net-edge
-      - net-gateway
-
   # ---------------------------------------------------------------------------
   # Client — React SPA served by Nginx
   # ---------------------------------------------------------------------------
@@ -919,7 +1043,7 @@ services:
 {% endif %}
     healthcheck:
 {% if _is_dev | default(false) | bool %}
-      test: ["CMD-SHELL", "curl --silent --show-error --fail --cacert /certs/ca.pem https://localhost:8080/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://localhost:8080/health >/dev/null || exit 1"]
 {% else %}
       test: ["CMD-SHELL", "curl --silent --show-error --fail http://127.0.0.1:8080/health >/dev/null || exit 1"]
 {% endif %}
@@ -929,8 +1053,6 @@ services:
       start_period: 5s
     depends_on:
       control-plane-api-go:
-        condition: service_healthy
-      server:
         condition: service_healthy
       desktop-broker-go:
         condition: service_healthy
@@ -969,7 +1091,7 @@ services:
       GATEWAY_GRPC_CLIENT_CA: /certs/client-ca.pem
       GATEWAY_GRPC_TLS_CERT: /certs/server-cert.pem
       GATEWAY_GRPC_TLS_KEY: /certs/server-key.pem
-      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}/service/server"
+      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}/service/control-plane-api"
 {% if not (_is_dev | default(false) | bool) %}
     ports:
       - "{{ arsenale_ssh_port }}:2222"
@@ -1024,7 +1146,7 @@ services:
       GATEWAY_GRPC_CLIENT_CA: /certs/client-ca.pem
       GATEWAY_GRPC_TLS_CERT: /certs/server-cert.pem
       GATEWAY_GRPC_TLS_KEY: /certs/server-key.pem
-      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}/service/server"
+      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}/service/control-plane-api"
     volumes:
       - {{ _home }}/config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
       - {{ arsenale_cert_dir }}/ssh-gateway:/certs:ro
@@ -1179,6 +1301,7 @@ secrets:
 # =============================================================================
 volumes:
   pgdata:
+  arsenale_redis:
   arsenale_drive:
   arsenale_recordings:
 

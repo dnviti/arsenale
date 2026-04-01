@@ -1,13 +1,16 @@
 package authservice
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"strings"
+
+	"github.com/dnviti/arsenale/backend/internal/emaildelivery"
 )
 
 const (
-	emailVerifyTTL   = 24 * 60 * 60
+	emailVerifyTTL    = 24 * 60 * 60
 	resendCooldownSec = 60
 	passwordResetTTL  = 60 * 60
 )
@@ -65,4 +68,42 @@ func (s Service) logVerificationEmail(to, token string) {
 
 func (s Service) logPasswordResetEmail(to, token string) {
 	slog.Info("password reset link (dev mode)", "to", to, "resetUrl", s.clientURL()+"/reset-password?token="+token)
+}
+
+func (s Service) sendVerificationEmail(ctx context.Context, to, token string) error {
+	status := emaildelivery.StatusFromEnv()
+	verifyURL := s.clientURL() + "/api/auth/verify-email?token=" + token
+	if !status.Configured {
+		s.logVerificationEmail(to, token)
+		return nil
+	}
+	return emaildelivery.Send(ctx, emaildelivery.Message{
+		To:      to,
+		Subject: "Verify your email - Arsenale",
+		HTML: "<h2>Email Verification</h2>" +
+			"<p>Click the link below to verify your email address:</p>" +
+			`<p><a href="` + verifyURL + `">` + verifyURL + `</a></p>` +
+			"<p>This link expires in 24 hours.</p>" +
+			"<p>If you did not create an account, you can ignore this email.</p>",
+		Text: "Verify your email: " + verifyURL + "\n\nThis link expires in 24 hours. If you did not create an account, ignore this email.",
+	})
+}
+
+func (s Service) sendPasswordResetEmail(ctx context.Context, to, token string) error {
+	status := emaildelivery.StatusFromEnv()
+	resetURL := s.clientURL() + "/reset-password?token=" + token
+	if !status.Configured {
+		s.logPasswordResetEmail(to, token)
+		return nil
+	}
+	return emaildelivery.Send(ctx, emaildelivery.Message{
+		To:      to,
+		Subject: "Password Reset - Arsenale",
+		HTML: "<h2>Password Reset Request</h2>" +
+			"<p>You requested a password reset. Click the link below to set a new password:</p>" +
+			`<p><a href="` + resetURL + `">` + resetURL + `</a></p>` +
+			"<p>This link expires in 1 hour.</p>" +
+			"<p>If you did not request this, you can safely ignore this email. Your password will not be changed.</p>",
+		Text: "Password Reset: " + resetURL + "\n\nThis link expires in 1 hour. If you did not request this, ignore this email.",
+	})
 }

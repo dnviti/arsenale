@@ -1,11 +1,9 @@
 package main
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
-	"github.com/dnviti/arsenale/backend/internal/mfaapi"
 )
 
 func (d *apiDependencies) registerUserMFARoutes(mux *http.ServeMux) {
@@ -17,10 +15,6 @@ func (d *apiDependencies) registerUserMFARoutes(mux *http.ServeMux) {
 				return
 			}
 			if err := fn(w, r, claims.UserID); err != nil {
-				if errors.Is(err, mfaapi.ErrLegacySMSMFAFlow) {
-					d.legacyAPIProxy.ServeHTTP(w, r)
-					return
-				}
 				app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 			}
 		}
@@ -94,6 +88,14 @@ func (d *apiDependencies) registerUserMFARoutes(mux *http.ServeMux) {
 			return
 		}
 		d.mfaService.HandleWebAuthnRegistrationOptions(w, r, claims.UserID)
+	})
+	mux.HandleFunc("POST /api/user/2fa/webauthn/register", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.mfaService.HandleRegisterWebAuthn(w, r, claims.UserID)
 	})
 	mux.HandleFunc("DELETE /api/user/2fa/webauthn/credentials/{id}", func(w http.ResponseWriter, r *http.Request) {
 		claims, err := d.authenticator.Authenticate(r)

@@ -1,14 +1,11 @@
 package mfaapi
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
-
-var ErrLegacySMSMFAFlow = errors.New("legacy sms mfa flow required")
 
 type Service struct {
 	DB        *pgxpool.Pool

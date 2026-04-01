@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -23,9 +25,6 @@ type registerResult struct {
 func (s Service) Register(ctx context.Context, email, password, ipAddress string) (registerResult, error) {
 	if s.DB == nil {
 		return registerResult{}, fmt.Errorf("postgres is not configured")
-	}
-	if s.EmailVerify {
-		return registerResult{}, ErrLegacyRegister
 	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
@@ -98,6 +97,20 @@ func (s Service) Register(ctx context.Context, email, password, ipAddress string
 		return registerResult{}, fmt.Errorf("encrypt recovery key: %w", err)
 	}
 
+	var (
+		emailVerifyToken  *string
+		emailVerifyExpiry *time.Time
+	)
+	if s.EmailVerify {
+		token, err := randomHexToken(32)
+		if err != nil {
+			return registerResult{}, fmt.Errorf("generate email verification token: %w", err)
+		}
+		expiry := time.Now().Add(time.Duration(emailVerifyTTL) * time.Second)
+		emailVerifyToken = &token
+		emailVerifyExpiry = &expiry
+	}
+
 	var userID string
 	if err := s.DB.QueryRow(ctx, `
 INSERT INTO "User" (
@@ -111,9 +124,11 @@ INSERT INTO "User" (
 	"vaultRecoveryKeyIV",
 	"vaultRecoveryKeyTag",
 	"vaultRecoveryKeySalt",
-	"emailVerified"
+	"emailVerified",
+	"emailVerifyToken",
+	"emailVerifyExpiry"
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 RETURNING id
 `,
 		email,
@@ -126,21 +141,34 @@ RETURNING id
 		encryptedRecovery.IV,
 		encryptedRecovery.Tag,
 		recoverySalt,
+		!s.EmailVerify,
+		emailVerifyToken,
+		emailVerifyExpiry,
 	).Scan(&userID); err != nil {
 		return registerResult{}, fmt.Errorf("create user: %w", err)
 	}
 
 	_ = s.insertStandaloneAuditLog(ctx, &userID, "REGISTER", map[string]any{}, ipAddress)
+	if s.EmailVerify && emailVerifyToken != nil {
+		if err := s.sendVerificationEmail(ctx, email, *emailVerifyToken); err != nil {
+			slog.Warn("failed to send verification email", "userId", userID, "email", email, "error", err)
+		}
+	}
+
+	message := "Registration successful. You can now log in."
+	if s.EmailVerify {
+		message = "Registration successful. Please check your email to verify your account."
+	}
 	return registerResult{
-		Message:             "Registration successful. You can now log in.",
+		Message:             message,
 		UserID:              userID,
-		EmailVerifyRequired: false,
+		EmailVerifyRequired: s.EmailVerify,
 		RecoveryKey:         recoveryKey,
 	}, nil
 }
 
 func (s Service) getSelfSignupEnabled(ctx context.Context) (bool, error) {
-	if os.Getenv("SELF_SIGNUP_ENABLED") != "true" {
+	if strings.TrimSpace(os.Getenv("SELF_SIGNUP_ENABLED")) != "true" {
 		return false, nil
 	}
 	if s.DB == nil {

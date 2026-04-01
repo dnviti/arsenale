@@ -102,6 +102,7 @@ const bcryptRounds = 12
 const verificationSessionTTL = 15 * time.Minute
 const verificationConsumeWindow = 5 * time.Minute
 const verificationMaxAttempts = 5
+const emailChangeTTL = 15 * time.Minute
 const verificationSessionKeyPrefix = "identity:verification:"
 const hibpAPIURL = "https://api.pwnedpasswords.com/range/"
 const hibpTimeout = 5 * time.Second
@@ -109,9 +110,6 @@ const hibpUserAgent = "Arsenale-PasswordCheck"
 
 var hhmmPattern = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 var errVaultLocked = errors.New("Vault must be unlocked to set domain password")
-var ErrLegacyPasswordChangeInitiation = errors.New("legacy password-change initiation required")
-var ErrLegacyIdentityVerification = errors.New("legacy identity verification required")
-var ErrLegacyEmailChangeFlow = errors.New("legacy email change flow required")
 var errNoVerificationMethod = errors.New("No verification method available. Please set up a password or enable MFA.")
 
 type encryptedField struct {

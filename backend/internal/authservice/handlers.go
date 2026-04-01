@@ -30,6 +30,10 @@ func (s Service) HandleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if sessionCookie, err := r.Cookie(s.browserSessionCookieName()); err == nil && sessionCookie.Value != "" && s.Redis != nil {
+		_ = s.Redis.Del(r.Context(), browserSessionKeyPrefix+sessionCookie.Value).Err()
+	}
+
 	s.clearAuthCookies(w)
 	app.WriteJSON(w, http.StatusOK, map[string]any{
 		"success": true,
@@ -64,8 +68,11 @@ func (s Service) HandleSwitchTenant(w http.ResponseWriter, r *http.Request, user
 		return
 	}
 
-	s.setRefreshTokenCookie(w, result.refreshToken, result.refreshExpires)
-	csrfToken := s.setCSRFCookie(w, result.refreshExpires)
+	csrfToken, err := s.ApplyBrowserAuthCookies(r.Context(), w, result.user.ID, result.refreshToken, result.refreshExpires)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	app.WriteJSON(w, http.StatusOK, map[string]any{
 		"accessToken": result.accessToken,
 		"csrfToken":   csrfToken,
@@ -138,8 +145,11 @@ func (s Service) HandleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.setRefreshTokenCookie(w, result.refreshToken, result.refreshExpires)
-	csrfToken := s.setCSRFCookie(w, result.refreshExpires)
+	csrfToken, err := s.ApplyBrowserAuthCookies(r.Context(), w, result.user.ID, result.refreshToken, result.refreshExpires)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	app.WriteJSON(w, http.StatusOK, map[string]any{
 		"accessToken": result.accessToken,
 		"csrfToken":   csrfToken,
@@ -173,8 +183,6 @@ func (s Service) HandleLogin(w http.ResponseWriter, r *http.Request) error {
 	result, err := s.Login(r.Context(), strings.TrimSpace(strings.ToLower(payload.Email)), payload.Password, requestIP(r), r.UserAgent())
 	if err != nil {
 		switch {
-		case errors.Is(err, ErrLegacyLogin):
-			return err
 		case isRequestError(err):
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
@@ -206,8 +214,11 @@ func (s Service) HandleLogin(w http.ResponseWriter, r *http.Request) error {
 		return nil
 	}
 
-	s.setRefreshTokenCookie(w, result.issued.refreshToken, result.issued.refreshExpires)
-	csrfToken := s.setCSRFCookie(w, result.issued.refreshExpires)
+	csrfToken, err := s.ApplyBrowserAuthCookies(r.Context(), w, result.issued.user.ID, result.issued.refreshToken, result.issued.refreshExpires)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return nil
+	}
 
 	app.WriteJSON(w, http.StatusOK, loginResult{
 		AccessToken:       result.issued.accessToken,

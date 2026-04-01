@@ -108,9 +108,10 @@ func (s Service) HandleInitiatePasswordChange(w http.ResponseWriter, r *http.Req
 
 	result, err := s.InitiatePasswordChange(r.Context(), claims.UserID)
 	if err != nil {
+		var reqErr *requestError
 		switch {
-		case errors.Is(err, ErrLegacyPasswordChangeInitiation):
-			return err
+		case errors.As(err, &reqErr):
+			app.ErrorJSON(w, reqErr.status, reqErr.message)
 		case errors.Is(err, errNoVerificationMethod):
 			app.ErrorJSON(w, http.StatusBadRequest, errNoVerificationMethod.Error())
 		case errors.Is(err, pgx.ErrNoRows):
@@ -142,8 +143,6 @@ func (s Service) HandleInitiateIdentity(w http.ResponseWriter, r *http.Request, 
 	if err != nil {
 		var reqErr *requestError
 		switch {
-		case errors.Is(err, ErrLegacyIdentityVerification):
-			return err
 		case errors.As(err, &reqErr):
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
 		case errors.Is(err, pgx.ErrNoRows):
@@ -175,8 +174,6 @@ func (s Service) HandleConfirmIdentity(w http.ResponseWriter, r *http.Request, c
 	if err != nil {
 		var reqErr *requestError
 		switch {
-		case errors.Is(err, ErrLegacyIdentityVerification):
-			return err
 		case errors.As(err, &reqErr):
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
 		default:
@@ -206,8 +203,6 @@ func (s Service) HandleInitiateEmailChange(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		var reqErr *requestError
 		switch {
-		case errors.Is(err, ErrLegacyEmailChangeFlow), errors.Is(err, ErrLegacyIdentityVerification):
-			return ErrLegacyEmailChangeFlow
 		case errors.As(err, &reqErr):
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
 		case errors.Is(err, pgx.ErrNoRows):
@@ -239,8 +234,6 @@ func (s Service) HandleConfirmEmailChange(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		var reqErr *requestError
 		switch {
-		case errors.Is(err, ErrLegacyEmailChangeFlow):
-			return err
 		case errors.As(err, &reqErr):
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
 		case errors.Is(err, pgx.ErrNoRows):

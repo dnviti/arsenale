@@ -49,14 +49,11 @@ func (s Service) HandleResendVerification(w http.ResponseWriter, r *http.Request
 
 	err := s.ResendVerification(r.Context(), payload.Email)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrLegacyEmailFlow):
-			return err
-		case isRequestError(err):
+		if isRequestError(err) {
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
-		default:
+		} else {
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 		return nil

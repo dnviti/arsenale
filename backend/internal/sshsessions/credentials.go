@@ -21,7 +21,7 @@ type encryptedField struct {
 	Tag        string `json:"tag"`
 }
 
-func (s Service) resolveCredentials(ctx context.Context, userID string, payload createRequest, access connectionAccess) (resolvedCredentials, error) {
+func (s Service) resolveCredentials(ctx context.Context, userID, tenantID string, payload createRequest, access connectionAccess) (resolvedCredentials, error) {
 	if payload.CredentialMode == "domain" {
 		return s.resolveDomainCredentials(ctx, userID)
 	}
@@ -29,12 +29,16 @@ func (s Service) resolveCredentials(ctx context.Context, userID string, payload 
 		return resolvedCredentials{
 			Username:         payload.Username,
 			Password:         payload.Password,
+			Domain:           payload.Domain,
 			CredentialSource: "manual",
 		}, nil
 	}
 
-	if access.Connection.ExternalVaultProviderID != nil || access.Connection.ExternalVaultPath != nil || access.Connection.CredentialSecretID != nil {
-		return resolvedCredentials{}, ErrLegacySSHSessionFlow
+	if access.Connection.ExternalVaultProviderID != nil || access.Connection.ExternalVaultPath != nil {
+		return s.resolveCredentialsFromExternalVault(ctx, tenantID, access)
+	}
+	if access.Connection.CredentialSecretID != nil {
+		return s.resolveCredentialsFromSecret(ctx, userID, tenantID, access)
 	}
 
 	switch access.AccessType {
@@ -78,16 +82,17 @@ func (s Service) resolveCredentials(ctx context.Context, userID string, payload 
 
 func (s Service) resolveDomainCredentials(ctx context.Context, userID string) (resolvedCredentials, error) {
 	var (
+		domainName        *string
 		domainUsername    *string
 		encryptedPassword *string
 		passwordIV        *string
 		passwordTag       *string
 	)
 	if err := s.DB.QueryRow(ctx, `
-SELECT "domainUsername", "encryptedDomainPassword", "domainPasswordIV", "domainPasswordTag"
+SELECT "domainName", "domainUsername", "encryptedDomainPassword", "domainPasswordIV", "domainPasswordTag"
 FROM "User"
 WHERE id = $1
-`, userID).Scan(&domainUsername, &encryptedPassword, &passwordIV, &passwordTag); err != nil {
+`, userID).Scan(&domainName, &domainUsername, &encryptedPassword, &passwordIV, &passwordTag); err != nil {
 		return resolvedCredentials{}, fmt.Errorf("load domain credentials: %w", err)
 	}
 	if domainUsername == nil || *domainUsername == "" || encryptedPassword == nil || passwordIV == nil || passwordTag == nil {
@@ -114,6 +119,7 @@ WHERE id = $1
 	return resolvedCredentials{
 		Username:         *domainUsername,
 		Password:         password,
+		Domain:           valueOrEmpty(domainName),
 		CredentialSource: "domain",
 	}, nil
 }
@@ -141,9 +147,21 @@ func decryptInlineCredentials(connection connectionRecord, key []byte) (resolved
 		return resolvedCredentials{}, &requestError{status: 400, message: "Connection has no credentials configured"}
 	}
 
+	domain := ""
+	if connection.EncryptedDomain != nil && connection.DomainIV != nil && connection.DomainTag != nil {
+		if decryptedDomain, err := decryptEncryptedField(key, encryptedField{
+			Ciphertext: *connection.EncryptedDomain,
+			IV:         *connection.DomainIV,
+			Tag:        *connection.DomainTag,
+		}); err == nil {
+			domain = decryptedDomain
+		}
+	}
+
 	return resolvedCredentials{
 		Username:         username,
 		Password:         password,
+		Domain:           domain,
 		CredentialSource: "saved",
 	}, nil
 }
@@ -171,9 +189,21 @@ func decryptSharedCredentials(connection connectionRecord, key []byte) (resolved
 		return resolvedCredentials{}, &requestError{status: 404, message: "Connection not found or credentials unavailable"}
 	}
 
+	domain := ""
+	if connection.SharedEncryptedDomain != nil && connection.SharedDomainIV != nil && connection.SharedDomainTag != nil {
+		if decryptedDomain, err := decryptEncryptedField(key, encryptedField{
+			Ciphertext: *connection.SharedEncryptedDomain,
+			IV:         *connection.SharedDomainIV,
+			Tag:        *connection.SharedDomainTag,
+		}); err == nil {
+			domain = decryptedDomain
+		}
+	}
+
 	return resolvedCredentials{
 		Username:         username,
 		Password:         password,
+		Domain:           domain,
 		CredentialSource: "saved",
 	}, nil
 }

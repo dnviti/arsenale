@@ -188,35 +188,56 @@ func validatePassword(password string) error {
 	}
 }
 
-func parseIdentityConfirmation(payload map[string]json.RawMessage) (verificationID, password string, shouldFallback bool, err error) {
+type identityConfirmationPayload struct {
+	VerificationID string
+	Code           string
+	Password       string
+	Credential     json.RawMessage
+}
+
+func parseIdentityConfirmation(payload map[string]json.RawMessage) (identityConfirmationPayload, error) {
+	result := identityConfirmationPayload{}
+
 	for key := range payload {
 		switch key {
 		case "verificationId", "password":
-		case "code", "credential":
-			shouldFallback = true
+		case "code":
+		case "credential":
 		default:
-			return "", "", false, &requestError{status: http.StatusBadRequest, message: fmt.Sprintf("json: unknown field %q", key)}
+			return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: fmt.Sprintf("json: unknown field %q", key)}
 		}
 	}
 
 	rawID, ok := payload["verificationId"]
 	if !ok {
-		return "", "", false, &requestError{status: http.StatusBadRequest, message: "verificationId is required"}
+		return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "verificationId is required"}
 	}
-	if err := json.Unmarshal(rawID, &verificationID); err != nil || verificationID == "" {
-		return "", "", false, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
+	if err := json.Unmarshal(rawID, &result.VerificationID); err != nil || result.VerificationID == "" {
+		return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
 	}
-	if _, parseErr := uuid.Parse(verificationID); parseErr != nil {
-		return "", "", false, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
+	if _, parseErr := uuid.Parse(result.VerificationID); parseErr != nil {
+		return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
 	}
 
-	if rawPassword, ok := payload["password"]; ok {
-		if err := json.Unmarshal(rawPassword, &password); err != nil {
-			return "", "", false, &requestError{status: http.StatusBadRequest, message: "password must be a string"}
+	if rawCode, ok := payload["code"]; ok {
+		if err := json.Unmarshal(rawCode, &result.Code); err != nil {
+			return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "code must be a string"}
 		}
 	}
+	if rawPassword, ok := payload["password"]; ok {
+		if err := json.Unmarshal(rawPassword, &result.Password); err != nil {
+			return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "password must be a string"}
+		}
+	}
+	if rawCredential, ok := payload["credential"]; ok {
+		var credential map[string]json.RawMessage
+		if err := json.Unmarshal(rawCredential, &credential); err != nil {
+			return identityConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "credential must be an object"}
+		}
+		result.Credential = append(json.RawMessage(nil), rawCredential...)
+	}
 
-	return verificationID, password, shouldFallback, nil
+	return result, nil
 }
 
 func parseNewEmailChangePayload(payload map[string]json.RawMessage) (string, error) {
@@ -248,27 +269,61 @@ func parseNewEmailChangePayload(payload map[string]json.RawMessage) (string, err
 	return newEmail, nil
 }
 
-func parseEmailChangeConfirmation(payload map[string]json.RawMessage) (verificationID string, shouldFallback bool, err error) {
+type emailChangeConfirmationPayload struct {
+	VerificationID string
+	CodeOld        string
+	CodeNew        string
+	UsesOTP        bool
+}
+
+func parseEmailChangeConfirmation(payload map[string]json.RawMessage) (emailChangeConfirmationPayload, error) {
+	result := emailChangeConfirmationPayload{}
+
 	for key := range payload {
 		switch key {
 		case "verificationId":
 		case "codeOld", "codeNew":
-			shouldFallback = true
 		default:
-			return "", false, &requestError{status: http.StatusBadRequest, message: fmt.Sprintf("json: unknown field %q", key)}
+			return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: fmt.Sprintf("json: unknown field %q", key)}
 		}
 	}
+
+	if rawCodeOld, ok := payload["codeOld"]; ok {
+		if err := json.Unmarshal(rawCodeOld, &result.CodeOld); err != nil {
+			return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "codeOld must be a string"}
+		}
+	}
+	if rawCodeNew, ok := payload["codeNew"]; ok {
+		if err := json.Unmarshal(rawCodeNew, &result.CodeNew); err != nil {
+			return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "codeNew must be a string"}
+		}
+	}
+
+	if result.CodeOld != "" || result.CodeNew != "" {
+		if result.CodeOld == "" || result.CodeNew == "" {
+			return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "Provide either both OTP codes or a verificationId"}
+		}
+		if err := validateVerificationCode(result.CodeOld, "codeOld"); err != nil {
+			return emailChangeConfirmationPayload{}, err
+		}
+		if err := validateVerificationCode(result.CodeNew, "codeNew"); err != nil {
+			return emailChangeConfirmationPayload{}, err
+		}
+		result.UsesOTP = true
+		return result, nil
+	}
+
 	rawID, ok := payload["verificationId"]
 	if !ok {
-		return "", false, &requestError{status: http.StatusBadRequest, message: "verificationId is required"}
+		return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "Provide either both OTP codes or a verificationId"}
 	}
-	if err := json.Unmarshal(rawID, &verificationID); err != nil || verificationID == "" {
-		return "", false, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
+	if err := json.Unmarshal(rawID, &result.VerificationID); err != nil || result.VerificationID == "" {
+		return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
 	}
-	if _, parseErr := uuid.Parse(verificationID); parseErr != nil {
-		return "", false, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
+	if _, parseErr := uuid.Parse(result.VerificationID); parseErr != nil {
+		return emailChangeConfirmationPayload{}, &requestError{status: http.StatusBadRequest, message: "verificationId must be a UUID"}
 	}
-	return verificationID, shouldFallback, nil
+	return result, nil
 }
 
 func decodeNullableString(raw json.RawMessage, field string) (*string, error) {

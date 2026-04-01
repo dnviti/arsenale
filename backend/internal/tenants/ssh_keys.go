@@ -49,8 +49,17 @@ func (s Service) ensureTenantSSHKeyPair(ctx context.Context, tenantID string) er
 	}
 
 	_, err = s.DB.Exec(ctx, `
-INSERT INTO "SshKeyPair" ("tenantId", "encryptedPrivateKey", "privateKeyIV", "privateKeyTag", "publicKey", fingerprint, algorithm)
-VALUES ($1, $2, $3, $4, $5, $6, 'ed25519')
+INSERT INTO "SshKeyPair" (
+  "tenantId",
+  "encryptedPrivateKey",
+  "privateKeyIV",
+  "privateKeyTag",
+  "publicKey",
+  fingerprint,
+  algorithm,
+  "updatedAt"
+)
+VALUES ($1, $2, $3, $4, $5, $6, 'ed25519', NOW())
 ON CONFLICT ("tenantId") DO NOTHING
 `,
 		tenantID,

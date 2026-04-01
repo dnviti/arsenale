@@ -16,6 +16,7 @@ func (d *apiDependencies) registerPublicRoutes(mux *http.ServeMux) {
 		app.WriteJSON(w, http.StatusOK, map[string]any{
 			"status":  "ok",
 			"service": "control-plane-api",
+			"version": getenv("ARSENALE_VERSION", "dev"),
 		})
 	}))
 	mux.Handle("/api/ready", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +25,7 @@ func (d *apiDependencies) registerPublicRoutes(mux *http.ServeMux) {
 			app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
-		readiness := checkAPIReadiness(r.Context(), d.db, d.legacyAPIProbe)
+		readiness := checkAPIReadiness(r.Context(), d.db)
 		statusCode := http.StatusOK
 		if readiness.Status != "ok" {
 			statusCode = http.StatusServiceUnavailable

@@ -71,7 +71,16 @@ func (s Service) HandleComplete(w http.ResponseWriter, r *http.Request) {
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	csrfToken := s.AuthService.ApplyRefreshCookies(w, result.refreshToken, result.refreshExpires)
+	userID, _ := result.response.User["id"].(string)
+	if userID == "" {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, "setup login flow did not return a user id")
+		return
+	}
+	csrfToken, err := s.AuthService.ApplyBrowserAuthCookies(r.Context(), w, userID, result.refreshToken, result.refreshExpires)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	result.response.CSRFToken = csrfToken
 	app.WriteJSON(w, http.StatusCreated, result.response)
 }

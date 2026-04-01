@@ -64,8 +64,6 @@ func (s Service) HandleTerminate(w http.ResponseWriter, r *http.Request, claims 
 	result, err := s.Store.TerminateTenantSession(r.Context(), r.PathValue("sessionId"), claims.TenantID, claims.UserID, requestIP(r))
 	if err != nil {
 		switch {
-		case errors.Is(err, sessions.ErrLegacySessionAdminFlow):
-			return err
 		case errors.Is(err, sessions.ErrSessionNotFound):
 			app.ErrorJSON(w, http.StatusNotFound, "Session not found")
 			return nil

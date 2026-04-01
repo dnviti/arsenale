@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import {
   NotificationEntry,
+  NotificationsResponse,
   getNotifications,
   markAsRead as apiMarkAsRead,
   markAllAsRead as apiMarkAllAsRead,
@@ -18,6 +19,7 @@ interface NotificationListState {
   markAllAsRead: () => Promise<void>;
   removeNotification: (id: string) => Promise<void>;
   addNotification: (notification: NotificationEntry) => void;
+  applySnapshot: (snapshot: NotificationsResponse) => void;
   reset: () => void;
 }
 
@@ -78,6 +80,15 @@ export const useNotificationListStore = create<NotificationListState>((set, get)
       total: state.total + 1,
       unreadCount: state.unreadCount + 1,
     }));
+  },
+
+  applySnapshot: (snapshot: NotificationsResponse) => {
+    set({
+      notifications: snapshot.data,
+      total: snapshot.total,
+      unreadCount: snapshot.unreadCount,
+      loading: false,
+    });
   },
 
   reset: () => set({ notifications: [], unreadCount: 0, total: 0, loading: false }),

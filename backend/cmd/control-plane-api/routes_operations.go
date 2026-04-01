@@ -9,15 +9,8 @@ import (
 )
 
 func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
-	adminEmailTestHandler := d.authenticator.Middleware(d.adminService.HandleSendTestEmail)
 	mux.HandleFunc("GET /api/admin/email/status", d.authenticator.Middleware(d.adminService.HandleGetEmailStatus))
-	mux.HandleFunc("POST /api/admin/email/test", func(w http.ResponseWriter, r *http.Request) {
-		if d.adminService.EmailTestRequiresLegacyProxy() {
-			d.legacyAPIProxy.ServeHTTP(w, r)
-			return
-		}
-		adminEmailTestHandler(w, r)
-	})
+	mux.HandleFunc("POST /api/admin/email/test", d.authenticator.Middleware(d.adminService.HandleSendTestEmail))
 	mux.HandleFunc("GET /api/admin/app-config", d.authenticator.Middleware(d.adminService.HandleGetAppConfig))
 	mux.HandleFunc("PUT /api/admin/app-config/self-signup", d.authenticator.Middleware(d.adminService.HandleSetSelfSignup))
 	mux.HandleFunc("GET /api/admin/auth-providers", d.authenticator.Middleware(d.adminService.HandleGetAuthProviders))
@@ -25,6 +18,12 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/system-settings", d.authenticator.Middleware(d.systemSettingsService.HandleBulkUpdate))
 	mux.HandleFunc("PUT /api/admin/system-settings/{key}", d.authenticator.Middleware(d.systemSettingsService.HandleUpdateSingle))
 	mux.HandleFunc("GET /api/admin/system-settings/db-status", d.authenticator.Middleware(d.adminService.HandleGetSystemSettingsDBStatus))
+	mux.HandleFunc("GET /api/ai/config", d.authenticator.Middleware(d.modelGatewayService.HandleGetConfig))
+	mux.HandleFunc("PUT /api/ai/config", d.authenticator.Middleware(d.modelGatewayService.HandleUpdateConfig))
+	mux.HandleFunc("POST /api/ai/generate-query", d.authenticator.Middleware(d.modelGatewayService.HandleAnalyzeQuery))
+	mux.HandleFunc("POST /api/ai/generate-query/confirm", d.authenticator.Middleware(d.modelGatewayService.HandleConfirmGeneration))
+	mux.HandleFunc("POST /api/ai/optimize-query", d.authenticator.Middleware(d.modelGatewayService.HandleOptimizeQuery))
+	mux.HandleFunc("POST /api/ai/optimize-query/continue", d.authenticator.Middleware(d.modelGatewayService.HandleContinueOptimization))
 
 	mux.HandleFunc("GET /api/access-policies", d.authenticator.Middleware(d.accessPolicyService.HandleList))
 	mux.HandleFunc("POST /api/access-policies", d.authenticator.Middleware(d.accessPolicyService.HandleCreate))
@@ -39,9 +38,200 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("GET /api/gateways", d.authenticator.Middleware(d.gatewayService.HandleList))
 	mux.HandleFunc("POST /api/gateways", d.authenticator.Middleware(d.gatewayService.HandleCreate))
-	mux.HandleFunc("PUT /api/gateways/{id}", d.authenticator.Middleware(d.gatewayService.HandleUpdate))
-	mux.HandleFunc("DELETE /api/gateways/{id}", d.authenticator.Middleware(d.gatewayService.HandleDelete))
-	mux.HandleFunc("POST /api/gateways/{id}/test", d.authenticator.Middleware(d.gatewayService.HandleTestConnectivity))
+	mux.HandleFunc("POST /api/gateways/ssh-keypair", d.authenticator.Middleware(d.gatewayService.HandleGenerateSSHKeyPair))
+	mux.HandleFunc("GET /api/gateways/ssh-keypair", d.authenticator.Middleware(d.gatewayService.HandleGetSSHKeyPair))
+	mux.HandleFunc("GET /api/gateways/ssh-keypair/private", d.authenticator.Middleware(d.gatewayService.HandleDownloadSSHPrivateKey))
+	mux.HandleFunc("POST /api/gateways/ssh-keypair/rotate", d.authenticator.Middleware(d.gatewayService.HandleRotateSSHKeyPair))
+	mux.HandleFunc("PATCH /api/gateways/ssh-keypair/rotation", d.authenticator.Middleware(d.gatewayService.HandleUpdateSSHKeyRotationPolicy))
+	mux.HandleFunc("GET /api/gateways/ssh-keypair/rotation", d.authenticator.Middleware(d.gatewayService.HandleGetSSHKeyRotationStatus))
+	mux.HandleFunc("GET /api/gateways/tunnel-overview", d.authenticator.Middleware(d.gatewayService.HandleTunnelOverview))
+	mux.HandleFunc("GET /api/gateways/templates", d.authenticator.Middleware(d.gatewayService.HandleListTemplates))
+	mux.HandleFunc("POST /api/gateways/templates", d.authenticator.Middleware(d.gatewayService.HandleCreateTemplate))
+	mux.HandleFunc("/api/gateways/", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/gateways/")
+		if path == "" {
+			app.ErrorJSON(w, http.StatusNotFound, "not found")
+			return
+		}
+
+		if strings.HasPrefix(path, "templates/") {
+			templatePath := strings.TrimPrefix(path, "templates/")
+			switch {
+			case strings.HasSuffix(templatePath, "/deploy"):
+				templateID := strings.TrimSuffix(templatePath, "/deploy")
+				templateID = strings.TrimSuffix(templateID, "/")
+				if templateID == "" || strings.Contains(templateID, "/") {
+					app.ErrorJSON(w, http.StatusNotFound, "not found")
+					return
+				}
+				if r.Method != http.MethodPost {
+					w.Header().Set("Allow", http.MethodPost)
+					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+					return
+				}
+				r.SetPathValue("templateId", templateID)
+				d.gatewayService.HandleDeployTemplate(w, r, claims)
+				return
+			default:
+				templateID := strings.TrimSuffix(templatePath, "/")
+				if templateID == "" || strings.Contains(templateID, "/") {
+					app.ErrorJSON(w, http.StatusNotFound, "not found")
+					return
+				}
+				r.SetPathValue("templateId", templateID)
+				switch r.Method {
+				case http.MethodPut:
+					d.gatewayService.HandleUpdateTemplate(w, r, claims)
+				case http.MethodDelete:
+					d.gatewayService.HandleDeleteTemplate(w, r, claims)
+				default:
+					w.Header().Set("Allow", "DELETE, PUT")
+					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				}
+				return
+			}
+		}
+
+		id, rest, hasRest := strings.Cut(path, "/")
+		id = strings.TrimSuffix(id, "/")
+		if id == "" || strings.Contains(id, "/") {
+			app.ErrorJSON(w, http.StatusNotFound, "not found")
+			return
+		}
+		r.SetPathValue("id", id)
+
+		if !hasRest {
+			switch r.Method {
+			case http.MethodPut:
+				d.gatewayService.HandleUpdate(w, r, claims)
+			case http.MethodDelete:
+				d.gatewayService.HandleDelete(w, r, claims)
+			default:
+				w.Header().Set("Allow", "DELETE, PUT")
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+			}
+			return
+		}
+
+		if strings.HasPrefix(rest, "instances/") {
+			instancePath := strings.TrimPrefix(rest, "instances/")
+			instanceID, action, ok := strings.Cut(instancePath, "/")
+			instanceID = strings.TrimSuffix(instanceID, "/")
+			if !ok || instanceID == "" || strings.Contains(instanceID, "/") {
+				app.ErrorJSON(w, http.StatusNotFound, "not found")
+				return
+			}
+			r.SetPathValue("instanceId", instanceID)
+			switch action {
+			case "restart":
+				if r.Method != http.MethodPost {
+					w.Header().Set("Allow", http.MethodPost)
+					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+					return
+				}
+				d.gatewayService.HandleRestartInstance(w, r, claims)
+			case "logs":
+				if r.Method != http.MethodGet {
+					w.Header().Set("Allow", http.MethodGet)
+					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+					return
+				}
+				d.gatewayService.HandleGetInstanceLogs(w, r, claims)
+			default:
+				app.ErrorJSON(w, http.StatusNotFound, "not found")
+			}
+			return
+		}
+
+		if strings.Contains(rest, "/") {
+			app.ErrorJSON(w, http.StatusNotFound, "not found")
+			return
+		}
+
+		switch rest {
+		case "test":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandleTestConnectivity(w, r, claims)
+		case "push-key":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandlePushSSHKey(w, r, claims)
+		case "scaling":
+			switch r.Method {
+			case http.MethodGet:
+				d.gatewayService.HandleGetScalingStatus(w, r, claims)
+			case http.MethodPut:
+				d.gatewayService.HandleUpdateScalingConfig(w, r, claims)
+			default:
+				w.Header().Set("Allow", "GET, PUT")
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+			}
+		case "instances":
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", http.MethodGet)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandleListInstances(w, r, claims)
+		case "deploy":
+			switch r.Method {
+			case http.MethodPost:
+				d.gatewayService.HandleDeploy(w, r, claims)
+			case http.MethodDelete:
+				d.gatewayService.HandleUndeploy(w, r, claims)
+			default:
+				w.Header().Set("Allow", "DELETE, POST")
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+			}
+		case "scale":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandleScale(w, r, claims)
+		case "tunnel-token":
+			switch r.Method {
+			case http.MethodPost:
+				d.gatewayService.HandleGenerateTunnelToken(w, r, claims)
+			case http.MethodDelete:
+				d.gatewayService.HandleRevokeTunnelToken(w, r, claims)
+			default:
+				w.Header().Set("Allow", "DELETE, POST")
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+			}
+		case "tunnel-disconnect":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandleForceDisconnectTunnel(w, r, claims)
+		case "tunnel-events":
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", http.MethodGet)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandleGetTunnelEvents(w, r, claims)
+		case "tunnel-metrics":
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", http.MethodGet)
+				app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
+				return
+			}
+			d.gatewayService.HandleGetTunnelMetrics(w, r, claims)
+		default:
+			app.ErrorJSON(w, http.StatusNotFound, "not found")
+		}
+	}))
 	mux.HandleFunc("GET /api/rdgw/config", d.authenticator.Middleware(d.rdGatewayService.HandleGetConfig))
 	mux.HandleFunc("PUT /api/rdgw/config", d.authenticator.Middleware(d.rdGatewayService.HandleUpdateConfig))
 	mux.HandleFunc("GET /api/rdgw/status", d.authenticator.Middleware(d.rdGatewayService.HandleStatus))

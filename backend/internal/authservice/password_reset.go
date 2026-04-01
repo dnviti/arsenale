@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -24,9 +25,6 @@ type resetValidationResult struct {
 func (s Service) ForgotPassword(ctx context.Context, email, ipAddress string) error {
 	if s.DB == nil {
 		return fmt.Errorf("postgres is not configured")
-	}
-	if emailFlowConfigured() {
-		return ErrLegacyEmailFlow
 	}
 
 	email = strings.TrimSpace(strings.ToLower(email))
@@ -75,7 +73,9 @@ WHERE id = $1
 		return fmt.Errorf("store password reset token: %w", err)
 	}
 
-	s.logPasswordResetEmail(email, token)
+	if err := s.sendPasswordResetEmail(ctx, email, token); err != nil {
+		slog.Warn("failed to send password reset email", "userId", userID, "email", email, "error", err)
+	}
 	_ = s.insertStandaloneAuditLog(ctx, &userID, "PASSWORD_RESET_REQUEST", map[string]any{"email": email}, ipAddress)
 	return nil
 }

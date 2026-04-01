@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	neturl "net/url"
 	"strconv"
@@ -23,8 +24,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-var ErrLegacySyncProfileFlow = errors.New("legacy sync profile flow required")
 
 var roleHierarchy = map[string]int{
 	"GUEST":      1,
@@ -39,6 +38,7 @@ var roleHierarchy = map[string]int{
 type Service struct {
 	DB                  *pgxpool.Pool
 	ServerEncryptionKey []byte
+	Scheduler           *schedulerState
 }
 
 type requestError struct {
@@ -194,9 +194,6 @@ func (s Service) HandleCreate(w http.ResponseWriter, r *http.Request, claims aut
 	}
 	item, err := s.CreateProfile(r.Context(), claims, payload)
 	if err != nil {
-		if errors.Is(err, ErrLegacySyncProfileFlow) {
-			return err
-		}
 		var reqErr *requestError
 		if errors.As(err, &reqErr) {
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
@@ -221,9 +218,6 @@ func (s Service) HandleUpdate(w http.ResponseWriter, r *http.Request, claims aut
 	}
 	item, err := s.UpdateProfile(r.Context(), claims, r.PathValue("id"), payload)
 	if err != nil {
-		if errors.Is(err, ErrLegacySyncProfileFlow) {
-			return err
-		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			app.ErrorJSON(w, http.StatusNotFound, "Sync profile not found")
 			return nil
@@ -246,9 +240,6 @@ func (s Service) HandleDelete(w http.ResponseWriter, r *http.Request, claims aut
 		return nil
 	}
 	if err := s.DeleteProfile(r.Context(), claims, r.PathValue("id")); err != nil {
-		if errors.Is(err, ErrLegacySyncProfileFlow) {
-			return err
-		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			app.ErrorJSON(w, http.StatusNotFound, "Sync profile not found")
 			return nil
@@ -337,9 +328,6 @@ WHERE id = $1 AND "tenantId" = $2
 }
 
 func (s Service) CreateProfile(ctx context.Context, claims authn.Claims, payload createPayload) (syncProfileResponse, error) {
-	if payload.CronExpression != nil {
-		return syncProfileResponse{}, ErrLegacySyncProfileFlow
-	}
 	if len(s.ServerEncryptionKey) == 0 {
 		return syncProfileResponse{}, fmt.Errorf("server encryption key is unavailable")
 	}
@@ -370,13 +358,13 @@ INSERT INTO "SyncProfile" (
   "cronExpression", enabled, "teamId", "createdById", "createdAt", "updatedAt"
 )
 VALUES (
-  $1, $2, $3, $4::"SyncProvider", $5::jsonb, $6, $7, $8, NULL, true, $9, $10, NOW(), NOW()
+  $1, $2, $3, $4::"SyncProvider", $5::jsonb, $6, $7, $8, $9, true, $10, $11, NOW(), NOW()
 )
 RETURNING id, name, "tenantId", provider::text, config::text, "cronExpression", enabled, "teamId",
           "lastSyncAt", "lastSyncStatus"::text,
           CASE WHEN "lastSyncDetails" IS NULL THEN NULL ELSE "lastSyncDetails"::text END,
           "createdById", "createdAt", "updatedAt", "encryptedApiToken"
-`, uuid.NewString(), payload.Name, claims.TenantID, payload.Provider, string(configJSON), encrypted.Ciphertext, encrypted.IV, encrypted.Tag, normalizedTeamID, claims.UserID)
+`, uuid.NewString(), payload.Name, claims.TenantID, payload.Provider, string(configJSON), encrypted.Ciphertext, encrypted.IV, encrypted.Tag, normalizeCronExpression(payload.CronExpression), normalizedTeamID, claims.UserID)
 
 	item, err := scanProfile(row)
 	if err != nil {
@@ -391,6 +379,7 @@ RETURNING id, name, "tenantId", provider::text, config::text, "cronExpression", 
 	if err := tx.Commit(ctx); err != nil {
 		return syncProfileResponse{}, fmt.Errorf("commit sync profile create: %w", err)
 	}
+	s.reconcileSchedule(item.ID, item.CronExpression, item.Enabled)
 	return item, nil
 }
 
@@ -398,9 +387,6 @@ func (s Service) UpdateProfile(ctx context.Context, claims authn.Claims, profile
 	current, encryptedPresent, err := s.loadProfileRecord(ctx, profileID, claims.TenantID)
 	if err != nil {
 		return syncProfileResponse{}, err
-	}
-	if current.CronExpression != nil || payload.CronExpression.Present {
-		return syncProfileResponse{}, ErrLegacySyncProfileFlow
 	}
 
 	updatedConfig := current.Config
@@ -427,9 +413,10 @@ func (s Service) UpdateProfile(ctx context.Context, claims authn.Claims, profile
 	}
 
 	var (
-		nameValue = current.Name
-		enabled   = current.Enabled
-		teamID    = current.TeamID
+		nameValue      = current.Name
+		enabled        = current.Enabled
+		teamID         = current.TeamID
+		cronExpression = current.CronExpression
 	)
 	if payload.Name != nil {
 		nameValue = strings.TrimSpace(*payload.Name)
@@ -442,6 +429,9 @@ func (s Service) UpdateProfile(ctx context.Context, claims authn.Claims, profile
 		if err != nil {
 			return syncProfileResponse{}, err
 		}
+	}
+	if payload.CronExpression.Present {
+		cronExpression = normalizeCronExpression(payload.CronExpression.Value)
 	}
 	if len(nameValue) == 0 || len(nameValue) > 100 {
 		return syncProfileResponse{}, &requestError{status: http.StatusBadRequest, message: "name must be between 1 and 100 characters"}
@@ -481,16 +471,17 @@ SET name = $3,
     config = $4::jsonb,
     enabled = $5,
     "teamId" = $6,
-    "encryptedApiToken" = CASE WHEN $7 = '' THEN "encryptedApiToken" ELSE $7 END,
-    "apiTokenIV" = CASE WHEN $8 = '' THEN "apiTokenIV" ELSE $8 END,
-    "apiTokenTag" = CASE WHEN $9 = '' THEN "apiTokenTag" ELSE $9 END,
+    "cronExpression" = $7,
+    "encryptedApiToken" = CASE WHEN $8 = '' THEN "encryptedApiToken" ELSE $8 END,
+    "apiTokenIV" = CASE WHEN $9 = '' THEN "apiTokenIV" ELSE $9 END,
+    "apiTokenTag" = CASE WHEN $10 = '' THEN "apiTokenTag" ELSE $10 END,
     "updatedAt" = NOW()
 WHERE id = $1 AND "tenantId" = $2
 RETURNING id, name, "tenantId", provider::text, config::text, "cronExpression", enabled, "teamId",
           "lastSyncAt", "lastSyncStatus"::text,
           CASE WHEN "lastSyncDetails" IS NULL THEN NULL ELSE "lastSyncDetails"::text END,
           "createdById", "createdAt", "updatedAt", "encryptedApiToken"
-`, profileID, claims.TenantID, nameValue, string(configJSON), enabled, teamID, apiTokenCipher, apiTokenIV, apiTokenTag)
+`, profileID, claims.TenantID, nameValue, string(configJSON), enabled, teamID, cronExpression, apiTokenCipher, apiTokenIV, apiTokenTag)
 
 	item, err := scanProfile(row)
 	if err != nil {
@@ -507,16 +498,13 @@ RETURNING id, name, "tenantId", provider::text, config::text, "cronExpression", 
 	if err := tx.Commit(ctx); err != nil {
 		return syncProfileResponse{}, fmt.Errorf("commit sync profile update: %w", err)
 	}
+	s.reconcileSchedule(item.ID, item.CronExpression, item.Enabled)
 	return item, nil
 }
 
 func (s Service) DeleteProfile(ctx context.Context, claims authn.Claims, profileID string) error {
-	current, _, err := s.loadProfileRecord(ctx, profileID, claims.TenantID)
-	if err != nil {
+	if _, _, err := s.loadProfileRecord(ctx, profileID, claims.TenantID); err != nil {
 		return err
-	}
-	if current.CronExpression != nil {
-		return ErrLegacySyncProfileFlow
 	}
 
 	tx, err := s.DB.Begin(ctx)
@@ -541,6 +529,7 @@ func (s Service) DeleteProfile(ctx context.Context, claims authn.Claims, profile
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit sync profile delete: %w", err)
 	}
+	s.unregisterSchedule(profileID)
 	return nil
 }
 
@@ -783,6 +772,17 @@ func defaultStringPointer(value *string, fallback string) string {
 	return strings.TrimSpace(*value)
 }
 
+func normalizeCronExpression(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*value)
+	if trimmed == "" {
+		return nil
+	}
+	return &trimmed
+}
+
 func requireTenantAdmin(claims authn.Claims) *requestError {
 	if strings.TrimSpace(claims.TenantID) == "" {
 		return &requestError{status: http.StatusForbidden, message: "You must belong to an organization to perform this action"}
@@ -805,6 +805,12 @@ VALUES ($1, $2, $3, 'SyncProfile', $4, $5::jsonb)
 		return fmt.Errorf("insert audit log: %w", err)
 	}
 	return nil
+}
+
+func logScheduleError(err error) {
+	if err != nil {
+		log.Printf("syncprofiles: %v", err)
+	}
 }
 
 func encryptValue(key []byte, plaintext string) (encryptedField, error) {

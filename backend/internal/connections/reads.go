@@ -105,7 +105,7 @@ ORDER BY c.name ASC
 	}
 	defer sharedRows.Close()
 
-	var shared []connectionResponse
+	shared := make([]connectionResponse, 0)
 	for sharedRows.Next() {
 		conn, permission, sharedBy, err := scanConnectionWithShare(sharedRows)
 		if err != nil {
@@ -167,7 +167,7 @@ ORDER BY c.name ASC
 	}
 	defer teamRows.Close()
 
-	var team []connectionResponse
+	team := make([]connectionResponse, 0)
 	for teamRows.Next() {
 		conn, teamRole, teamName, err := scanConnectionWithTeam(teamRows)
 		if err != nil {
@@ -183,7 +183,7 @@ ORDER BY c.name ASC
 		return listResponse{}, fmt.Errorf("iterate team connections: %w", err)
 	}
 
-	return listResponse{Own: own, Shared: shared, Team: team}, nil
+	return normalizeListResponse(listResponse{Own: own, Shared: shared, Team: team}), nil
 }
 
 func (s Service) GetConnection(ctx context.Context, userID, tenantID, connectionID string) (connectionResponse, error) {
@@ -407,7 +407,7 @@ WHERE sc."connectionId" = $1
 }
 
 func scanConnectionRows(rows pgx.Rows, decorate func(*connectionResponse)) ([]connectionResponse, error) {
-	var items []connectionResponse
+	items := make([]connectionResponse, 0)
 	for rows.Next() {
 		conn, err := scanSingleConnection(rows)
 		if err != nil {

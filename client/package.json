@@ -6,7 +6,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ./scripts/sync-monaco-assets.mjs",
     "dev": "vite",
+    "prebuild": "node ./scripts/sync-monaco-assets.mjs",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
     "test": "vitest run",

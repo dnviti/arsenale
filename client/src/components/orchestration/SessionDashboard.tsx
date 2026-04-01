@@ -12,8 +12,12 @@ import {
   Dns as DnsIcon,
   Terminal as TerminalIcon,
 } from '@mui/icons-material';
+import type { ActiveSessionStreamSnapshot } from '../../api/live.api';
+import { connectSSE } from '../../api/sse';
+import { useAuthStore } from '../../store/authStore';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { isGatewayGroup } from '../../utils/gatewayMode';
 
 const statusColor: Record<string, 'success' | 'warning' | 'default'> = {
   ACTIVE: 'success',
@@ -28,10 +32,11 @@ export default function SessionDashboard() {
   const gateways = useGatewayStore((s) => s.gateways);
   const fetchActiveSessions = useGatewayStore((s) => s.fetchActiveSessions);
   const fetchSessionCount = useGatewayStore((s) => s.fetchSessionCount);
+  const applyActiveSessionStreamSnapshot = useGatewayStore((s) => s.applyActiveSessionStreamSnapshot);
   const terminateSessionAction = useGatewayStore((s) => s.terminateSession);
+  const accessToken = useAuthStore((s) => s.accessToken);
 
   const autoRefresh = useUiPreferencesStore((s) => s.orchestrationAutoRefresh);
-  const refreshInterval = useUiPreferencesStore((s) => s.orchestrationRefreshInterval);
   const toggleAutoRefresh = useUiPreferencesStore((s) => s.toggle);
 
   const [protocolFilter, setProtocolFilter] = useState<string>('');
@@ -46,20 +51,37 @@ export default function SessionDashboard() {
   }, [protocolFilter, gatewayFilter]);
 
   const refresh = useCallback(() => {
-    fetchActiveSessions(filters);
-    fetchSessionCount();
+    void fetchActiveSessions(filters);
+    void fetchSessionCount();
   }, [filters, fetchActiveSessions, fetchSessionCount]);
 
   useEffect(() => {
+    if (autoRefresh || !accessToken) return undefined;
     refresh();
-    if (!autoRefresh) return;
-    const timer = setInterval(refresh, refreshInterval);
-    return () => clearInterval(timer);
-  }, [refresh, autoRefresh, refreshInterval]);
+    return undefined;
+  }, [refresh, autoRefresh, accessToken]);
+
+  useEffect(() => {
+    if (!autoRefresh || !accessToken) return undefined;
+
+    const params = new URLSearchParams();
+    if (filters.protocol) params.set('protocol', filters.protocol);
+    if (filters.gatewayId) params.set('gatewayId', filters.gatewayId);
+    const query = params.toString();
+
+    return connectSSE({
+      url: query ? `/api/sessions/active/stream?${query}` : '/api/sessions/active/stream',
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        applyActiveSessionStreamSnapshot(data as ActiveSessionStreamSnapshot);
+      },
+    });
+  }, [autoRefresh, accessToken, filters.protocol, filters.gatewayId, applyActiveSessionStreamSnapshot]);
 
   const sshCount = activeSessions.filter((s) => s.protocol === 'SSH').length;
   const rdpCount = activeSessions.filter((s) => s.protocol === 'RDP').length;
-  const managedGateways = gateways.filter((g) => g.isManaged).length;
+  const managedGateways = gateways.filter((g) => isGatewayGroup(g)).length;
 
   const handleTerminate = async () => {
     if (!terminateTarget) return;
@@ -116,7 +138,7 @@ export default function SessionDashboard() {
               size="small"
             />
           }
-          label="Auto-refresh"
+          label="Live updates"
         />
       </Stack>
 

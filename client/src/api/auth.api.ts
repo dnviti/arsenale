@@ -82,6 +82,15 @@ export async function refreshApi() {
   };
 }
 
+export async function restoreSessionApi() {
+  const { data } = await api.get('/auth/session');
+  return data as {
+    accessToken: string;
+    csrfToken: string;
+    user: { id: string; email: string; username: string | null; avatarData: string | null };
+  };
+}
+
 export async function logoutApi() {
   await api.post('/auth/logout');
 }

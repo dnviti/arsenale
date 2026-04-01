@@ -20,9 +20,6 @@ func (s Service) HandleCreate(w http.ResponseWriter, r *http.Request, claims aut
 
 	result, err := s.StartSession(r.Context(), claims, payload, requestIP(r))
 	if err != nil {
-		if errors.Is(err, ErrLegacySSHSessionFlow) {
-			return err
-		}
 		var reqErr *requestError
 		if errors.As(err, &reqErr) {
 			app.ErrorJSON(w, reqErr.status, reqErr.message)

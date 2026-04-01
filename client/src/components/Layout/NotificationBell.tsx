@@ -4,6 +4,8 @@ import {
   ListItemText, ListItemIcon, Button, Divider,
 } from '@mui/material';
 import { NotificationsOutlined, DoneAll, Close as CloseIcon } from '@mui/icons-material';
+import type { NotificationStreamSnapshot } from '../../api/live.api';
+import { connectSSE } from '../../api/sse';
 import { useAuthStore } from '../../store/authStore';
 import { useNotificationListStore } from '../../store/notificationListStore';
 import type { NotificationEntry } from '../../api/notifications.api';
@@ -35,36 +37,50 @@ export default function NotificationBell({ navigationActions }: NotificationBell
   const accessToken = useAuthStore((s) => s.accessToken);
   const notifications = useNotificationListStore((s) => s.notifications);
   const unreadCount = useNotificationListStore((s) => s.unreadCount);
-  const fetchNotifications = useNotificationListStore((s) => s.fetchNotifications);
+  const applySnapshot = useNotificationListStore((s) => s.applySnapshot);
   const markAsRead = useNotificationListStore((s) => s.markAsRead);
   const markAllAsRead = useNotificationListStore((s) => s.markAllAsRead);
   const removeNotification = useNotificationListStore((s) => s.removeNotification);
 
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
 
-  const { setOnClick } = useDesktopNotifications();
+  const { setOnClick, sendDesktopNotification } = useDesktopNotifications();
 
   // Open notification popover when user clicks a native desktop notification
   const anchorRef = useRef<HTMLButtonElement | null>(null);
+  const latestNotificationIdRef = useRef<string | null>(null);
   useEffect(() => {
     setOnClick(() => {
       if (anchorRef.current) setAnchorEl(anchorRef.current);
     });
   }, [setOnClick]);
 
-  // Poll notifications while authenticated.
   useEffect(() => {
     if (!accessToken) return undefined;
 
-    void fetchNotifications();
-    const interval = window.setInterval(() => {
-      void fetchNotifications();
-    }, 15_000);
+    return connectSSE({
+      url: '/api/notifications/stream',
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        const snapshot = data as NotificationStreamSnapshot;
+        const latest = snapshot.data[0];
+        const previousLatestId = latestNotificationIdRef.current;
 
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [accessToken, fetchNotifications]);
+        applySnapshot(snapshot);
+
+        if (latest) {
+          if (previousLatestId && previousLatestId !== latest.id && !latest.read) {
+            sendDesktopNotification('New notification', {
+              body: latest.message,
+              tag: latest.id,
+            });
+          }
+          latestNotificationIdRef.current = latest.id;
+        }
+      },
+    });
+  }, [accessToken, applySnapshot, sendDesktopNotification]);
 
   const handleClick = (notification: NotificationEntry) => {
     if (!notification.read) {

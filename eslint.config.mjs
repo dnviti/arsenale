@@ -9,15 +9,16 @@ export default tseslint.config(
     ignores: [
       "**/dist/**",
       "**/node_modules/**",
-      "server/src/generated/**",
+      "server/**",
       "client/dist-node/**",
+      "client/public/monaco/**",
     ],
   },
 
   // ── Base TypeScript rules (all workspaces) ────────────────────
   ...tseslint.configs.strict,
   {
-    files: ["server/src/**/*.ts", "client/src/**/*.{ts,tsx}", "tunnel-agent/src/**/*.ts", "extra-clients/browser-extensions/src/**/*.{ts,tsx}"],
+    files: ["client/src/**/*.{ts,tsx}", "gateways/tunnel-agent/src/**/*.ts", "extra-clients/browser-extensions/src/**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -36,22 +37,12 @@ export default tseslint.config(
 
   // ── Security rules (all workspaces) ───────────────────────────
   {
-    files: ["server/src/**/*.ts", "client/src/**/*.{ts,tsx}", "tunnel-agent/src/**/*.ts", "extra-clients/browser-extensions/src/**/*.{ts,tsx}"],
+    files: ["client/src/**/*.{ts,tsx}", "gateways/tunnel-agent/src/**/*.ts", "extra-clients/browser-extensions/src/**/*.{ts,tsx}"],
     plugins: { security },
     rules: {
       ...security.configs.recommended.rules,
       // Too many false positives on Record/Map bracket access
       "security/detect-object-injection": "off",
-    },
-  },
-
-  // ── Server-specific rules ──────────────────────────────────────
-  {
-    files: ["server/src/**/*.ts"],
-    ignores: ["server/src/cli.ts", "server/src/cli/**/*.ts"],
-    rules: {
-      // Server has a logger utility — discourage raw console usage
-      "no-console": "warn",
     },
   },
 

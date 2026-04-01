@@ -25,7 +25,7 @@ function LazyFallback() {
 }
 import { useAuth } from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
-import { useVaultStore } from './store/vaultStore';
+import { useVaultStatusStream } from './hooks/useVaultStatusStream';
 import { getSetupStatus } from './api/setup.api';
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
@@ -38,18 +38,9 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const user = useAuthStore((s) => s.user);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const checkStatus = useVaultStore((s) => s.checkStatus);
-  const startPolling = useVaultStore((s) => s.startPolling);
-  const stopPolling = useVaultStore((s) => s.stopPolling);
   const location = useLocation();
 
-  useEffect(() => {
-    if (!isAuthenticated || !accessToken) return;
-    checkStatus();
-    startPolling();
-    return () => stopPolling();
-  }, [isAuthenticated, accessToken, checkStatus, startPolling, stopPolling]);
+  useVaultStatusStream();
 
   if (loading) return null;
   if (!isAuthenticated) {

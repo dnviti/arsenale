@@ -509,7 +509,7 @@ New notification types for agent lifecycle:
 | 2 | RDP/VNC approach — vision-based vs. accessibility API? | Vision-based (screenshot + OCR + coordinate clicks) | Guacamole already supports screenshot capture; accessibility APIs are protocol-specific and fragile |
 | 3 | Permission granularity — start coarse or fine? | Start with connection-level (read/write/execute), add command-level regex in Phase 2 | Avoids over-engineering; most initial use cases are SSH + DB |
 | 4 | Cost controls — per-instance, per-agent, or per-tenant? | Per-instance hard limit + per-tenant soft limit with alerts | Prevents runaway single execution while allowing flexible budgets |
-| 5 | Context persistence — in DB or external store? | JSON column on `AgentInstance` for Phase 1, consider Redis/gocache for Phase 3+ | DB is sufficient for single-instance; high-frequency updates benefit from cache layer |
+| 5 | Context persistence — in DB or external store? | JSON column on `AgentInstance` for Phase 1, consider Redis/external cache for Phase 3+ | DB is sufficient for single-instance; high-frequency updates benefit from a dedicated cache layer |
 | 6 | LLM provider abstraction — custom or existing SDK? | LangChain/Vercel AI SDK for provider normalization | Avoid reinventing provider adapters; these SDKs handle streaming, retries, token counting |
 
 ## Supported LLM Providers
