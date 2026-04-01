@@ -13,34 +13,37 @@ func (s Service) TestGatewayConnectivity(ctx context.Context, tenantID, gatewayI
 	}
 
 	var (
-		host         string
-		port         int
-		gatewayType  string
-		publishPorts bool
+		host        string
+		port        int
+		gatewayType string
 	)
 	if err := s.DB.QueryRow(ctx, `
-SELECT host, port, type::text, "publishPorts"
+SELECT host, port, type::text
   FROM "Gateway"
  WHERE id = $1
    AND "tenantId" = $2
-`, gatewayID, tenantID).Scan(&host, &port, &gatewayType, &publishPorts); err != nil {
+`, gatewayID, tenantID).Scan(&host, &port, &gatewayType); err != nil {
 		return connectivityResult{}, &requestError{status: 404, message: "Gateway not found"}
 	}
 
-	if publishPorts && (gatewayType == "MANAGED_SSH" || gatewayType == "GUACD" || gatewayType == "DB_PROXY") {
-		var instanceHost string
+	if gatewayType == "MANAGED_SSH" || gatewayType == "GUACD" || gatewayType == "DB_PROXY" {
+		var instanceHost, instanceContainerName string
 		var instancePort int
 		err := s.DB.QueryRow(ctx, `
-SELECT host, port
+SELECT host, port, "containerName"
   FROM "ManagedGatewayInstance"
  WHERE "gatewayId" = $1
    AND status = 'RUNNING'
  ORDER BY "createdAt" ASC
  LIMIT 1
-`, gatewayID).Scan(&instanceHost, &instancePort)
+`, gatewayID).Scan(&instanceHost, &instancePort, &instanceContainerName)
 		if err == nil {
-			host = instanceHost
-			port = instancePort
+			if instanceContainerName != "" {
+				host = instanceContainerName
+			} else {
+				host = instanceHost
+				port = instancePort
+			}
 		}
 	}
 
@@ -54,7 +57,8 @@ UPDATE "Gateway"
    SET "lastHealthStatus" = $2::"GatewayHealthStatus",
        "lastCheckedAt" = NOW(),
        "lastLatencyMs" = $3,
-       "lastError" = $4
+       "lastError" = $4,
+       "updatedAt" = NOW()
  WHERE id = $1
 `, gatewayID, status, result.LatencyMS, result.Error); err != nil {
 		return connectivityResult{}, fmt.Errorf("update gateway health: %w", err)

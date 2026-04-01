@@ -1,14 +1,11 @@
 package main
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
-	"github.com/dnviti/arsenale/backend/internal/connections"
-	"github.com/dnviti/arsenale/backend/internal/importexportapi"
-	"github.com/dnviti/arsenale/backend/internal/syncprofiles"
+	"github.com/dnviti/arsenale/backend/internal/authn"
 )
 
 func (d *apiDependencies) registerResourceRoutes(mux *http.ServeMux) {
@@ -20,68 +17,24 @@ func (d *apiDependencies) registerResourceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/checkouts/{id}/checkin", d.authenticator.Middleware(d.checkoutService.HandleCheckin))
 
 	mux.HandleFunc("GET /api/connections", d.authenticator.Middleware(d.connectionService.HandleList))
-	mux.HandleFunc("POST /api/connections/export", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.importExportService.HandleExport(w, r, claims); err != nil {
-			if errors.Is(err, importexportapi.ErrLegacyImportExportFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
-	mux.HandleFunc("POST /api/connections/import", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.importExportService.HandleImport(w, r, claims); err != nil {
-			if errors.Is(err, importexportapi.ErrLegacyImportExportFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
-	mux.HandleFunc("POST /api/connections", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.connectionService.HandleCreate(w, r, claims); err != nil {
-			if errors.Is(err, connections.ErrLegacyConnectionFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
+	mux.HandleFunc("POST /api/connections/export", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.importExportService.HandleExport(w, r, claims)
+	}))
+	mux.HandleFunc("POST /api/connections/import", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.importExportService.HandleImport(w, r, claims)
+	}))
+	mux.HandleFunc("POST /api/connections", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.connectionService.HandleCreate(w, r, claims)
+	}))
 	mux.HandleFunc("GET /api/connections/{id}", d.authenticator.Middleware(d.connectionService.HandleGetOne))
 	mux.HandleFunc("POST /api/connections/batch-share", d.authenticator.Middleware(d.connectionService.HandleBatchShare))
 	mux.HandleFunc("POST /api/connections/{id}/share", d.authenticator.Middleware(d.connectionService.HandleShare))
 	mux.HandleFunc("PUT /api/connections/{id}/share/{userId}", d.authenticator.Middleware(d.connectionService.HandleUpdateSharePermission))
 	mux.HandleFunc("DELETE /api/connections/{id}/share/{userId}", d.authenticator.Middleware(d.connectionService.HandleUnshare))
 	mux.HandleFunc("GET /api/connections/{id}/shares", d.authenticator.Middleware(d.connectionService.HandleListShares))
-	mux.HandleFunc("PUT /api/connections/{id}", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.connectionService.HandleUpdate(w, r, claims); err != nil {
-			if errors.Is(err, connections.ErrLegacyConnectionFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
+	mux.HandleFunc("PUT /api/connections/{id}", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.connectionService.HandleUpdate(w, r, claims)
+	}))
 	mux.HandleFunc("DELETE /api/connections/{id}", d.authenticator.Middleware(d.connectionService.HandleDelete))
 	mux.HandleFunc("PATCH /api/connections/{id}/favorite", d.authenticator.Middleware(d.connectionService.HandleToggleFavorite))
 	mux.HandleFunc("GET /api/cli/connections", d.authenticator.Middleware(d.connectionService.HandleCLIList))
@@ -133,64 +86,20 @@ func (d *apiDependencies) registerResourceRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/vault-providers/{providerId}/test", d.authenticator.Middleware(d.externalVaultService.HandleTest))
 
 	mux.HandleFunc("GET /api/sync-profiles", d.authenticator.Middleware(d.syncProfileService.HandleList))
-	mux.HandleFunc("POST /api/sync-profiles", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.syncProfileService.HandleCreate(w, r, claims); err != nil {
-			if errors.Is(err, syncprofiles.ErrLegacySyncProfileFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
+	mux.HandleFunc("POST /api/sync-profiles", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.syncProfileService.HandleCreate(w, r, claims)
+	}))
 	mux.HandleFunc("GET /api/sync-profiles/{id}", d.authenticator.Middleware(d.syncProfileService.HandleGet))
-	mux.HandleFunc("PUT /api/sync-profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.syncProfileService.HandleUpdate(w, r, claims); err != nil {
-			if errors.Is(err, syncprofiles.ErrLegacySyncProfileFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
-	mux.HandleFunc("DELETE /api/sync-profiles/{id}", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.syncProfileService.HandleDelete(w, r, claims); err != nil {
-			if errors.Is(err, syncprofiles.ErrLegacySyncProfileFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
+	mux.HandleFunc("PUT /api/sync-profiles/{id}", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.syncProfileService.HandleUpdate(w, r, claims)
+	}))
+	mux.HandleFunc("DELETE /api/sync-profiles/{id}", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.syncProfileService.HandleDelete(w, r, claims)
+	}))
 	mux.HandleFunc("POST /api/sync-profiles/{id}/test", d.authenticator.Middleware(d.syncProfileService.HandleTestConnection))
-	mux.HandleFunc("POST /api/sync-profiles/{id}/sync", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		if err := d.syncProfileService.HandleTriggerSync(w, r, claims); err != nil {
-			if errors.Is(err, syncprofiles.ErrLegacySyncProfileFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
-			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		}
-	})
+	mux.HandleFunc("POST /api/sync-profiles/{id}/sync", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+		_ = d.syncProfileService.HandleTriggerSync(w, r, claims)
+	}))
 	mux.HandleFunc("GET /api/sync-profiles/{id}/logs", d.authenticator.Middleware(d.syncProfileService.HandleLogs))
 
 	mux.HandleFunc("/api/teams", func(w http.ResponseWriter, r *http.Request) {

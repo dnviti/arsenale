@@ -13,8 +13,8 @@ The preferred way to interact with Ansible is through the root `Makefile`. All c
 make setup          # Install Ansible collections, generate vault + certs
 
 # Development
-make dev            # Start postgres + split cache/pubsub backends, generate .env
-npm run dev         # Start server + client
+make dev            # Start the full Go-based development stack
+npm run dev         # Optional: start Vite on https://localhost:3005 against the local Go stack
 
 # Production
 make deploy         # Full stack deployment
@@ -208,7 +208,7 @@ loginctl enable-linger arsenale
 ### Container health checks failing
 ```bash
 # Check container logs:
-podman logs arsenale-server
+podman logs arsenale-control-plane-api-go
 podman logs arsenale-postgres
 
 # Check all container statuses:
@@ -221,7 +221,7 @@ podman compose -f /opt/arsenale/docker-compose.yml ps
 podman secret ls
 
 # Verify secrets are mounted:
-podman exec arsenale-server ls /run/secrets/
+podman exec arsenale-control-plane-api-go ls /run/secrets/
 ```
 
 ### Certificate issues

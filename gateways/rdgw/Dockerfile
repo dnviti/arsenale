@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ COPY main.go ./
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o rdgw-proxy .
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM alpine:3.21
+FROM docker.io/library/alpine:3.21
 
 RUN apk add --no-cache ca-certificates
 
@@ -27,7 +27,7 @@ RUN adduser -D -s /sbin/nologin rdgw
 USER rdgw
 
 # Required env vars:
-# RDGW_ARSENALE_API_URL   http://arsenale-server:3001
+# RDGW_ARSENALE_API_URL   http://arsenale-control-plane:8080
 # RDGW_API_TOKEN          <token for authenticating with Arsenale API>
 #
 # Optional:

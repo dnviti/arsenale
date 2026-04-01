@@ -103,7 +103,8 @@ func (s *PostgresStore) MarkTunnelConnected(ctx context.Context, gatewayID strin
 		    SET "tunnelConnectedAt" = $2,
 		        "tunnelLastHeartbeat" = $2,
 		        "tunnelClientVersion" = NULLIF($3, ''),
-		        "tunnelClientIp" = NULLIF($4, '')
+		        "tunnelClientIp" = NULLIF($4, ''),
+		        "updatedAt" = $2
 		  WHERE id = $1`,
 		gatewayID,
 		connectedAt.UTC(),
@@ -118,7 +119,8 @@ func (s *PostgresStore) MarkTunnelDisconnected(ctx context.Context, gatewayID st
 		ctx,
 		`UPDATE "Gateway"
 		    SET "tunnelConnectedAt" = NULL,
-		        "tunnelLastHeartbeat" = NULL
+		        "tunnelLastHeartbeat" = NULL,
+		        "updatedAt" = NOW()
 		  WHERE id = $1`,
 		gatewayID,
 	)
@@ -129,7 +131,8 @@ func (s *PostgresStore) MarkTunnelHeartbeat(ctx context.Context, gatewayID strin
 	_, err := s.db.Exec(
 		ctx,
 		`UPDATE "Gateway"
-		    SET "tunnelLastHeartbeat" = $2
+		    SET "tunnelLastHeartbeat" = $2,
+		        "updatedAt" = $2
 		  WHERE id = $1`,
 		gatewayID,
 		heartbeatAt.UTC(),
@@ -151,7 +154,8 @@ func (s *PostgresStore) MarkTunnelHeartbeat(ctx context.Context, gatewayID strin
 		ctx,
 		`UPDATE "ManagedGatewayInstance"
 		    SET "healthStatus" = $2,
-		        "lastHealthCheck" = $3
+		        "lastHealthCheck" = $3,
+		        "updatedAt" = $3
 		  WHERE "gatewayId" = $1
 		    AND status = 'RUNNING'::"ManagedInstanceStatus"`,
 		gatewayID,

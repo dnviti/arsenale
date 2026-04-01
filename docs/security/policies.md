@@ -3,6 +3,8 @@
 > Auto-generated on 2026-03-15 by /docs create security.
 > Source of truth is the codebase. Run /docs update security after code changes.
 
+> Runtime note: the current authorization and policy enforcement path is Go-first. Any `server/src` citations below are archived reference material.
+
 ## Connection Sharing Security
 
 When a connection is shared with another user, credentials are **re-encrypted** for the recipient:
@@ -134,7 +136,7 @@ When a policy denies access:
 - A `SESSION_DENIED_ABAC` audit log entry is created with the denial reason, policy ID, target type/ID, and GeoIP data
 - The caller receives a 403 response
 
-Source: `server/src/services/abac.service.ts`
+Source: `backend/internal/accesspolicies/service.go`
 
 <!-- manual-start -->
 <!-- manual-end -->

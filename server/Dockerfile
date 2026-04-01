@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: Install ALL dependencies (dev + prod) with native build tools
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS deps
+FROM docker.io/library/node:22-alpine AS deps
 
 RUN apk add --no-cache python3 make g++
 
@@ -17,7 +17,7 @@ RUN npm ci
 # ---------------------------------------------------------------------------
 # Stage: Dev target (deps only — source bind-mounted at runtime)
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS dev
+FROM docker.io/library/node:22-alpine AS dev
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ USER node
 # ---------------------------------------------------------------------------
 # Stage 2: Build (Prisma generate + TypeScript compile)
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS build
+FROM docker.io/library/node:22-alpine AS build
 
 WORKDIR /app
 
@@ -50,7 +50,7 @@ RUN npx tsc
 # ---------------------------------------------------------------------------
 # Stage 3: Production dependencies only (no dev deps, no build tools)
 # ---------------------------------------------------------------------------
-FROM node:22-alpine AS prod-deps
+FROM docker.io/library/node:22-alpine AS prod-deps
 
 RUN apk add --no-cache python3 make g++
 
@@ -70,7 +70,7 @@ RUN npm ci --omit=dev && \
 # ---------------------------------------------------------------------------
 # Stage 4: Runtime (minimal — no build tools, no dev deps, no source)
 # ---------------------------------------------------------------------------
-FROM node:22-alpine
+FROM docker.io/library/node:22-alpine
 
 WORKDIR /app
 

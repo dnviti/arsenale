@@ -27,13 +27,19 @@ interface GatewayInstanceListProps {
 export default function GatewayInstanceList({ gatewayId }: GatewayInstanceListProps) {
   const instances = useGatewayStore((s) => s.instances[gatewayId] ?? EMPTY_INSTANCES);
   const fetchInstances = useGatewayStore((s) => s.fetchInstances);
+  const watchInstances = useGatewayStore((s) => s.watchInstances);
+  const unwatchInstances = useGatewayStore((s) => s.unwatchInstances);
   const restartInstance = useGatewayStore((s) => s.restartInstance);
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsInstance, setLogsInstance] = useState<ManagedInstanceData | null>(null);
 
   useEffect(() => {
-    fetchInstances(gatewayId);
-  }, [gatewayId, fetchInstances]);
+    watchInstances(gatewayId);
+    void fetchInstances(gatewayId);
+    return () => {
+      unwatchInstances(gatewayId);
+    };
+  }, [gatewayId, fetchInstances, watchInstances, unwatchInstances]);
 
   if (instances.length === 0) {
     return (

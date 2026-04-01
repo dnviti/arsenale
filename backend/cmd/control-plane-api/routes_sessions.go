@@ -2,12 +2,12 @@ package main
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/sessions"
-	"github.com/dnviti/arsenale/backend/internal/sshsessions"
 )
 
 func (d *apiDependencies) handleOwnedSessionHeartbeat(w http.ResponseWriter, r *http.Request, userID string) {
@@ -60,13 +60,37 @@ func (d *apiDependencies) registerSessionRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.sshSessionService.HandleCreate(w, r, claims); err != nil {
-			if errors.Is(err, sshsessions.ErrLegacySSHSessionFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})
+	mux.HandleFunc("POST /api/sessions/database", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.databaseSessionService.HandleCreate(w, r, claims)
+	})
+	mux.HandleFunc("POST /api/sessions/rdp", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.desktopSessionService.HandleCreateRDP(w, r, claims)
+	})
+	mux.HandleFunc("POST /api/sessions/vnc", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.desktopSessionService.HandleCreateVNC(w, r, claims)
+	})
+	mux.HandleFunc("POST /api/sessions/db-tunnel", d.authenticator.Middleware(d.sshSessionService.HandleCreateDBTunnel))
+	mux.HandleFunc("GET /api/sessions/db-tunnel", d.authenticator.Middleware(d.sshSessionService.HandleListDBTunnels))
+	mux.HandleFunc("POST /api/sessions/db-tunnel/{tunnelId}/heartbeat", d.authenticator.Middleware(d.sshSessionService.HandleDBTunnelHeartbeat))
+	mux.HandleFunc("DELETE /api/sessions/db-tunnel/{tunnelId}", d.authenticator.Middleware(d.sshSessionService.HandleCloseDBTunnel))
 	mux.HandleFunc("POST /api/sessions/rdp/{sessionId}/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 		claims, err := d.authenticator.Authenticate(r)
 		if err != nil {
@@ -139,6 +163,38 @@ func (d *apiDependencies) registerSessionRoutes(mux *http.ServeMux) {
 		}
 		d.databaseSessionService.HandleOwnedConfigGet(w, r, claims.UserID)
 	})
+	mux.HandleFunc("POST /api/sessions/database/{sessionId}/query", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.databaseSessionService.HandleOwnedQuery(w, r, claims.UserID, claims.TenantID, claims.TenantRole, sessionRequestIP(r))
+	})
+	mux.HandleFunc("GET /api/sessions/database/{sessionId}/schema", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.databaseSessionService.HandleOwnedSchema(w, r, claims.UserID, claims.TenantID)
+	})
+	mux.HandleFunc("POST /api/sessions/database/{sessionId}/explain", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.databaseSessionService.HandleOwnedExplain(w, r, claims.UserID, claims.TenantID, claims.TenantRole, sessionRequestIP(r))
+	})
+	mux.HandleFunc("POST /api/sessions/database/{sessionId}/introspect", func(w http.ResponseWriter, r *http.Request) {
+		claims, err := d.authenticator.Authenticate(r)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+			return
+		}
+		d.databaseSessionService.HandleOwnedIntrospect(w, r, claims.UserID, claims.TenantID)
+	})
 	mux.HandleFunc("POST /api/sessions/{sessionId}/terminate", func(w http.ResponseWriter, r *http.Request) {
 		claims, err := d.authenticator.Authenticate(r)
 		if err != nil {
@@ -146,10 +202,6 @@ func (d *apiDependencies) registerSessionRoutes(mux *http.ServeMux) {
 			return
 		}
 		if err := d.sessionAdminService.HandleTerminate(w, r, claims); err != nil {
-			if errors.Is(err, sessions.ErrLegacySessionAdminFlow) {
-				d.legacyAPIProxy.ServeHTTP(w, r)
-				return
-			}
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 	})
@@ -163,4 +215,33 @@ func (d *apiDependencies) registerSessionRoutes(mux *http.ServeMux) {
 		}
 		d.databaseSessionService.HandleHistory(w, r, claims.UserID)
 	})
+}
+
+func sessionRequestIP(r *http.Request) string {
+	for _, value := range []string{
+		r.Header.Get("X-Real-IP"),
+		firstForwardedHeader(r.Header.Get("X-Forwarded-For")),
+		r.RemoteAddr,
+	} {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if host, _, err := net.SplitHostPort(value); err == nil {
+			value = host
+		}
+		value = strings.TrimPrefix(value, "::ffff:")
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstForwardedHeader(value string) string {
+	parts := strings.Split(value, ",")
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(parts[0])
 }

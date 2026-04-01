@@ -4,9 +4,13 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 // Allow overriding proxy targets via env vars (set by Docker Compose).
-// Defaults work for host-mode development (server on localhost).
-const apiTarget = process.env.VITE_API_TARGET || 'https://localhost:3001';
-const guacTarget = process.env.VITE_GUAC_TARGET || 'https://localhost:3002';
+// Defaults target the local Go split services started by `make dev`.
+const apiTarget = process.env.VITE_API_TARGET || 'http://localhost:18080';
+const guacTarget = process.env.VITE_GUAC_TARGET || 'http://localhost:18091';
+const terminalTarget = process.env.VITE_TERMINAL_TARGET || 'http://localhost:18090';
+const devPort = Number(process.env.VITE_DEV_PORT || '3005');
+const contentSecurityPolicy =
+  "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://*.tile.openstreetmap.org; connect-src 'self' ws: wss:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
 
 export default defineConfig({
   plugins: [
@@ -80,6 +84,7 @@ export default defineConfig({
       workbox: {
         // Only cache static assets — never cache API calls or WebSocket connections
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB — main bundle exceeds default 2 MiB
+        globIgnores: ['monaco/vs/**/*'],
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/guacamole\//],
         runtimeCaching: [
@@ -160,7 +165,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
+    port: devPort,
     headers: {
       'X-Frame-Options': 'DENY',
       'X-Content-Type-Options': 'nosniff',
@@ -168,10 +173,9 @@ export default defineConfig({
       'Referrer-Policy': 'strict-origin-when-cross-origin',
       'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
       // NOTE: Vite dev server requires unsafe-inline/unsafe-eval for HMR to function.
-      // This is acceptable in development only. Production builds use Helmet CSP
-      // configured in server/src/app.ts with strict default-src 'self' (no unsafe-*).
-      'Content-Security-Policy':
-        "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+      // This is acceptable in development only. Production builds use the client
+      // nginx CSP with strict same-origin defaults.
+      'Content-Security-Policy': contentSecurityPolicy,
     },
     fs: {
       // Restrict file serving to the project workspace only — prevents /@fs path traversal
@@ -207,9 +211,9 @@ export default defineConfig({
       ],
     },
     https: (() => {
-      // Use provided certs or fall back to auto-generated dev certs from the server
-      const certPath = process.env.VITE_TLS_CERT || '../dev-certs/server/server-cert.pem';
-      const keyPath = process.env.VITE_TLS_KEY || '../dev-certs/server/server-key.pem';
+      // Use provided certs or fall back to the generated dev cert bundle.
+      const certPath = process.env.VITE_TLS_CERT || '../dev-certs/control-plane-api/server-cert.pem';
+      const keyPath = process.env.VITE_TLS_KEY || '../dev-certs/control-plane-api/server-key.pem';
       try {
         return {
           cert: fs.readFileSync(certPath),
@@ -232,6 +236,11 @@ export default defineConfig({
         ws: true,
         secure: false,
         rewrite: (path) => path.replace(/^\/guacamole/, ''),
+      },
+      '/ws/terminal': {
+        target: terminalTarget,
+        ws: true,
+        secure: false,
       },
     },
   },

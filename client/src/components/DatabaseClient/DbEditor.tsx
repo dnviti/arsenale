@@ -45,6 +45,7 @@ import {
 import Editor, { type OnMount, type Monaco } from '@monaco-editor/react';
 import type * as monacoNs from 'monaco-editor';
 import api from '../../api/client';
+import { ensureLocalMonacoLoader } from '../../lib/monacoLoader';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { DbQueryResult, DbSchemaInfo, DbSessionConfig } from '../../api/database.api';
 import { createDbSession, endDbSession, dbSessionHeartbeat, updateDbSessionConfig } from '../../api/database.api';
@@ -64,6 +65,8 @@ import DbSessionConfigPopover from './DbSessionConfigPopover';
 import { format as formatSql } from 'sql-formatter';
 import { createSqlCompletionProvider } from './sqlCompletionProvider';
 import { validateSql } from './sqlValidation';
+
+ensureLocalMonacoLoader();
 
 interface DbEditorProps {
   connectionId: string;

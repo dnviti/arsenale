@@ -3,7 +3,9 @@ package gateways
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -50,7 +52,14 @@ SELECT
 	g."lastScaleAction",
 	g."templateId",
 	g."tunnelEnabled",
+	g."encryptedTunnelToken",
+	g."tunnelTokenIV",
+	g."tunnelTokenTag",
 	g."tunnelConnectedAt",
+	g."tunnelClientCert",
+	g."tunnelClientKey",
+	g."tunnelClientKeyIV",
+	g."tunnelClientKeyTag",
 	g."tunnelClientCertExp",
 	COALESCE(total_instances.count, 0) AS "totalInstances",
 	COALESCE(running_instances.count, 0) AS "runningInstances",
@@ -96,12 +105,19 @@ ORDER BY g.type ASC, g.name ASC
 func (s Service) loadGateway(ctx context.Context, tenantID, gatewayID string) (gatewayRecord, error) {
 	row := s.DB.QueryRow(ctx, gatewaySelect+`
 WHERE g."tenantId" = $1 AND g.id = $2
-`, tenantID, gatewayID)
+	`, tenantID, gatewayID)
 	record, err := scanGateway(row)
 	if err != nil {
-		return gatewayRecord{}, err
+		return gatewayRecord{}, mapLoadGatewayError(err)
 	}
 	return record, nil
+}
+
+func mapLoadGatewayError(err error) error {
+	if errors.Is(err, sql.ErrNoRows) {
+		return &requestError{status: http.StatusNotFound, message: "Gateway not found"}
+	}
+	return err
 }
 
 type rowScanner interface {
@@ -112,6 +128,8 @@ func scanGateway(row rowScanner) (gatewayRecord, error) {
 	var item gatewayRecord
 	var description, encryptedUsername, usernameIV, usernameTag sql.NullString
 	var encryptedPassword, passwordIV, passwordTag, encryptedSSHKey, sshKeyIV, sshKeyTag sql.NullString
+	var encryptedTunnelToken, tunnelTokenIV, tunnelTokenTag sql.NullString
+	var tunnelClientCert, tunnelClientKey, tunnelClientKeyIV, tunnelClientKeyTag sql.NullString
 	var templateID, lastError sql.NullString
 	var apiPort, lastLatency sql.NullInt32
 	var lastCheckedAt, lastScaleAction, tunnelConnectedAt, tunnelClientCertExp sql.NullTime
@@ -158,7 +176,14 @@ func scanGateway(row rowScanner) (gatewayRecord, error) {
 		&lastScaleAction,
 		&templateID,
 		&item.TunnelEnabled,
+		&encryptedTunnelToken,
+		&tunnelTokenIV,
+		&tunnelTokenTag,
 		&tunnelConnectedAt,
+		&tunnelClientCert,
+		&tunnelClientKey,
+		&tunnelClientKeyIV,
+		&tunnelClientKeyTag,
 		&tunnelClientCertExp,
 		&item.TotalInstances,
 		&item.RunningInstances,
@@ -183,6 +208,13 @@ func scanGateway(row rowScanner) (gatewayRecord, error) {
 	item.LastScaleAction = nullTimePtr(lastScaleAction)
 	item.TemplateID = nullStringPtr(templateID)
 	item.TunnelConnectedAt = nullTimePtr(tunnelConnectedAt)
+	item.EncryptedTunnelToken = nullStringPtr(encryptedTunnelToken)
+	item.TunnelTokenIV = nullStringPtr(tunnelTokenIV)
+	item.TunnelTokenTag = nullStringPtr(tunnelTokenTag)
+	item.TunnelClientCert = nullStringPtr(tunnelClientCert)
+	item.TunnelClientKey = nullStringPtr(tunnelClientKey)
+	item.TunnelClientKeyIV = nullStringPtr(tunnelClientKeyIV)
+	item.TunnelClientKeyTag = nullStringPtr(tunnelClientKeyTag)
 	item.TunnelClientCertExp = nullTimePtr(tunnelClientCertExp)
 	if !hasSSHKey {
 		item.EncryptedSSHKey = nil

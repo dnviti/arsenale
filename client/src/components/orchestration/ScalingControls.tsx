@@ -26,6 +26,8 @@ const recommendationColor: Record<string, 'success' | 'info' | 'warning'> = {
 export default function ScalingControls({ gatewayId, gateway }: ScalingControlsProps) {
   const scalingStatus = useGatewayStore((s) => s.scalingStatus[gatewayId]);
   const fetchScalingStatus = useGatewayStore((s) => s.fetchScalingStatus);
+  const watchScalingStatus = useGatewayStore((s) => s.watchScalingStatus);
+  const unwatchScalingStatus = useGatewayStore((s) => s.unwatchScalingStatus);
   const deployGatewayAction = useGatewayStore((s) => s.deployGateway);
   const undeployGatewayAction = useGatewayStore((s) => s.undeployGateway);
   const scaleGatewayAction = useGatewayStore((s) => s.scaleGateway);
@@ -43,10 +45,15 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
 
   // Initial fetch on mount — real-time updates arrive via Socket.IO (scaling:updated)
   useEffect(() => {
-    if (gateway.isManaged) {
-      fetchScalingStatus(gatewayId);
-    }
-  }, [gatewayId, gateway.isManaged, fetchScalingStatus]);
+    if (!gateway.isManaged) return undefined;
+
+    watchScalingStatus(gatewayId);
+    void fetchScalingStatus(gatewayId);
+
+    return () => {
+      unwatchScalingStatus(gatewayId);
+    };
+  }, [gatewayId, gateway.isManaged, fetchScalingStatus, watchScalingStatus, unwatchScalingStatus]);
 
   // Sync local form state only when server-side config fields change
   // (not on health probe updates which change lastHealthStatus, lastLatencyMs, etc.)

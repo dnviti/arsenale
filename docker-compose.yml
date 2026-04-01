@@ -31,9 +31,9 @@ services:
       - postgres_password
     volumes:
       - pgdata:/var/lib/pgsql/data
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../infrastructure/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../infrastructure/postgres/entrypoint.sh:/usr/local/bin/arsenale-postgres-entrypoint.sh:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../infrastructure/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../infrastructure/postgres/entrypoint.sh:/usr/local/bin/arsenale-postgres-entrypoint.sh:ro
     entrypoint: ["/usr/local/bin/arsenale-postgres-entrypoint.sh"]
     restart: always
     cap_drop:
@@ -58,7 +58,9 @@ services:
   # Apache Guacamole Daemon (guacd) — RDP/VNC protocol handler
   # ---------------------------------------------------------------------------
   guacd:
-    image: guacamole/guacd:1.6.0
+    build:
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
+      dockerfile: gateways/guacd/Dockerfile
     container_name: arsenale-guacd
     read_only: true
     cpus: "1.0"
@@ -73,7 +75,7 @@ services:
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacd:/certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacd:/certs:ro
     restart: always
     cap_drop:
       - ALL
@@ -93,7 +95,7 @@ services:
   # ---------------------------------------------------------------------------
   guacenc:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../gateways/guacenc
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../gateways/guacenc
       dockerfile: Dockerfile
     container_name: arsenale-guacenc
     read_only: true
@@ -111,14 +113,14 @@ services:
       - guacenc_auth_token
     volumes:
       - arsenale_recordings:/recordings
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs:/certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs:/certs:ro
     restart: always
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --show-error --fail --cacert /certs/ca.pem https://localhost:3003/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://127.0.0.1:3003/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -133,6 +135,10 @@ services:
   redis:
     image: quay.io/sclorg/redis-7-c9s
     container_name: arsenale-redis
+    command:
+      - run-redis
+      - --appendonly
+      - "yes"
     cpus: "0.5"
     mem_limit: "256m"
     pids_limit: 256
@@ -143,6 +149,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    volumes:
+      - arsenale_redis:/var/lib/redis/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 -p 6379 ping | grep -q PONG"]
       interval: 10s
@@ -152,12 +160,13 @@ services:
     networks:
       - net-cache
 
+
   # ---------------------------------------------------------------------------
-  # Go backend foundation services — staged replacement for the Node monolith
+  # Go backend foundation services — active public runtime
   # ---------------------------------------------------------------------------
   control-plane-api-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-api
@@ -169,7 +178,7 @@ services:
     user: "0:0"
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -186,7 +195,27 @@ services:
     environment:
       PORT: "8080"
       ARSENALE_VERSION: "latest"
+      GO_QUERY_RUNNER_ENABLED: "true"
       HIBP_FAIL_OPEN: "true"
+      SELF_SIGNUP_ENABLED: "true"
+      CLIENT_URL: "https://arsenale.home.arpa.viti"
+      WEBAUTHN_RP_ID: "arsenale.home.arpa.viti"
+      WEBAUTHN_RP_ORIGIN: "https://arsenale.home.arpa.viti"
+      ORCHESTRATOR_TYPE: "podman"
+      PODMAN_SOCKET_PATH: "/run/podman/podman.sock"
+      ORCHESTRATOR_EDGE_NETWORK: "arsenale-net-edge"
+      ORCHESTRATOR_DB_NETWORK: "arsenale-net-db"
+      ORCHESTRATOR_GUACD_NETWORK: "arsenale-net-guacd"
+      ORCHESTRATOR_GATEWAY_NETWORK: "arsenale-net-gateway"
+      ORCHESTRATOR_SSH_GATEWAY_IMAGE: "localhost/arsenale_ssh-gateway:latest"
+      ORCHESTRATOR_GUACD_IMAGE: "localhost/arsenale_guacd:latest"
+      ORCHESTRATOR_DB_PROXY_IMAGE: "localhost/arsenale_db-proxy:latest"
+      SPIFFE_TRUST_DOMAIN: "arsenale.local"
+      DEV_BOOTSTRAP_ADMIN_EMAIL: "admin@example.com"
+      DEV_BOOTSTRAP_ADMIN_USERNAME: "admin"
+      DEV_BOOTSTRAP_ADMIN_PASSWORD: "DevAdmin123!"
+      DEV_BOOTSTRAP_TENANT_NAME: "Development Environment"
+      DEV_TUNNEL_CERT_DIR: "/certs"
       DRIVE_BASE_PATH: "/guacd-drive"
       FILE_UPLOAD_MAX_SIZE: "10485760"
       USER_DRIVE_QUOTA: "104857600"
@@ -204,8 +233,12 @@ services:
       ASCIICAST_CONVERTER_URL: "https://guacenc:3003"
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
-      LEGACY_NODE_API_URL: "https://server:3001"
-      LEGACY_NODE_API_CA_CERT: /certs/ca.pem
+      GATEWAY_GRPC_TLS_CA: /certs/ca.pem
+      GATEWAY_GRPC_CLIENT_CA: /certs/ssh-gateway/client-ca.pem
+      GATEWAY_GRPC_TLS_CERT: /certs/ssh-gateway/client-cert.pem
+      GATEWAY_GRPC_TLS_KEY: /certs/ssh-gateway/client-key.pem
+      GATEWAY_GRPC_SERVER_CERT: /certs/ssh-gateway/server-cert.pem
+      GATEWAY_GRPC_SERVER_KEY: /certs/ssh-gateway/server-key.pem
     ports:
       - "127.0.0.1:18080:8080"
     depends_on:
@@ -213,14 +246,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      server:
-        condition: service_healthy
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca.pem:/certs/ca.pem:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacenc:/certs/guacenc:ro
+      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca.pem:/certs/ca.pem:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs/ssh-gateway:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca-key.pem:/certs/ca-key.pem:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacenc:/certs/guacenc:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-managed-ssh:/certs/tunnel-managed-ssh:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-guacd:/certs/tunnel-guacd:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-db-proxy:/certs/tunnel-db-proxy:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -237,14 +274,14 @@ services:
 
   control-plane-controller-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: control-plane-controller
     container_name: arsenale-control-plane-controller-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -259,6 +296,8 @@ services:
       ARSENALE_VERSION: "latest"
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
+      ORCHESTRATOR_TYPE: "podman"
+      PODMAN_SOCKET_PATH: "/run/podman/podman.sock"
       RUNTIME_AGENT_URL: "http://runtime-agent-go:8095"
     ports:
       - "127.0.0.1:18081:8081"
@@ -268,7 +307,8 @@ services:
       runtime-agent-go:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /run/user/1000/podman/podman.sock:/run/podman/podman.sock
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8081/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -282,14 +322,14 @@ services:
 
   authz-pdp-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: authz-pdp
     container_name: arsenale-authz-pdp-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -314,14 +354,14 @@ services:
 
   model-gateway-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: model-gateway
     container_name: arsenale-model-gateway-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -344,7 +384,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8083/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -358,14 +398,14 @@ services:
 
   terminal-broker-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: terminal-broker
     container_name: arsenale-terminal-broker-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -390,7 +430,7 @@ services:
       terminal-target:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -404,7 +444,7 @@ services:
 
   tunnel-broker-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../
       dockerfile: backend/Dockerfile
       args:
         SERVICE: tunnel-broker
@@ -438,7 +478,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8092/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -453,14 +493,14 @@ services:
 
   tool-gateway-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: tool-gateway
     container_name: arsenale-tool-gateway-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -496,14 +536,14 @@ services:
 
   query-runner-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: query-runner
     container_name: arsenale-query-runner-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -524,7 +564,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8093/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -538,14 +578,14 @@ services:
 
   desktop-broker-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: desktop-broker
     container_name: arsenale-desktop-broker-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -575,8 +615,8 @@ services:
         condition: service_healthy
     volumes:
       - arsenale_recordings:/recordings
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs:/certs/ca:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs:/certs/ca:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8091/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -591,14 +631,14 @@ services:
 
   memory-service-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: memory-service
     container_name: arsenale-memory-service-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -619,7 +659,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8086/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -633,14 +673,14 @@ services:
 
   agent-orchestrator-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: agent-orchestrator
     container_name: arsenale-agent-orchestrator-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -661,7 +701,7 @@ services:
       postgres:
         condition: service_healthy
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8085/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -675,14 +715,14 @@ services:
 
   runtime-agent-go:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: backend/Dockerfile
       args:
         SERVICE: runtime-agent
     container_name: arsenale-runtime-agent-go
     read_only: true
     cpus: "0.5"
-    mem_limit: "256m"
+    mem_limit: "512m"
     pids_limit: 128
     tmpfs:
       - /tmp
@@ -707,7 +747,7 @@ services:
 
   terminal-target:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: infrastructure/dev/terminal-target/Dockerfile
     container_name: arsenale-terminal-target
     read_only: true
@@ -730,141 +770,12 @@ services:
         aliases:
           - terminal-target
 
-
-  # ---------------------------------------------------------------------------
-  # Server — Express.js API + WebSocket backend
-  # ---------------------------------------------------------------------------
-  server:
-    build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
-      dockerfile: server/Dockerfile
-    container_name: arsenale-server
-    read_only: true
-    cpus: "2.0"
-    mem_limit: "1536m"
-    pids_limit: 512
-    tmpfs:
-      - /tmp
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    secrets:
-      - jwt_secret
-      - guacamole_secret
-      - server_encryption_key
-      - database_url
-      - guacenc_auth_token
-      - smtp_pass
-      - sendgrid_api_key
-      - ses_secret_access_key
-      - resend_api_key
-      - mailgun_api_key
-      - twilio_auth_token
-      - sns_secret_access_key
-      - vonage_api_secret
-      - google_client_secret
-      - microsoft_client_secret
-      - github_client_secret
-      - oidc_client_secret
-      - ldap_bind_password
-      - ai_api_key
-    environment:
-      NODE_ENV: "development"
-      HIBP_FAIL_OPEN: "true"
-      SPIFFE_TRUST_DOMAIN: "arsenale.local"
-      NODE_EXTRA_CA_CERTS: /certs/ca.pem
-      CLI_ENABLED: "true"
-      DEV_TUNNEL_CERT_DIR: "/certs"
-      DEV_BOOTSTRAP_ADMIN_EMAIL: "admin@example.com"
-      DEV_BOOTSTRAP_ADMIN_USERNAME: "admin"
-      DEV_BOOTSTRAP_ADMIN_PASSWORD: "DevAdmin123!"
-      DEV_BOOTSTRAP_TENANT_NAME: "Development Environment"
-      LOG_LEVEL: "info"
-      LOG_HTTP_REQUESTS: "false"
-      LOG_GUACAMOLE: "false"
-      PORT: "3001"
-      GUACAMOLE_WS_PORT: "3002"
-      DATABASE_URL: ""
-      CLIENT_URL: "https://localhost:3000"
-      TRUST_PROXY: "1"
-      RATE_LIMIT_WHITELIST_CIDRS: "127.0.0.1/32,::1/128"
-      COOKIE_SECURE: "true"
-      GUACD_HOST: guacd
-      GUACD_PORT: "4822"
-      GUACD_SSL: "true"
-      GUACD_CA_CERT: /certs/ca.pem
-      GUACENC_SERVICE_URL: "https://guacenc:3003"
-      GUACENC_USE_TLS: "true"
-      GUACENC_TLS_CA: /certs/guacenc/ca.pem
-      REDIS_URL: "redis://redis:6379/0"
-      SERVER_TLS_CERT: /certs/server/server-cert.pem
-      SERVER_TLS_KEY: /certs/server/server-key.pem
-      TUNNEL_SERVER_CERT: /certs/server/server-cert.pem
-      TUNNEL_SERVER_KEY: /certs/server/server-key.pem
-      TUNNEL_SERVER_CA: /certs/ca.pem
-      TUNNEL_STRICT_MTLS: "true"
-      RECORDING_ENABLED: "false"
-      RECORDING_PATH: /recordings
-      ALLOW_LOCAL_NETWORK: "true"
-      LATERAL_MOVEMENT_DETECTION_ENABLED: "false"
-      SELF_SIGNUP_ENABLED: "false"
-      EMAIL_PROVIDER: "smtp"
-      GATEWAY_GRPC_TLS_CA: /certs/ca.pem
-      GATEWAY_GRPC_TLS_CERT: /certs/ssh-gateway/client-cert.pem
-      GATEWAY_GRPC_TLS_KEY: /certs/ssh-gateway/client-key.pem
-      GO_QUERY_RUNNER_ENABLED: "true"
-      GO_CONTROL_PLANE_API_URL: "http://control-plane-api-go:8080"
-      GO_QUERY_RUNNER_URL: "http://query-runner-go:8093"
-      GO_TUNNEL_BROKER_ENABLED: "true"
-      GO_TUNNEL_BROKER_URL: "http://tunnel-broker-go:8092"
-      TUNNEL_SERVER_URL: "ws://tunnel-broker-go:8092/api/tunnel/connect"
-      GO_DESKTOP_BROKER_ENABLED: "true"
-      INTERNAL_SERVER_HOST: "server"
-      TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
-    volumes:
-      - arsenale_drive:/guacd-drive
-      - arsenale_recordings:/recordings
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca.pem:/certs/ca.pem:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ca-key.pem:/certs/ca-key.pem:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-managed-ssh:/certs/tunnel-managed-ssh:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-guacd:/certs/tunnel-guacd:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-db-proxy:/certs/tunnel-db-proxy:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/server:/certs/server:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/guacenc:/certs/guacenc:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs/ssh-gateway:ro
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"const fs=require('fs');const http=require('http');const https=require('https');const useTls=Boolean(process.env.SERVER_TLS_CERT&&process.env.SERVER_TLS_KEY);const request=useTls?https:http;const options=useTls?{hostname:'localhost',port:3001,path:'/api/health',ca:fs.readFileSync('/certs/ca.pem')}:{hostname:'localhost',port:3001,path:'/api/health'};request.get(options,res=>{res.resume();process.exit(res.statusCode===200?0:1);}).on('error',()=>process.exit(1));\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      guacd:
-        condition: service_healthy
-      desktop-broker-go:
-        condition: service_healthy
-      tunnel-broker-go:
-        condition: service_healthy
-    restart: always
-    networks:
-      - net-db
-      - net-guacd
-      - net-guacenc
-      - net-cache
-      - net-edge
-      - net-gateway
-
   # ---------------------------------------------------------------------------
   # Client — React SPA served by Nginx
   # ---------------------------------------------------------------------------
   client:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: client/Dockerfile
     container_name: arsenale-client
     read_only: true
@@ -882,18 +793,16 @@ services:
     ports:
       - "127.0.0.1:3000:8080"
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/client:/certs:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../client/nginx.dev.conf:/etc/nginx/templates/default.conf.template:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/client:/certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../client/nginx.dev.conf:/etc/nginx/templates/default.conf.template:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl --silent --show-error --fail --cacert /certs/ca.pem https://localhost:8080/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://localhost:8080/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 5s
     depends_on:
       control-plane-api-go:
-        condition: service_healthy
-      server:
         condition: service_healthy
       desktop-broker-go:
         condition: service_healthy
@@ -906,7 +815,7 @@ services:
   # ---------------------------------------------------------------------------
   ssh-gateway:
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: gateways/ssh-gateway/Dockerfile
     container_name: arsenale-ssh-gateway
     read_only: true
@@ -927,10 +836,10 @@ services:
       GATEWAY_GRPC_CLIENT_CA: /certs/client-ca.pem
       GATEWAY_GRPC_TLS_CERT: /certs/server-cert.pem
       GATEWAY_GRPC_TLS_KEY: /certs/server-key.pem
-      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://arsenale.local/service/server"
+      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://arsenale.local/service/control-plane-api"
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs:ro
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
       interval: 10s
@@ -945,8 +854,10 @@ services:
   # Development tunnel gateways — end-to-end tunnel registration fixtures
   # ---------------------------------------------------------------------------
   dev-tunnel-ssh-gateway:
+    profiles:
+      - dev-fixtures
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: gateways/ssh-gateway/Dockerfile
     container_name: arsenale-dev-tunnel-ssh-gateway
     read_only: true
@@ -973,11 +884,11 @@ services:
       GATEWAY_GRPC_CLIENT_CA: /certs/client-ca.pem
       GATEWAY_GRPC_TLS_CERT: /certs/server-cert.pem
       GATEWAY_GRPC_TLS_KEY: /certs/server-key.pem
-      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://arsenale.local/service/server"
+      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://arsenale.local/service/control-plane-api"
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs:ro
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-managed-ssh:/tunnel-certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/ssh-gateway:/certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-managed-ssh:/tunnel-certs:ro
     depends_on:
       tunnel-broker-go:
         condition: service_healthy
@@ -991,8 +902,10 @@ services:
       - net-gateway
 
   dev-tunnel-guacd:
+    profiles:
+      - dev-fixtures
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: gateways/guacd/Dockerfile
     container_name: arsenale-dev-tunnel-guacd
     read_only: true
@@ -1015,7 +928,7 @@ services:
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-guacd:/tunnel-certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-guacd:/tunnel-certs:ro
     depends_on:
       tunnel-broker-go:
         condition: service_healthy
@@ -1030,8 +943,10 @@ services:
       - net-gateway
 
   dev-tunnel-db-proxy:
+    profiles:
+      - dev-fixtures
     build:
-      context: /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../..
+      context: /home/debian/repos/arsenale/deployment/ansible/playbooks/../../..
       dockerfile: gateways/db-proxy/Dockerfile
     container_name: arsenale-dev-tunnel-db-proxy
     read_only: true
@@ -1055,7 +970,7 @@ services:
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
     volumes:
-      - /home/daniele/Documents/Repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-db-proxy:/tunnel-certs:ro
+      - /home/debian/repos/arsenale/deployment/ansible/playbooks/../../../dev-certs/tunnel-db-proxy:/tunnel-certs:ro
     depends_on:
       tunnel-broker-go:
         condition: service_healthy
@@ -1119,6 +1034,7 @@ secrets:
 # =============================================================================
 volumes:
   pgdata:
+  arsenale_redis:
   arsenale_drive:
   arsenale_recordings:
 

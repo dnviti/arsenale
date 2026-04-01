@@ -2,7 +2,6 @@ package connections
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -14,36 +13,22 @@ import (
 )
 
 func (s Service) CreateConnection(ctx context.Context, claims authn.Claims, payload createPayload, ip *string) (connectionResponse, error) {
-	if payload.CredentialSecretID != nil || payload.ExternalVaultProviderID != nil || payload.ExternalVaultPath != nil || payload.TeamID != nil || payload.FolderID != nil {
-		return connectionResponse{}, ErrLegacyConnectionFlow
-	}
-	if strings.EqualFold(payload.Type, "DB_TUNNEL") {
-		return connectionResponse{}, ErrLegacyConnectionFlow
-	}
-	if payload.Username == nil || payload.Password == nil {
+	credentialSecretID := normalizeOptionalStringPtrValue(payload.CredentialSecretID)
+	externalVaultProviderID := normalizeOptionalStringPtrValue(payload.ExternalVaultProviderID)
+	externalVaultPath := normalizeOptionalStringPtrValue(payload.ExternalVaultPath)
+	teamID := normalizeOptionalStringPtrValue(payload.TeamID)
+	folderID := normalizeOptionalStringPtrValue(payload.FolderID)
+
+	if credentialSecretID == nil && externalVaultProviderID == nil && (payload.Username == nil || payload.Password == nil) {
 		return connectionResponse{}, &requestError{status: 400, message: "Either credentialSecretId, externalVaultProviderId, or both username and password must be provided"}
 	}
-
 	if s.DB == nil {
 		return connectionResponse{}, errors.New("database is unavailable")
-	}
-	key, err := s.getVaultKey(ctx, claims.UserID)
-	if err != nil {
-		return connectionResponse{}, err
-	}
-	if len(key) == 0 {
-		return connectionResponse{}, &requestError{status: 403, message: "Vault is locked. Please unlock it first."}
-	}
-	defer zeroBytes(key)
-
-	username := strings.TrimSpace(*payload.Username)
-	password := *payload.Password
-	if username == "" || password == "" {
-		return connectionResponse{}, &requestError{status: 400, message: "username and password are required"}
 	}
 
 	name := strings.TrimSpace(payload.Name)
 	host := strings.TrimSpace(payload.Host)
+	connType := strings.ToUpper(strings.TrimSpace(payload.Type))
 	if name == "" {
 		return connectionResponse{}, &requestError{status: 400, message: "name is required"}
 	}
@@ -53,43 +38,77 @@ func (s Service) CreateConnection(ctx context.Context, claims authn.Claims, payl
 	if payload.Port < 1 || payload.Port > 65535 {
 		return connectionResponse{}, &requestError{status: 400, message: "port must be between 1 and 65535"}
 	}
-	if !validConnectionType(payload.Type) {
+	if !validConnectionType(connType) {
 		return connectionResponse{}, &requestError{status: 400, message: "type must be one of RDP, SSH, VNC, DATABASE, DB_TUNNEL"}
 	}
+	if err := validateConnectionHost(ctx, host); err != nil {
+		return connectionResponse{}, err
+	}
+	if teamID != nil {
+		if _, err := s.requireTeamRole(ctx, claims.UserID, claims.TenantID, *teamID); err != nil {
+			return connectionResponse{}, err
+		}
+	}
+	if credentialSecretID != nil {
+		if err := s.validateCredentialSecretReference(ctx, claims.UserID, claims.TenantID, *credentialSecretID, connType); err != nil {
+			return connectionResponse{}, err
+		}
+	}
 
-	encUser, err := encryptValue(key, username)
-	if err != nil {
-		return connectionResponse{}, err
-	}
-	encPassword, err := encryptValue(key, password)
-	if err != nil {
-		return connectionResponse{}, err
-	}
-	var encDomain *encryptedField
-	if payload.Domain != nil && strings.TrimSpace(*payload.Domain) != "" {
-		encrypted, err := encryptValue(key, strings.TrimSpace(*payload.Domain))
+	var (
+		err         error
+		key         []byte
+		encUser     *encryptedField
+		encPassword *encryptedField
+		encDomain   *encryptedField
+	)
+	if payload.Username != nil && payload.Password != nil {
+		key, err = s.resolveConnectionEncryptionKey(ctx, claims.UserID, teamID)
 		if err != nil {
 			return connectionResponse{}, err
 		}
-		encDomain = &encrypted
+		defer zeroBytes(key)
+
+		username := strings.TrimSpace(*payload.Username)
+		password := *payload.Password
+		if username == "" || password == "" {
+			return connectionResponse{}, &requestError{status: 400, message: "username and password are required"}
+		}
+
+		encryptedUsername, err := encryptValue(key, username)
+		if err != nil {
+			return connectionResponse{}, err
+		}
+		encUser = &encryptedUsername
+
+		encryptedPassword, err := encryptValue(key, password)
+		if err != nil {
+			return connectionResponse{}, err
+		}
+		encPassword = &encryptedPassword
+
+		if payload.Domain != nil && strings.TrimSpace(*payload.Domain) != "" {
+			encryptedDomain, err := encryptValue(key, strings.TrimSpace(*payload.Domain))
+			if err != nil {
+				return connectionResponse{}, err
+			}
+			encDomain = &encryptedDomain
+		}
 	}
 
-	var connection connectionResponse
 	connectionID := uuid.NewString()
-	var teamID, credentialSecretID, credentialSecretName, credentialSecretType sql.NullString
-	var externalVaultProviderID, externalVaultPath, description sql.NullString
-	var gatewayID, defaultCredentialMode sql.NullString
-	var targetDBHost, dbType, bastionConnectionID sql.NullString
-	var targetDBPort sql.NullInt32
-	var sshConfig, rdpSettings, vncSettings, dbSettings, dlpPolicy []byte
-
-	row := s.DB.QueryRow(ctx, `
+	if err := s.DB.QueryRow(ctx, `
 INSERT INTO "Connection" (
 	id,
 	"name",
 	type,
 	host,
 	port,
+	"folderId",
+	"teamId",
+	"credentialSecretId",
+	"externalVaultProviderId",
+	"externalVaultPath",
 	"userId",
 	"encryptedUsername",
 	"usernameIV",
@@ -146,50 +165,32 @@ VALUES (
 	$27,
 	$28,
 	$29,
-	$30
+	$30,
+	$31,
+	$32,
+	$33,
+	$34,
+	$35
 )
-RETURNING
-	id,
-	"name",
-	type::text,
-	host,
-	port,
-	"folderId",
-	"teamId",
-	"credentialSecretId",
-	NULL::text,
-	NULL::text,
-	"externalVaultProviderId",
-	"externalVaultPath",
-	description,
-	"isFavorite",
-	"enableDrive",
-	"gatewayId",
-	"sshTerminalConfig",
-	"rdpSettings",
-	"vncSettings",
-	"dbSettings",
-	"defaultCredentialMode",
-	"dlpPolicy",
-	"targetDbHost",
-	"targetDbPort",
-	"dbType",
-	"bastionConnectionId",
-	"createdAt",
-	"updatedAt"
+RETURNING id
 `,
 		connectionID,
 		name,
-		strings.ToUpper(payload.Type),
+		connType,
 		host,
 		payload.Port,
+		nullableString(folderID),
+		nullableString(teamID),
+		nullableString(credentialSecretID),
+		nullableString(externalVaultProviderID),
+		nullableString(externalVaultPath),
 		claims.UserID,
-		encUser.Ciphertext,
-		encUser.IV,
-		encUser.Tag,
-		encPassword.Ciphertext,
-		encPassword.IV,
-		encPassword.Tag,
+		nullCiphertext(encUser),
+		nullIV(encUser),
+		nullTag(encUser),
+		nullCiphertext(encPassword),
+		nullIV(encPassword),
+		nullTag(encPassword),
 		nullCiphertext(encDomain),
 		nullIV(encDomain),
 		nullTag(encDomain),
@@ -208,50 +209,17 @@ RETURNING
 		nullableString(payload.BastionConnectionID),
 		time.Now(),
 		time.Now(),
-	)
-	if err := row.Scan(
-		&connection.ID,
-		&connection.Name,
-		&connection.Type,
-		&connection.Host,
-		&connection.Port,
-		&connection.FolderID,
-		&teamID,
-		&credentialSecretID,
-		&credentialSecretName,
-		&credentialSecretType,
-		&externalVaultProviderID,
-		&externalVaultPath,
-		&description,
-		&connection.IsFavorite,
-		&connection.EnableDrive,
-		&gatewayID,
-		&sshConfig,
-		&rdpSettings,
-		&vncSettings,
-		&dbSettings,
-		&defaultCredentialMode,
-		&dlpPolicy,
-		&targetDBHost,
-		&targetDBPort,
-		&dbType,
-		&bastionConnectionID,
-		&connection.CreatedAt,
-		&connection.UpdatedAt,
-	); err != nil {
+	).Scan(&connectionID); err != nil {
 		return connectionResponse{}, fmt.Errorf("create connection: %w", err)
 	}
 
-	connection.Scope = "private"
-	connection.IsOwner = true
-	applyNulls(&connection, teamID, credentialSecretID, credentialSecretName, credentialSecretType, externalVaultProviderID, externalVaultPath, description, gatewayID, defaultCredentialMode, targetDBHost, targetDBPort, dbType, bastionConnectionID, sshConfig, rdpSettings, vncSettings, dbSettings, dlpPolicy)
-	_ = s.insertAuditLog(ctx, claims.UserID, "CREATE_CONNECTION", connection.ID, map[string]any{
-		"name":   connection.Name,
-		"type":   connection.Type,
-		"host":   connection.Host,
-		"teamId": nil,
+	_ = s.insertAuditLog(ctx, claims.UserID, "CREATE_CONNECTION", connectionID, map[string]any{
+		"name":   name,
+		"type":   connType,
+		"host":   host,
+		"teamId": teamID,
 	}, ip)
-	return connection, nil
+	return s.GetConnection(ctx, claims.UserID, claims.TenantID, connectionID)
 }
 
 func (s Service) ImportSimpleConnection(ctx context.Context, claims authn.Claims, payload ImportPayload, ip *string) (connectionResponse, error) {
@@ -265,6 +233,7 @@ func (s Service) ImportSimpleConnection(ctx context.Context, claims authn.Claims
 		Username:    &username,
 		Password:    &password,
 		Domain:      payload.Domain,
+		FolderID:    payload.FolderID,
 		Description: payload.Description,
 	}
 	return s.CreateConnection(ctx, claims, create, ip)
@@ -278,15 +247,8 @@ func (s Service) UpdateConnection(ctx context.Context, claims authn.Claims, conn
 	if access.AccessType == "shared" {
 		return connectionResponse{}, pgx.ErrNoRows
 	}
-	if access.AccessType == "team" {
-		return connectionResponse{}, ErrLegacyConnectionFlow
-	}
-	if access.Connection.TeamID != nil ||
-		payload.CredentialSecretID.Present ||
-		payload.ExternalVaultProviderID.Present ||
-		payload.ExternalVaultPath.Present ||
-		payload.FolderID.Present {
-		return connectionResponse{}, ErrLegacyConnectionFlow
+	if access.AccessType == "team" && (access.Connection.TeamRole == nil || !canManageTeam(*access.Connection.TeamRole)) {
+		return connectionResponse{}, pgx.ErrNoRows
 	}
 
 	var updates []string
@@ -302,6 +264,7 @@ func (s Service) UpdateConnection(ctx context.Context, claims authn.Claims, conn
 		}
 		addUpdate(`name`, strings.TrimSpace(*payload.Name.Value))
 	}
+	effectiveType := access.Connection.Type
 	if payload.Type.Present {
 		if payload.Type.Value == nil {
 			return connectionResponse{}, &requestError{status: 400, message: "type is required"}
@@ -310,9 +273,7 @@ func (s Service) UpdateConnection(ctx context.Context, claims authn.Claims, conn
 		if !validConnectionType(connType) {
 			return connectionResponse{}, &requestError{status: 400, message: "type must be one of RDP, SSH, VNC, DATABASE, DB_TUNNEL"}
 		}
-		if connType == "DB_TUNNEL" {
-			return connectionResponse{}, ErrLegacyConnectionFlow
-		}
+		effectiveType = connType
 		updates = append(updates, fmt.Sprintf(`type = $%d::"ConnectionType"`, len(args)+1))
 		args = append(args, connType)
 	}
@@ -320,7 +281,11 @@ func (s Service) UpdateConnection(ctx context.Context, claims authn.Claims, conn
 		if payload.Host.Value == nil || strings.TrimSpace(*payload.Host.Value) == "" {
 			return connectionResponse{}, &requestError{status: 400, message: "host is required"}
 		}
-		addUpdate(`host`, strings.TrimSpace(*payload.Host.Value))
+		host := strings.TrimSpace(*payload.Host.Value)
+		if err := validateConnectionHost(ctx, host); err != nil {
+			return connectionResponse{}, err
+		}
+		addUpdate(`host`, host)
 	}
 	if payload.Port.Present {
 		if payload.Port.Value == nil || *payload.Port.Value < 1 || *payload.Port.Value > 65535 {
@@ -330,6 +295,9 @@ func (s Service) UpdateConnection(ctx context.Context, claims authn.Claims, conn
 	}
 	if payload.Description.Present {
 		addUpdate(`description`, nullableString(payload.Description.Value))
+	}
+	if payload.FolderID.Present {
+		addUpdate(`"folderId"`, nullableString(payload.FolderID.Value))
 	}
 	if payload.EnableDrive.Present {
 		if payload.EnableDrive.Value == nil {
@@ -370,16 +338,53 @@ func (s Service) UpdateConnection(ctx context.Context, claims authn.Claims, conn
 	if payload.BastionConnectionID.Present {
 		addUpdate(`"bastionConnectionId"`, nullableString(payload.BastionConnectionID.Value))
 	}
+	if payload.CredentialSecretID.Present {
+		secretID := normalizeOptionalStringPtrValue(payload.CredentialSecretID.Value)
+		if secretID == nil {
+			addUpdate(`"credentialSecretId"`, nil)
+		} else {
+			if err := s.validateCredentialSecretReference(ctx, claims.UserID, claims.TenantID, *secretID, effectiveType); err != nil {
+				return connectionResponse{}, err
+			}
+			addUpdate(`"credentialSecretId"`, *secretID)
+			addUpdate(`"externalVaultProviderId"`, nil)
+			addUpdate(`"externalVaultPath"`, nil)
+			addUpdate(`"encryptedUsername"`, nil)
+			addUpdate(`"usernameIV"`, nil)
+			addUpdate(`"usernameTag"`, nil)
+			addUpdate(`"encryptedPassword"`, nil)
+			addUpdate(`"passwordIV"`, nil)
+			addUpdate(`"passwordTag"`, nil)
+			addUpdate(`"encryptedDomain"`, nil)
+			addUpdate(`"domainIV"`, nil)
+			addUpdate(`"domainTag"`, nil)
+		}
+	}
+	if payload.ExternalVaultProviderID.Present {
+		providerID := normalizeOptionalStringPtrValue(payload.ExternalVaultProviderID.Value)
+		pathValue := normalizeOptionalStringPtrValue(payload.ExternalVaultPath.Value)
+		addUpdate(`"externalVaultProviderId"`, nullableString(providerID))
+		addUpdate(`"externalVaultPath"`, nullableString(pathValue))
+		if providerID != nil {
+			addUpdate(`"credentialSecretId"`, nil)
+			addUpdate(`"encryptedUsername"`, nil)
+			addUpdate(`"usernameIV"`, nil)
+			addUpdate(`"usernameTag"`, nil)
+			addUpdate(`"encryptedPassword"`, nil)
+			addUpdate(`"passwordIV"`, nil)
+			addUpdate(`"passwordTag"`, nil)
+			addUpdate(`"encryptedDomain"`, nil)
+			addUpdate(`"domainIV"`, nil)
+			addUpdate(`"domainTag"`, nil)
+		}
+	}
 
 	needsVaultKey := payload.Username.Present || payload.Password.Present || payload.Domain.Present
 	var key []byte
 	if needsVaultKey {
-		key, err = s.getVaultKey(ctx, claims.UserID)
+		key, err = s.resolveConnectionEncryptionKey(ctx, claims.UserID, access.Connection.TeamID)
 		if err != nil {
 			return connectionResponse{}, err
-		}
-		if len(key) == 0 {
-			return connectionResponse{}, &requestError{status: 403, message: "Vault is locked. Please unlock it first."}
 		}
 		defer zeroBytes(key)
 	}

@@ -1,9 +1,5 @@
 import { create } from 'zustand';
-import { getVaultStatus } from '../api/vault.api';
-
-const POLL_INTERVAL_MS = 60_000;
-
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+import { getVaultStatus, type VaultStatusResponse } from '../api/vault.api';
 
 interface VaultState {
   unlocked: boolean;
@@ -11,14 +7,13 @@ interface VaultState {
   mfaUnlockAvailable: boolean;
   mfaUnlockMethods: string[];
   checkStatus: () => Promise<void>;
+  applyStatus: (status: VaultStatusResponse) => void;
   setUnlocked: (unlocked: boolean) => void;
   /** Handle a vault status event pushed via Socket.IO */
   handleSocketEvent: (data: { unlocked: boolean }) => void;
-  startPolling: () => void;
-  stopPolling: () => void;
 }
 
-export const useVaultStore = create<VaultState>((set, get) => ({
+export const useVaultStore = create<VaultState>((set) => ({
   unlocked: false,
   initialized: false,
   mfaUnlockAvailable: false,
@@ -38,23 +33,18 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
+  applyStatus: (status) => {
+    set({
+      unlocked: status.unlocked,
+      initialized: true,
+      mfaUnlockAvailable: status.mfaUnlockAvailable ?? false,
+      mfaUnlockMethods: status.mfaUnlockMethods ?? [],
+    });
+  },
+
   setUnlocked: (unlocked) => set({ unlocked }),
 
   handleSocketEvent: (data: { unlocked: boolean }) => {
     set({ unlocked: data.unlocked, initialized: true });
-  },
-
-  startPolling: () => {
-    if (pollTimer) return;
-    pollTimer = setInterval(() => {
-      get().checkStatus();
-    }, POLL_INTERVAL_MS);
-  },
-
-  stopPolling: () => {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
   },
 }));

@@ -7,10 +7,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/smsdelivery"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -67,11 +67,16 @@ func (s Service) VerifySMSCode(ctx context.Context, tempToken, code, ipAddress, 
 		return issuedLogin{}, &requestError{status: 401, message: "Invalid or expired SMS code"}
 	}
 
+	allowlistDecision := evaluateIPAllowlist(user.ActiveTenant, ipAddress)
+	if allowlistDecision.Blocked {
+		return issuedLogin{}, s.rejectBlockedIPAllowlist(ctx, user.ID, ipAddress)
+	}
+
 	result, err := s.issueTokens(ctx, user, ipAddress, userAgent)
 	if err != nil {
 		return issuedLogin{}, err
 	}
-	_ = s.insertStandaloneAuditLog(ctx, &user.ID, "LOGIN_SMS", map[string]any{}, ipAddress)
+	_ = s.insertStandaloneAuditLogWithFlags(ctx, &user.ID, "LOGIN_SMS", map[string]any{}, ipAddress, allowlistDecision.Flags())
 	return result, nil
 }
 
@@ -94,9 +99,6 @@ func (s Service) sendOTPToPhone(ctx context.Context, userID, phoneNumber string)
 	if s.DB == nil {
 		return fmt.Errorf("postgres is not configured")
 	}
-	if strings.TrimSpace(os.Getenv("SMS_PROVIDER")) != "" {
-		return ErrLegacyLogin
-	}
 
 	code, err := generateOTPCode()
 	if err != nil {
@@ -117,7 +119,17 @@ func (s Service) sendOTPToPhone(ctx context.Context, userID, phoneNumber string)
 		return fmt.Errorf("store sms otp: %w", err)
 	}
 
-	log.Printf("authservice dev sms otp for user=%s phone=%s code=%s", userID, phoneNumber, code)
+	status := smsdelivery.StatusFromEnv()
+	if err := smsdelivery.Send(ctx, smsdelivery.Message{
+		To:   phoneNumber,
+		Body: fmt.Sprintf("Your Arsenale verification code is: %s. It expires in 5 minutes.", code),
+	}); err != nil {
+		return err
+	}
+
+	if !status.Configured {
+		log.Printf("authservice dev sms otp for user=%s phone=%s code=%s", userID, phoneNumber, code)
+	}
 	return nil
 }
 

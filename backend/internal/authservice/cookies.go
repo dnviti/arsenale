@@ -58,6 +58,18 @@ func (s Service) clearAuthCookies(w http.ResponseWriter) {
 	}
 	http.SetCookie(w, refreshCookie)
 
+	browserSessionCookie := &http.Cookie{
+		Name:     s.browserSessionCookieName(),
+		Value:    "",
+		Path:     "/api/auth",
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		Secure:   s.CookieSecure,
+		SameSite: s.cookieSameSite(),
+	}
+	http.SetCookie(w, browserSessionCookie)
+
 	csrfCookie := &http.Cookie{
 		Name:     s.csrfCookieName(),
 		Value:    "",
@@ -90,6 +102,22 @@ func (s Service) setRefreshTokenCookie(w http.ResponseWriter, refreshToken strin
 	http.SetCookie(w, &http.Cookie{
 		Name:     s.refreshCookieName(),
 		Value:    refreshToken,
+		Path:     "/api/auth",
+		MaxAge:   int(ttl.Seconds()),
+		Expires:  time.Now().Add(ttl),
+		HttpOnly: true,
+		Secure:   s.CookieSecure,
+		SameSite: s.cookieSameSite(),
+	})
+}
+
+func (s Service) setBrowserSessionCookie(w http.ResponseWriter, sessionID string, ttl time.Duration) {
+	if ttl <= 0 {
+		ttl = 7 * 24 * time.Hour
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     s.browserSessionCookieName(),
+		Value:    sessionID,
 		Path:     "/api/auth",
 		MaxAge:   int(ttl.Seconds()),
 		Expires:  time.Now().Add(ttl),
@@ -133,6 +161,13 @@ func (s Service) csrfCookieName() string {
 		return s.CSRFCookie
 	}
 	return "arsenale-csrf"
+}
+
+func (s Service) browserSessionCookieName() string {
+	if s.BrowserSession != "" {
+		return s.BrowserSession
+	}
+	return "arsenale-session"
 }
 
 func (s Service) cookieSameSite() http.SameSite {

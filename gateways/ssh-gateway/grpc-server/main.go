@@ -175,7 +175,7 @@ func main() {
 	}
 	expectedSPIFFEID := os.Getenv("GATEWAY_GRPC_EXPECTED_SPIFFE_ID")
 	if expectedSPIFFEID == "" {
-		expectedSPIFFEID = buildServiceSPIFFEID(trustDomain, "server")
+		expectedSPIFFEID = buildServiceSPIFFEID(trustDomain, "control-plane-api")
 	}
 
 	if tlsConfig := buildServerTLSConfig(expectedSPIFFEID); tlsConfig != nil {

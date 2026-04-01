@@ -1,7 +1,6 @@
 package vaultapi
 
 import (
-	"errors"
 	"net/http"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
@@ -120,11 +119,8 @@ func (s Service) HandleRevealPassword(w http.ResponseWriter, r *http.Request, cl
 		return nil
 	}
 
-	result, err := s.RevealPassword(r.Context(), claims.UserID, payload.ConnectionID, payload.Password)
+	result, err := s.RevealPassword(r.Context(), claims.UserID, claims.TenantID, payload.ConnectionID, payload.Password)
 	if err != nil {
-		if errors.Is(err, ErrLegacyRevealPasswordFlow) {
-			return err
-		}
 		s.writeError(w, err)
 		return nil
 	}

@@ -14,18 +14,19 @@ import (
 )
 
 func (s Service) InitiatePasswordChange(ctx context.Context, userID string) (passwordChangeInitResult, error) {
-	method, err := s.primaryVerificationMethod(ctx, userID)
+	result, err := s.initiateVerification(ctx, userID, "password-change")
 	if err != nil {
 		return passwordChangeInitResult{}, err
 	}
-	if method == "" {
-		return passwordChangeInitResult{}, errNoVerificationMethod
+	if result.Method == "password" {
+		return passwordChangeInitResult{SkipVerification: true}, nil
 	}
-	if method != "password" {
-		return passwordChangeInitResult{}, ErrLegacyPasswordChangeInitiation
-	}
-
-	return passwordChangeInitResult{SkipVerification: true}, nil
+	return passwordChangeInitResult{
+		SkipVerification: false,
+		VerificationID:   result.VerificationID,
+		Method:           result.Method,
+		Metadata:         result.Metadata,
+	}, nil
 }
 
 func (s Service) ChangePassword(ctx context.Context, userID, oldPassword, newPassword string, verificationID *string, ipAddress string) (passwordChangeResult, error) {
@@ -183,15 +184,16 @@ func (s Service) InitiateIdentity(ctx context.Context, userID string, payload ma
 		return identityInitResult{}, err
 	}
 
+	return s.initiateVerification(ctx, userID, purpose)
+}
+
+func (s Service) initiateVerification(ctx context.Context, userID, purpose string) (identityInitResult, error) {
 	method, err := s.primaryVerificationMethod(ctx, userID)
 	if err != nil {
 		return identityInitResult{}, err
 	}
 	if method == "" {
 		return identityInitResult{}, errNoVerificationMethod
-	}
-	if method != "password" {
-		return identityInitResult{}, ErrLegacyIdentityVerification
 	}
 	if s.Redis == nil {
 		return identityInitResult{}, fmt.Errorf("redis is not configured")
@@ -201,60 +203,93 @@ func (s Service) InitiateIdentity(ctx context.Context, userID string, payload ma
 	expiresAt := time.Now().Add(verificationSessionTTL)
 	session := verificationSession{
 		UserID:      userID,
-		Method:      "password",
+		Method:      method,
 		Purpose:     purpose,
 		Confirmed:   false,
 		ConfirmedAt: nil,
 		Attempts:    0,
 		ExpiresAt:   expiresAt.UnixMilli(),
 	}
+
+	var metadata map[string]interface{}
+	switch method {
+	case "email":
+		email, err := s.loadVerificationEmail(ctx, userID)
+		if err != nil {
+			return identityInitResult{}, err
+		}
+		code, err := generateOTPCode()
+		if err != nil {
+			return identityInitResult{}, err
+		}
+		session.EmailOtpHash = hashOTP(code)
+		if err := s.sendIdentityVerificationCode(ctx, email, code, purpose); err != nil {
+			return identityInitResult{}, err
+		}
+		metadata = map[string]interface{}{"maskedEmail": maskEmail(email)}
+	case "sms":
+		phoneNumber, err := s.loadVerificationPhone(ctx, userID)
+		if err != nil {
+			return identityInitResult{}, err
+		}
+		if err := s.sendOTPToPhone(ctx, userID, phoneNumber); err != nil {
+			return identityInitResult{}, err
+		}
+		metadata = map[string]interface{}{"maskedPhone": maskPhone(phoneNumber)}
+	case "webauthn":
+		options, err := s.prepareIdentityWebAuthnOptions(ctx, userID)
+		if err != nil {
+			return identityInitResult{}, err
+		}
+		session.WebAuthnOption = options
+		metadata = map[string]interface{}{"options": options}
+	case "totp", "password":
+	default:
+		return identityInitResult{}, &requestError{status: http.StatusBadRequest, message: "Unsupported verification method."}
+	}
+
 	if err := s.putVerificationSession(ctx, verificationID, session, verificationSessionTTL); err != nil {
 		return identityInitResult{}, err
 	}
 
 	return identityInitResult{
 		VerificationID: verificationID,
-		Method:         "password",
+		Method:         method,
+		Metadata:       metadata,
 	}, nil
 }
 
 func (s Service) ConfirmIdentity(ctx context.Context, userID string, payload map[string]json.RawMessage) (bool, error) {
-	verificationID, password, shouldFallback, err := parseIdentityConfirmation(payload)
+	confirmation, err := parseIdentityConfirmation(payload)
 	if err != nil {
 		return false, err
-	}
-	if shouldFallback {
-		return false, ErrLegacyIdentityVerification
 	}
 
-	session, found, err := s.getVerificationSession(ctx, verificationID)
+	session, found, err := s.getVerificationSession(ctx, confirmation.VerificationID)
 	if err != nil {
 		return false, err
 	}
-	if !found || session.Method != "password" {
-		return false, ErrLegacyIdentityVerification
+	if !found {
+		return false, &requestError{status: http.StatusBadRequest, message: "Verification session not found or expired."}
 	}
 	if session.UserID != userID {
 		return false, &requestError{status: http.StatusForbidden, message: "Verification session mismatch."}
 	}
 	if session.ExpiresAt < time.Now().UnixMilli() {
-		_ = s.deleteVerificationSession(ctx, verificationID)
+		_ = s.deleteVerificationSession(ctx, confirmation.VerificationID)
 		return false, &requestError{status: http.StatusBadRequest, message: "Verification session expired."}
 	}
 	if session.Confirmed {
 		return false, &requestError{status: http.StatusBadRequest, message: "Verification already confirmed."}
 	}
-	if password == "" {
-		return false, &requestError{status: http.StatusBadRequest, message: "Password is required."}
-	}
 
 	session.Attempts++
 	if session.Attempts > verificationMaxAttempts {
-		_ = s.deleteVerificationSession(ctx, verificationID)
+		_ = s.deleteVerificationSession(ctx, confirmation.VerificationID)
 		return false, &requestError{status: http.StatusTooManyRequests, message: "Too many verification attempts. Please start a new verification."}
 	}
 
-	valid, err := s.verifyPassword(ctx, userID, password)
+	valid, err := s.verifyIdentityChallenge(ctx, userID, session, confirmation)
 	if err != nil {
 		return false, err
 	}
@@ -263,7 +298,7 @@ func (s Service) ConfirmIdentity(ctx context.Context, userID string, payload map
 		if remaining <= 0 {
 			remaining = time.Second
 		}
-		if err := s.putVerificationSession(ctx, verificationID, session, remaining); err != nil {
+		if err := s.putVerificationSession(ctx, confirmation.VerificationID, session, remaining); err != nil {
 			return false, err
 		}
 		return false, nil
@@ -274,7 +309,7 @@ func (s Service) ConfirmIdentity(ctx context.Context, userID string, payload map
 	session.Confirmed = true
 	session.ConfirmedAt = &confirmedAt
 	session.ExpiresAt = now.Add(verificationConsumeWindow).UnixMilli()
-	if err := s.putVerificationSession(ctx, verificationID, session, verificationConsumeWindow); err != nil {
+	if err := s.putVerificationSession(ctx, confirmation.VerificationID, session, verificationConsumeWindow); err != nil {
 		return false, err
 	}
 
@@ -310,7 +345,41 @@ func (s Service) InitiateEmailChange(ctx context.Context, userID string, payload
 	}
 
 	if emailVerificationConfigured() && emailVerified {
-		return emailChangeInitResult{}, ErrLegacyEmailChangeFlow
+		otpOld, err := generateOTPCode()
+		if err != nil {
+			return emailChangeInitResult{}, err
+		}
+		otpNew, err := generateOTPCode()
+		if err != nil {
+			return emailChangeInitResult{}, err
+		}
+
+		if _, err := s.DB.Exec(
+			ctx,
+			`UPDATE "User"
+			    SET "pendingEmail" = $2,
+			        "emailChangeCodeOldHash" = $3,
+			        "emailChangeCodeNewHash" = $4,
+			        "emailChangeExpiry" = $5,
+			        "updatedAt" = NOW()
+			  WHERE id = $1`,
+			userID,
+			newEmail,
+			hashOTP(otpOld),
+			hashOTP(otpNew),
+			time.Now().Add(emailChangeTTL),
+		); err != nil {
+			return emailChangeInitResult{}, err
+		}
+
+		if err := s.sendEmailChangeCode(ctx, currentEmail, otpOld, true); err != nil {
+			return emailChangeInitResult{}, err
+		}
+		if err := s.sendEmailChangeCode(ctx, newEmail, otpNew, false); err != nil {
+			return emailChangeInitResult{}, err
+		}
+
+		return emailChangeInitResult{Flow: "dual-otp"}, nil
 	}
 
 	if _, err := s.DB.Exec(ctx, `UPDATE "User" SET "pendingEmail" = $2, "updatedAt" = NOW() WHERE id = $1`, userID, newEmail); err != nil {
@@ -333,12 +402,9 @@ func (s Service) InitiateEmailChange(ctx context.Context, userID string, payload
 }
 
 func (s Service) ConfirmEmailChange(ctx context.Context, userID string, payload map[string]json.RawMessage, ipAddress string) (map[string]string, error) {
-	verificationID, shouldFallback, err := parseEmailChangeConfirmation(payload)
+	confirmation, err := parseEmailChangeConfirmation(payload)
 	if err != nil {
 		return nil, err
-	}
-	if shouldFallback {
-		return nil, ErrLegacyEmailChangeFlow
 	}
 	if s.DB == nil {
 		return nil, fmt.Errorf("postgres is not configured")
@@ -362,12 +428,41 @@ func (s Service) ConfirmEmailChange(ctx context.Context, userID string, payload 
 	if pendingEmail == nil || strings.TrimSpace(*pendingEmail) == "" {
 		return nil, &requestError{status: http.StatusBadRequest, message: "No pending email change."}
 	}
-	if emailChangeCodeOld != nil || emailChangeCodeNew != nil || emailChangeExpiry != nil {
-		return nil, ErrLegacyEmailChangeFlow
-	}
 
-	if err := s.consumeVerificationSession(ctx, verificationID, userID, "email-change"); err != nil {
-		return nil, err
+	switch {
+	case confirmation.UsesOTP:
+		if emailChangeCodeOld == nil || emailChangeCodeNew == nil {
+			return nil, &requestError{status: http.StatusBadRequest, message: "Invalid confirmation payload."}
+		}
+		if emailChangeExpiry != nil && emailChangeExpiry.Before(time.Now()) {
+			if _, err := s.DB.Exec(
+				ctx,
+				`UPDATE "User"
+				    SET "pendingEmail" = NULL,
+				        "emailChangeCodeOldHash" = NULL,
+				        "emailChangeCodeNewHash" = NULL,
+				        "emailChangeExpiry" = NULL,
+				        "updatedAt" = NOW()
+				  WHERE id = $1`,
+				userID,
+			); err != nil {
+				return nil, err
+			}
+			return nil, &requestError{status: http.StatusBadRequest, message: "Verification codes have expired. Please start again."}
+		}
+		if !timingSafeHexEqual(hashOTP(confirmation.CodeOld), *emailChangeCodeOld) ||
+			!timingSafeHexEqual(hashOTP(confirmation.CodeNew), *emailChangeCodeNew) {
+			return nil, &requestError{status: http.StatusBadRequest, message: "Invalid verification code(s)."}
+		}
+	case confirmation.VerificationID != "":
+		if emailChangeCodeOld != nil || emailChangeCodeNew != nil || emailChangeExpiry != nil {
+			return nil, &requestError{status: http.StatusBadRequest, message: "Invalid confirmation payload."}
+		}
+		if err := s.consumeVerificationSession(ctx, confirmation.VerificationID, userID, "email-change"); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, &requestError{status: http.StatusBadRequest, message: "Invalid confirmation payload."}
 	}
 
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{})
@@ -405,6 +500,137 @@ func (s Service) ConfirmEmailChange(ctx context.Context, userID string, payload 
 	}
 
 	return map[string]string{"email": updatedEmail}, nil
+}
+
+func (s Service) loadVerificationEmail(ctx context.Context, userID string) (string, error) {
+	if s.DB == nil {
+		return "", fmt.Errorf("postgres is not configured")
+	}
+	var email string
+	if err := s.DB.QueryRow(ctx, `SELECT email FROM "User" WHERE id = $1`, userID).Scan(&email); err != nil {
+		return "", err
+	}
+	return email, nil
+}
+
+func (s Service) loadVerificationPhone(ctx context.Context, userID string) (string, error) {
+	if s.DB == nil {
+		return "", fmt.Errorf("postgres is not configured")
+	}
+	var phoneNumber string
+	if err := s.DB.QueryRow(
+		ctx,
+		`SELECT COALESCE("phoneNumber", '')
+		   FROM "User"
+		  WHERE id = $1`,
+		userID,
+	).Scan(&phoneNumber); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(phoneNumber) == "" {
+		return "", &requestError{status: http.StatusBadRequest, message: "SMS is not configured properly."}
+	}
+	return phoneNumber, nil
+}
+
+func (s Service) verifyIdentityChallenge(ctx context.Context, userID string, session verificationSession, confirmation identityConfirmationPayload) (bool, error) {
+	switch session.Method {
+	case "email":
+		if confirmation.Code == "" {
+			return false, &requestError{status: http.StatusBadRequest, message: "Verification code is required."}
+		}
+		if session.EmailOtpHash == "" {
+			return false, &requestError{status: http.StatusBadRequest, message: "Verification session is missing an email code."}
+		}
+		return timingSafeHexEqual(hashOTP(confirmation.Code), session.EmailOtpHash), nil
+	case "totp":
+		if confirmation.Code == "" {
+			return false, &requestError{status: http.StatusBadRequest, message: "TOTP code is required."}
+		}
+		user, err := s.loadVerificationTOTPUser(ctx, userID)
+		if err != nil {
+			return false, err
+		}
+		secret, err := s.resolveVerificationTOTPSecret(ctx, userID, user)
+		if err != nil {
+			return false, err
+		}
+		if secret == "" {
+			return false, &requestError{status: http.StatusBadRequest, message: "TOTP is not configured properly."}
+		}
+		return verifyTOTP(secret, confirmation.Code, time.Now()), nil
+	case "sms":
+		if confirmation.Code == "" {
+			return false, &requestError{status: http.StatusBadRequest, message: "SMS code is required."}
+		}
+		return s.verifySMSOTP(ctx, userID, confirmation.Code)
+	case "webauthn":
+		if session.WebAuthnOption == nil {
+			return false, &requestError{status: http.StatusBadRequest, message: "Verification session is missing WebAuthn options."}
+		}
+		return s.verifyIdentityWebAuthn(ctx, userID, session.WebAuthnOption, confirmation.Credential)
+	case "password":
+		if confirmation.Password == "" {
+			return false, &requestError{status: http.StatusBadRequest, message: "Password is required."}
+		}
+		return s.verifyPassword(ctx, userID, confirmation.Password)
+	default:
+		return false, &requestError{status: http.StatusBadRequest, message: "Unsupported verification method."}
+	}
+}
+
+type verificationTOTPUser struct {
+	EncryptedTOTPSecret *string
+	TOTPSecretIV        *string
+	TOTPSecretTag       *string
+	TOTPSecret          *string
+}
+
+func (s Service) loadVerificationTOTPUser(ctx context.Context, userID string) (verificationTOTPUser, error) {
+	if s.DB == nil {
+		return verificationTOTPUser{}, fmt.Errorf("postgres is not configured")
+	}
+
+	var user verificationTOTPUser
+	if err := s.DB.QueryRow(
+		ctx,
+		`SELECT "encryptedTotpSecret", "totpSecretIV", "totpSecretTag", "totpSecret"
+		   FROM "User"
+		  WHERE id = $1`,
+		userID,
+	).Scan(&user.EncryptedTOTPSecret, &user.TOTPSecretIV, &user.TOTPSecretTag, &user.TOTPSecret); err != nil {
+		return verificationTOTPUser{}, err
+	}
+	return user, nil
+}
+
+func (s Service) resolveVerificationTOTPSecret(ctx context.Context, userID string, user verificationTOTPUser) (string, error) {
+	if user.TOTPSecret != nil && strings.TrimSpace(*user.TOTPSecret) != "" {
+		return strings.TrimSpace(*user.TOTPSecret), nil
+	}
+	if user.EncryptedTOTPSecret == nil || user.TOTPSecretIV == nil || user.TOTPSecretTag == nil ||
+		strings.TrimSpace(*user.EncryptedTOTPSecret) == "" || strings.TrimSpace(*user.TOTPSecretIV) == "" || strings.TrimSpace(*user.TOTPSecretTag) == "" {
+		return "", nil
+	}
+
+	masterKey, err := s.getVaultMasterKey(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	if len(masterKey) == 0 {
+		return "", nil
+	}
+	defer zeroBytes(masterKey)
+
+	secret, err := decryptEncryptedField(masterKey, encryptedField{
+		Ciphertext: *user.EncryptedTOTPSecret,
+		IV:         *user.TOTPSecretIV,
+		Tag:        *user.TOTPSecretTag,
+	})
+	if err != nil {
+		return "", fmt.Errorf("decrypt totp secret: %w", err)
+	}
+	return secret, nil
 }
 
 func (s Service) primaryVerificationMethod(ctx context.Context, userID string) (string, error) {

@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/catalog"
@@ -14,10 +13,6 @@ import (
 
 func (d *apiDependencies) registerInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
-			d.legacyAPIProxy.ServeHTTP(w, r)
-			return
-		}
 		http.NotFound(w, r)
 	})
 

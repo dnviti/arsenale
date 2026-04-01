@@ -92,7 +92,7 @@ func (s Service) consumeVerificationSession(ctx context.Context, verificationID,
 		return err
 	}
 	if !found {
-		return ErrLegacyEmailChangeFlow
+		return &requestError{status: http.StatusBadRequest, message: "Verification session not found or expired."}
 	}
 	if !session.Confirmed {
 		return &requestError{status: http.StatusBadRequest, message: "Verification not yet confirmed."}

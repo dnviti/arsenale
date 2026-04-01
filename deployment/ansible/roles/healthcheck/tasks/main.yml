@@ -57,20 +57,20 @@
 
 - name: Verify secrets are NOT in container environment
   command: >
-    {{ container_runtime | default('podman') }} inspect arsenale-server --format
+    {{ container_runtime | default('podman') }} inspect arsenale-control-plane-api-go --format
     '{% raw %}{{ range .Config.Env }}{{ println . }}{{ end }}{% endraw %}'
-  register: server_env
+  register: control_plane_env
   changed_when: false
   failed_when: >
-    'JWT_SECRET=' in server_env.stdout or
-    'GUACAMOLE_SECRET=' in server_env.stdout or
-    'SERVER_ENCRYPTION_KEY=' in server_env.stdout
+    'JWT_SECRET=' in control_plane_env.stdout or
+    'GUACAMOLE_SECRET=' in control_plane_env.stdout or
+    'SERVER_ENCRYPTION_KEY=' in control_plane_env.stdout
 
-- name: Verify Podman secrets are mounted in server
-  command: "{{ container_runtime | default('podman') }} exec arsenale-server ls /run/secrets/"
-  register: server_secrets
+- name: Verify Podman secrets are mounted in control-plane-api-go
+  command: "{{ container_runtime | default('podman') }} exec arsenale-control-plane-api-go ls /run/secrets/"
+  register: control_plane_secrets
   changed_when: false
-  failed_when: "'jwt_secret' not in server_secrets.stdout"
+  failed_when: "'jwt_secret' not in control_plane_secrets.stdout"
 
 - name: Verify postgres only has its own secret
   command: "{{ container_runtime | default('podman') }} exec arsenale-postgres ls /run/secrets/"

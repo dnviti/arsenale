@@ -12,10 +12,12 @@ import {
   Fullscreen as FullscreenIcon,
   FullscreenExit as FullscreenExitIcon,
 } from '@mui/icons-material';
+import type { ContainerLogStreamSnapshot } from '../../api/live.api';
+import { connectSSE } from '../../api/sse';
 import { getInstanceLogs, type ManagedInstanceData } from '../../api/gateway.api';
+import { useAuthStore } from '../../store/authStore';
 
 const TAIL_OPTIONS = [100, 200, 500, 1000] as const;
-const LIVE_INTERVAL_MS = 3000;
 const MIN_HEIGHT = 200;
 const DEFAULT_HEIGHT = 500;
 
@@ -29,6 +31,7 @@ interface ContainerLogDialogProps {
 export default function ContainerLogDialog({
   open, onClose, gatewayId, instance,
 }: ContainerLogDialogProps) {
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [logs, setLogs] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +40,7 @@ export default function ContainerLogDialog({
   const [fullScreen, setFullScreen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef(false);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
-
-  // Keep ref in sync for interval callback
-  liveRef.current = live;
 
   const fetchLogs = useCallback(async () => {
     if (!instance) return;
@@ -60,24 +59,45 @@ export default function ContainerLogDialog({
 
   // Initial fetch on open / tail change
   useEffect(() => {
-    if (open && instance) {
-      fetchLogs();
-    }
     if (!open) {
       setLogs('');
       setError(null);
       setLive(true);
+      setLoading(false);
+      return;
+    }
+    if (open && instance && !live) {
+      void fetchLogs();
     }
   }, [open, instance, fetchLogs]);
 
-  // Live polling
   useEffect(() => {
-    if (!live || !open || !instance) return;
-    const id = setInterval(() => {
-      if (liveRef.current) fetchLogs();
-    }, LIVE_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [live, open, instance, fetchLogs]);
+    if (!live || !open || !instance || !accessToken) return undefined;
+
+    setLoading(true);
+    setError(null);
+
+    const params = new URLSearchParams({ tail: String(tail) });
+    return connectSSE({
+      url: `/api/gateways/${gatewayId}/instances/${instance.id}/logs/stream?${params.toString()}`,
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        const snapshot = data as ContainerLogStreamSnapshot;
+        setLogs(snapshot.logs);
+        setLoading(false);
+        setError(null);
+      },
+      onError: (streamError) => {
+        const status = (streamError as Error & { status?: number }).status;
+        setError(streamError.message);
+        setLoading(false);
+        if (status != null && !(status === 408 || status === 429 || (status >= 500 && status !== 501))) {
+          setLive(false);
+        }
+      },
+    });
+  }, [live, open, instance, accessToken, tail, gatewayId]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -223,7 +243,7 @@ export default function ContainerLogDialog({
             }}
           />
           <Typography variant="caption" color="text.secondary">
-            Live — refreshing every {LIVE_INTERVAL_MS / 1000}s
+            Live stream connected
           </Typography>
         </Box>
       )}

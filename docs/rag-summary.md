@@ -2,6 +2,8 @@
 
 > Auto-generated on 2026-03-20. High-level product overview for LLM RAG consumption.
 
+> Runtime note: the live platform now runs through the Go control plane and companion Go services. References to `server/src` or Prisma below are archived implementation notes unless explicitly restated as current.
+
 ## What is Arsenale
 
 Arsenale is a modern, web-based remote access management platform designed to replace legacy tools like mRemoteNG, RoyalTS, and standalone Apache Guacamole deployments. It provides a unified interface for managing SSH, RDP, VNC, and database connections through a browser or native clients, eliminating the need for complex jump host configurations. Unlike traditional tools that store credentials locally or rely on unencrypted configuration files, Arsenale encrypts all credentials at rest using a zero-knowledge vault architecture where the server never has access to plaintext passwords.
@@ -76,7 +78,7 @@ Password breach protection queries the HaveIBeenPwned API using k-Anonymity duri
 
 Token binding ties JWT access tokens and refresh tokens to the originating client's IP address and User-Agent via a SHA-256 hash embedded in the token payload and stored on refresh token records. If a token is presented from a different IP or User-Agent than the one that issued it, the token is rejected and the session is terminated. For refresh tokens, the entire token family is revoked to prevent further use. A `TOKEN_HIJACK_ATTEMPT` audit event is logged for security monitoring. Token binding is enabled by default and can be disabled globally via the `TOKEN_BINDING_ENABLED` environment variable for environments with dynamic IPs. Tokens issued before token binding was enabled are accepted without verification for backward compatibility.
 
-Attribute-Based Access Control (ABAC) extends the role-based permission model by evaluating context attributes when a user attempts to start a session. ABAC policies (`AccessPolicy` Prisma model) are scoped to a `FOLDER`, `TEAM`, or `TENANT` target. Each policy can enforce: time-window restrictions (comma-separated `HH:MM-HH:MM` UTC ranges — e.g., `"09:00-18:00"` restricts sessions to business hours), trusted-device requirements (user must have authenticated with WebAuthn during the current login), and MFA step-up requirements (user must have completed any MFA challenge — TOTP, WebAuthn, or SMS — during login). Policies are evaluated at session start for SSH, RDP, and VNC connections; the first matching denial returns HTTP 403 and logs a `SESSION_DENIED_ABAC` audit event with `details.reason` set to `outside_working_hours`, `untrusted_device`, or `mfa_step_up_required`. The MFA method used during login (`totp`, `webauthn`, or `sms`) is now embedded in the JWT payload as `mfaMethod` and is forwarded to the ABAC evaluator. The ABAC service lives at `server/src/services/abac.service.ts`. Segregation of Duties enforcement for privileged access management (PAM) checkout requests — preventing a user from approving their own secret checkout — will be added when PAM-111 is implemented.
+Attribute-Based Access Control (ABAC) extends the role-based permission model by evaluating context attributes when a user attempts to start a session. ABAC policies (`AccessPolicy`) are scoped to a `FOLDER`, `TEAM`, or `TENANT` target. Each policy can enforce time-window restrictions (comma-separated `HH:MM-HH:MM` UTC ranges — e.g., `"09:00-18:00"` restricts sessions to business hours), trusted-device requirements (user must have authenticated with WebAuthn during the current login), and MFA step-up requirements (user must have completed any MFA challenge — TOTP, WebAuthn, or SMS — during login). Policies are evaluated at session start for SSH, RDP, and VNC connections; the first matching denial returns HTTP 403 and logs a `SESSION_DENIED_ABAC` audit event with `details.reason` set to `outside_working_hours`, `untrusted_device`, or `mfa_step_up_required`. The MFA method used during login (`totp`, `webauthn`, or `sms`) is embedded in the JWT payload and forwarded to the Go access-policy evaluator in `backend/internal/accesspolicies/service.go`. Segregation of Duties enforcement for privileged access management (PAM) checkout requests — preventing a user from approving their own secret checkout — will be added when PAM-111 is implemented.
 
 Comprehensive audit logging tracks over 100 distinct action types across the platform, including authentication events, connection usage, sharing activities, administrative operations, and session lifecycle events. Audit logs include client IP addresses and optional geographic location enrichment using MaxMind GeoLite2 data. Administrators can view tenant-wide audit logs with geographic visualization on an interactive map.
 
@@ -222,30 +224,30 @@ Connection import and export supports CSV, JSON, mRemoteNG configuration files, 
 
 ## Deployment
 
-Arsenale deploys with a single Docker Compose command that starts all required services: PostgreSQL database, Guacamole daemon, the server API, and the Nginx-based web client. Database migrations run automatically on startup. The entire stack runs on an internal Docker network with only the web port exposed to the host.
+Arsenale now deploys as a Go-first container stack driven by Ansible and Compose. The default stack includes PostgreSQL, Redis, guacd, guacenc, the Nginx-based web client, `control-plane-api-go`, and the Go runtime brokers for desktop, terminal, tunnel, query, and orchestration traffic. When the database is empty, bootstrap is handled from `backend/schema/bootstrap.sql` instead of Prisma migrations.
 
 Both Docker and Podman are supported as container runtimes, with rootless Podman configurations working out of the box. All application containers run as non-root users. Volume persistence is configured for database data, drive files, and session recordings.
 
 Configuration is handled through a single environment file with sensible defaults for development. Production deployment requires setting cryptographic secrets and connection parameters, all documented with generation commands.
 
-## Distributed State (Go Cache Backends)
+## Distributed State (Redis Coordination)
 
-Arsenale includes Go-based cache backends (`infrastructure/gocache/`) that enable multi-instance deployments by replacing per-process in-memory stores with distributed alternatives. The split runtime exposes a dedicated cache backend for KV, TTL, locks, and queues, plus a dedicated pubsub backend for service-to-service event wiring over gRPC.
+Arsenale uses Redis for distributed coordination across the Go control plane and brokers. Redis holds short-lived auth and MFA state, rate limit counters, vault status events, and other ephemeral coordination data that must survive beyond a single process.
 
 ### Architecture
 
-The backends run as separate containers (`gocache-cache` and `gocache-pubsub`) alongside the server. The TypeScript client (`server/src/utils/cacheClient.ts`) routes KV/locks/queues to the cache backend and publish/subscribe to the pubsub backend. All operations gracefully degrade — when backend integration is disabled (`CACHE_SIDECAR_ENABLED=false`), each subsystem falls back to local in-memory behavior, making the split backends optional for single-instance deployments.
+Redis runs as a shared service alongside the Go API and brokers. The runtime opens a standard Redis connection from `REDIS_URL` and uses TTL keys and pub/sub where cross-instance coordination matters.
 
 ### Distributed Subsystems
 
 | Subsystem | Cache Primitive | Fallback |
 |-----------|----------------|----------|
-| Socket.IO cross-instance events | Pub/sub (custom adapter) | Default in-memory adapter |
-| Auth codes (OAuth/SAML callbacks) | KV with TTL + atomic GetDel | Local `Map<string, AuthCodeEntry>` |
+| Cross-instance coordination events | Pub/sub | Process-local state only |
+| Auth codes (OAuth/SAML callbacks) | KV with TTL + atomic GetDel | Process-local state only |
 | Link codes (account linking) | KV with TTL + atomic GetDel | Local `Map<string, LinkCodeEntry>` |
 | Relay state (SAML/OAuth state) | KV with TTL + atomic GetDel | Local `Map<string, LinkCodeEntry>` |
-| Leader election (scheduled jobs) | Distributed locks + heartbeat renewal | Every instance runs every job |
 | Vault session index | KV (JSON arrays for prefix-based cleanup) | Local Map cleanup only |
+| Rate limit counters | KV with TTL | Per-process counters only |
 
 ### Cache Key Patterns
 
@@ -254,41 +256,19 @@ The backends run as separate containers (`gocache-cache` and `gocache-pubsub`) a
 | `auth:code:<hex>` | OAuth/SAML one-time auth code | 60s |
 | `link:code:<hex>` | Account-linking one-time code | 60s |
 | `relay:code:<hex>` | SAML/OAuth relay state | 5m |
-| `sio:<namespace>` | Socket.IO broadcast messages | None (pub/sub) |
-| `sio:server:<namespace>` | Socket.IO server-side emit | None (pub/sub) |
-| `sio:*` | Socket.IO subscription pattern | None (pub/sub) |
+| `vault:status` | Vault status fanout channel | None (pub/sub) |
+| `rl:*` | Rate-limit buckets | Varies by limiter |
 
 ### Leader Election
 
-In multi-instance deployments, background scheduled jobs (key rotation, cleanup tasks, LDAP sync, health monitors) must run on only one instance to prevent duplicate work. The leader election utility (`server/src/utils/leaderElection.ts`) provides two patterns:
-
-- **`runIfLeader(lockName, fn, ttlMs)`** — acquires a distributed lock, runs the function if acquired, releases on completion. Other instances skip the job.
-- **`startLeaderHeartbeat(lockName, ttlMs, intervalMs)`** — maintains continuous leadership via periodic lock renewal. If the leader loses the lock (crash, network partition), another instance re-acquires it.
-
-When the sidecar is disabled, both functions fall through and execute unconditionally (single-instance behavior).
-
-### Socket.IO Cross-Instance Adapter
-
-The `GoCacheAdapter` (`server/src/utils/cacheAdapter.ts`) replaces Socket.IO's default in-memory adapter with one backed by the dedicated pubsub backend. Each server instance publishes broadcast and serverSideEmit packets to namespaced channels, and subscribes to `sio:*` using pattern matching. Messages include a source instance ID to prevent self-echo. This enables real-time notifications, gateway monitoring, and vault status updates to reach clients connected to any server instance.
-
-### Peer Replication
-
-Each backend supports multi-instance clustering with peer discovery (DNS, Docker label-based, Kubernetes headless service, or manual peer list). KV mutations and pub/sub messages are replicated across peers with last-writer-wins (LWW) conflict resolution based on logical timestamps.
+In multi-instance deployments, the shared Redis coordination layer lets the API and brokers enforce consistent rate limits, challenge validation, and short-lived state. Long-running background work remains in the Go control/controller services rather than in the archived Node scheduler path.
 
 ### Configuration
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CACHE_KV_URL` | `localhost:6380` | gRPC endpoint of the cache backend |
-| `CACHE_PUBSUB_URL` | `localhost:6480` | gRPC endpoint of the pubsub backend |
-| `CACHE_SIDECAR_ENABLED` | `true` | Enable/disable sidecar integration |
-| `CACHE_PROTO_PATH` | `infrastructure/gocache/proto/cache.proto` | Proto file location |
-| `CACHE_LISTEN` | `tcp://localhost:6380` | Sidecar listen address |
-| `CACHE_HEALTH_ADDR` | `0.0.0.0:6381` | Sidecar health HTTP endpoint |
-| `CACHE_MAX_MEMORY` | `256mb` | Maximum memory for KV store |
-| `CACHE_DISCOVERY` | `manual` | Peer discovery mode (`dns`, `docker`, `kubernetes`, `manual`) |
-| `CACHE_PEERS` | (empty) | Comma-separated peer addresses (manual mode) |
+| `REDIS_URL` | `redis://localhost:6379/0` | Shared Redis coordination endpoint |
 
 ## Technology
 
-Arsenale is built on a modern open-source stack: a Node.js and TypeScript server with a layered Express architecture backed by PostgreSQL through Prisma ORM, and a React client with Zustand state management and Material UI components. The monorepo includes four npm workspaces: `server/`, `client/`, `gateways/tunnel-agent/`, and `extra-clients/browser-extensions/`, plus Go-based gateway components (`gateways/db-proxy/`, `gateways/rdgw/`), a Go CLI tool (`tools/arsenale-cli/`), and the Go cache backends (`infrastructure/gocache/`). Remote desktop rendering uses the Guacamole protocol via guacamole-lite and guacamole-common-js. SSH terminals use XTerm.js with the ssh2 library. Real-time communication uses Socket.IO for terminal I/O, notifications, and monitoring updates, with optional cross-instance delivery via the dedicated pubsub backend. The zero-trust tunnel system uses raw `ws` WebSocket connections with a custom binary multiplexing protocol for proxying TCP streams through outbound-only gateway agent connections. The ABAC policy engine evaluates `AccessPolicy` Prisma records at session start time to enforce time-window, trusted-device, and MFA step-up constraints.
+Arsenale is built on a Go-first service stack backed by PostgreSQL and Redis, with a React client using Zustand and Material UI. The active JavaScript workspaces are `client/`, `gateways/tunnel-agent/`, and `extra-clients/browser-extensions/`; the old `server/` tree remains archived in-repo as historical reference only. Remote desktop rendering uses guacd and guacamole-common-js, SSH terminals use XTerm.js with the Go terminal broker, and the zero-trust tunnel system uses raw WebSockets with a custom binary multiplexing protocol for proxying TCP streams through outbound-only gateway agent connections. ABAC enforcement now lives in the Go access-policy services and is evaluated on the active Go session path.

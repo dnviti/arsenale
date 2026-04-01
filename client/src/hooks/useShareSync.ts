@@ -18,9 +18,10 @@ export function useShareSync() {
   useEffect(() => {
     const unsubscribe = useNotificationListStore.subscribe(
       (state, prevState) => {
-        if (state.notifications.length <= prevState.notifications.length) return;
         const latest = state.notifications[0];
+        const previousLatest = prevState.notifications[0];
         if (!latest) return;
+        if (latest.id === previousLatest?.id) return;
 
         const handler = getOnReceive(latest.type);
         if (!handler) return;

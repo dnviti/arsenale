@@ -24,14 +24,11 @@ func (s Service) HandleForgotPassword(w http.ResponseWriter, r *http.Request) er
 	}
 
 	if err := s.ForgotPassword(r.Context(), payload.Email, requestIP(r)); err != nil {
-		switch {
-		case errors.Is(err, ErrLegacyEmailFlow):
-			return err
-		case isRequestError(err):
+		if isRequestError(err) {
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
-		default:
+		} else {
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 		return nil
@@ -97,14 +94,11 @@ func (s Service) HandleRequestResetSMSCode(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := s.RequestResetSMSCode(r.Context(), strings.TrimSpace(payload.Token)); err != nil {
-		switch {
-		case errors.Is(err, ErrLegacyLogin):
-			return err
-		case isRequestError(err):
+		if isRequestError(err) {
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
-		default:
+		} else {
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 		return nil
@@ -149,14 +143,11 @@ func (s Service) HandleCompletePasswordReset(w http.ResponseWriter, r *http.Requ
 		requestIP(r),
 	)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrLegacyLogin):
-			return err
-		case isRequestError(err):
+		if isRequestError(err) {
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
-		default:
+		} else {
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 		return nil

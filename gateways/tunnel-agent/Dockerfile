@@ -1,5 +1,5 @@
 # ── Build stage ──────────────────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
+FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -12,7 +12,7 @@ COPY src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM node:22-alpine
+FROM docker.io/library/node:22-alpine
 
 LABEL org.opencontainers.image.title="Arsenale Tunnel Agent"
 LABEL org.opencontainers.image.description="Zero-trust tunnel agent for non-managed gateways"

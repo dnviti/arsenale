@@ -7,10 +7,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/dnviti/arsenale/backend/internal/smsdelivery"
 )
 
 const smsOTPTTL = 5 * time.Minute
@@ -25,9 +26,6 @@ func (s Service) sendOTPToPhone(ctx context.Context, userID, phoneNumber string)
 	if s.DB == nil {
 		return fmt.Errorf("database is unavailable")
 	}
-	if strings.TrimSpace(os.Getenv("SMS_PROVIDER")) != "" {
-		return ErrLegacySMSMFAFlow
-	}
 
 	code, err := generateOTPCode()
 	if err != nil {
@@ -37,7 +35,17 @@ func (s Service) sendOTPToPhone(ctx context.Context, userID, phoneNumber string)
 		return err
 	}
 
-	log.Printf("mfaapi dev sms otp for user=%s phone=%s code=%s", userID, phoneNumber, code)
+	status := smsdelivery.StatusFromEnv()
+	if err := smsdelivery.Send(ctx, smsdelivery.Message{
+		To:   phoneNumber,
+		Body: fmt.Sprintf("Your Arsenale verification code is: %s. It expires in 5 minutes.", code),
+	}); err != nil {
+		return err
+	}
+
+	if !status.Configured {
+		log.Printf("mfaapi dev sms otp for user=%s phone=%s code=%s", userID, phoneNumber, code)
+	}
 	return nil
 }
 

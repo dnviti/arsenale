@@ -25,6 +25,33 @@ api.interceptors.request.use((config) => {
 // only the first one triggers a refresh; the rest wait for it.
 let refreshPromise: Promise<string> | null = null;
 
+export async function refreshAccessToken(): Promise<string> {
+  const { isAuthenticated, csrfToken } = useAuthStore.getState();
+  if (!isAuthenticated) {
+    throw new Error('Not authenticated');
+  }
+
+  if (!refreshPromise) {
+    refreshPromise = axios
+      .post('/api/auth/refresh', {}, {
+        withCredentials: true,
+        headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+      })
+      .then((res) => {
+        const { accessToken, csrfToken: newCsrfToken, user } = res.data;
+        useAuthStore.getState().setAccessToken(accessToken);
+        if (newCsrfToken) useAuthStore.getState().setCsrfToken(newCsrfToken);
+        if (user) useAuthStore.getState().updateUser(user);
+        return accessToken as string;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+
+  return refreshPromise;
+}
+
 // Response interceptor: handle 401 and refresh
 api.interceptors.response.use(
   (response) => response,
@@ -34,32 +61,19 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      const { isAuthenticated, csrfToken } = useAuthStore.getState();
+      const { isAuthenticated } = useAuthStore.getState();
       if (isAuthenticated) {
         try {
-          if (!refreshPromise) {
-            refreshPromise = axios
-              .post('/api/auth/refresh', {}, {
-                withCredentials: true,
-                headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
-              })
-              .then((res) => {
-                const { accessToken, csrfToken: newCsrfToken, user } = res.data;
-                useAuthStore.getState().setAccessToken(accessToken);
-                if (newCsrfToken) useAuthStore.getState().setCsrfToken(newCsrfToken);
-                if (user) useAuthStore.getState().updateUser(user);
-                return accessToken as string;
-              })
-              .finally(() => {
-                refreshPromise = null;
-              });
-          }
-
-          const accessToken = await refreshPromise;
+          const accessToken = await refreshAccessToken();
           originalRequest.headers.Authorization = `Bearer ${accessToken}`;
           return api(originalRequest);
-        } catch {
-          useAuthStore.getState().logout();
+        } catch (refreshError) {
+          if (axios.isAxiosError(refreshError)) {
+            const status = refreshError.response?.status;
+            if (status === 401 || status === 403) {
+              useAuthStore.getState().logout();
+            }
+          }
         }
       }
     }

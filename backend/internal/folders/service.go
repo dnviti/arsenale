@@ -62,15 +62,15 @@ type updatePayload struct {
 }
 
 type folderResponse struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	ParentID  *string    `json:"parentId"`
-	SortOrder int        `json:"sortOrder"`
-	TeamID    *string    `json:"teamId,omitempty"`
-	TeamName  *string    `json:"teamName,omitempty"`
-	Scope     string     `json:"scope"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	ParentID  *string   `json:"parentId"`
+	SortOrder int       `json:"sortOrder"`
+	TeamID    *string   `json:"teamId,omitempty"`
+	TeamName  *string   `json:"teamName,omitempty"`
+	Scope     string    `json:"scope"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type listResponse struct {
@@ -81,6 +81,16 @@ type listResponse struct {
 type accessResult struct {
 	Folder   folderResponse
 	TeamRole *string
+}
+
+func normalizeListResponse(resp listResponse) listResponse {
+	if resp.Personal == nil {
+		resp.Personal = []folderResponse{}
+	}
+	if resp.Team == nil {
+		resp.Team = []folderResponse{}
+	}
+	return resp
 }
 
 func (s Service) HandleList(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
@@ -165,7 +175,7 @@ ORDER BY "sortOrder" ASC, name ASC
 	}
 	defer personalRows.Close()
 
-	var personal []folderResponse
+	personal := make([]folderResponse, 0)
 	for personalRows.Next() {
 		var folder folderResponse
 		var parentID sql.NullString
@@ -197,7 +207,7 @@ ORDER BY f."sortOrder" ASC, f.name ASC
 	}
 	defer teamRows.Close()
 
-	var team []folderResponse
+	team := make([]folderResponse, 0)
 	for teamRows.Next() {
 		var folder folderResponse
 		var parentID, teamID, teamName sql.NullString
@@ -220,7 +230,7 @@ ORDER BY f."sortOrder" ASC, f.name ASC
 		return listResponse{}, fmt.Errorf("iterate team folders: %w", err)
 	}
 
-	return listResponse{Personal: personal, Team: team}, nil
+	return normalizeListResponse(listResponse{Personal: personal, Team: team}), nil
 }
 
 func (s Service) CreateFolder(ctx context.Context, claims authn.Claims, payload createPayload, ip *string) (folderResponse, error) {

@@ -50,4 +50,12 @@ func TestEncryptAPIKeyProducesExpectedFieldShapes(t *testing.T) {
 	if ciphertext == "" || iv == "" || tag == "" {
 		t.Fatalf("expected non-empty encrypted fields, got ciphertext=%q iv=%q tag=%q", ciphertext, iv, tag)
 	}
+
+	plaintext, err := DecryptAPIKey(ciphertext, iv, tag, key)
+	if err != nil {
+		t.Fatalf("DecryptAPIKey() returned error: %v", err)
+	}
+	if plaintext != "secret-token" {
+		t.Fatalf("expected decrypted plaintext to round-trip, got %q", plaintext)
+	}
 }

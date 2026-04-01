@@ -48,6 +48,19 @@ func (s Service) HandleDisable(w http.ResponseWriter, r *http.Request, claims au
 	app.WriteJSON(w, http.StatusOK, result)
 }
 
+func (s Service) HandleTrigger(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+	result, err := s.TriggerRotation(r.Context(), claims.UserID, claims.TenantID, r.PathValue("id"), "MANUAL", requestIP(r))
+	if err != nil {
+		if reqErr, ok := isRequestError(err); ok {
+			app.ErrorJSON(w, reqErr.status, reqErr.message)
+			return
+		}
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	app.WriteJSON(w, http.StatusOK, result)
+}
+
 func (s Service) HandleStatus(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
 	var payload struct {
 		SecretID string `json:"secretId"`

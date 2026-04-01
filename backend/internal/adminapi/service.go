@@ -14,6 +14,7 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/internal/emaildelivery"
 	"github.com/dnviti/arsenale/backend/internal/storage"
 	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 	"github.com/google/uuid"
@@ -91,11 +92,13 @@ func (s Service) HandleSendTestEmail(w http.ResponseWriter, r *http.Request, cla
 	}
 
 	status := buildEmailStatus()
-	if status.Configured {
-		s.writeError(w, &requestError{
-			status:  http.StatusNotImplemented,
-			message: "configured email providers still use the legacy API path",
-		})
+	if err := emaildelivery.Send(r.Context(), emaildelivery.Message{
+		To:      strings.TrimSpace(payload.To),
+		Subject: "Arsenale test email",
+		HTML:    "<p>This is a test email from Arsenale.</p>",
+		Text:    "This is a test email from Arsenale.",
+	}); err != nil {
+		s.writeError(w, err)
 		return
 	}
 
@@ -176,10 +179,6 @@ func (s Service) HandleGetSystemSettingsDBStatus(w http.ResponseWriter, r *http.
 		return
 	}
 	app.WriteJSON(w, http.StatusOK, status)
-}
-
-func (s Service) EmailTestRequiresLegacyProxy() bool {
-	return buildEmailStatus().Configured
 }
 
 func (s Service) requireTenantAdmin(ctx context.Context, claims authn.Claims) error {
@@ -272,26 +271,19 @@ func selfSignupEnvLocked() bool {
 }
 
 func buildEmailStatus() emailStatusResponse {
-	provider := strings.TrimSpace(os.Getenv("EMAIL_PROVIDER"))
-	if provider == "" {
-		provider = "smtp"
-	}
+	deliveryStatus := emaildelivery.StatusFromEnv()
 
 	status := emailStatusResponse{
-		Provider: provider,
-		From:     getenv("SMTP_FROM", "noreply@localhost"),
+		Provider: deliveryStatus.Provider,
+		Configured: deliveryStatus.Configured,
+		From:     deliveryStatus.From,
 	}
 
-	switch provider {
+	switch strings.ToLower(strings.TrimSpace(deliveryStatus.Provider)) {
 	case "smtp":
 		status.Host = strings.TrimSpace(os.Getenv("SMTP_HOST"))
 		status.Port = parseInt(getenv("SMTP_PORT", "587"), 587)
 		status.Secure = status.Port == 465
-		status.Configured = status.Host != ""
-	case "sendgrid", "ses", "resend", "mailgun":
-		status.Configured = true
-	default:
-		status.Configured = false
 	}
 
 	return status

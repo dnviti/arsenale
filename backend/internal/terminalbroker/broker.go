@@ -354,7 +354,7 @@ func (r *terminalRuntime) close() {
 		_ = r.stdin.Close()
 		_ = r.session.Close()
 		_ = r.send(serverMessage{Type: "closed"})
-		_ = r.wsConn.Close()
+		closeWebSocketConnection(r.wsConn, websocket.CloseNormalClosure, "")
 		if !r.wasExternallyClosed() {
 			if err := r.sessionStore.FinalizeTerminalSession(context.Background(), r.sessionID); err != nil {
 				r.logger.Warn("finalize terminal session failed", "error", err)
@@ -493,6 +493,18 @@ func sendWebsocketMessage(conn *websocket.Conn, message serverMessage) error {
 		return err
 	}
 	return conn.WriteMessage(websocket.TextMessage, payload)
+}
+
+func closeWebSocketConnection(conn *websocket.Conn, code int, text string) {
+	if conn == nil {
+		return
+	}
+	_ = conn.WriteControl(
+		websocket.CloseMessage,
+		websocket.FormatCloseMessage(code, text),
+		time.Now().Add(time.Second),
+	)
+	_ = conn.Close()
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -156,14 +157,16 @@ func (s Service) Login(ctx context.Context, email, password, ipAddress, userAgen
 	if len(s.JWTSecret) == 0 {
 		return loginFlow{}, fmt.Errorf("JWT secret is not configured")
 	}
-	if os.Getenv("LDAP_ENABLED") == "true" {
-		return loginFlow{}, ErrLegacyLogin
-	}
 	if email == "" || password == "" {
 		return loginFlow{}, &requestError{status: 400, message: "Email and password are required"}
 	}
 	if err := s.enforceLoginRateLimit(ctx, ipAddress); err != nil {
 		return loginFlow{}, err
+	}
+	if ldapFlow, err := s.tryLDAPLogin(ctx, email, password, ipAddress, userAgent); err != nil {
+		return loginFlow{}, err
+	} else if ldapFlow != nil {
+		return *ldapFlow, nil
 	}
 
 	user, err := s.loadLoginUser(ctx, email)
@@ -224,10 +227,6 @@ func (s Service) Login(ctx context.Context, email, password, ipAddress, userAgen
 		return loginFlow{}, &requestError{status: 403, message: "Email not verified. Please check your inbox or resend the verification email."}
 	}
 
-	if user.ActiveTenant != nil && user.ActiveTenant.IPAllowlistEnabled {
-		return loginFlow{}, ErrLegacyLogin
-	}
-
 	if err := s.resetLoginCounters(ctx, user.ID, user.FailedLoginAttempts, user.LockedUntil); err != nil {
 		return loginFlow{}, err
 	}
@@ -270,12 +269,17 @@ func (s Service) Login(ctx context.Context, email, password, ipAddress, userAgen
 		}, nil
 	}
 
+	allowlistDecision := evaluateIPAllowlist(user.ActiveTenant, ipAddress)
+	if allowlistDecision.Blocked {
+		return loginFlow{}, s.rejectBlockedIPAllowlist(ctx, user.ID, ipAddress)
+	}
+
 	result, err := s.issueTokens(ctx, user, ipAddress, userAgent)
 	if err != nil {
 		return loginFlow{}, err
 	}
 
-	_ = s.insertStandaloneAuditLog(ctx, &user.ID, "LOGIN", map[string]any{}, ipAddress)
+	_ = s.insertStandaloneAuditLogWithFlags(ctx, &user.ID, "LOGIN", map[string]any{}, ipAddress, allowlistDecision.Flags())
 	return loginFlow{issued: &result}, nil
 }
 
@@ -396,7 +400,8 @@ func (s Service) loadLoginUserByIDOrEmail(ctx context.Context, field, value stri
 	rows, err := s.DB.Query(
 		ctx,
 		`SELECT tm."tenantId", t.name, t.slug, tm.role::text, tm.status::text, tm."isActive", tm."joinedAt",
-		        t."mfaRequired", t."ipAllowlistEnabled", t."jwtExpiresInSeconds", t."jwtRefreshExpiresInSeconds",
+		        t."mfaRequired", t."ipAllowlistEnabled", t."ipAllowlistMode", t."ipAllowlistEntries",
+		        t."jwtExpiresInSeconds", t."jwtRefreshExpiresInSeconds",
 		        t."accountLockoutThreshold", t."accountLockoutDurationMs"
 		   FROM "TenantMember" tm
 		   JOIN "Tenant" t ON t.id = tm."tenantId"
@@ -411,14 +416,24 @@ func (s Service) loadLoginUserByIDOrEmail(ctx context.Context, field, value stri
 	defer rows.Close()
 
 	for rows.Next() {
-		var membership loginMembership
+		var (
+			membership       loginMembership
+			allowlistMode    sql.NullString
+			allowlistEntries []string
+		)
 		if err := rows.Scan(
 			&membership.TenantID, &membership.Name, &membership.Slug, &membership.Role, &membership.Status, &membership.IsActive,
-			&membership.JoinedAt, &membership.MFARequired, &membership.IPAllowlistEnabled, &membership.JWTExpiresInSeconds,
+			&membership.JoinedAt, &membership.MFARequired, &membership.IPAllowlistEnabled, &allowlistMode, &allowlistEntries,
+			&membership.JWTExpiresInSeconds,
 			&membership.JWTRefreshExpiresSeconds, &membership.AccountLockoutThreshold, &membership.AccountLockoutDurationMs,
 		); err != nil {
 			return loginUser{}, fmt.Errorf("scan membership: %w", err)
 		}
+		membership.IPAllowlistMode = "flag"
+		if allowlistMode.Valid && strings.TrimSpace(allowlistMode.String) != "" {
+			membership.IPAllowlistMode = strings.TrimSpace(allowlistMode.String)
+		}
+		membership.IPAllowlistEntries = allowlistEntries
 		user.Memberships = append(user.Memberships, membership)
 	}
 	if err := rows.Err(); err != nil {
@@ -531,7 +546,7 @@ func (s Service) issueTokens(ctx context.Context, user loginUser, ipAddress, use
 	return s.issueTokensForFamily(ctx, user, ipAddress, userAgent, uuid.NewString(), time.Now())
 }
 
-func (s Service) issueTokensForFamily(ctx context.Context, user loginUser, ipAddress, userAgent, tokenFamily string, familyCreatedAt time.Time) (issuedLogin, error) {
+func (s Service) issueAccessToken(user loginUser, ipAddress, userAgent string) (string, error) {
 	now := time.Now()
 	active := user.ActiveTenant
 	accessTTL := s.AccessTokenTTL
@@ -541,15 +556,7 @@ func (s Service) issueTokensForFamily(ctx context.Context, user loginUser, ipAdd
 	if active != nil && active.JWTExpiresInSeconds != nil && *active.JWTExpiresInSeconds > 0 {
 		accessTTL = time.Duration(*active.JWTExpiresInSeconds) * time.Second
 	}
-	refreshTTL := s.RefreshCookieTTL
-	if refreshTTL <= 0 {
-		refreshTTL = 7 * 24 * time.Hour
-	}
-	if active != nil && active.JWTRefreshExpiresSeconds != nil && *active.JWTRefreshExpiresSeconds > 0 {
-		refreshTTL = time.Duration(*active.JWTRefreshExpiresSeconds) * time.Second
-	}
 
-	refreshToken := uuid.NewString()
 	var ipUaHash *string
 	if s.TokenBinding {
 		hash := computeBindingHash(ipAddress, userAgent)
@@ -573,24 +580,26 @@ func (s Service) issueTokensForFamily(ctx context.Context, user loginUser, ipAdd
 
 	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(s.JWTSecret)
 	if err != nil {
-		return issuedLogin{}, fmt.Errorf("sign access token: %w", err)
+		return "", fmt.Errorf("sign access token: %w", err)
 	}
+	return accessToken, nil
+}
 
-	if _, err := s.DB.Exec(
-		ctx,
-		`INSERT INTO "RefreshToken" (id, token, "userId", "tokenFamily", "familyCreatedAt", "expiresAt", "ipUaHash")
-		  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-		uuid.NewString(),
-		refreshToken,
-		user.ID,
-		tokenFamily,
-		familyCreatedAt,
-		now.Add(refreshTTL),
-		ipUaHash,
-	); err != nil {
-		return issuedLogin{}, fmt.Errorf("insert refresh token: %w", err)
+func buildLoginUserResponse(user loginUser) loginUserResponse {
+	resultUser := loginUserResponse{
+		ID:         user.ID,
+		Email:      user.Email,
+		Username:   user.Username,
+		AvatarData: user.AvatarData,
 	}
+	if user.ActiveTenant != nil {
+		resultUser.TenantID = user.ActiveTenant.TenantID
+		resultUser.TenantRole = user.ActiveTenant.Role
+	}
+	return resultUser
+}
 
+func buildTenantMemberships(user loginUser) []tenantMembership {
 	memberships := make([]tenantMembership, 0, len(user.Memberships))
 	for _, membership := range user.Memberships {
 		memberships = append(memberships, tenantMembership{
@@ -619,23 +628,52 @@ func (s Service) issueTokensForFamily(ctx context.Context, user loginUser, ipAdd
 		}
 		return memberships[i].Name < memberships[j].Name
 	})
+	return memberships
+}
 
-	resultUser := loginUserResponse{
-		ID:         user.ID,
-		Email:      user.Email,
-		Username:   user.Username,
-		AvatarData: user.AvatarData,
+func (s Service) issueTokensForFamily(ctx context.Context, user loginUser, ipAddress, userAgent, tokenFamily string, familyCreatedAt time.Time) (issuedLogin, error) {
+	now := time.Now()
+	active := user.ActiveTenant
+	refreshTTL := s.RefreshCookieTTL
+	if refreshTTL <= 0 {
+		refreshTTL = 7 * 24 * time.Hour
 	}
-	if active != nil {
-		resultUser.TenantID = active.TenantID
-		resultUser.TenantRole = active.Role
+	if active != nil && active.JWTRefreshExpiresSeconds != nil && *active.JWTRefreshExpiresSeconds > 0 {
+		refreshTTL = time.Duration(*active.JWTRefreshExpiresSeconds) * time.Second
+	}
+
+	refreshToken := uuid.NewString()
+	var ipUaHash *string
+	if s.TokenBinding {
+		hash := computeBindingHash(ipAddress, userAgent)
+		ipUaHash = &hash
+	}
+
+	accessToken, err := s.issueAccessToken(user, ipAddress, userAgent)
+	if err != nil {
+		return issuedLogin{}, err
+	}
+
+	if _, err := s.DB.Exec(
+		ctx,
+		`INSERT INTO "RefreshToken" (id, token, "userId", "tokenFamily", "familyCreatedAt", "expiresAt", "ipUaHash")
+		  VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		uuid.NewString(),
+		refreshToken,
+		user.ID,
+		tokenFamily,
+		familyCreatedAt,
+		now.Add(refreshTTL),
+		ipUaHash,
+	); err != nil {
+		return issuedLogin{}, fmt.Errorf("insert refresh token: %w", err)
 	}
 
 	return issuedLogin{
 		accessToken:       accessToken,
 		refreshToken:      refreshToken,
 		refreshExpires:    refreshTTL,
-		user:              resultUser,
-		tenantMemberships: memberships,
+		user:              buildLoginUserResponse(user),
+		tenantMemberships: buildTenantMemberships(user),
 	}, nil
 }

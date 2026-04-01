@@ -34,11 +34,11 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
         listFolders(),
       ]);
       set({
-        ownConnections: connData.own,
-        sharedConnections: connData.shared,
-        teamConnections: connData.team,
-        folders: foldersData.personal,
-        teamFolders: foldersData.team,
+        ownConnections: Array.isArray(connData.own) ? connData.own : [],
+        sharedConnections: Array.isArray(connData.shared) ? connData.shared : [],
+        teamConnections: Array.isArray(connData.team) ? connData.team : [],
+        folders: Array.isArray(foldersData.personal) ? foldersData.personal : [],
+        teamFolders: Array.isArray(foldersData.team) ? foldersData.team : [],
         loading: false,
       });
     } catch {
@@ -49,7 +49,10 @@ export const useConnectionsStore = create<ConnectionsState>((set, get) => ({
   fetchFolders: async () => {
     try {
       const foldersData = await listFolders();
-      set({ folders: foldersData.personal, teamFolders: foldersData.team });
+      set({
+        folders: Array.isArray(foldersData.personal) ? foldersData.personal : [],
+        teamFolders: Array.isArray(foldersData.team) ? foldersData.team : [],
+      });
     } catch {}
   },
 

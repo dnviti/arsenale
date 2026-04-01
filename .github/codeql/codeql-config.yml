@@ -1,30 +1,20 @@
 name: "Arsenale CodeQL Config"
 
-# js/missing-token-validation is a false positive: the app implements CSRF
-# protection via a custom double-submit-cookie middleware (server/src/middleware/csrf.middleware.ts)
-# applied globally to all state-changing /api routes in app.ts lines 98-105.
-# CodeQL only recognises session-based libraries (lusca, csurf) which are
-# incompatible with JWT-based authentication.
+# These exclusions document known false positives in the JavaScript/TypeScript
+# workspaces. The live application edge now runs in Go; JS/TS scanning covers
+# the client, tunnel agent, browser extension, and archived reference code.
 query-filters:
   - exclude:
       id: js/missing-token-validation
-  # js/log-injection is a false positive: all logging goes through the centralized
-  # logger (server/src/utils/logger.ts) which strips newlines via stripNewlines()
-  # and formatArgs().replace(/[\n\r]/g, '\\n') before any console output. CodeQL
-  # cannot track taint through custom sanitizer functions.
+  # js/log-injection is a false positive: Arsenale sanitizes log output before
+  # writing it, but CodeQL cannot fully track the custom sanitization path.
   - exclude:
       id: js/log-injection
-  # js/sql-injection in dbQueryExecutor.service.ts is by design: this is a database
-  # admin tool where authenticated users execute SQL queries. Security is enforced
-  # upstream: role-based query restriction (SELECT-only for non-operators) and
-  # sqlFirewall.evaluateQuery() in dbSession.service.ts validate all queries before
-  # they reach the executor. Parameterized queries are not applicable for dynamic
-  # schema exploration (table names, column names are part of the SQL structure).
+  # js/sql-injection is excluded for the archived admin-query code path because
+  # authenticated users intentionally execute SQL in a constrained database tool.
   - exclude:
       id: js/sql-injection
-  # js/regex-injection in safeRegex.ts is by design: admin users create SQL firewall
-  # rules and data masking policies with regex patterns. compileRegex() validates via
-  # isRegexSafe() which rejects nested quantifiers (ReDoS) and patterns > 500 chars.
-  # The feature requires dynamic regex — escaping metacharacters would break it.
+  # js/regex-injection is excluded for the policy editor because the feature
+  # intentionally accepts administrator-supplied regex with safety validation.
   - exclude:
       id: js/regex-injection

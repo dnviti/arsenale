@@ -2,6 +2,7 @@ package gateways
 
 import (
 	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -9,10 +10,30 @@ import (
 )
 
 type Service struct {
-	DB                  *pgxpool.Pool
-	Redis               *redis.Client
-	ServerEncryptionKey []byte
-	DefaultGRPCPort     int
+	DB                    *pgxpool.Pool
+	Redis                 *redis.Client
+	ServerEncryptionKey   []byte
+	DefaultGRPCPort       int
+	GatewayGRPCTLSCA      string
+	GatewayGRPCClientCA   string
+	GatewayGRPCTLSCert    string
+	GatewayGRPCTLSKey     string
+	GatewayGRPCServerCert string
+	GatewayGRPCServerKey  string
+	HTTPClient            *http.Client
+	TunnelBrokerURL       string
+	TunnelTrustDomain     string
+	OrchestratorType      string
+	DockerSocketPath      string
+	PodmanSocketPath      string
+	EdgeNetwork           string
+	DBNetwork             string
+	GuacdNetwork          string
+	GatewayNetwork        string
+	SSHGatewayImage       string
+	GuacdImage            string
+	DBProxyImage          string
+	RecordingPath         string
 }
 
 type gatewayResponse struct {
@@ -53,6 +74,13 @@ type gatewayResponse struct {
 	TunnelConnected          bool       `json:"tunnelConnected"`
 	TunnelConnectedAt        *time.Time `json:"tunnelConnectedAt"`
 	TunnelClientCertExp      *time.Time `json:"tunnelClientCertExp"`
+	EncryptedTunnelToken     *string
+	TunnelTokenIV            *string
+	TunnelTokenTag           *string
+	TunnelClientCert         *string
+	TunnelClientKey          *string
+	TunnelClientKeyIV        *string
+	TunnelClientKeyTag       *string
 }
 
 type gatewayRecord struct {
@@ -96,8 +124,15 @@ type gatewayRecord struct {
 	LastScaleAction          *time.Time
 	TemplateID               *string
 	TunnelEnabled            bool
+	EncryptedTunnelToken     *string
+	TunnelTokenIV            *string
+	TunnelTokenTag           *string
 	TunnelConnected          bool
 	TunnelConnectedAt        *time.Time
+	TunnelClientCert         *string
+	TunnelClientKey          *string
+	TunnelClientKeyIV        *string
+	TunnelClientKeyTag       *string
 	TunnelClientCertExp      *time.Time
 	TotalInstances           int
 	RunningInstances         int

@@ -4,18 +4,17 @@ description: Common errors, debugging techniques, and frequently asked questions
 generated-by: claw-docs
 generated-at: 2026-03-27T12:00:00Z
 source-files:
-  - server/src/index.ts
-  - server/src/config.ts
-  - server/src/utils/logger.ts
-  - server/src/middleware/error.middleware.ts
-  - server/src/middleware/auth.middleware.ts
-  - server/src/middleware/globalRateLimit.middleware.ts
+  - backend/cmd/control-plane-api/main.go
+  - backend/cmd/control-plane-api/dev_bootstrap.go
+  - backend/internal/systemsettingsapi/service.go
   - client/src/api/client.ts
   - dev-certs/generate.sh
   - Makefile
 ---
 
 ## 🐛 Common Errors
+
+> Runtime note: the current stack is the Go control plane plus supporting Go services. Any older references to `server/` paths are archived implementation history, not the active runtime.
 
 ### Database Connection
 
@@ -24,8 +23,7 @@ source-files:
 | `ECONNREFUSED 127.0.0.1:5432` | PostgreSQL not running | Run `make dev` to start containers |
 | `FATAL: password authentication failed` | Wrong DB password | Check `vault.yml` or regenerate with `make vault` |
 | `SSL connection required` | Missing SSL certs | Ensure `DATABASE_URL` includes `?sslmode=require` |
-| `P1001: Can't reach database server` | Prisma can't connect | Verify `DATABASE_URL` in `.env`, check `make status` |
-| `P3009: Migration failed` | Schema conflict | Run `npm run db:push` to force-sync, then `npm run db:migrate` |
+| App starts against an empty DB | Schema not bootstrapped yet | Run `npm run db:bootstrap` or redeploy with `make dev` |
 
 ### TLS and Certificates
 
@@ -35,7 +33,7 @@ source-files:
 | `ERR_CERT_AUTHORITY_INVALID` | Browser doesn't trust dev CA | Import `dev-certs/ca.pem` into browser trust store |
 | `DEPTH_ZERO_SELF_SIGNED_CERT` | Self-signed cert without CA | Run `make certs` to regenerate with proper CA chain |
 | `certificate has expired` | Expired dev certs | Run `make certs` to regenerate (default: 10-year validity) |
-| `ENOENT: dev-certs/server/server-cert.pem` | Missing cert files | Run `./dev-certs/generate.sh` or `make setup` |
+| `ENOENT: dev-certs/control-plane-api/server-cert.pem` | Missing cert files | Run `./dev-certs/generate.sh` or `make setup` |
 
 ### Authentication
 
@@ -53,7 +51,6 @@ source-files:
 |-------|-------|----------|
 | `EADDRINUSE :::3001` | Port already in use | The server auto-cleans stale processes in dev; otherwise `kill` the process |
 | `JWT_SECRET is required in production` | Missing env var | Set `JWT_SECRET` (64 hex chars) in `.env` or vault |
-| `Cannot find module '@prisma/client'` | Prisma not generated | Run `npm run db:generate` |
 | `guacd connection refused` | guacd not running | Run `make dev` or check guacd container: `make status` |
 | `GUACD_SSL=true but no GUACD_CA_CERT` | TLS misconfigured for guacd | Set `GUACD_CA_CERT` path or disable `GUACD_SSL` |
 
@@ -110,7 +107,7 @@ LOG_FORMAT=json
 
 ```bash
 make logs              # All services
-make logs SVC=server   # Server only
+make logs SVC=arsenale-control-plane-api-go
 make logs SVC=guacd    # guacd only
 make logs SVC=postgres # PostgreSQL only
 ```
@@ -122,10 +119,10 @@ make logs SVC=postgres # PostgreSQL only
 make status
 
 # API health check
-curl -k https://localhost:3001/api/health
+curl -k https://localhost:3000/api/health
 
-# Readiness check (includes DB, guacd)
-curl -k https://localhost:3001/api/ready
+# Readiness check
+curl -k https://localhost:3000/api/ready
 ```
 
 ### Database Debugging
@@ -134,9 +131,8 @@ curl -k https://localhost:3001/api/ready
 # Connect directly to PostgreSQL
 psql "$DATABASE_URL"
 
-# Check Prisma schema sync
-npx prisma db pull    # Pull current DB schema
-npx prisma validate   # Validate schema.prisma
+# Confirm the bootstrap snapshot is present
+test -f backend/schema/bootstrap.sql
 ```
 
 ### Network Debugging
@@ -145,8 +141,8 @@ npx prisma validate   # Validate schema.prisma
 # Test guacd connectivity
 nc -zv localhost 4822
 
-# Test gocache connectivity
-nc -zv localhost 6380
+# Test Redis connectivity
+nc -zv localhost 6379
 
 # Test PostgreSQL connectivity
 pg_isready -h localhost -p 5432
@@ -159,20 +155,14 @@ make dev-down          # Stop containers
 make clean             # Remove everything
 make setup             # Regenerate vault + certs
 make dev               # Fresh start
-npm run db:push        # Sync schema
+npm run db:bootstrap   # Apply schema if needed
 ```
 
 ## ❓ FAQ
 
 ### How do I reset the admin password?
 
-Use the CLI tool:
-
-```bash
-npm run cli:dev -- user reset-password --email admin@example.com
-```
-
-Requires `CLI_ENABLED=true` in `.env`.
+Use the dev bootstrap credentials or reset the password directly in PostgreSQL if you intentionally changed the seeded admin user.
 
 ### How do I add a new OAuth provider?
 
@@ -198,12 +188,12 @@ ALLOW_LOCAL_NETWORK=true   # RFC 1918 addresses (10.x, 172.16-31.x, 192.168.x)
 ALLOW_LOOPBACK=true        # 127.x, ::1 (opt-in, default false)
 ```
 
-### How do I scale to multiple server instances?
+### How do I scale to multiple API instances?
 
 1. Set `arsenale_server_replicas` in Ansible vars
-2. Ensure `CACHE_SIDECAR_ENABLED=true` (required for distributed state)
-3. GoCacheKV handles rate limits, session state, and Socket.IO events across instances
-4. Leader election ensures singleton jobs run on one instance only
+2. Point all replicas at the same `REDIS_URL`
+3. Redis handles rate limits and other short-lived coordination state across instances
+4. Keep PostgreSQL shared and externalize it for HA if you need production-grade failover
 
 ### How do I rotate secrets?
 

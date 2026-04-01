@@ -125,3 +125,34 @@ func EncryptAPIKey(apiKey string, key []byte) (ciphertext, iv, tag string, err e
 	tagOffset := len(sealed) - aead.Overhead()
 	return hex.EncodeToString(sealed[:tagOffset]), hex.EncodeToString(nonce), hex.EncodeToString(sealed[tagOffset:]), nil
 }
+
+func DecryptAPIKey(ciphertext, iv, tag string, key []byte) (string, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("create cipher: %w", err)
+	}
+
+	nonce, err := hex.DecodeString(strings.TrimSpace(iv))
+	if err != nil {
+		return "", fmt.Errorf("decode iv: %w", err)
+	}
+	payload, err := hex.DecodeString(strings.TrimSpace(ciphertext))
+	if err != nil {
+		return "", fmt.Errorf("decode ciphertext: %w", err)
+	}
+	authTag, err := hex.DecodeString(strings.TrimSpace(tag))
+	if err != nil {
+		return "", fmt.Errorf("decode tag: %w", err)
+	}
+
+	aead, err := cipher.NewGCMWithNonceSize(block, len(nonce))
+	if err != nil {
+		return "", fmt.Errorf("create gcm: %w", err)
+	}
+
+	plaintext, err := aead.Open(nil, nonce, append(payload, authTag...), nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt api key: %w", err)
+	}
+	return string(plaintext), nil
+}

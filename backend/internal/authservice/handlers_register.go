@@ -34,14 +34,11 @@ func (s Service) HandleRegister(w http.ResponseWriter, r *http.Request) error {
 
 	result, err := s.Register(r.Context(), strings.TrimSpace(strings.ToLower(payload.Email)), payload.Password, requestIP(r))
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrLegacyRegister):
-			return err
-		case isRequestError(err):
+		if isRequestError(err) {
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
-		default:
+		} else {
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 		return nil

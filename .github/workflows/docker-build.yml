@@ -5,9 +5,19 @@ on:
     tags: ["v*"]
     branches: [staging, main]
     paths:
-      - "server/**"
+      - "backend/**"
       - "client/**"
-      - "!server/**/*.md"
+      - "gateways/tunnel-agent/**"
+      - "extra-clients/browser-extensions/**"
+      - ".github/workflows/docker-build.yml"
+      - ".github/workflows/verify.yml"
+      - ".github/workflows/security.yml"
+      - ".github/codeql/**"
+      - "backend/Dockerfile"
+      - "backend/go.mod"
+      - "backend/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - "!client/**/*.md"
       - "package.json"
       - "package-lock.json"
@@ -17,9 +27,19 @@ on:
   pull_request:
     branches: [develop, staging, main]
     paths:
-      - "server/**"
+      - "backend/**"
       - "client/**"
-      - "!server/**/*.md"
+      - "gateways/tunnel-agent/**"
+      - "extra-clients/browser-extensions/**"
+      - ".github/workflows/docker-build.yml"
+      - ".github/workflows/verify.yml"
+      - ".github/workflows/security.yml"
+      - ".github/codeql/**"
+      - "backend/Dockerfile"
+      - "backend/go.mod"
+      - "backend/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - "!client/**/*.md"
       - "package.json"
       - "package-lock.json"
@@ -34,12 +54,23 @@ env:
 
 jobs:
   # ── Gate: Verify ──────────────────────────────────────────────
-  verify-server:
-    uses: ./.github/workflows/verify.yml
-    with:
-      workspace: server
+  verify-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
 
   verify-client:
     uses: ./.github/workflows/verify.yml
@@ -49,11 +80,11 @@ jobs:
       contents: read
 
   # ── Gate: Security ────────────────────────────────────────────
-  security-server:
+  security-js:
     uses: ./.github/workflows/security.yml
     with:
       run-codeql: true
-      trivy-category: trivy-filesystem-server
+      trivy-category: trivy-filesystem-javascript
     permissions:
       contents: read
       security-events: write
@@ -69,7 +100,7 @@ jobs:
 
   # ── Build, Scan & Push ───────────────────────────────────────
   build-and-scan:
-    needs: [verify-server, verify-client, security-server, security-client]
+    needs: [verify-backend, verify-client, security-js, security-client]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -81,10 +112,15 @@ jobs:
       fail-fast: false
       matrix:
         service:
-          - name: server
-            dockerfile: ./server/Dockerfile
+          - name: control-plane-api
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=control-plane-api
           - name: client
             dockerfile: ./client/Dockerfile
+            context: .
+            build_args: ""
 
     concurrency:
       group: docker-${{ matrix.service.name }}-${{ github.ref }}
@@ -122,6 +158,7 @@ jobs:
         with:
           context: .
           file: ${{ matrix.service.dockerfile }}
+          build-args: ${{ matrix.service.build_args }}
           push: false
           load: true
           tags: arsenale-${{ matrix.service.name }}:scan
@@ -147,8 +184,9 @@ jobs:
         if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
+          build-args: ${{ matrix.service.build_args }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

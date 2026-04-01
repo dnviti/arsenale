@@ -610,6 +610,30 @@ clear_login_rate_limits() {
   fi
 }
 
+clear_session_security_state() {
+  if [[ "${container_runtime}" != "podman" && "${container_runtime}" != "docker" ]]; then
+    return
+  fi
+
+  "${container_runtime}" exec \
+    -e PGPASSWORD="${postgres_password}" \
+    arsenale-postgres \
+    psql -U "${db_user}" -d "${db_name}" -c \
+    "UPDATE \"User\"
+     SET \"failedLoginAttempts\" = 0,
+         \"lockedUntil\" = NULL
+     WHERE email = '${admin_email}';
+
+     DELETE FROM \"AuditLog\"
+     WHERE \"userId\" IN (
+       SELECT id
+       FROM \"User\"
+       WHERE email = '${admin_email}'
+     )
+       AND action IN ('SESSION_START'::\"AuditAction\", 'ANOMALOUS_LATERAL_MOVEMENT'::\"AuditAction\");" \
+    >/dev/null
+}
+
 login_json_for_password() {
   local password="$1"
   curl --silent --show-error --fail \
@@ -624,6 +648,7 @@ normalize_admin_password() {
   access_token=""
   tenant_id=""
   clear_login_rate_limits
+  clear_session_security_state
 
   if login_json="$(login_json_for_password "${admin_password}" 2>/dev/null)"; then
     access_token="$(printf '%s' "${login_json}" | jq -r '.accessToken')"
@@ -3798,7 +3823,8 @@ terminal_ws_url="$(printf '%s' "${terminal_grant_json}" | jq -r '.output.webSock
 [[ -n "${terminal_ws_url}" && "${terminal_ws_url}" != "null" ]]
 
 TERMINAL_WS_URL="${terminal_ws_url}" node <<'NODE'
-const ws = new WebSocket(process.env.TERMINAL_WS_URL);
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
+const ws = new WebSocketCtor(process.env.TERMINAL_WS_URL);
 let ready = false;
 let sawOutput = false;
 let buffer = '';
@@ -4054,7 +4080,8 @@ curl --silent --show-error --fail \
   | jq -e '.count >= 1' >/dev/null
 
 NODE_TLS_REJECT_UNAUTHORIZED=0 SSH_WS_URL="${ssh_ws_url}" node <<'NODE'
-const ws = new WebSocket(process.env.SSH_WS_URL);
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
+const ws = new WebSocketCtor(process.env.SSH_WS_URL);
 let ready = false;
 let sawOutput = false;
 let buffer = '';
@@ -4137,7 +4164,8 @@ curl --silent --show-error --fail \
   | jq -e --arg gateway_id "${dev_tunnel_managed_ssh_gateway_id}" 'map(select(.gatewayId == $gateway_id and .count >= 1)) | length >= 1' >/dev/null
 
 NODE_TLS_REJECT_UNAUTHORIZED=0 SSH_WS_URL="${ssh_tunnel_ws_url}" node <<'NODE'
-const ws = new WebSocket(process.env.SSH_WS_URL);
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
+const ws = new WebSocketCtor(process.env.SSH_WS_URL);
 let ready = false;
 let sawOutput = false;
 let buffer = '';
@@ -4591,6 +4619,7 @@ curl --silent --show-error --fail \
   | jq -e '.ok == true' >/dev/null
 
 NODE_TLS_REJECT_UNAUTHORIZED=0 RDP_TOKEN="${rdp_token}" node <<'NODE'
+const WebSocketCtor = globalThis.WebSocket || require('undici').WebSocket || require('ws');
 const url = new URL('wss://localhost:3000/guacamole/');
 url.searchParams.set('token', process.env.RDP_TOKEN);
 let opened = false;
@@ -4599,7 +4628,7 @@ const timeout = setTimeout(() => {
   process.exit(1);
 }, 20000);
 
-const ws = new WebSocket(url);
+const ws = new WebSocketCtor(url);
 
 ws.onopen = () => {
   opened = true;

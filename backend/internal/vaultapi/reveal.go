@@ -4,34 +4,46 @@ import (
 	"context"
 	"errors"
 	"net/http"
+
+	"github.com/dnviti/arsenale/backend/internal/credentialresolver"
 )
 
-var ErrLegacyRevealPasswordFlow = errors.New("legacy reveal-password flow required")
-
-func (s Service) RevealPassword(ctx context.Context, userID, connectionID, password string) (map[string]any, error) {
-	masterKey, err := s.resolveRevealMasterKey(ctx, userID, password)
+func (s Service) RevealPassword(ctx context.Context, userID, tenantID, connectionID, password string) (map[string]any, error) {
+	userMasterKey, err := s.resolveRevealMasterKey(ctx, userID, password)
 	if err != nil {
 		return nil, err
 	}
-	defer zeroBytes(masterKey)
+	defer zeroBytes(userMasterKey)
 
-	owned, err := s.loadOwnedRevealCredential(ctx, connectionID, userID)
-	if err == nil {
-		return s.revealCredential(owned, masterKey)
-	}
-	if !errors.Is(err, notFoundError("owned reveal credential")) {
+	record, err := s.loadRevealCredential(ctx, connectionID, userID, tenantID)
+	if err != nil {
 		return nil, err
 	}
 
-	shared, err := s.loadSharedRevealCredential(ctx, connectionID, userID)
-	if err == nil {
-		return s.revealCredential(shared, masterKey)
-	}
-	if !errors.Is(err, notFoundError("shared reveal credential")) {
-		return nil, err
+	if record.CredentialSecretID != nil && *record.CredentialSecretID != "" {
+		resolver := credentialresolver.Resolver{
+			DB:        s.DB,
+			Redis:     s.Redis,
+			ServerKey: s.ServerKey,
+			VaultTTL:  s.VaultTTL,
+		}
+		secretCreds, err := resolver.Resolve(ctx, userID, *record.CredentialSecretID, record.ConnectionType, tenantID)
+		if err != nil {
+			return nil, s.mapRevealCredentialError(err)
+		}
+		return map[string]any{"password": secretCreds.Password}, nil
 	}
 
-	return nil, &requestError{status: http.StatusForbidden, message: "Connection not found or insufficient permissions"}
+	key := userMasterKey
+	if record.AccessType == "team" {
+		key, err = s.resolveTeamRevealKey(ctx, record, userMasterKey)
+		if err != nil {
+			return nil, err
+		}
+		defer zeroBytes(key)
+	}
+
+	return s.revealInlineCredential(record, key)
 }
 
 func (s Service) resolveRevealMasterKey(ctx context.Context, userID, password string) ([]byte, error) {
@@ -73,16 +85,41 @@ func (s Service) resolveRevealMasterKey(ctx context.Context, userID, password st
 	return masterKey, nil
 }
 
-func (s Service) revealCredential(record revealCredentialRecord, masterKey []byte) (map[string]any, error) {
-	if record.RequiresLegacy {
-		return nil, ErrLegacyRevealPasswordFlow
+func (s Service) resolveTeamRevealKey(ctx context.Context, record revealCredentialRecord, userMasterKey []byte) ([]byte, error) {
+	if record.TeamID == nil || *record.TeamID == "" {
+		return nil, &requestError{status: http.StatusForbidden, message: "Connection not found or insufficient permissions"}
 	}
+
+	field, err := s.loadTeamRevealKey(ctx, *record.TeamID, record.UserID)
+	if err != nil {
+		return nil, err
+	}
+	hexKey, err := decryptEncryptedField(userMasterKey, field)
+	if err != nil {
+		return nil, &requestError{status: http.StatusForbidden, message: "Connection not found or insufficient permissions"}
+	}
+	teamKey, err := decodeHexKey(hexKey)
+	if err != nil {
+		return nil, err
+	}
+	return teamKey, nil
+}
+
+func (s Service) revealInlineCredential(record revealCredentialRecord, key []byte) (map[string]any, error) {
 	if record.Password == nil || record.Password.IV == "" || record.Password.Tag == "" || record.Password.Ciphertext == "" {
 		return nil, &requestError{status: http.StatusForbidden, message: "Connection not found or insufficient permissions"}
 	}
-	plaintext, err := decryptEncryptedField(masterKey, *record.Password)
+	plaintext, err := decryptEncryptedField(key, *record.Password)
 	if err != nil {
 		return nil, &requestError{status: http.StatusForbidden, message: "Connection not found or insufficient permissions"}
 	}
 	return map[string]any{"password": plaintext}, nil
+}
+
+func (s Service) mapRevealCredentialError(err error) error {
+	var reqErr *credentialresolver.RequestError
+	if errors.As(err, &reqErr) {
+		return &requestError{status: reqErr.Status, message: reqErr.Message}
+	}
+	return err
 }

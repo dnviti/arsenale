@@ -32,21 +32,21 @@ func (s Service) HandleVerifyTOTP(w http.ResponseWriter, r *http.Request) error 
 		r.UserAgent(),
 	)
 	if err != nil {
-		switch {
-		case errors.Is(err, ErrLegacyLogin):
-			return err
-		case isRequestError(err):
+		if isRequestError(err) {
 			var reqErr *requestError
 			_ = errors.As(err, &reqErr)
 			app.ErrorJSON(w, reqErr.status, reqErr.message)
-		default:
+		} else {
 			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		}
 		return nil
 	}
 
-	s.setRefreshTokenCookie(w, result.refreshToken, result.refreshExpires)
-	csrfToken := s.setCSRFCookie(w, result.refreshExpires)
+	csrfToken, err := s.ApplyBrowserAuthCookies(r.Context(), w, result.user.ID, result.refreshToken, result.refreshExpires)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return nil
+	}
 	app.WriteJSON(w, http.StatusOK, loginResult{
 		AccessToken:       result.accessToken,
 		CSRFToken:         csrfToken,

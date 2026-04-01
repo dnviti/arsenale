@@ -12,6 +12,7 @@ func (d *apiDependencies) register(mux *http.ServeMux) {
 	d.registerUserAccountRoutes(mux)
 	d.registerTenantRoutes(mux)
 	d.registerResourceRoutes(mux)
+	d.registerLiveRoutes(mux)
 	d.registerOperationsRoutes(mux)
 	d.registerSessionRoutes(mux)
 	d.registerInternalRoutes(mux)

@@ -3,6 +3,8 @@
 > Auto-generated on 2026-03-15 by /docs create security.
 > Source of truth is the codebase. Run /docs update security after code changes.
 
+> Runtime note: the live encryption and vault flow now runs in the Go services. Legacy `server/src` citations below are retained only as historical reference.
+
 ## Overview
 
 Arsenale employs a defense-in-depth security model:

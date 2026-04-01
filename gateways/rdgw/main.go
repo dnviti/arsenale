@@ -12,7 +12,7 @@
 //	RDGW_LISTEN_ADDR      - Address to listen on (default: ":443")
 //	RDGW_TLS_CERT         - Path to TLS certificate file
 //	RDGW_TLS_KEY          - Path to TLS private key file
-//	RDGW_ARSENALE_API_URL - Arsenale server API URL (e.g., "http://localhost:3001")
+//	RDGW_ARSENALE_API_URL - Arsenale control-plane API URL (e.g., "http://localhost:18080")
 //	RDGW_API_TOKEN        - API token for authenticating with Arsenale server
 //	RDGW_IDLE_TIMEOUT     - Idle timeout in seconds (default: 3600)
 //	RDGW_LOG_LEVEL        - Log level: debug, info, warn, error (default: info)
@@ -66,7 +66,7 @@ func main() {
 	listenAddr := envOrDefault("RDGW_LISTEN_ADDR", ":443")
 	tlsCert := envOrDefault("RDGW_TLS_CERT", "")
 	tlsKey := envOrDefault("RDGW_TLS_KEY", "")
-	arsenaleURL := envOrDefault("RDGW_ARSENALE_API_URL", "http://localhost:3001")
+	arsenaleURL := envOrDefault("RDGW_ARSENALE_API_URL", "http://localhost:18080")
 	apiToken := envOrDefault("RDGW_API_TOKEN", "")
 	idleTimeoutSec, _ := strconv.Atoi(envOrDefault("RDGW_IDLE_TIMEOUT", "3600"))
 	logLevel := envOrDefault("RDGW_LOG_LEVEL", "info")
@@ -234,7 +234,7 @@ func (s *rdgwServer) handleInDataChannel(w http.ResponseWriter, r *http.Request)
 	log.Printf("[rdgw] Connecting to target: %s:%d for user %s", targetHost, targetPort, username)
 
 	// Connect to the target RDP host
-	targetAddr := fmt.Sprintf("%s:%d", targetHost, targetPort)
+	targetAddr := net.JoinHostPort(targetHost, strconv.Itoa(targetPort))
 	upstream, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
 	if err != nil {
 		log.Printf("[rdgw] Failed to connect to target %s: %v", targetAddr, err)

@@ -145,4 +145,4 @@ Attribute-Based Access Control (ABAC) policies that restrict session access base
 
 **Index**: `[targetType, targetId]`
 
-Source: `server/src/services/abac.service.ts`
+Source: `backend/internal/accesspolicies/service.go`

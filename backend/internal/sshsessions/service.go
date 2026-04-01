@@ -3,7 +3,6 @@ package sshsessions
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -17,8 +16,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
-
-var ErrLegacySSHSessionFlow = errors.New("legacy ssh session flow required")
 
 type Service struct {
 	DB                  *pgxpool.Pool
@@ -83,6 +80,10 @@ type connectionRecord struct {
 	CredentialSecretID      *string
 	ExternalVaultProviderID *string
 	ExternalVaultPath       *string
+	TargetDBHost            *string
+	TargetDBPort            *int
+	DBType                  *string
+	DBSettings              json.RawMessage
 	DLPPolicy               json.RawMessage
 
 	EncryptedUsername *string
@@ -114,6 +115,7 @@ type gatewayRecord struct {
 	TenantID          string
 	IsManaged         bool
 	TunnelEnabled     bool
+	LBStrategy        string
 	EncryptedUsername *string
 	UsernameIV        *string
 	UsernameTag       *string
@@ -128,6 +130,7 @@ type gatewayRecord struct {
 type resolvedCredentials struct {
 	Username         string
 	Password         string
+	Domain           string
 	PrivateKey       string
 	Passphrase       string
 	CredentialSource string
@@ -210,12 +213,12 @@ func (s Service) StartSession(ctx context.Context, claims authn.Claims, payload 
 		return coreResult{}, err
 	}
 
-	credentials, err := s.resolveCredentials(ctx, claims.UserID, payload, access)
+	credentials, err := s.resolveCredentials(ctx, claims.UserID, claims.TenantID, payload, access)
 	if err != nil {
 		return coreResult{}, err
 	}
 
-	bastion, gatewayID, err := s.resolveBastion(ctx, claims, access)
+	bastion, gatewayID, instanceID, err := s.resolveBastion(ctx, claims, access)
 	if err != nil {
 		return coreResult{}, err
 	}
@@ -228,6 +231,7 @@ func (s Service) StartSession(ctx context.Context, claims authn.Claims, payload 
 		UserID:       claims.UserID,
 		ConnectionID: access.Connection.ID,
 		GatewayID:    gatewayID,
+		InstanceID:   instanceID,
 		Protocol:     "SSH",
 		IPAddress:    ipAddress,
 		Metadata: map[string]any{

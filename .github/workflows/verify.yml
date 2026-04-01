@@ -4,10 +4,10 @@ on:
   workflow_dispatch:
     inputs:
       workspace:
-        description: 'Workspace to verify (server or client)'
+        description: 'Workspace to verify'
         required: true
         type: choice
-        options: [server, client]
+        options: [client, gateways/tunnel-agent, extra-clients/browser-extensions]
   workflow_call:
     inputs:
       workspace:
@@ -38,10 +38,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      - name: Generate Prisma client
-        if: inputs.workspace == 'server'
-        run: npm run db:generate
 
       - name: Typecheck
         run: npm run typecheck -w ${{ inputs.workspace }}

@@ -6,12 +6,13 @@
 ## Overview
 
 - **Provider**: PostgreSQL 16
-- **ORM**: Prisma (with `prisma-client` generator, CJS module format, output to `server/src/generated/prisma`)
-- **Schema location**: `server/prisma/schema.prisma`
+- **Active access layer**: Go stores and SQL in `backend/internal/*`
+- **Bootstrap snapshot**: `backend/schema/bootstrap.sql`
 - **Connection**: Configured via `DATABASE_URL` environment variable
-- **Migrations**: Automatically applied on server start via `prisma migrate deploy`
+- **Bootstrap path**: `scripts/bootstrap-db-schema.sh` applies the snapshot when the database is empty
 
 <!-- manual-start -->
+The legacy Prisma schema is retained only as archived reference under `server/`. The running application no longer depends on Prisma generation or `prisma migrate deploy`.
 <!-- manual-end -->
 
 ## Entity-Relationship Summary

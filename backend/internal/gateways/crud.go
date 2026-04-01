@@ -26,6 +26,9 @@ func (s Service) CreateGateway(ctx context.Context, claims authn.Claims, input c
 	if err != nil {
 		return gatewayResponse{}, err
 	}
+	usernameCipher, usernameIV, usernameTag := encryptedFieldParts(enc.username)
+	passwordCipher, passwordIV, passwordTag := encryptedFieldParts(enc.password)
+	sshKeyCipher, sshKeyIV, sshKeyTag := encryptedFieldParts(enc.sshKey)
 
 	if strings.EqualFold(strings.TrimSpace(input.Type), "MANAGED_SSH") {
 		var exists bool
@@ -53,7 +56,8 @@ func (s Service) CreateGateway(ctx context.Context, claims authn.Claims, input c
 	if isDefault {
 		if _, err := tx.Exec(ctx, `
 UPDATE "Gateway"
-   SET "isDefault" = false
+   SET "isDefault" = false,
+       "updatedAt" = NOW()
  WHERE "tenantId" = $1
    AND type = $2::"GatewayType"
    AND "isDefault" = true
@@ -69,14 +73,14 @@ INSERT INTO "Gateway" (
   "encryptedPassword", "passwordIV", "passwordTag",
   "encryptedSshKey", "sshKeyIV", "sshKeyTag",
   "apiPort", "monitoringEnabled", "monitorIntervalMs", "inactivityTimeoutSeconds",
-  "publishPorts", "lbStrategy"
+  "publishPorts", "lbStrategy", "createdAt", "updatedAt"
 ) VALUES (
   $1, $2, $3::"GatewayType", $4, $5, $6, $7, $8, $9,
   $10, $11, $12,
   $13, $14, $15,
   $16, $17, $18,
   $19, $20, $21, $22,
-  $23, $24::"LoadBalancingStrategy"
+  $23, $24::"LoadBalancingStrategy", NOW(), NOW()
 )
 `,
 		id,
@@ -88,15 +92,15 @@ INSERT INTO "Gateway" (
 		isDefault,
 		claims.TenantID,
 		claims.UserID,
-		enc.username.Ciphertext,
-		enc.username.IV,
-		enc.username.Tag,
-		enc.password.Ciphertext,
-		enc.password.IV,
-		enc.password.Tag,
-		enc.sshKey.Ciphertext,
-		enc.sshKey.IV,
-		enc.sshKey.Tag,
+		usernameCipher,
+		usernameIV,
+		usernameTag,
+		passwordCipher,
+		passwordIV,
+		passwordTag,
+		sshKeyCipher,
+		sshKeyIV,
+		sshKeyTag,
 		apiPort,
 		boolValue(input.MonitoringEnabled, true),
 		intValue(input.MonitorIntervalMS, 5000),
@@ -146,6 +150,9 @@ func (s Service) UpdateGateway(ctx context.Context, claims authn.Claims, gateway
 	if err != nil {
 		return gatewayResponse{}, err
 	}
+	usernameCipher, usernameIV, usernameTag := encryptedFieldParts(enc.username)
+	passwordCipher, passwordIV, passwordTag := encryptedFieldParts(enc.password)
+	sshKeyCipher, sshKeyIV, sshKeyTag := encryptedFieldParts(enc.sshKey)
 
 	updatedName := chooseString(record.Name, input.Name)
 	updatedHost := chooseString(record.Host, input.Host)
@@ -168,7 +175,8 @@ func (s Service) UpdateGateway(ctx context.Context, claims authn.Claims, gateway
 	if updatedDefault && !record.IsDefault {
 		if _, err := tx.Exec(ctx, `
 UPDATE "Gateway"
-   SET "isDefault" = false
+   SET "isDefault" = false,
+       "updatedAt" = NOW()
  WHERE "tenantId" = $1
    AND type = $2::"GatewayType"
    AND id <> $3
@@ -208,15 +216,15 @@ UPDATE "Gateway"
 		updatedPort,
 		updatedDescription,
 		updatedDefault,
-		enc.username.Ciphertext,
-		enc.username.IV,
-		enc.username.Tag,
-		enc.password.Ciphertext,
-		enc.password.IV,
-		enc.password.Tag,
-		enc.sshKey.Ciphertext,
-		enc.sshKey.IV,
-		enc.sshKey.Tag,
+		usernameCipher,
+		usernameIV,
+		usernameTag,
+		passwordCipher,
+		passwordIV,
+		passwordTag,
+		sshKeyCipher,
+		sshKeyIV,
+		sshKeyTag,
 		updatedAPIPort,
 		updatedMonitoringEnabled,
 		updatedMonitorInterval,
@@ -433,6 +441,13 @@ func encryptedFieldFromRecord(ciphertext, iv, tag *string) *encryptedField {
 		IV:         *iv,
 		Tag:        *tag,
 	}
+}
+
+func encryptedFieldParts(field *encryptedField) (ciphertext, iv, tag *string) {
+	if field == nil {
+		return nil, nil, nil
+	}
+	return &field.Ciphertext, &field.IV, &field.Tag
 }
 
 func validateCreatePayload(input createPayload) error {

@@ -3,11 +3,13 @@ package passwordrotationapi
 import (
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/credentialresolver"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	DB *pgxpool.Pool
+	DB       *pgxpool.Pool
+	Resolver credentialresolver.Resolver
 }
 
 type requestError struct {
@@ -49,4 +51,11 @@ type rotationHistoryEntry struct {
 	ErrorMessage *string   `json:"errorMessage"`
 	DurationMs   *int      `json:"durationMs"`
 	CreatedAt    time.Time `json:"createdAt"`
+}
+
+type rotationResult struct {
+	Success  bool   `json:"success"`
+	SecretID string `json:"secretId"`
+	LogID    string `json:"logId"`
+	Error    string `json:"error,omitempty"`
 }

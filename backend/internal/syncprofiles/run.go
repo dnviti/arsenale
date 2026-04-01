@@ -65,17 +65,36 @@ type syncPreviewResponse struct {
 	Plan syncPlan `json:"plan"`
 }
 
+type syncResultError struct {
+	ExternalID string `json:"externalId"`
+	Name       string `json:"name"`
+	Error      string `json:"error"`
+}
+
+type syncResultResponse struct {
+	Created int               `json:"created"`
+	Updated int               `json:"updated"`
+	Skipped int               `json:"skipped"`
+	Failed  int               `json:"failed"`
+	Errors  []syncResultError `json:"errors"`
+}
+
+type triggerSyncResponse struct {
+	Plan   syncPlan            `json:"plan"`
+	Result *syncResultResponse `json:"result,omitempty"`
+}
+
 type syncProfileRuntime struct {
-	Profile         syncProfileResponse
+	Profile           syncProfileResponse
 	EncryptedAPIToken string
 	APITokenIV        string
 	APITokenTag       string
 }
 
 type netBoxPaginatedResponse[T any] struct {
-	Count   int    `json:"count"`
+	Count   int     `json:"count"`
 	Next    *string `json:"next"`
-	Results []T    `json:"results"`
+	Results []T     `json:"results"`
 }
 
 type netBoxIP struct {
@@ -104,32 +123,32 @@ type netBoxStatus struct {
 }
 
 type netBoxDevice struct {
-	ID          int             `json:"id"`
-	Name        string          `json:"name"`
-	Display     string          `json:"display"`
-	PrimaryIP4  *netBoxIP       `json:"primary_ip4"`
-	PrimaryIP6  *netBoxIP       `json:"primary_ip6"`
-	Platform    *netBoxPlatform `json:"platform"`
-	Site        *netBoxNamed    `json:"site"`
-	Rack        *netBoxRack     `json:"rack"`
-	Location    *netBoxRack     `json:"location"`
-	Status      *netBoxStatus   `json:"status"`
-	Description string          `json:"description"`
-	CustomFields map[string]any `json:"custom_fields"`
+	ID           int             `json:"id"`
+	Name         string          `json:"name"`
+	Display      string          `json:"display"`
+	PrimaryIP4   *netBoxIP       `json:"primary_ip4"`
+	PrimaryIP6   *netBoxIP       `json:"primary_ip6"`
+	Platform     *netBoxPlatform `json:"platform"`
+	Site         *netBoxNamed    `json:"site"`
+	Rack         *netBoxRack     `json:"rack"`
+	Location     *netBoxRack     `json:"location"`
+	Status       *netBoxStatus   `json:"status"`
+	Description  string          `json:"description"`
+	CustomFields map[string]any  `json:"custom_fields"`
 }
 
 type netBoxVM struct {
-	ID          int             `json:"id"`
-	Name        string          `json:"name"`
-	Display     string          `json:"display"`
-	PrimaryIP4  *netBoxIP       `json:"primary_ip4"`
-	PrimaryIP6  *netBoxIP       `json:"primary_ip6"`
-	Platform    *netBoxPlatform `json:"platform"`
-	Site        *netBoxNamed    `json:"site"`
-	Cluster     *netBoxRack     `json:"cluster"`
-	Status      *netBoxStatus   `json:"status"`
-	Description string          `json:"description"`
-	CustomFields map[string]any `json:"custom_fields"`
+	ID           int             `json:"id"`
+	Name         string          `json:"name"`
+	Display      string          `json:"display"`
+	PrimaryIP4   *netBoxIP       `json:"primary_ip4"`
+	PrimaryIP6   *netBoxIP       `json:"primary_ip6"`
+	Platform     *netBoxPlatform `json:"platform"`
+	Site         *netBoxNamed    `json:"site"`
+	Cluster      *netBoxRack     `json:"cluster"`
+	Status       *netBoxStatus   `json:"status"`
+	Description  string          `json:"description"`
+	CustomFields map[string]any  `json:"custom_fields"`
 }
 
 func (s Service) HandleTestConnection(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
@@ -165,15 +184,9 @@ func (s Service) HandleTriggerSync(w http.ResponseWriter, r *http.Request, claim
 		app.ErrorJSON(w, http.StatusBadRequest, err.Error())
 		return nil
 	}
-	if !payload.DryRun {
-		return ErrLegacySyncProfileFlow
-	}
 
-	result, err := s.TriggerSyncPreview(r.Context(), claims, r.PathValue("id"))
+	result, err := s.TriggerSync(r.Context(), claims.UserID, claims.TenantID, r.PathValue("id"), payload.DryRun)
 	if err != nil {
-		if errors.Is(err, ErrLegacySyncProfileFlow) {
-			return err
-		}
 		var reqErr *requestError
 		switch {
 		case errors.As(err, &reqErr):
@@ -206,129 +219,111 @@ func (s Service) TestConnection(ctx context.Context, profileID, tenantID string)
 	return result, nil
 }
 
-func (s Service) TriggerSyncPreview(ctx context.Context, claims authn.Claims, profileID string) (syncPreviewResponse, error) {
-	runtime, err := s.loadProfileRuntime(ctx, profileID, claims.TenantID)
+func (s Service) TriggerSync(ctx context.Context, userID, tenantID, profileID string, dryRun bool) (triggerSyncResponse, error) {
+	runtime, err := s.loadProfileRuntime(ctx, profileID, tenantID)
 	if err != nil {
-		return syncPreviewResponse{}, err
-	}
-	if runtime.Profile.CronExpression != nil {
-		return syncPreviewResponse{}, ErrLegacySyncProfileFlow
+		return triggerSyncResponse{}, err
 	}
 
 	apiToken, err := decryptValue(s.ServerEncryptionKey, runtime.EncryptedAPIToken, runtime.APITokenIV, runtime.APITokenTag)
 	if err != nil {
-		return syncPreviewResponse{}, fmt.Errorf("decrypt sync api token: %w", err)
+		return triggerSyncResponse{}, fmt.Errorf("decrypt sync api token: %w", err)
 	}
 
-	plan, status, details := s.buildPreviewPlan(ctx, runtime.Profile, apiToken)
-	if err := s.persistDryRun(ctx, claims.UserID, runtime.Profile.ID, status, details); err != nil {
-		return syncPreviewResponse{}, err
+	syncLogID, err := s.beginSyncRun(ctx, userID, runtime.Profile.ID, dryRun)
+	if err != nil {
+		return triggerSyncResponse{}, err
 	}
-	return syncPreviewResponse{Plan: plan}, nil
+
+	plan, err := s.buildSyncPlan(ctx, runtime.Profile, apiToken)
+	if err != nil {
+		if dryRun {
+			plan = discoveryErrorPlan(runtime.Profile, err)
+			logDetails := map[string]any{
+				"dryRun":   true,
+				"toCreate": len(plan.ToCreate),
+				"toUpdate": len(plan.ToUpdate),
+				"toSkip":   len(plan.ToSkip),
+				"errors":   len(plan.Errors),
+			}
+			profileDetails := map[string]any{
+				"dryRun": true,
+				"errors": []string{err.Error()},
+			}
+			if err := s.completeSyncRun(ctx, userID, syncLogID, runtime.Profile.ID, "ERROR", logDetails, profileDetails); err != nil {
+				return triggerSyncResponse{}, err
+			}
+			return triggerSyncResponse{Plan: plan}, nil
+		}
+		if recordErr := s.failSyncRun(ctx, userID, syncLogID, runtime.Profile.ID, err); recordErr != nil {
+			return triggerSyncResponse{}, fmt.Errorf("sync failed: %w (recording error failed: %v)", err, recordErr)
+		}
+		return triggerSyncResponse{}, err
+	}
+
+	if dryRun {
+		logDetails := map[string]any{
+			"dryRun":   true,
+			"toCreate": len(plan.ToCreate),
+			"toUpdate": len(plan.ToUpdate),
+			"toSkip":   len(plan.ToSkip),
+			"errors":   len(plan.Errors),
+		}
+		if err := s.completeSyncRun(ctx, userID, syncLogID, runtime.Profile.ID, "SUCCESS", logDetails, map[string]any{"dryRun": true}); err != nil {
+			return triggerSyncResponse{}, err
+		}
+		return triggerSyncResponse{Plan: plan}, nil
+	}
+
+	result := s.executeSyncPlan(ctx, plan, runtime.Profile)
+	status := "SUCCESS"
+	if result.Failed > 0 {
+		status = "PARTIAL"
+	}
+	logDetails := map[string]any{
+		"created": result.Created,
+		"updated": result.Updated,
+		"skipped": result.Skipped,
+		"failed":  result.Failed,
+		"errors":  result.Errors,
+	}
+	profileDetails := map[string]any{
+		"created": result.Created,
+		"updated": result.Updated,
+		"skipped": result.Skipped,
+		"failed":  result.Failed,
+	}
+	if err := s.completeSyncRun(ctx, userID, syncLogID, runtime.Profile.ID, status, logDetails, profileDetails); err != nil {
+		return triggerSyncResponse{}, err
+	}
+	return triggerSyncResponse{Plan: plan, Result: &result}, nil
 }
 
-func (s Service) buildPreviewPlan(ctx context.Context, profile syncProfileResponse, apiToken string) (syncPlan, string, map[string]any) {
+func (s Service) buildSyncPlan(ctx context.Context, profile syncProfileResponse, apiToken string) (syncPlan, error) {
 	devices, err := discoverNetBoxDevices(profile.Config, apiToken)
 	if err != nil {
-		plan := syncPlan{
-			ToCreate: []discoveredDevice{},
-			ToUpdate: []syncPlanUpdateItem{},
-			ToSkip:   []syncPlanSkipItem{},
-			Errors: []syncPlanErrorItem{{
-				Device: discoveredDevice{
-					ExternalID: "provider:netbox",
-					Name:       profile.Name,
-					Protocol:   profile.Config.DefaultProtocol,
-					Metadata:   map[string]any{"provider": profile.Provider},
-				},
-				Error: err.Error(),
-			}},
-		}
-		return plan, "ERROR", map[string]any{
-			"dryRun":   true,
-			"toCreate": 0,
-			"toUpdate": 0,
-			"toSkip":   0,
-			"errors":   1,
-			"error":    err.Error(),
-		}
+		return syncPlan{}, err
 	}
-
-	plan, err := s.buildPlan(ctx, profile.ID, devices, profile.Config.ConflictStrategy)
-	if err != nil {
-		plan = syncPlan{
-			ToCreate: []discoveredDevice{},
-			ToUpdate: []syncPlanUpdateItem{},
-			ToSkip:   []syncPlanSkipItem{},
-			Errors: []syncPlanErrorItem{{
-				Device: discoveredDevice{
-					ExternalID: "provider:netbox",
-					Name:       profile.Name,
-					Protocol:   profile.Config.DefaultProtocol,
-					Metadata:   map[string]any{"provider": profile.Provider},
-				},
-				Error: err.Error(),
-			}},
-		}
-	}
-
-	status := "SUCCESS"
-	if len(plan.Errors) > 0 {
-		status = "ERROR"
-	}
-	return plan, status, map[string]any{
-		"dryRun":   true,
-		"toCreate": len(plan.ToCreate),
-		"toUpdate": len(plan.ToUpdate),
-		"toSkip":   len(plan.ToSkip),
-		"errors":   len(plan.Errors),
-	}
+	return s.buildPlan(ctx, profile.ID, devices, profile.Config.ConflictStrategy)
 }
 
-func (s Service) persistDryRun(ctx context.Context, userID, profileID, status string, details map[string]any) error {
-	detailsJSON, err := json.Marshal(details)
-	if err != nil {
-		return fmt.Errorf("marshal sync dry-run details: %w", err)
+func discoveryErrorPlan(profile syncProfileResponse, cause error) syncPlan {
+	return syncPlan{
+		ToCreate: []discoveredDevice{},
+		ToUpdate: []syncPlanUpdateItem{},
+		ToSkip:   []syncPlanSkipItem{},
+		Errors: []syncPlanErrorItem{
+			{
+				Device: discoveredDevice{
+					ExternalID: "provider:discovery",
+					Name:       profile.Name,
+					Protocol:   profile.Provider,
+					Metadata:   map[string]any{"provider": profile.Provider},
+				},
+				Error: cause.Error(),
+			},
+		},
 	}
-
-	tx, err := s.DB.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin sync dry-run: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, err := tx.Exec(ctx, `
-INSERT INTO "SyncLog" (id, "syncProfileId", status, "startedAt", "completedAt", details, "triggeredBy")
-VALUES ($1, $2, $3::"SyncStatus", NOW(), NOW(), $4::jsonb, $5)
-`, uuid.NewString(), profileID, status, string(detailsJSON), userID); err != nil {
-		return fmt.Errorf("insert sync dry-run log: %w", err)
-	}
-
-	if _, err := tx.Exec(ctx, `
-UPDATE "SyncProfile"
-SET "lastSyncAt" = NOW(),
-    "lastSyncStatus" = $2::"SyncStatus",
-    "lastSyncDetails" = $3::jsonb,
-    "updatedAt" = NOW()
-WHERE id = $1
-`, profileID, status, string(detailsJSON)); err != nil {
-		return fmt.Errorf("update sync profile dry-run status: %w", err)
-	}
-
-	if err := insertAuditLog(ctx, tx, userID, "SYNC_START", profileID, map[string]any{"dryRun": true}); err != nil {
-		return err
-	}
-	auditAction := "SYNC_COMPLETE"
-	if status == "ERROR" {
-		auditAction = "SYNC_ERROR"
-	}
-	if err := insertAuditLog(ctx, tx, userID, auditAction, profileID, details); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit sync dry-run: %w", err)
-	}
-	return nil
 }
 
 func (s Service) loadProfileRuntime(ctx context.Context, profileID, tenantID string) (syncProfileRuntime, error) {

@@ -43,6 +43,10 @@ SELECT
 	c."credentialSecretId",
 	c."externalVaultProviderId",
 	c."externalVaultPath",
+	c."targetDbHost",
+	c."targetDbPort",
+	c."dbType",
+	c."dbSettings",
 	c."dlpPolicy",
 	c."encryptedUsername",
 	c."usernameIV",
@@ -57,7 +61,7 @@ FROM "Connection" c
 WHERE c.id = $1
   AND c."userId" = $2
   AND c."teamId" IS NULL
-`)
+`, connectionID, userID)
 	return scanConnectionRecord(row, connectionID, userID)
 }
 
@@ -73,6 +77,10 @@ SELECT
 	c."credentialSecretId",
 	c."externalVaultProviderId",
 	c."externalVaultPath",
+	c."targetDbHost",
+	c."targetDbPort",
+	c."dbType",
+	c."dbSettings",
 	c."dlpPolicy",
 	c."encryptedUsername",
 	c."usernameIV",
@@ -106,6 +114,10 @@ SELECT
 	c."credentialSecretId",
 	c."externalVaultProviderId",
 	c."externalVaultPath",
+	c."targetDbHost",
+	c."targetDbPort",
+	c."dbType",
+	c."dbSettings",
 	c."dlpPolicy",
 	c."encryptedUsername",
 	c."usernameIV",
@@ -134,7 +146,7 @@ WHERE c.id = $1
 `, connectionID, userID, tenantID)
 
 	var conn connectionRecord
-	var dlp []byte
+	var dbSettings, dlp []byte
 	if err := row.Scan(
 		&conn.ID,
 		&conn.Type,
@@ -145,6 +157,10 @@ WHERE c.id = $1
 		&conn.CredentialSecretID,
 		&conn.ExternalVaultProviderID,
 		&conn.ExternalVaultPath,
+		&conn.TargetDBHost,
+		&conn.TargetDBPort,
+		&conn.DBType,
+		&dbSettings,
 		&dlp,
 		&conn.EncryptedUsername,
 		&conn.UsernameIV,
@@ -170,13 +186,14 @@ WHERE c.id = $1
 		}
 		return connectionRecord{}, fmt.Errorf("load shared connection: %w", err)
 	}
+	conn.DBSettings = normalizeRawJSON(dbSettings)
 	conn.DLPPolicy = normalizeRawJSON(dlp)
 	return conn, nil
 }
 
 func scanConnectionRecord(row pgx.Row, _ ...any) (connectionRecord, error) {
 	var conn connectionRecord
-	var dlp []byte
+	var dbSettings, dlp []byte
 	if err := row.Scan(
 		&conn.ID,
 		&conn.Type,
@@ -187,6 +204,10 @@ func scanConnectionRecord(row pgx.Row, _ ...any) (connectionRecord, error) {
 		&conn.CredentialSecretID,
 		&conn.ExternalVaultProviderID,
 		&conn.ExternalVaultPath,
+		&conn.TargetDBHost,
+		&conn.TargetDBPort,
+		&conn.DBType,
+		&dbSettings,
 		&dlp,
 		&conn.EncryptedUsername,
 		&conn.UsernameIV,
@@ -203,6 +224,7 @@ func scanConnectionRecord(row pgx.Row, _ ...any) (connectionRecord, error) {
 		}
 		return connectionRecord{}, fmt.Errorf("load connection: %w", err)
 	}
+	conn.DBSettings = normalizeRawJSON(dbSettings)
 	conn.DLPPolicy = normalizeRawJSON(dlp)
 	return conn, nil
 }

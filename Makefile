@@ -3,7 +3,7 @@
 # ============================================================================
 # Usage:
 #   make setup      — First-time setup: install Ansible collections, generate vault + certs
-#   make dev        — Start development infrastructure (postgres + redis)
+#   make dev        — Start the full development stack
 #   make deploy     — Deploy full production stack
 #   make help       — Show all available targets
 # ============================================================================

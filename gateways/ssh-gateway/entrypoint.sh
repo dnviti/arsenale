@@ -51,6 +51,11 @@ if [ -n "$GATEWAY_GRPC_TLS_CA_PEM" ] && [ -n "$GATEWAY_GRPC_TLS_CERT_PEM" ] && [
   printf '%s\n' "$GATEWAY_GRPC_TLS_CA_PEM" > "$GRPC_TLS_DIR/ca.pem"
   printf '%s\n' "$GATEWAY_GRPC_TLS_CERT_PEM" > "$GRPC_TLS_DIR/cert.pem"
   printf '%s\n' "$GATEWAY_GRPC_TLS_KEY_PEM" > "$GRPC_TLS_DIR/key.pem"
+  if [ -n "$GATEWAY_GRPC_CLIENT_CA_PEM" ]; then
+    printf '%s\n' "$GATEWAY_GRPC_CLIENT_CA_PEM" > "$GRPC_TLS_DIR/client-ca.pem"
+    chmod 600 "$GRPC_TLS_DIR/client-ca.pem"
+    export GATEWAY_GRPC_CLIENT_CA="${GATEWAY_GRPC_CLIENT_CA:-$GRPC_TLS_DIR/client-ca.pem}"
+  fi
   chmod 600 "$GRPC_TLS_DIR/ca.pem" "$GRPC_TLS_DIR/cert.pem" "$GRPC_TLS_DIR/key.pem"
   export GATEWAY_GRPC_TLS_CA="${GATEWAY_GRPC_TLS_CA:-$GRPC_TLS_DIR/ca.pem}"
   export GATEWAY_GRPC_TLS_CERT="${GATEWAY_GRPC_TLS_CERT:-$GRPC_TLS_DIR/cert.pem}"

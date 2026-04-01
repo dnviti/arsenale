@@ -13,6 +13,8 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/queryrunner"
 	"github.com/dnviti/arsenale/backend/internal/sessions"
+	"github.com/dnviti/arsenale/backend/internal/sshsessions"
+	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -59,8 +61,11 @@ type ownedSessionConfigPayload struct {
 }
 
 type Service struct {
-	Store *sessions.Store
-	DB    *pgxpool.Pool
+	Store               *sessions.Store
+	DB                  *pgxpool.Pool
+	TenantAuth          tenantauth.Service
+	ConnectionResolver  sshsessions.Service
+	ServerEncryptionKey []byte
 }
 
 type QueryHistoryEntry struct {
@@ -83,46 +88,18 @@ func (s Service) HandleIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateSessionIssueRequest(req); err != nil {
-		app.ErrorJSON(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if err := queryrunner.ValidateConnectivity(r.Context(), nil, req.Target); err != nil {
-		app.ErrorJSON(w, classifyConnectivityStatus(err), err.Error())
-		return
-	}
-
-	protocol := strings.ToUpper(strings.TrimSpace(req.Protocol))
-	_, err := s.Store.CloseStaleSessionsForConnection(r.Context(), req.UserID, req.ConnectionID, protocol)
+	result, err := s.issueSession(r.Context(), req, true)
 	if err != nil {
+		var reqErr *requestError
+		if errors.As(err, &reqErr) {
+			app.ErrorJSON(w, reqErr.status, reqErr.message)
+			return
+		}
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 
-	sessionID, err := s.Store.StartSession(r.Context(), sessions.StartSessionParams{
-		UserID:          req.UserID,
-		ConnectionID:    req.ConnectionID,
-		GatewayID:       req.GatewayID,
-		InstanceID:      req.InstanceID,
-		Protocol:        protocol,
-		IPAddress:       req.IPAddress,
-		Metadata:        normalizeMetadata(req.SessionMetadata),
-		RoutingDecision: req.RoutingDecision,
-	})
-	if err != nil {
-		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
-		return
-	}
-
-	app.WriteJSON(w, http.StatusOK, SessionIssueResponse{
-		SessionID:    sessionID,
-		ProxyHost:    strings.TrimSpace(req.ProxyHost),
-		ProxyPort:    req.ProxyPort,
-		Protocol:     strings.ToLower(protocol),
-		DatabaseName: strings.TrimSpace(req.DatabaseName),
-		Username:     strings.TrimSpace(req.Username),
-	})
+	app.WriteJSON(w, http.StatusOK, result)
 }
 
 func (s Service) HandleHeartbeat(w http.ResponseWriter, r *http.Request) {

@@ -4,7 +4,7 @@
 
 ## Architecture & Design
 
-- [Architecture](architecture.md) — System overview, server/client layers, connection flows, network topology
+- [Architecture](architecture.md) — System overview, Go service/client layers, connection flows, network topology
 
 ## API Reference
 

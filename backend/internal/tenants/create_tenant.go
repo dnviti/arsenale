@@ -56,7 +56,11 @@ func (s Service) HandleCreate(w http.ResponseWriter, r *http.Request, claims aut
 		return
 	}
 
-	csrfToken := s.AuthService.ApplyRefreshCookies(w, login.RefreshToken, login.RefreshExpires)
+	csrfToken, err := s.AuthService.ApplyBrowserAuthCookies(r.Context(), w, login.User.ID, login.RefreshToken, login.RefreshExpires)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	app.WriteJSON(w, http.StatusCreated, map[string]any{
 		"tenant":      tenant,
 		"accessToken": login.AccessToken,
