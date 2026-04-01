@@ -3,6 +3,7 @@ package gateways
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,7 +18,7 @@ const (
 	defaultGatewayLogTailLines = 200
 	maxGatewayLogTailLines     = 5000
 	unavailableOrchestratorMsg = "Container orchestration not available. Configure Docker socket, Podman socket, or Kubernetes credentials."
-	managedGatewayReadyTimeout = 20 * time.Second
+	managedGatewayReadyTimeout = 60 * time.Second
 	managedGatewayReadyPoll    = 250 * time.Millisecond
 )
 
@@ -446,10 +447,10 @@ func (s Service) deployManagedGatewayInstance(ctx context.Context, record gatewa
 	}
 
 	instanceID := uuid.NewString()
-	instanceHost, instancePort := managedGatewayInstanceAddress(record, containerInfo, s.managedGatewayPrimaryPort(record.Type))
+	instanceHost, instancePort := managedGatewayInstanceAddress(record, containerInfo, s.managedGatewayPrimaryPort(record.Type), s.managedGatewayNetworks(record))
 	apiPort := managedGatewayAPIPort(record, s.DefaultGRPCPort)
 
-	if err := s.waitForManagedGatewayReady(ctx, record, containerInfo.Name, instanceHost, instancePort, apiPort); err != nil {
+	if err := s.waitForManagedGatewayReady(ctx, record, runtimeClient, containerInfo.ID, containerInfo.Name, apiPort); err != nil {
 		_ = runtimeClient.removeContainer(ctx, containerInfo.ID)
 		_ = s.recordManagedGatewayDeploymentFailure(ctx, record, orchestratorType, containerInfo.Name, err)
 		return managedGatewayInstanceResponse{}, &requestError{status: http.StatusServiceUnavailable, message: fmt.Sprintf("Gateway deployment failed: %v", err)}
@@ -459,6 +460,7 @@ func (s Service) deployManagedGatewayInstance(ctx context.Context, record gatewa
 	if err == nil {
 		containerInfo = inspectedInfo
 	}
+	instanceHost, instancePort = managedGatewayInstanceAddress(record, containerInfo, s.managedGatewayPrimaryPort(record.Type), s.managedGatewayNetworks(record))
 	status := inferInstanceStatus(containerInfo.Status)
 	healthStatus := inferInstanceHealth(containerInfo.Status, containerInfo.Health)
 	if status == "RUNNING" {
@@ -637,44 +639,67 @@ VALUES (
 	return nil
 }
 
-func (s Service) waitForManagedGatewayReady(ctx context.Context, record gatewayRecord, containerName, instanceHost string, instancePort int, apiPort *int) error {
-	probeHost := strings.TrimSpace(containerName)
-	if probeHost == "" {
-		probeHost = strings.TrimSpace(instanceHost)
-	}
-	if probeHost == "" || instancePort <= 0 {
+func (s Service) waitForManagedGatewayReady(ctx context.Context, record gatewayRecord, runtimeClient *dockerSocketClient, containerID, containerName string, apiPort *int) error {
+	primaryPort := s.managedGatewayPrimaryPort(record.Type)
+	if primaryPort <= 0 {
 		return fmt.Errorf("managed gateway %q has no routable readiness target", record.Name)
 	}
+	preferredNetworks := s.managedGatewayNetworks(record)
 
 	deadlineCtx, cancel := context.WithTimeout(ctx, managedGatewayReadyTimeout)
 	defer cancel()
 
-	probes := []struct {
-		name string
-		host string
-		port int
-	}{
-		{name: "service", host: probeHost, port: instancePort},
-	}
-	if strings.EqualFold(record.Type, "MANAGED_SSH") && apiPort != nil && *apiPort > 0 {
-		probes = append(probes, struct {
+	var lastErr string
+	for {
+		currentInfo, err := runtimeClient.inspectContainer(deadlineCtx, containerID)
+		if err != nil {
+			lastErr = fmt.Sprintf("inspect container %s: %v", containerName, err)
+		}
+		probeHost := managedGatewayProbeHost(currentInfo, preferredNetworks)
+		if probeHost == "" {
+			log.Printf("managed gateway readiness waiting for container IP: container=%s id=%s", containerName, containerID)
+			timer := time.NewTimer(managedGatewayReadyPoll)
+			select {
+			case <-deadlineCtx.Done():
+				timer.Stop()
+				if lastErr == "" {
+					lastErr = fmt.Sprintf("managed gateway %q did not become ready before timeout", record.Name)
+				}
+				return fmt.Errorf("%s", lastErr)
+			case <-timer.C:
+				continue
+			}
+		}
+
+		probes := []struct {
 			name string
 			host string
 			port int
 		}{
-			name: "grpc",
-			host: probeHost,
-			port: *apiPort,
-		})
-	}
+			{name: "service", host: probeHost, port: primaryPort},
+		}
+		if strings.EqualFold(record.Type, "MANAGED_SSH") && apiPort != nil && *apiPort > 0 {
+			probes = append(probes, struct {
+				name string
+				host string
+				port int
+			}{
+				name: "grpc",
+				host: probeHost,
+				port: *apiPort,
+			})
+		}
 
-	var lastErr string
-	for {
 		allReady := true
 		for _, probe := range probes {
 			result := tcpProbe(deadlineCtx, probe.host, probe.port, time.Second)
 			if result.Reachable {
 				continue
+			}
+			if result.Error != nil {
+				log.Printf("managed gateway readiness probe failed: container=%s target=%s:%d error=%s", containerName, probe.host, probe.port, strings.TrimSpace(*result.Error))
+			} else {
+				log.Printf("managed gateway readiness probe failed: container=%s target=%s:%d", containerName, probe.host, probe.port)
 			}
 			allReady = false
 			if result.Error != nil {
@@ -701,18 +726,34 @@ func (s Service) waitForManagedGatewayReady(ctx context.Context, record gatewayR
 	}
 }
 
-func managedGatewayInstanceAddress(record gatewayRecord, info managedContainerInfo, fallbackPort int) (string, int) {
+func managedGatewayProbeHost(info managedContainerInfo, preferredNetworks []string) string {
+	for _, networkName := range normalizedStrings(preferredNetworks) {
+		if ip := strings.TrimSpace(info.NetworkIPs[networkName]); ip != "" {
+			return ip
+		}
+	}
+	return strings.TrimSpace(info.IPAddress)
+}
+
+func managedGatewayInstanceAddress(record gatewayRecord, info managedContainerInfo, fallbackPort int, preferredNetworks []string) (string, int) {
 	port := fallbackPort
+	if containerPort, ok := info.ContainerPorts[fallbackPort]; ok && containerPort > 0 {
+		port = containerPort
+	}
+	for _, networkName := range normalizedStrings(preferredNetworks) {
+		if ip := strings.TrimSpace(info.NetworkIPs[networkName]); ip != "" {
+			return ip, port
+		}
+	}
+	if strings.TrimSpace(info.IPAddress) != "" {
+		return strings.TrimSpace(info.IPAddress), port
+	}
 	if publishedPort, ok := info.PublishedPorts[fallbackPort]; ok && publishedPort > 0 {
 		host := strings.TrimSpace(record.Host)
 		if host == "" {
 			host = "127.0.0.1"
 		}
 		return host, publishedPort
-	}
-
-	if containerPort, ok := info.ContainerPorts[fallbackPort]; ok && containerPort > 0 {
-		port = containerPort
 	}
 	return inferPrimaryInstanceHost(record, info.Name), port
 }

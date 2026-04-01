@@ -37,7 +37,17 @@ RUN apk add --no-cache \
     guacamole-server-ssh \
     guacamole-server-libs \
     nodejs \
-    netcat-openbsd
+    netcat-openbsd \
+    shadow \
+    && mkdir -p /home/guacd \
+    && chown guacd:guacd /home/guacd \
+    && usermod -d /home/guacd guacd \
+    && ln -sf /usr/lib/libguac-client-rdp.so.0 /usr/lib/libguac-client-rdp.so \
+    && ln -sf /usr/lib/libguac-client-vnc.so.0 /usr/lib/libguac-client-vnc.so \
+    && ln -sf /usr/lib/libguac-client-ssh.so.0 /usr/lib/libguac-client-ssh.so
+
+ENV HOME=/home/guacd
+ENV XDG_CONFIG_HOME=/home/guacd/.config
 
 # Embed pre-built tunnel agent
 COPY --from=tunnel-builder /tunnel-agent/dist /opt/tunnel-agent/dist

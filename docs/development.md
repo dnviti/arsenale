@@ -195,14 +195,15 @@ New features   -> define env var in the active Go config or settings registry fi
 
 ## 🗄 Database
 
-### Schema bootstrap
+### Schema migrations
 
-The active empty-database bootstrap snapshot lives at `backend/schema/bootstrap.sql`. Key commands:
+The database schema now lives under `backend/migrations/*.sql`, and Go query generation is configured via `backend/sqlc.yaml`. Key commands:
 
 ```bash
-npm run db:bootstrap      # Apply schema snapshot when DB is empty
-npm run db:push           # Alias
-npm run db:migrate        # Alias
+npm run db:migrate        # Apply pending migrations
+npm run db:status         # Show applied/pending migrations
+npm run db:bootstrap      # Compatibility alias
+npm run backend:generate  # Regenerate sqlc code
 ```
 
 ## 🐳 Container Standards

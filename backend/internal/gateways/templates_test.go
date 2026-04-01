@@ -81,4 +81,16 @@ func TestInsertGatewayFromTemplateSQLSetsTimestamps(t *testing.T) {
 	if strings.Count(insertGatewayFromTemplateSQL, "NOW()") < 2 {
 		t.Fatal(`expected insertGatewayFromTemplateSQL to set both timestamps with NOW()`)
 	}
+	if strings.Count(insertGatewayFromTemplateSQL, "$") != 23 {
+		t.Fatalf("expected insertGatewayFromTemplateSQL to define 23 placeholders, got %d", strings.Count(insertGatewayFromTemplateSQL, "$"))
+	}
+	if !strings.Contains(insertGatewayFromTemplateSQL, "$19,") {
+		t.Fatal(`expected insertGatewayFromTemplateSQL to map "publishPorts" to $19`)
+	}
+	if !strings.Contains(insertGatewayFromTemplateSQL, `$20::"LoadBalancingStrategy"`) {
+		t.Fatal(`expected insertGatewayFromTemplateSQL to map "lbStrategy" to $20`)
+	}
+	if !strings.Contains(insertGatewayFromTemplateSQL, "$23,") {
+		t.Fatal(`expected insertGatewayFromTemplateSQL to map "templateId" to $23`)
+	}
 }

@@ -7,12 +7,13 @@
 
 - **Provider**: PostgreSQL 16
 - **Active access layer**: Go stores and SQL in `backend/internal/*`
-- **Bootstrap snapshot**: `backend/schema/bootstrap.sql`
+- **Schema source of truth**: `backend/migrations/*.sql`
+- **Generated query config**: `backend/sqlc.yaml`
 - **Connection**: Configured via `DATABASE_URL` environment variable
-- **Bootstrap path**: `scripts/bootstrap-db-schema.sh` applies the snapshot when the database is empty
+- **Migration path**: `backend/cmd/migrate` and `scripts/db-migrate.sh`
 
 <!-- manual-start -->
-The legacy Prisma schema is retained only as archived reference under `server/`. The running application no longer depends on Prisma generation or `prisma migrate deploy`.
+The legacy Prisma schema is retained only as archived reference under `server/`. The running application no longer depends on Prisma generation or `prisma migrate deploy`. Runtime DDL bootstrapping has been removed from the Go services; schema changes must land as versioned SQL migrations and fixed application queries should live behind sqlc-generated packages.
 <!-- manual-end -->
 
 ## Entity-Relationship Summary

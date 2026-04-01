@@ -273,7 +273,7 @@ export default function RdpSettingsSection({ value, onChange, mode, resolvedDefa
         <FormControl fullWidth size="small" sx={{ mb: 1.5 }} disabled={fieldDisabled('security')}>
           <InputLabel>Security Type</InputLabel>
           <Select
-            value={get('security') ?? 'nla'}
+            value={get('security') ?? 'any'}
             label="Security Type"
             onChange={(e) => set('security', e.target.value as RdpSettings['security'])}
           >

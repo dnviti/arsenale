@@ -5,33 +5,70 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 )
 
+// Version is set by main.go.
+var Version = "0.0.0"
+
 var httpClient = &http.Client{
-	Timeout: 30 * time.Second,
+	Timeout: 90 * time.Second,
 }
 
-// apiRequest makes an authenticated API request.
+// apiRequest makes an authenticated API request with automatic 401 retry.
 func apiRequest(method, path string, body interface{}, cfg *CLIConfig) ([]byte, int, error) {
-	var bodyReader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, 0, fmt.Errorf("marshal request body: %w", err)
-		}
-		bodyReader = bytes.NewReader(data)
+	respBody, status, err := doRequest(method, path, body, cfg)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	url := cfg.ServerURL + path
-	req, err := http.NewRequest(method, url, bodyReader)
+	// Auto-retry on 401 with token refresh
+	if status == 401 && cfg.RefreshToken != "" {
+		if refreshErr := refreshAccessToken(cfg); refreshErr == nil {
+			return doRequest(method, path, body, cfg)
+		}
+	}
+
+	return respBody, status, nil
+}
+
+// apiRequestWithParams makes a request with URL query parameters.
+func apiRequestWithParams(method, path string, params url.Values, body interface{}, cfg *CLIConfig) ([]byte, int, error) {
+	if len(params) > 0 {
+		path = path + "?" + params.Encode()
+	}
+	return apiRequest(method, path, body, cfg)
+}
+
+// doRequest performs the actual HTTP request without retry logic.
+func doRequest(method, path string, body interface{}, cfg *CLIConfig) ([]byte, int, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		switch v := body.(type) {
+		case []byte:
+			bodyReader = bytes.NewReader(v)
+		default:
+			data, err := json.Marshal(body)
+			if err != nil {
+				return nil, 0, fmt.Errorf("marshal request body: %w", err)
+			}
+			bodyReader = bytes.NewReader(data)
+		}
+	}
+
+	reqURL := cfg.ServerURL + path
+	req, err := http.NewRequest(method, reqURL, bodyReader)
 	if err != nil {
 		return nil, 0, fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "arsenale-cli/1.7.0")
+	req.Header.Set("User-Agent", "arsenale-cli/"+Version)
 
 	if cfg.AccessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.AccessToken)
@@ -61,13 +98,115 @@ func apiPost(path string, body interface{}, cfg *CLIConfig) ([]byte, int, error)
 	return apiRequest("POST", path, body, cfg)
 }
 
+// apiPut makes an authenticated PUT request.
+func apiPut(path string, body interface{}, cfg *CLIConfig) ([]byte, int, error) {
+	return apiRequest("PUT", path, body, cfg)
+}
+
+// apiDelete makes an authenticated DELETE request.
+func apiDelete(path string, cfg *CLIConfig) ([]byte, int, error) {
+	return apiRequest("DELETE", path, nil, cfg)
+}
+
+// apiDeleteWithBody makes an authenticated DELETE request with a body.
+func apiDeleteWithBody(path string, body interface{}, cfg *CLIConfig) ([]byte, int, error) {
+	return apiRequest("DELETE", path, body, cfg)
+}
+
+// apiPatch makes an authenticated PATCH request.
+func apiPatch(path string, body interface{}, cfg *CLIConfig) ([]byte, int, error) {
+	return apiRequest("PATCH", path, body, cfg)
+}
+
+// apiUpload uploads a file via multipart form POST.
+func apiUpload(path, filePath string, cfg *CLIConfig) ([]byte, int, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open file: %w", err)
+	}
+	defer file.Close()
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	if err != nil {
+		return nil, 0, fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, 0, fmt.Errorf("copy file data: %w", err)
+	}
+	writer.Close()
+
+	reqURL := cfg.ServerURL + path
+	req, err := http.NewRequest("POST", reqURL, &buf)
+	if err != nil {
+		return nil, 0, fmt.Errorf("create upload request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("User-Agent", "arsenale-cli/"+Version)
+	if cfg.AccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.AccessToken)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("upload request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, fmt.Errorf("read upload response: %w", err)
+	}
+
+	return respBody, resp.StatusCode, nil
+}
+
+// apiDownload downloads a file from the API and saves it to destPath.
+func apiDownload(path, destPath string, cfg *CLIConfig) (int, error) {
+	reqURL := cfg.ServerURL + path
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return 0, fmt.Errorf("create download request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "arsenale-cli/"+Version)
+	if cfg.AccessToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.AccessToken)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("download request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, fmt.Errorf("download failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return resp.StatusCode, fmt.Errorf("create output file: %w", err)
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, resp.Body); err != nil {
+		return resp.StatusCode, fmt.Errorf("write output file: %w", err)
+	}
+
+	return resp.StatusCode, nil
+}
+
 // refreshAccessToken attempts to refresh the access token using the refresh token.
 func refreshAccessToken(cfg *CLIConfig) error {
 	body := map[string]string{
 		"refreshToken": cfg.RefreshToken,
 	}
 
-	respBody, status, err := apiPost("/api/auth/refresh", body, cfg)
+	respBody, status, err := doRequest("POST", "/api/auth/refresh", body, cfg)
 	if err != nil {
 		return fmt.Errorf("refresh token request failed: %w", err)
 	}
@@ -88,7 +227,7 @@ func refreshAccessToken(cfg *CLIConfig) error {
 	if result.RefreshToken != "" {
 		cfg.RefreshToken = result.RefreshToken
 	}
-	cfg.TokenExpiry = time.Now().Add(14 * time.Minute).Format(time.RFC3339) // ~15 min token life
+	cfg.TokenExpiry = time.Now().Add(14 * time.Minute).Format(time.RFC3339)
 
 	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("save refreshed config: %w", err)
@@ -107,7 +246,7 @@ func ensureAuthenticated(cfg *CLIConfig) error {
 		if cfg.RefreshToken == "" {
 			return fmt.Errorf("token expired and no refresh token available. Run 'arsenale login' again")
 		}
-		fmt.Println("Access token expired, refreshing...")
+		fmt.Fprintln(os.Stderr, "Access token expired, refreshing...")
 		if err := refreshAccessToken(cfg); err != nil {
 			return fmt.Errorf("failed to refresh token: %w. Run 'arsenale login' again", err)
 		}

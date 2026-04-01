@@ -24,7 +24,7 @@
 | **SyncProvider** | `NETBOX` |
 | **SyncStatus** | `PENDING`, `RUNNING`, `SUCCESS`, `PARTIAL`, `ERROR` |
 | **AccessPolicyTargetType** | `TENANT`, `TEAM`, `FOLDER` |
-| **AuditAction** | 100+ values — see `backend/schema/bootstrap.sql` for the current bootstrap set |
+| **AuditAction** | 100+ values — see `backend/migrations/*.sql` for the current migration set |
 
 ### New AuditAction Values (Tunnel & ABAC)
 

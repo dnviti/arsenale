@@ -66,6 +66,12 @@ jobs:
         with:
           go-version-file: backend/go.mod
 
+      - name: Verify sqlc generation
+        working-directory: backend
+        run: |
+          go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate -f sqlc.yaml
+          git diff --exit-code
+
       - name: Run backend tests
         working-directory: backend
         run: |

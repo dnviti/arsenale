@@ -23,9 +23,6 @@ func main() {
 	}
 
 	store := agents.NewStore(db)
-	if err := store.EnsureSchema(ctx); err != nil {
-		panic(err)
-	}
 
 	service := app.StaticService{
 		Descriptor: catalog.MustService(contracts.ServiceAgentOrchestrator),

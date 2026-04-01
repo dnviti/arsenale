@@ -10,7 +10,8 @@ source-files:
   - client/package.json
   - dev-certs/generate.sh
   - .env.example
-  - backend/schema/bootstrap.sql
+  - backend/migrations/000001_baseline.sql
+  - backend/sqlc.yaml
   - deployment/ansible/inventory/group_vars/all/vars.yml
 ---
 
@@ -121,12 +122,13 @@ npm run test             # Run all tests (vitest)
 npm run test:watch       # Watch mode
 ```
 
-### Database bootstrap
+### Database migrations
 
 ```bash
-npm run db:bootstrap     # Apply backend/schema/bootstrap.sql when DB is empty
-npm run db:push          # Alias of db:bootstrap
-npm run db:migrate       # Alias of db:bootstrap
+npm run db:migrate       # Apply pending backend migrations
+npm run db:status        # Show applied/pending migrations
+npm run db:bootstrap     # Compatibility alias of db:migrate
+npm run backend:generate # Regenerate sqlc code for converted domains
 ```
 
 ### Infrastructure (Makefile)
@@ -208,7 +210,7 @@ All certificates use ECC (secp256r1) and are valid for 10 years. The shared CA i
 | `ECONNREFUSED :5432` | Run `make dev` to start PostgreSQL |
 | `SSL certificate problem` | Run `make certs` to regenerate dev certificates |
 | `Port already in use` | The dev server auto-detects and cleans stale processes |
-| Empty DB after a reset | Run `npm run db:bootstrap` or redeploy with `make dev` |
+| Empty DB after a reset | Run `npm run db:migrate` or redeploy with `make dev` |
 | `Permission denied` on certs | Certificate files should be readable; run `chmod 644 dev-certs/**/*.pem` |
 | First access shows setup wizard | Expected on fresh install -- create your admin account |
 

@@ -23,9 +23,6 @@ func main() {
 	}
 
 	store := modelgateway.NewStore(db)
-	if err := store.EnsureSchema(ctx); err != nil {
-		panic(err)
-	}
 
 	encryptionKey, err := modelgateway.LoadServerEncryptionKey()
 	if err != nil {

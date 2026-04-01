@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/scrypt"
 )
@@ -49,7 +50,7 @@ func LoadSecret(envKey, fileEnvKey string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", fileEnvKey, err)
 	}
 
-	return string(payload), nil
+	return strings.TrimRight(string(payload), "\r\n"), nil
 }
 
 func EncryptToken(secret string, token ConnectionToken) (string, error) {
@@ -95,7 +96,7 @@ func EncryptToken(secret string, token ConnectionToken) (string, error) {
 		return "", fmt.Errorf("marshal token envelope: %w", err)
 	}
 
-	return base64.StdEncoding.EncodeToString(rawEnvelope), nil
+	return base64.RawURLEncoding.EncodeToString(rawEnvelope), nil
 }
 
 func DecryptToken(secret, encryptedToken string) (ConnectionToken, error) {
@@ -107,7 +108,7 @@ func DecryptToken(secret, encryptedToken string) (ConnectionToken, error) {
 		return token, errors.New("token is required")
 	}
 
-	rawEnvelope, err := base64.StdEncoding.DecodeString(encryptedToken)
+	rawEnvelope, err := decodeBase64Token(encryptedToken)
 	if err != nil {
 		return token, fmt.Errorf("decode token envelope: %w", err)
 	}
@@ -117,15 +118,15 @@ func DecryptToken(secret, encryptedToken string) (ConnectionToken, error) {
 		return token, fmt.Errorf("decode token envelope json: %w", err)
 	}
 
-	iv, err := base64.StdEncoding.DecodeString(envelope.IV)
+	iv, err := decodeBase64Token(envelope.IV)
 	if err != nil {
 		return token, fmt.Errorf("decode token iv: %w", err)
 	}
-	ciphertext, err := base64.StdEncoding.DecodeString(envelope.Value)
+	ciphertext, err := decodeBase64Token(envelope.Value)
 	if err != nil {
 		return token, fmt.Errorf("decode token ciphertext: %w", err)
 	}
-	tag, err := base64.StdEncoding.DecodeString(envelope.Tag)
+	tag, err := decodeBase64Token(envelope.Tag)
 	if err != nil {
 		return token, fmt.Errorf("decode token tag: %w", err)
 	}
@@ -164,6 +165,40 @@ func DecryptToken(secret, encryptedToken string) (ConnectionToken, error) {
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return fmt.Sprintf("%x", sum[:])
+}
+
+func decodeBase64Token(value string) ([]byte, error) {
+	normalized := strings.TrimSpace(value)
+	if normalized == "" {
+		return nil, errors.New("empty base64 token")
+	}
+
+	candidates := []string{normalized}
+	// Legacy tokens used standard base64 in a query string. If a client or proxy
+	// forwards '+' without escaping it, net/url decodes it as a space.
+	if strings.Contains(normalized, " ") {
+		candidates = append(candidates, strings.ReplaceAll(normalized, " ", "+"))
+	}
+
+	encodings := []*base64.Encoding{
+		base64.RawURLEncoding,
+		base64.URLEncoding,
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+	}
+
+	var lastErr error
+	for _, candidate := range candidates {
+		for _, encoding := range encodings {
+			decoded, err := encoding.DecodeString(candidate)
+			if err == nil {
+				return decoded, nil
+			}
+			lastErr = err
+		}
+	}
+
+	return nil, lastErr
 }
 
 func MetadataString(metadata map[string]any, key string) string {

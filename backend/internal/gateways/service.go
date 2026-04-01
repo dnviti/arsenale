@@ -20,12 +20,17 @@ type Service struct {
 	GatewayGRPCTLSKey     string
 	GatewayGRPCServerCert string
 	GatewayGRPCServerKey  string
+	GuacdTLSCert          string
+	GuacdTLSKey           string
 	HTTPClient            *http.Client
 	TunnelBrokerURL       string
 	TunnelTrustDomain     string
 	OrchestratorType      string
 	DockerSocketPath      string
 	PodmanSocketPath      string
+	DNSServers            []string
+	ResolvConfPath        string
+	EgressNetwork         string
 	EdgeNetwork           string
 	DBNetwork             string
 	GuacdNetwork          string

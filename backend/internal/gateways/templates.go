@@ -261,10 +261,11 @@ VALUES (
 	$16,
 	$17,
 	$18,
-	$19::"LoadBalancingStrategy",
-	$20,
+	$19,
+	$20::"LoadBalancingStrategy",
 	$21,
 	$22,
+	$23,
 	NOW(),
 	NOW()
 )

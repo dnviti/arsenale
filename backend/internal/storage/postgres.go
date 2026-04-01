@@ -32,6 +32,10 @@ func OpenPostgres(ctx context.Context) (*pgxpool.Pool, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
+	if err := RequireMigrations(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 
 	return pool, nil
 }

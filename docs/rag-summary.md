@@ -224,7 +224,7 @@ Connection import and export supports CSV, JSON, mRemoteNG configuration files, 
 
 ## Deployment
 
-Arsenale now deploys as a Go-first container stack driven by Ansible and Compose. The default stack includes PostgreSQL, Redis, guacd, guacenc, the Nginx-based web client, `control-plane-api-go`, and the Go runtime brokers for desktop, terminal, tunnel, query, and orchestration traffic. When the database is empty, bootstrap is handled from `backend/schema/bootstrap.sql` instead of Prisma migrations.
+Arsenale now deploys as a Go-first container stack driven by Ansible and Compose. The default stack includes PostgreSQL, Redis, guacd, guacenc, the Nginx-based web client, `control-plane-api-go`, and the Go runtime brokers for desktop, terminal, tunnel, query, and orchestration traffic. Database changes are applied through versioned SQL migrations in `backend/migrations/`, and sqlc is used for generated query packages in the converted Go domains.
 
 Both Docker and Podman are supported as container runtimes, with rootless Podman configurations working out of the box. All application containers run as non-root users. Volume persistence is configured for database data, drive files, and session recordings.
 

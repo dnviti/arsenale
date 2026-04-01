@@ -11,6 +11,7 @@ RUN go mod download
 
 COPY backend/. ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/${SERVICE}
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
 FROM docker.io/library/alpine:3.22
 
@@ -18,6 +19,7 @@ RUN apk add --no-cache ca-certificates wget && \
     addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=build /out/service /usr/local/bin/service
+COPY --from=build /out/migrate /usr/local/bin/migrate
 
 USER appuser
 

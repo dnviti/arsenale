@@ -30,23 +30,23 @@ import (
 )
 
 const (
-	frameHeaderSize          = 4
-	maxStreamID              = 0xffff
-	defaultOpenTimeout       = 10 * time.Second
-	defaultProxyIdleTimeout  = 60 * time.Second
-	defaultTrustDomain       = "arsenale.local"
-	aesKeyBytes              = 32
-	aesIVBytes               = 16
+	frameHeaderSize         = 4
+	maxStreamID             = 0xffff
+	defaultOpenTimeout      = 10 * time.Second
+	defaultProxyIdleTimeout = 60 * time.Second
+	defaultTrustDomain      = "arsenale.local"
+	aesKeyBytes             = 32
+	aesIVBytes              = 16
 )
 
 type msgType byte
 
 const (
-	msgOpen msgType = 1
-	msgData msgType = 2
-	msgClose msgType = 3
-	msgPing msgType = 4
-	msgPong msgType = 5
+	msgOpen      msgType = 1
+	msgData      msgType = 2
+	msgClose     msgType = 3
+	msgPing      msgType = 4
+	msgPong      msgType = 5
 	msgHeartbeat msgType = 6
 	msgCertRenew msgType = 7
 )
@@ -58,12 +58,12 @@ type HeartbeatMetadata struct {
 }
 
 type BrokerConfig struct {
-	Store             Store
-	Logger            *slog.Logger
+	Store               Store
+	Logger              *slog.Logger
 	ServerEncryptionKey []byte
-	SpiffeTrustDomain string
-	ProxyBindHost     string
-	ProxyAdvertiseHost string
+	SpiffeTrustDomain   string
+	ProxyBindHost       string
+	ProxyAdvertiseHost  string
 }
 
 type Broker struct {
@@ -75,17 +75,17 @@ type Broker struct {
 }
 
 type tunnelConnection struct {
-	broker         *Broker
-	gatewayID      string
-	ws             *websocket.Conn
-	connectedAt    time.Time
-	clientVersion  string
-	clientIP       string
-	lastHeartbeat  time.Time
-	lastPingSentAt time.Time
-	pingLatency    *int64
+	broker           *Broker
+	gatewayID        string
+	ws               *websocket.Conn
+	connectedAt      time.Time
+	clientVersion    string
+	clientIP         string
+	lastHeartbeat    time.Time
+	lastPingSentAt   time.Time
+	pingLatency      *int64
 	bytesTransferred int64
-	heartbeat      *HeartbeatMetadata
+	heartbeat        *HeartbeatMetadata
 
 	sendMu       sync.Mutex
 	streams      map[uint16]*streamConn
@@ -293,15 +293,15 @@ func (b *Broker) registerConnection(gatewayID string, wsConn *websocket.Conn, cl
 	}
 
 	conn := &tunnelConnection{
-		broker:         b,
-		gatewayID:      gatewayID,
-		ws:             wsConn,
-		connectedAt:    time.Now().UTC(),
-		clientVersion:  clientVersion,
-		clientIP:       clientIP,
-		streams:        make(map[uint16]*streamConn),
-		pendingOpens:   make(map[uint16]*pendingOpen),
-		nextStreamID:   1,
+		broker:        b,
+		gatewayID:     gatewayID,
+		ws:            wsConn,
+		connectedAt:   time.Now().UTC(),
+		clientVersion: clientVersion,
+		clientIP:      clientIP,
+		streams:       make(map[uint16]*streamConn),
+		pendingOpens:  make(map[uint16]*pendingOpen),
+		nextStreamID:  1,
 	}
 	b.registry[gatewayID] = conn
 	go b.readLoop(conn)

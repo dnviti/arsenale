@@ -10,7 +10,8 @@ source-files:
   - backend/cmd/control-plane-api/routes_public.go
   - backend/cmd/control-plane-api/routes_sessions.go
   - backend/internal/systemsettingsapi/service.go
-  - backend/schema/bootstrap.sql
+  - backend/migrations/000001_baseline.sql
+  - backend/sqlc.yaml
   - client/vite.config.ts
 ---
 
@@ -35,7 +36,8 @@ Arsenale is a Go-first remote access platform for SSH, RDP, VNC, and database ac
 |------|---------------|
 | Public routes | `backend/cmd/control-plane-api/routes_*.go` |
 | Runtime services | `backend/cmd/*` and `backend/internal/*` |
-| Empty DB bootstrap | `backend/schema/bootstrap.sql` + `scripts/bootstrap-db-schema.sh` |
+| Database schema | `backend/migrations/*.sql` + `backend/cmd/migrate` |
+| Generated queries | `backend/sqlc.yaml` + `backend/internal/*/queries` |
 | Frontend dev proxy | `client/vite.config.ts` |
 | Deployment | `deployment/ansible/playbooks/deploy.yml` + `deployment/ansible/roles/deploy/` |
 
@@ -46,7 +48,7 @@ make setup              # First-time vault/cert setup
 make dev                # Full local stack via Ansible
 npm run dev             # Full dev flow: make dev + local Vite
 npm run verify          # Backend tests + JS typecheck/lint/test/build
-npm run db:bootstrap    # Apply bootstrap.sql when DB is empty
+npm run db:migrate      # Apply pending backend migrations
 ```
 
 ## API Surface

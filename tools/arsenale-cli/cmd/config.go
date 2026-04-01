@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ type CLIConfig struct {
 	AccessToken  string `yaml:"access_token,omitempty"`
 	RefreshToken string `yaml:"refresh_token,omitempty"`
 	TokenExpiry  string `yaml:"token_expiry,omitempty"`
+	TenantID     string `yaml:"tenant_id,omitempty"`
 	CacheTTL     string `yaml:"cache_ttl,omitempty"`
 }
 
@@ -71,27 +73,30 @@ func (c *CLIConfig) isTokenValid() bool {
 	if err != nil {
 		return false
 	}
-	// Add 30-second buffer
 	return time.Now().Before(expiry.Add(-30 * time.Second))
 }
 
-// Config prints the current configuration.
-func Config() {
-	cfg := loadConfig()
-
-	fmt.Println("Arsenale CLI Configuration")
-	fmt.Println("==========================")
-	fmt.Printf("Config file:   %s\n", configPath())
-	fmt.Printf("Server URL:    %s\n", cfg.ServerURL)
-	fmt.Printf("Cache TTL:     %s\n", cfg.CacheTTL)
-
-	if cfg.AccessToken != "" {
-		if cfg.isTokenValid() {
-			fmt.Println("Auth status:   authenticated")
-		} else {
-			fmt.Println("Auth status:   token expired (run 'arsenale login')")
-		}
-	} else {
-		fmt.Println("Auth status:   not authenticated (run 'arsenale login')")
+// resolveTenantID returns the tenant ID from flag, config, or fetches it.
+func (c *CLIConfig) resolveTenantID() string {
+	if c.TenantID != "" {
+		return c.TenantID
 	}
+
+	// Try to fetch from API
+	body, status, err := apiGet("/api/tenants/mine", c)
+	if err != nil || status != 200 {
+		return ""
+	}
+
+	var tenant struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &tenant); err != nil {
+		return ""
+	}
+
+	// Cache it
+	c.TenantID = tenant.ID
+	_ = saveConfig(c)
+	return tenant.ID
 }

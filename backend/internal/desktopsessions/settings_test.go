@@ -48,6 +48,14 @@ func TestMergeRDPSettingsAppliesUserConnectionAndTenantOrder(t *testing.T) {
 	}
 }
 
+func TestMergeRDPSettingsDefaultsToAutoNegotiatedSecurity(t *testing.T) {
+	merged := mergeRDPSettings(nil, nil, nil)
+
+	if merged.Security != "any" {
+		t.Fatalf("expected default security any, got %q", merged.Security)
+	}
+}
+
 func TestPrepareRecordedRDPSettingsForcesReconnectAndDefaultSize(t *testing.T) {
 	prepared := prepareRecordedRDPSettings(mergedRDPSettings{
 		ResizeMethod: "display-update",

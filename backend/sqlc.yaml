@@ -1,0 +1,74 @@
+version: "2"
+
+sql:
+  - engine: "postgresql"
+    schema: "migrations"
+    queries: "internal/agents/queries"
+    gen:
+      go:
+        package: "agentsdb"
+        out: "internal/agents/dbgen"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "pg_catalog.timestamp"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "pg_catalog.timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+
+  - engine: "postgresql"
+    schema: "migrations"
+    queries: "internal/memory/queries"
+    gen:
+      go:
+        package: "memorydb"
+        out: "internal/memory/dbgen"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "pg_catalog.timestamp"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "pg_catalog.timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+
+  - engine: "postgresql"
+    schema: "migrations"
+    queries: "internal/orchestration/queries"
+    gen:
+      go:
+        package: "orchestrationdb"
+        out: "internal/orchestration/dbgen"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "pg_catalog.timestamp"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "pg_catalog.timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"
+
+  - engine: "postgresql"
+    schema: "migrations"
+    queries: "internal/modelgateway/queries"
+    gen:
+      go:
+        package: "modelgatewaydb"
+        out: "internal/modelgateway/dbgen"
+        sql_package: "pgx/v5"
+        overrides:
+          - db_type: "pg_catalog.timestamp"
+            go_type:
+              import: "time"
+              type: "Time"
+          - db_type: "pg_catalog.timestamptz"
+            go_type:
+              import: "time"
+              type: "Time"

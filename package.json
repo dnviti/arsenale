@@ -32,15 +32,17 @@
   "scripts": {
     "predev": "make dev",
     "backend:build": "./scripts/run-go.sh build ./...",
+    "backend:generate": "./scripts/run-go.sh run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate -f sqlc.yaml",
     "backend:test": "./scripts/run-go.sh test ./...",
-    "db:bootstrap": "./scripts/bootstrap-db-schema.sh",
-    "db:push": "npm run db:bootstrap",
+    "db:bootstrap": "./scripts/db-migrate.sh up",
+    "db:push": "npm run db:migrate",
+    "db:status": "./scripts/db-migrate.sh status",
     "dev": "npm run dev:client:wait",
     "dev:client": "npm run dev -w client",
     "dev:client:wait": "wait-on -t 120000 http-get://localhost:18080/healthz http-get://localhost:18090/healthz http-get://localhost:18091/healthz && npm run dev -w client",
     "dev:api-acceptance": "./scripts/dev-api-acceptance.sh",
     "build": "npm run backend:build && npm run build -w client && npm run build -w gateways/tunnel-agent && npm run build -w browser-extensions",
-    "db:migrate": "npm run db:bootstrap",
+    "db:migrate": "./scripts/db-migrate.sh up",
     "typecheck": "npm run typecheck -w client && npm run typecheck -w gateways/tunnel-agent && npm run typecheck -w browser-extensions",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
@@ -51,7 +53,7 @@
     "codeql": "./scripts/codeql-scan.sh",
     "codeql:full": "./scripts/codeql-scan.sh --full",
     "test:watch": "npm run test:watch -w client",
-    "verify": "npm run backend:test && npm run typecheck && npm run lint && npm run sast && npm run test -w client && npm run test -w gateways/tunnel-agent && npm run build"
+    "verify": "npm run backend:generate && npm run backend:test && npm run typecheck && npm run lint && npm run sast && npm run test -w client && npm run test -w gateways/tunnel-agent && npm run build"
   },
   "overrides": {
     "hono": "4.12.8",
@@ -66,15 +68,15 @@
     "dompurify": "$dompurify"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1",
-    "eslint": "^9.24.0",
-    "eslint-plugin-react-hooks": "^7.0.1",
-    "eslint-plugin-react-refresh": "^0.5.2",
-    "eslint-plugin-security": "^4.0.0",
-    "typescript-eslint": "^8.57.1",
-    "wait-on": "^9.0.4"
+    "concurrently": "9.2.1",
+    "eslint": "9.39.4",
+    "eslint-plugin-react-hooks": "7.0.1",
+    "eslint-plugin-react-refresh": "0.5.2",
+    "eslint-plugin-security": "4.0.0",
+    "typescript-eslint": "8.57.2",
+    "wait-on": "9.0.4"
   },
   "dependencies": {
-    "dompurify": "^3.3.3"
+    "dompurify": "3.3.3"
   }
 }

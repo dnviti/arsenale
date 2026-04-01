@@ -274,9 +274,9 @@ func buildEmailStatus() emailStatusResponse {
 	deliveryStatus := emaildelivery.StatusFromEnv()
 
 	status := emailStatusResponse{
-		Provider: deliveryStatus.Provider,
+		Provider:   deliveryStatus.Provider,
 		Configured: deliveryStatus.Configured,
-		From:     deliveryStatus.From,
+		From:       deliveryStatus.From,
 	}
 
 	switch strings.ToLower(strings.TrimSpace(deliveryStatus.Provider)) {

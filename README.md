@@ -142,12 +142,14 @@ npm run dev:client          # Client only (Vite on :3005)
 # Build
 npm run build               # Build the active Go/backend + client workspaces
 npm run backend:build       # Build the Go backend module
+npm run backend:generate    # Regenerate sqlc code for the converted Go domains
 npm run build -w client     # Client only
 
 # Database
-npm run db:bootstrap        # Apply backend/schema/bootstrap.sql when DB is empty
-npm run db:push             # Alias of db:bootstrap
-npm run db:migrate          # Alias of db:bootstrap
+npm run db:migrate          # Apply pending backend SQL migrations
+npm run db:status           # Show applied and pending backend migrations
+npm run db:bootstrap        # Compatibility alias of db:migrate
+npm run db:push             # Alias of db:migrate
 
 # Infrastructure (via Makefile + Ansible)
 make setup                  # First-time setup (Ansible collections, vault)

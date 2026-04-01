@@ -15,14 +15,12 @@ export function useAuth() {
 
   useEffect(() => {
     if (accessToken) {
-      setLoading(false);
       return;
     }
 
     let cancelled = false;
     let retryTimer: number | undefined;
 
-    setLoading(true);
     restoreSessionApi()
       .then((data) => {
         if (cancelled) return;

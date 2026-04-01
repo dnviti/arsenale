@@ -8,7 +8,8 @@ source-files:
   - backend/cmd/desktop-broker/main.go
   - backend/cmd/terminal-broker/main.go
   - backend/cmd/tunnel-broker/main.go
-  - backend/schema/bootstrap.sql
+  - backend/migrations/000001_baseline.sql
+  - backend/sqlc.yaml
   - backend/internal/authservice/service.go
   - backend/internal/sshsessions/service.go
   - backend/internal/dbsessions/service.go

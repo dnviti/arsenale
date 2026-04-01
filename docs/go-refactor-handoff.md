@@ -8,8 +8,9 @@ source-files:
   - backend/cmd/control-plane-api/routes_public.go
   - backend/cmd/control-plane-api/routes_sessions.go
   - backend/cmd/control-plane-api/readiness.go
-  - backend/schema/bootstrap.sql
-  - scripts/bootstrap-db-schema.sh
+  - backend/migrations/000001_baseline.sql
+  - backend/sqlc.yaml
+  - scripts/db-migrate.sh
   - deployment/ansible/roles/deploy/tasks/main.yml
   - docker-compose.yml
 ---
@@ -24,7 +25,7 @@ What is true now:
 - Browser terminal and desktop traffic are served by Go brokers.
 - The legacy reverse proxy fallback has been removed.
 - The live stack no longer requires the legacy Node runtime container.
-- Empty database bootstrap is handled by `backend/schema/bootstrap.sql` through `scripts/bootstrap-db-schema.sh`.
+- Database schema changes are applied through versioned SQL migrations in `backend/migrations/`.
 - The root npm workspace, default dev flow, and active CI no longer depend on Prisma generation or the legacy Node server.
 
 ## Active Sources Of Truth
@@ -33,7 +34,8 @@ What is true now:
 |--------|--------|
 | Public routes | `backend/cmd/control-plane-api/routes_*.go` |
 | Runtime services | `backend/cmd/*` and `backend/internal/*` |
-| Database bootstrap | `backend/schema/bootstrap.sql` |
+| Database schema | `backend/migrations/*.sql` |
+| Generated query config | `backend/sqlc.yaml` |
 | Deploy bootstrap hook | `deployment/ansible/roles/deploy/tasks/main.yml` |
 | Acceptance verification | `scripts/dev-api-acceptance.sh` |
 
@@ -46,6 +48,6 @@ What is true now:
 Future work should assume a Go-first system:
 
 1. Add new backend behavior in `backend/`, not `server/`.
-2. Update `backend/schema/bootstrap.sql` and the Go stores when schema changes are introduced.
+2. Add schema changes in `backend/migrations/*.sql` and regenerate converted sqlc packages when their queries or schema change.
 3. Keep docs and CI aligned with the Go runtime.
 4. Treat any remaining `server/` references as archival cleanup, not active platform dependencies.

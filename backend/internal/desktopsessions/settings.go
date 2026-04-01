@@ -153,7 +153,7 @@ func mergeRDPSettings(userDefaults, connectionOverrides, tenantEnforced *rdpSett
 		ForceLossless:            false,
 		DisableAudio:             true,
 		EnableAudioInput:         false,
-		Security:                 "nla",
+		Security:                 "any",
 		IgnoreCert:               false,
 		Console:                  false,
 	}

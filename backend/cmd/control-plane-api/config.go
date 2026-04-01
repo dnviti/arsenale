@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,19 @@ func parseInt(raw string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func parseCSV(raw string) []string {
+	parts := strings.Split(raw, ",")
+	values := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || slices.Contains(values, part) {
+			continue
+		}
+		values = append(values, part)
+	}
+	return values
 }
 
 func loadOptionalSecret(envKey, fileEnvKey string) (string, error) {

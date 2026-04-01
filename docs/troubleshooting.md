@@ -23,7 +23,7 @@ source-files:
 | `ECONNREFUSED 127.0.0.1:5432` | PostgreSQL not running | Run `make dev` to start containers |
 | `FATAL: password authentication failed` | Wrong DB password | Check `vault.yml` or regenerate with `make vault` |
 | `SSL connection required` | Missing SSL certs | Ensure `DATABASE_URL` includes `?sslmode=require` |
-| App starts against an empty DB | Schema not bootstrapped yet | Run `npm run db:bootstrap` or redeploy with `make dev` |
+| App starts against an empty DB | Migrations have not been applied yet | Run `npm run db:migrate` or redeploy with `make dev` |
 
 ### TLS and Certificates
 
@@ -131,8 +131,8 @@ curl -k https://localhost:3000/api/ready
 # Connect directly to PostgreSQL
 psql "$DATABASE_URL"
 
-# Confirm the bootstrap snapshot is present
-test -f backend/schema/bootstrap.sql
+# Confirm migrations are present
+find backend/migrations -maxdepth 1 -name '*.sql' | sort
 ```
 
 ### Network Debugging
@@ -155,7 +155,7 @@ make dev-down          # Stop containers
 make clean             # Remove everything
 make setup             # Regenerate vault + certs
 make dev               # Fresh start
-npm run db:bootstrap   # Apply schema if needed
+npm run db:migrate     # Apply schema if needed
 ```
 
 ## ❓ FAQ

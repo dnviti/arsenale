@@ -4,9 +4,9 @@ import "testing"
 
 func TestClassifyDBQuery(t *testing.T) {
 	tests := []struct {
-		name  string
-		sql   string
-		want  dbQueryType
+		name string
+		sql  string
+		want dbQueryType
 	}{
 		{name: "select", sql: "select * from users", want: dbQueryTypeSelect},
 		{name: "insert", sql: "insert into users(id) values (1)", want: dbQueryTypeInsert},

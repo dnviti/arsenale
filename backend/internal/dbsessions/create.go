@@ -56,14 +56,14 @@ type databaseSettings struct {
 }
 
 type gatewaySnapshot struct {
-	ID            string
-	Type          string
-	Host          string
-	Port          int
-	IsManaged     bool
+	ID             string
+	Type           string
+	Host           string
+	Port           int
+	IsManaged      bool
 	DeploymentMode string
-	TunnelEnabled bool
-	LBStrategy    string
+	TunnelEnabled  bool
+	LBStrategy     string
 }
 
 type managedGatewayInstance struct {

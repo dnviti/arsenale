@@ -147,11 +147,8 @@ func (s Service) selectManagedGatewayInstance(ctx context.Context, gatewayID, st
 	rows, err := s.DB.Query(ctx, `
 SELECT
 	i.id,
-	COALESCE(NULLIF(i."containerName", ''), i.host) AS host,
-	CASE
-		WHEN NULLIF(i."containerName", '') IS NOT NULL THEN g.port
-		ELSE i.port
-	END AS port,
+	COALESCE(NULLIF(i.host, ''), NULLIF(i."containerName", '')) AS host,
+	COALESCE(NULLIF(i.port, 0), g.port) AS port,
 	i."createdAt",
 	COUNT(sess.id)::int AS active_sessions
 FROM "ManagedGatewayInstance" i

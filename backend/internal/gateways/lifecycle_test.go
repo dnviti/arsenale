@@ -60,7 +60,26 @@ func TestManagedGatewayPublishedPortsSuppressesTunnelPublishing(t *testing.T) {
 	}
 }
 
-func TestManagedGatewayInstanceAddressUsesPublishedHostPort(t *testing.T) {
+func TestManagedGatewayInstanceAddressPrefersPreferredNetworkIP(t *testing.T) {
+	host, port := managedGatewayInstanceAddress(
+		gatewayRecord{Host: "gateway.example"},
+		managedContainerInfo{
+			Name:       "arsenale-gw-demo",
+			NetworkIPs: map[string]string{"arsenale-net-edge": "10.89.4.17", "arsenale-net-gateway": "10.89.5.9"},
+		},
+		2222,
+		[]string{"arsenale-net-edge", "arsenale-net-gateway"},
+	)
+
+	if host != "10.89.4.17" {
+		t.Fatalf("expected preferred network IP 10.89.4.17, got %q", host)
+	}
+	if port != 2222 {
+		t.Fatalf("expected internal port 2222, got %d", port)
+	}
+}
+
+func TestManagedGatewayInstanceAddressFallsBackToPublishedHostPort(t *testing.T) {
 	host, port := managedGatewayInstanceAddress(
 		gatewayRecord{Host: "gateway.example"},
 		managedContainerInfo{
@@ -68,6 +87,7 @@ func TestManagedGatewayInstanceAddressUsesPublishedHostPort(t *testing.T) {
 			PublishedPorts: map[int]int{2222: 40022},
 		},
 		2222,
+		[]string{"arsenale-net-edge"},
 	)
 
 	if host != "gateway.example" {
@@ -78,20 +98,16 @@ func TestManagedGatewayInstanceAddressUsesPublishedHostPort(t *testing.T) {
 	}
 }
 
-func TestManagedGatewayInstanceAddressUsesContainerNameInternally(t *testing.T) {
-	host, port := managedGatewayInstanceAddress(
-		gatewayRecord{},
+func TestManagedGatewayProbeHostPrefersPreferredNetworkIP(t *testing.T) {
+	host := managedGatewayProbeHost(
 		managedContainerInfo{
-			Name:           "arsenale-gw-demo",
-			ContainerPorts: map[int]int{4822: 4822},
+			IPAddress:  "10.89.6.2",
+			NetworkIPs: map[string]string{"arsenale-net-egress": "10.89.6.2", "arsenale-net-edge": "10.89.4.17"},
 		},
-		4822,
+		[]string{"arsenale-net-edge"},
 	)
 
-	if host != "arsenale-gw-demo" {
-		t.Fatalf("expected internal host arsenale-gw-demo, got %q", host)
-	}
-	if port != 4822 {
-		t.Fatalf("expected internal port 4822, got %d", port)
+	if host != "10.89.4.17" {
+		t.Fatalf("expected probe host 10.89.4.17, got %q", host)
 	}
 }

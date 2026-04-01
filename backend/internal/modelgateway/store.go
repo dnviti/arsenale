@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	modelgatewaydb "github.com/dnviti/arsenale/backend/internal/modelgateway/dbgen"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -12,59 +13,20 @@ import (
 )
 
 type Store struct {
-	db *pgxpool.Pool
+	db      *pgxpool.Pool
+	queries *modelgatewaydb.Queries
 }
 
 func NewStore(db *pgxpool.Pool) *Store {
-	return &Store{db: db}
+	store := &Store{db: db}
+	if db != nil {
+		store.queries = modelgatewaydb.New(db)
+	}
+	return store
 }
 
 func (s *Store) Enabled() bool {
 	return s != nil && s.db != nil
-}
-
-func (s *Store) EnsureSchema(ctx context.Context) error {
-	if !s.Enabled() {
-		return nil
-	}
-
-	_, err := s.db.Exec(ctx, `
-CREATE TABLE IF NOT EXISTS "TenantAiConfig" (
-  id TEXT PRIMARY KEY,
-  "tenantId" TEXT NOT NULL UNIQUE,
-  provider TEXT NOT NULL DEFAULT 'none',
-  "encryptedApiKey" TEXT,
-  "apiKeyIV" TEXT,
-  "apiKeyTag" TEXT,
-  "modelId" TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
-  "baseUrl" TEXT,
-  "maxTokensPerRequest" INTEGER NOT NULL DEFAULT 4000,
-  "dailyRequestLimit" INTEGER NOT NULL DEFAULT 100,
-  enabled BOOLEAN NOT NULL DEFAULT false,
-  "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-  "updatedAt" TIMESTAMP NOT NULL DEFAULT now()
-)
-`)
-	if err != nil {
-		return fmt.Errorf("ensure TenantAiConfig schema: %w", err)
-	}
-
-	_, err = s.db.Exec(ctx, `
-CREATE TABLE IF NOT EXISTS "AiDailyUsage" (
-  id TEXT PRIMARY KEY,
-  "tenantId" TEXT NOT NULL,
-  date DATE NOT NULL,
-  count INTEGER NOT NULL DEFAULT 0,
-  "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-  "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
-  UNIQUE ("tenantId", date)
-)
-`)
-	if err != nil {
-		return fmt.Errorf("ensure AiDailyUsage schema: %w", err)
-	}
-
-	return nil
 }
 
 func (s *Store) GetConfig(ctx context.Context, tenantID string) (contracts.TenantAIConfig, error) {
@@ -72,17 +34,20 @@ func (s *Store) GetConfig(ctx context.Context, tenantID string) (contracts.Tenan
 		return contracts.TenantAIConfig{}, errors.New("model gateway store is not configured")
 	}
 
-	row := s.db.QueryRow(ctx, `
-SELECT "tenantId", provider, COALESCE("encryptedApiKey", ''), "modelId", COALESCE("baseUrl", ''), "maxTokensPerRequest", "dailyRequestLimit", enabled
-FROM "TenantAiConfig"
-WHERE "tenantId" = $1
-`, tenantID)
-
-	config, err := scanConfig(row)
+	row, err := s.queries.GetConfig(ctx, tenantID)
 	if err != nil {
 		return contracts.TenantAIConfig{}, err
 	}
-	return config, nil
+	return mapConfig(
+		row.TenantId,
+		row.Provider,
+		row.EncryptedApiKey,
+		row.ModelId,
+		row.BaseUrl,
+		row.MaxTokensPerRequest,
+		row.DailyRequestLimit,
+		row.Enabled,
+	), nil
 }
 
 func (s *Store) UpsertConfig(ctx context.Context, tenantID string, update contracts.TenantAIConfigUpdate, encryptionKey []byte) (contracts.TenantAIConfig, error) {
@@ -157,75 +122,77 @@ func (s *Store) UpsertConfig(ctx context.Context, tenantID string, update contra
 	}
 
 	if encryptedAPIKey == preserveMarker {
-		row := s.db.QueryRow(ctx, `
-INSERT INTO "TenantAiConfig" (
-  id, "tenantId", provider, "modelId", "baseUrl", "maxTokensPerRequest", "dailyRequestLimit", enabled, "createdAt", "updatedAt"
-) VALUES ($1, $2, $3, $4, NULLIF($5, ''), $6, $7, $8, now(), now())
-ON CONFLICT ("tenantId") DO UPDATE SET
-  provider = EXCLUDED.provider,
-  "modelId" = EXCLUDED."modelId",
-  "baseUrl" = EXCLUDED."baseUrl",
-  "maxTokensPerRequest" = EXCLUDED."maxTokensPerRequest",
-  "dailyRequestLimit" = EXCLUDED."dailyRequestLimit",
-  enabled = EXCLUDED.enabled,
-  "updatedAt" = now()
-RETURNING "tenantId", provider, COALESCE("encryptedApiKey", ''), "modelId", COALESCE("baseUrl", ''), "maxTokensPerRequest", "dailyRequestLimit", enabled
-`, uuid.NewString(), tenantID, next.Provider, next.ModelID, next.BaseURL, next.MaxTokensPerRequest, next.DailyRequestLimit, next.Enabled)
-
-		return scanConfig(row)
+		row, err := s.queries.UpsertConfigPreserveKey(ctx, modelgatewaydb.UpsertConfigPreserveKeyParams{
+			ID:                  uuid.NewString(),
+			TenantID:            tenantID,
+			Provider:            string(next.Provider),
+			ModelID:             next.ModelID,
+			BaseUrl:             nullableValue(next.BaseURL),
+			MaxTokensPerRequest: int32(next.MaxTokensPerRequest),
+			DailyRequestLimit:   int32(next.DailyRequestLimit),
+			Enabled:             next.Enabled,
+		})
+		if err != nil {
+			return contracts.TenantAIConfig{}, err
+		}
+		return mapConfig(
+			row.TenantId,
+			row.Provider,
+			row.EncryptedApiKey,
+			row.ModelId,
+			row.BaseUrl,
+			row.MaxTokensPerRequest,
+			row.DailyRequestLimit,
+			row.Enabled,
+		), nil
 	}
 
-	row := s.db.QueryRow(ctx, `
-INSERT INTO "TenantAiConfig" (
-  id, "tenantId", provider, "encryptedApiKey", "apiKeyIV", "apiKeyTag", "modelId", "baseUrl", "maxTokensPerRequest", "dailyRequestLimit", enabled, "createdAt", "updatedAt"
-) VALUES ($1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7, NULLIF($8, ''), $9, $10, $11, now(), now())
-ON CONFLICT ("tenantId") DO UPDATE SET
-  provider = EXCLUDED.provider,
-  "encryptedApiKey" = EXCLUDED."encryptedApiKey",
-  "apiKeyIV" = EXCLUDED."apiKeyIV",
-  "apiKeyTag" = EXCLUDED."apiKeyTag",
-  "modelId" = EXCLUDED."modelId",
-  "baseUrl" = EXCLUDED."baseUrl",
-  "maxTokensPerRequest" = EXCLUDED."maxTokensPerRequest",
-  "dailyRequestLimit" = EXCLUDED."dailyRequestLimit",
-  enabled = EXCLUDED.enabled,
-  "updatedAt" = now()
-RETURNING "tenantId", provider, COALESCE("encryptedApiKey", ''), "modelId", COALESCE("baseUrl", ''), "maxTokensPerRequest", "dailyRequestLimit", enabled
-`, uuid.NewString(), tenantID, next.Provider, encryptedAPIKey, apiKeyIV, apiKeyTag, next.ModelID, next.BaseURL, next.MaxTokensPerRequest, next.DailyRequestLimit, next.Enabled)
+	row, err := s.queries.UpsertConfig(ctx, modelgatewaydb.UpsertConfigParams{
+		ID:                  uuid.NewString(),
+		TenantID:            tenantID,
+		Provider:            string(next.Provider),
+		EncryptedApiKey:     nullableValue(encryptedAPIKey),
+		ApiKeyIv:            nullableValue(apiKeyIV),
+		ApiKeyTag:           nullableValue(apiKeyTag),
+		ModelID:             next.ModelID,
+		BaseUrl:             nullableValue(next.BaseURL),
+		MaxTokensPerRequest: int32(next.MaxTokensPerRequest),
+		DailyRequestLimit:   int32(next.DailyRequestLimit),
+		Enabled:             next.Enabled,
+	})
+	if err != nil {
+		return contracts.TenantAIConfig{}, err
+	}
 
-	return scanConfig(row)
+	return mapConfig(
+		row.TenantId,
+		row.Provider,
+		row.EncryptedApiKey,
+		row.ModelId,
+		row.BaseUrl,
+		row.MaxTokensPerRequest,
+		row.DailyRequestLimit,
+		row.Enabled,
+	), nil
 }
 
 const preserveMarker = "__preserve__"
 
-type configScanner interface {
-	Scan(dest ...any) error
+func nullableValue(value string) any {
+	return value
 }
 
-func scanConfig(scanner configScanner) (contracts.TenantAIConfig, error) {
-	var (
-		config          contracts.TenantAIConfig
-		encryptedAPIKey string
-		baseURL         string
-	)
-
-	if err := scanner.Scan(
-		&config.TenantID,
-		&config.Provider,
-		&encryptedAPIKey,
-		&config.ModelID,
-		&baseURL,
-		&config.MaxTokensPerRequest,
-		&config.DailyRequestLimit,
-		&config.Enabled,
-	); err != nil {
-		return contracts.TenantAIConfig{}, err
+func mapConfig(tenantID, provider, encryptedAPIKey, modelID, baseURL string, maxTokensPerRequest, dailyRequestLimit int32, enabled bool) contracts.TenantAIConfig {
+	return contracts.TenantAIConfig{
+		TenantID:            tenantID,
+		Provider:            contracts.AIProviderID(provider),
+		HasAPIKey:           encryptedAPIKey != "",
+		ModelID:             modelID,
+		BaseURL:             baseURL,
+		MaxTokensPerRequest: int(maxTokensPerRequest),
+		DailyRequestLimit:   int(dailyRequestLimit),
+		Enabled:             enabled,
 	}
-
-	config.HasAPIKey = encryptedAPIKey != ""
-	config.BaseURL = baseURL
-
-	return config, nil
 }
 
 func IsNotFound(err error) bool {

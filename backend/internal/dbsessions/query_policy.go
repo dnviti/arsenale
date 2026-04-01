@@ -41,11 +41,11 @@ type firewallRuleRecord struct {
 }
 
 type maskingPolicyRecord struct {
-	Name         string
+	Name          string
 	ColumnPattern string
-	Strategy     string
-	ExemptRoles  []string
-	Scope        sql.NullString
+	Strategy      string
+	ExemptRoles   []string
+	Scope         sql.NullString
 }
 
 type maskedColumn struct {

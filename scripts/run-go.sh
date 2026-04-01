@@ -23,8 +23,35 @@ GO_IMAGE=${GO_TOOLCHAIN_IMAGE:-docker.io/library/golang:1.25.8-alpine}
 GO_CMD=(/usr/local/go/bin/go "$@")
 printf -v GO_CMD_STRING '%q ' "${GO_CMD[@]}"
 
+ENV_FLAGS=()
+forward_env() {
+  local name="$1"
+  if [[ -v "$name" ]]; then
+    ENV_FLAGS+=(-e "$name")
+  fi
+}
+
+for name in \
+  DATABASE_URL \
+  DATABASE_URL_FILE \
+  DATABASE_SSL_ROOT_CERT \
+  ARSENALE_SKIP_MIGRATION_CHECK \
+  GOFLAGS \
+  GOPROXY \
+  GOSUMDB \
+  GOPRIVATE \
+  GONOSUMDB \
+  GONOPROXY \
+  GOCACHE \
+  GOMODCACHE \
+  CGO_ENABLED
+do
+  forward_env "$name"
+done
+
 exec "$CONTAINER_RUNTIME" run --rm \
   -v "$BACKEND_DIR:/src" \
   -w /src \
+  "${ENV_FLAGS[@]}" \
   "$GO_IMAGE" \
   sh -lc "${GO_CMD_STRING% }"

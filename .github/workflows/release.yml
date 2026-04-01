@@ -9,19 +9,134 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # ── Build CLI binaries ──────────────────────────────────────────
+  build-cli:
+    name: Build CLI (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+          - goos: linux
+            goarch: arm64
+            ext: ""
+          - goos: darwin
+            goarch: amd64
+            ext: ""
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+          - goos: windows
+            goarch: arm64
+            ext: ".exe"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/arsenale-cli/go.mod
+
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          go build \
+            -ldflags "-s -w -X github.com/dnviti/arsenale/tools/arsenale-cli/cmd.Version=${{ steps.version.outputs.version }}" \
+            -o dist/arsenale${{ matrix.ext }} \
+            ./tools/arsenale-cli/
+
+      - name: Package archive
+        run: |
+          cd dist
+          ARCHIVE="arsenale-cli_${{ steps.version.outputs.version }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            zip "${ARCHIVE}.zip" arsenale${{ matrix.ext }}
+          else
+            tar czf "${ARCHIVE}.tar.gz" arsenale${{ matrix.ext }}
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arsenale-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/arsenale-cli_*
+          if-no-files-found: error
+
+  # ── Generate checksums ──────────────────────────────────────────
+  checksums:
+    name: Generate checksums
+    needs: build-cli
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: arsenale-cli-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist
+          sha256sum arsenale-cli_* > checksums_sha256.txt
+
+      - name: Upload checksums artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: dist/checksums_sha256.txt
+
+  # ── Create GitHub Release ──────────────────────────────────────
   release:
     name: Create GitHub Release
+    needs: [build-cli, checksums]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
       pull-requests: read
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: arsenale-cli-*
+          merge-multiple: true
+          path: dist
+
+      - name: Download checksums
+        uses: actions/download-artifact@v4
+        with:
+          name: checksums
+          path: dist
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -30,3 +145,6 @@ jobs:
           generate_release_notes: true
           name: ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-beta') }}
+          files: |
+            dist/arsenale-cli_*
+            dist/checksums_sha256.txt
