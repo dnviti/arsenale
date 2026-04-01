@@ -355,3 +355,7 @@ func parseEnvInt(key string, fallback int) int {
 	}
 	return parsed
 }
+
+func (s Service) gatewayRoutingMandatoryEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("GATEWAY_ROUTING_MODE")), "gateway-mandatory")
+}

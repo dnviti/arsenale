@@ -1046,6 +1046,31 @@ services:
         aliases:
           - terminal-target
 
+  dev-debian-ssh-target:
+    build:
+      context: {{ _home }}
+      dockerfile: infrastructure/dev/debian-ssh-target/Dockerfile
+    container_name: arsenale-dev-debian-ssh-target
+    cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
+    mem_limit: "128m"
+    pids_limit: {{ arsenale_resource_limits.go_service.pids }}
+    tmpfs:
+      - /tmp
+      - /run
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 22 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: always
+    networks:
+      net-edge: {}
+      net-gateway:
+        aliases:
+          - dev-debian-target
+          - dev-debian-ssh-target
+
 {% endif %}
   # ---------------------------------------------------------------------------
   # Client — React SPA served by Nginx
@@ -1202,6 +1227,12 @@ services:
       timeout: 5s
       retries: 3
     restart: always
+{% if (arsenale_container_dns_servers | default([]) | length) > 0 %}
+    dns:
+{% for dns_server in (arsenale_container_dns_servers | default([])) %}
+      - "{{ dns_server }}"
+{% endfor %}
+{% endif %}
     networks:
       - net-gateway
 
@@ -1249,6 +1280,12 @@ services:
       retries: 3
       start_period: 10s
     restart: always
+{% if (arsenale_container_dns_servers | default([]) | length) > 0 %}
+    dns:
+{% for dns_server in (arsenale_container_dns_servers | default([])) %}
+      - "{{ dns_server }}"
+{% endfor %}
+{% endif %}
     networks:
       - net-gateway
 
@@ -1292,6 +1329,12 @@ services:
       timeout: 5s
       retries: 3
     restart: always
+{% if (arsenale_container_dns_servers | default([]) | length) > 0 %}
+    dns:
+{% for dns_server in (arsenale_container_dns_servers | default([])) %}
+      - "{{ dns_server }}"
+{% endfor %}
+{% endif %}
     networks:
       - net-gateway
 

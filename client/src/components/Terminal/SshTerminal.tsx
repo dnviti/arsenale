@@ -241,6 +241,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
       webSocketRef.current = ws;
 
       let resolved = false;
+      let failedBeforeReady = false;
 
       const fail = (message: string, permanent = false) => {
         if (sessionIdRef.current) {
@@ -253,6 +254,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
         setStatus('error');
         setError(message);
         if (!resolved) {
+          failedBeforeReady = true;
           reject(new Error(message));
           return;
         }
@@ -336,6 +338,10 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
         }
 
         if (cancelledRef.current || permanentErrorRef.current) {
+          return;
+        }
+
+        if (failedBeforeReady) {
           return;
         }
 

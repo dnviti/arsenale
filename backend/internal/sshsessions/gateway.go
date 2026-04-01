@@ -22,11 +22,22 @@ type managedGatewayInstance struct {
 }
 
 func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access connectionAccess) (map[string]any, string, string, error) {
-	if access.Connection.GatewayID == nil || strings.TrimSpace(*access.Connection.GatewayID) == "" {
+	gatewayID := ""
+	if access.Connection.GatewayID != nil {
+		gatewayID = strings.TrimSpace(*access.Connection.GatewayID)
+	}
+	if gatewayID == "" && s.gatewayRoutingMandatoryEnabled() {
+		resolvedGatewayID, err := s.resolveDefaultSSHGatewayID(ctx, claims.TenantID)
+		if err != nil {
+			return nil, "", "", err
+		}
+		gatewayID = resolvedGatewayID
+	}
+	if gatewayID == "" {
 		return nil, "", "", nil
 	}
 
-	gateway, err := s.loadGateway(ctx, *access.Connection.GatewayID)
+	gateway, err := s.loadGateway(ctx, gatewayID)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -318,4 +329,71 @@ func (s Service) createTunnelProxy(ctx context.Context, gatewayID, targetHost st
 		return tunnelProxyResponse{}, fmt.Errorf("decode tunnel proxy response: %w", err)
 	}
 	return proxy, nil
+}
+
+func (s Service) resolveDefaultSSHGatewayID(ctx context.Context, tenantID string) (string, error) {
+	rows, err := s.DB.Query(ctx, `
+SELECT id, type::text, "isDefault"
+FROM "Gateway"
+WHERE "tenantId" = $1
+  AND type::text = ANY($2)
+ORDER BY "isDefault" DESC, "updatedAt" DESC
+`, tenantID, []string{"MANAGED_SSH", "SSH_BASTION"})
+	if err != nil {
+		return "", fmt.Errorf("list compatible SSH gateways: %w", err)
+	}
+	defer rows.Close()
+
+	type gatewayCandidate struct {
+		ID        string
+		Type      string
+		IsDefault bool
+	}
+
+	candidates := make([]gatewayCandidate, 0, 4)
+	for rows.Next() {
+		var item gatewayCandidate
+		if err := rows.Scan(&item.ID, &item.Type, &item.IsDefault); err != nil {
+			return "", fmt.Errorf("scan compatible SSH gateway: %w", err)
+		}
+		candidates = append(candidates, item)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate compatible SSH gateways: %w", err)
+	}
+	if len(candidates) == 0 {
+		return "", &requestError{
+			status:  400,
+			message: "Gateway routing is mandatory, but no MANAGED_SSH or SSH_BASTION gateway is configured for this tenant.",
+		}
+	}
+
+	selected := candidates[0]
+	for _, candidate := range candidates[1:] {
+		if candidate.IsDefault != selected.IsDefault {
+			continue
+		}
+		if gatewayTypePriority(candidate.Type) < gatewayTypePriority(selected.Type) {
+			selected = candidate
+		}
+	}
+	if selected.IsDefault || len(candidates) == 1 {
+		return selected.ID, nil
+	}
+
+	return "", &requestError{
+		status:  400,
+		message: "Gateway routing is mandatory and multiple compatible SSH gateways exist. Set gatewayId explicitly on the connection or mark one SSH gateway as default.",
+	}
+}
+
+func gatewayTypePriority(gatewayType string) int {
+	switch strings.ToUpper(strings.TrimSpace(gatewayType)) {
+	case "MANAGED_SSH":
+		return 0
+	case "SSH_BASTION":
+		return 1
+	default:
+		return 99
+	}
 }

@@ -478,8 +478,15 @@ func mapConnectionError(err error) string {
 	switch {
 	case strings.Contains(message, "unable to authenticate"), strings.Contains(message, "permission denied"):
 		return "authentication failed"
+	case strings.Contains(message, "no such host"),
+		strings.Contains(message, "name or service not known"),
+		strings.Contains(message, "temporary failure in name resolution"),
+		strings.Contains(message, "unknown host"):
+		return "terminal target DNS lookup failed"
 	case strings.Contains(message, "connection refused"):
 		return "terminal target refused the connection"
+	case strings.Contains(message, "no route to host"), strings.Contains(message, "network is unreachable"):
+		return "terminal target is unreachable"
 	case strings.Contains(message, "i/o timeout"), strings.Contains(message, "deadline exceeded"):
 		return "terminal target timed out"
 	default:
