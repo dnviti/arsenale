@@ -224,6 +224,19 @@ func (s *Store) StartSession(ctx context.Context, params StartSessionParams) (st
 		return "", fmt.Errorf("insert active session: %w", err)
 	}
 
+	if params.RecordingID != "" {
+		if _, err := tx.Exec(
+			ctx,
+			`UPDATE "SessionRecording"
+			    SET "sessionId" = $2
+			  WHERE id = $1`,
+			params.RecordingID,
+			sessionID,
+		); err != nil {
+			return "", fmt.Errorf("link session recording: %w", err)
+		}
+	}
+
 	detailsMap := make(map[string]any, len(params.Metadata)+8)
 	for key, value := range params.Metadata {
 		detailsMap[key] = value

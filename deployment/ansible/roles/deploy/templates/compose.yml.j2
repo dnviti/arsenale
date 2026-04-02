@@ -245,6 +245,7 @@ services:
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
       REDIS_URL: "redis://redis:6379/0"
+      RECORDING_ENABLED: "{{ 'true' if arsenale_recording_enabled else 'false' }}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
       GUACENC_AUTH_TOKEN_FILE: /run/secrets/guacenc_auth_token
@@ -519,6 +520,7 @@ services:
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
       REDIS_URL: "redis://redis:6379/0"
+      RECORDING_ENABLED: "{{ 'true' if arsenale_recording_enabled else 'false' }}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
       GUACENC_AUTH_TOKEN_FILE: /run/secrets/guacenc_auth_token
@@ -1436,6 +1438,7 @@ services:
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
     volumes:
+      - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/guacd:/certs:ro
       - {{ arsenale_cert_dir }}/tunnel-guacd:/tunnel-certs:ro
     depends_on:

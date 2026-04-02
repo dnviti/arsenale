@@ -23,7 +23,7 @@ arsenale_dev_bootstrap_tenant_name: Development Environment
 # Features
 arsenale_self_signup_enabled: false
 arsenale_email_verify_required: false
-arsenale_recording_enabled: false
+arsenale_recording_enabled: true
 arsenale_email_provider: smtp
 
 # Container images (override to use pre-built registry images)

@@ -216,6 +216,20 @@ func completeRecording(ctx context.Context, db *pgxpool.Pool, recordingID string
 		}
 		return nil
 	}
+	if err := ensureRecordingReadable(recording.FilePath, stat); err != nil {
+		if _, updateErr := db.Exec(
+			ctx,
+			`UPDATE "SessionRecording"
+			 SET status = 'ERROR'::"RecordingStatus",
+			     "completedAt" = $2
+			 WHERE id = $1`,
+			recording.ID,
+			time.Now().UTC(),
+		); updateErr != nil {
+			return fmt.Errorf("mark recording error after chmod failure: %w", updateErr)
+		}
+		return fmt.Errorf("ensure recording readable: %w", err)
+	}
 
 	duration := int(time.Since(recording.CreatedAt).Seconds())
 	completedAt := time.Now().UTC()
@@ -242,8 +256,9 @@ func completeRecording(ctx context.Context, db *pgxpool.Pool, recordingID string
 
 	if _, err := db.Exec(
 		ctx,
-		`INSERT INTO "Notification" ("userId", type, message, "read", "relatedId")
-		 VALUES ($1, 'RECORDING_READY'::"NotificationType", $2, false, $3)`,
+		`INSERT INTO "Notification" (id, "userId", type, message, "read", "relatedId", "createdAt")
+		 VALUES ($1, $2, 'RECORDING_READY'::"NotificationType", $3, false, $4, NOW())`,
+		uuid.NewString(),
 		recording.UserID,
 		fmt.Sprintf("Your %s session recording is ready", label),
 		recording.ID,
@@ -251,6 +266,18 @@ func completeRecording(ctx context.Context, db *pgxpool.Pool, recordingID string
 		return fmt.Errorf("create recording notification: %w", err)
 	}
 
+	return nil
+}
+
+func ensureRecordingReadable(filePath string, stat os.FileInfo) error {
+	mode := stat.Mode().Perm()
+	readableMode := mode | 0o044
+	if readableMode == mode {
+		return nil
+	}
+	if err := os.Chmod(filePath, readableMode); err != nil {
+		return err
+	}
 	return nil
 }
 
