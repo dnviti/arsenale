@@ -230,6 +230,12 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	sessionStore := sessions.NewStore(db)
 	tenantAuthService := tenantauth.Service{DB: db}
 	vaultTTL := time.Duration(parseInt(getenv("VAULT_TTL_MINUTES", "30"), 30)) * time.Minute
+	tenantVaultService := tenantvaultapi.Service{
+		DB:        db,
+		Redis:     redisClient,
+		ServerKey: serverEncryptionKey,
+		VaultTTL:  vaultTTL,
+	}
 	orchestratorDNSServers := parseCSV(os.Getenv("ORCHESTRATOR_DNS_SERVERS"))
 	sshSessionService := sshsessions.Service{
 		DB:                  db,
@@ -241,17 +247,18 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		TunnelBrokerURL:     getenv("GO_TUNNEL_BROKER_URL", "http://tunnel-broker:8092"),
 	}
 	authService := authservice.Service{
-		DB:               db,
-		Redis:            redisClient,
-		JWTSecret:        []byte(strings.TrimSpace(jwtSecret)),
-		ServerKey:        serverEncryptionKey,
-		ClientURL:        getenv("CLIENT_URL", "https://localhost:3000"),
-		TokenBinding:     os.Getenv("TOKEN_BINDING_ENABLED") != "false",
-		EmailVerify:      os.Getenv("EMAIL_VERIFY_REQUIRED") == "true",
-		CookieSecure:     authservice.DefaultCookieSecure(),
-		AccessTokenTTL:   parseExpiry(getenv("JWT_EXPIRES_IN", "15m")),
-		RefreshCookieTTL: parseExpiry(getenv("JWT_REFRESH_EXPIRES_IN", "7d")),
-		VaultTTL:         vaultTTL,
+		DB:                 db,
+		Redis:              redisClient,
+		JWTSecret:          []byte(strings.TrimSpace(jwtSecret)),
+		ServerKey:          serverEncryptionKey,
+		ClientURL:          getenv("CLIENT_URL", "https://localhost:3000"),
+		TokenBinding:       os.Getenv("TOKEN_BINDING_ENABLED") != "false",
+		EmailVerify:        os.Getenv("EMAIL_VERIFY_REQUIRED") == "true",
+		CookieSecure:       authservice.DefaultCookieSecure(),
+		AccessTokenTTL:     parseExpiry(getenv("JWT_EXPIRES_IN", "15m")),
+		RefreshCookieTTL:   parseExpiry(getenv("JWT_REFRESH_EXPIRES_IN", "7d")),
+		VaultTTL:           vaultTTL,
+		TenantVaultService: &tenantVaultService,
 	}
 
 	deps := &apiDependencies{
@@ -276,10 +283,11 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		},
 		sessionStore: sessionStore,
 		setupService: setup.Service{
-			DB:        db,
-			Redis:     redisClient,
-			ServerKey: serverEncryptionKey,
-			VaultTTL:  vaultTTL,
+			DB:                 db,
+			Redis:              redisClient,
+			ServerKey:          serverEncryptionKey,
+			VaultTTL:           vaultTTL,
+			TenantVaultService: &tenantVaultService,
 		},
 		publicConfigService: publicconfig.Service{
 			DB: db,
@@ -350,11 +358,12 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			DB: db,
 		},
 		oauthService: oauthapi.Service{
-			DB:        db,
-			Redis:     redisClient,
-			ServerKey: serverEncryptionKey,
-			VaultTTL:  vaultTTL,
-			ClientURL: getenv("CLIENT_URL", "https://localhost:3000"),
+			DB:                 db,
+			Redis:              redisClient,
+			ServerKey:          serverEncryptionKey,
+			VaultTTL:           vaultTTL,
+			ClientURL:          getenv("CLIENT_URL", "https://localhost:3000"),
+			TenantVaultService: &tenantVaultService,
 		},
 		passwordRotationService: passwordrotationapi.Service{
 			DB: db,
@@ -387,6 +396,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			Redis:               redisClient,
 			TenantAuth:          tenantAuthService,
 			AuthService:         &authService,
+			TenantVaultService:  &tenantVaultService,
 			ServerEncryptionKey: serverEncryptionKey,
 		},
 		teamService: teams.Service{
@@ -405,10 +415,11 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			ServerEncryptionKey: serverEncryptionKey,
 		},
 		vaultService: vaultapi.Service{
-			DB:        db,
-			Redis:     redisClient,
-			ServerKey: serverEncryptionKey,
-			VaultTTL:  vaultTTL,
+			DB:                 db,
+			Redis:              redisClient,
+			ServerKey:          serverEncryptionKey,
+			VaultTTL:           vaultTTL,
+			TenantVaultService: &tenantVaultService,
 		},
 		secretsMetaService: secretsmeta.Service{
 			DB:        db,
@@ -417,12 +428,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			VaultTTL:  vaultTTL,
 			ClientURL: getenv("CLIENT_URL", "https://localhost:3000"),
 		},
-		tenantVaultService: tenantvaultapi.Service{
-			DB:        db,
-			Redis:     redisClient,
-			ServerKey: serverEncryptionKey,
-			VaultTTL:  vaultTTL,
-		},
+		tenantVaultService: tenantVaultService,
 		adminService: adminapi.Service{
 			DB:         db,
 			TenantAuth: tenantAuthService,

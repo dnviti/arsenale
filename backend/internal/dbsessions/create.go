@@ -41,6 +41,7 @@ type createRequest struct {
 type databaseSettings struct {
 	Protocol             string `json:"protocol"`
 	DatabaseName         string `json:"databaseName"`
+	PersistExecutionPlan bool   `json:"persistExecutionPlan"`
 	SSLMode              string `json:"sslMode"`
 	OracleConnectionType string `json:"oracleConnectionType"`
 	OracleSID            string `json:"oracleSid"`

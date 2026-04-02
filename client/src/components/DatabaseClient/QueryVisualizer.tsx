@@ -242,7 +242,7 @@ export default function QueryVisualizer({
             {blocked
               ? 'Execution plan is not available for blocked queries.'
               : !sessionId
-                ? 'No active session to fetch execution plan.'
+                ? 'No persisted execution plan is stored for this audit entry. Enable execution plan persistence on the connection to retain plans after the session closes.'
                 : unsupportedProtocols.includes(dbProtocol ?? '')
                   ? `Execution plans are not supported for ${dbProtocol}.`
                   : 'Execution plan is not available.'}

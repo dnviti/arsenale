@@ -13,6 +13,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -50,6 +51,7 @@ func (s Service) ensureTenantSSHKeyPair(ctx context.Context, tenantID string) er
 
 	_, err = s.DB.Exec(ctx, `
 INSERT INTO "SshKeyPair" (
+  id,
   "tenantId",
   "encryptedPrivateKey",
   "privateKeyIV",
@@ -59,9 +61,10 @@ INSERT INTO "SshKeyPair" (
   algorithm,
   "updatedAt"
 )
-VALUES ($1, $2, $3, $4, $5, $6, 'ed25519', NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, 'ed25519', NOW())
 ON CONFLICT ("tenantId") DO NOTHING
 `,
+		uuid.NewString(),
 		tenantID,
 		encrypted.Ciphertext,
 		encrypted.IV,

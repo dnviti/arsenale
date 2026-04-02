@@ -11,6 +11,7 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/authn"
 	"github.com/dnviti/arsenale/backend/internal/authservice"
 	"github.com/dnviti/arsenale/backend/internal/tenantauth"
+	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -20,6 +21,7 @@ type Service struct {
 	Redis               *redis.Client
 	TenantAuth          tenantauth.Service
 	AuthService         *authservice.Service
+	TenantVaultService  *tenantvaultapi.Service
 	ServerEncryptionKey []byte
 }
 

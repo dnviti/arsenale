@@ -22,6 +22,7 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/authn"
 	"github.com/dnviti/arsenale/backend/internal/authservice"
+	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,14 +31,15 @@ import (
 )
 
 type Service struct {
-	DB            *pgxpool.Pool
-	Redis         *redis.Client
-	ServerKey     []byte
-	VaultTTL      time.Duration
-	ClientURL     string
-	HTTPClient    *http.Client
-	Auth          *authservice.Service
-	Authenticator *authn.Authenticator
+	DB                 *pgxpool.Pool
+	Redis              *redis.Client
+	ServerKey          []byte
+	VaultTTL           time.Duration
+	ClientURL          string
+	HTTPClient         *http.Client
+	Auth               *authservice.Service
+	Authenticator      *authn.Authenticator
+	TenantVaultService *tenantvaultapi.Service
 }
 
 type requestError struct {
@@ -912,6 +914,11 @@ func (s Service) storeVaultSession(ctx context.Context, userID string, masterKey
 	recoveryTTL := 7 * 24 * time.Hour
 	if err := s.Redis.Set(ctx, "vault:recovery:"+userID, raw, recoveryTTL).Err(); err != nil {
 		return fmt.Errorf("store vault recovery: %w", err)
+	}
+	if s.TenantVaultService != nil {
+		if err := s.TenantVaultService.ProcessPendingDistributionsForUser(ctx, userID); err != nil {
+			return fmt.Errorf("process pending tenant vault distributions: %w", err)
+		}
 	}
 	return nil
 }

@@ -4,26 +4,28 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
 type Service struct {
-	DB               *pgxpool.Pool
-	Redis            *redis.Client
-	JWTSecret        []byte
-	ServerKey        []byte
-	ClientURL        string
-	TokenBinding     bool
-	EmailVerify      bool
-	RefreshCookie    string
-	CSRFCookie       string
-	BrowserSession   string
-	CookieSecure     bool
-	CookieSameSite   http.SameSite
-	RefreshCookieTTL time.Duration
-	AccessTokenTTL   time.Duration
-	VaultTTL         time.Duration
+	DB                 *pgxpool.Pool
+	Redis              *redis.Client
+	JWTSecret          []byte
+	ServerKey          []byte
+	ClientURL          string
+	TokenBinding       bool
+	EmailVerify        bool
+	RefreshCookie      string
+	CSRFCookie         string
+	BrowserSession     string
+	CookieSecure       bool
+	CookieSameSite     http.SameSite
+	RefreshCookieTTL   time.Duration
+	AccessTokenTTL     time.Duration
+	VaultTTL           time.Duration
+	TenantVaultService *tenantvaultapi.Service
 }
 
 type loginMembership struct {

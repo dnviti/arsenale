@@ -15,6 +15,18 @@ import (
 )
 
 func (s Service) InitTenantVault(ctx context.Context, tenantID, initiatorUserID, ipAddress string) (initResponse, error) {
+	return s.provisionTenantVault(ctx, tenantID, initiatorUserID, ipAddress, true, false)
+}
+
+func (s Service) EnsureTenantVaultProvisioned(ctx context.Context, tenantID, initiatorUserID, ipAddress string) error {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("FEATURE_KEYCHAIN_ENABLED")), "false") {
+		return nil
+	}
+	_, err := s.provisionTenantVault(ctx, tenantID, initiatorUserID, ipAddress, false, true)
+	return err
+}
+
+func (s Service) provisionTenantVault(ctx context.Context, tenantID, initiatorUserID, ipAddress string, requireInitiatorAccess, allowExisting bool) (initResponse, error) {
 	if err := s.ensureAvailable(); err != nil {
 		return initResponse{}, err
 	}
@@ -25,11 +37,25 @@ func (s Service) InitTenantVault(ctx context.Context, tenantID, initiatorUserID,
 		return initResponse{}, err
 	}
 
-	initiatorMasterKey, err := s.requireUserMasterKey(ctx, initiatorUserID)
-	if err != nil {
-		return initResponse{}, err
+	var (
+		initiatorMasterKey []byte
+		err                error
+	)
+	if requireInitiatorAccess {
+		initiatorMasterKey, err = s.requireUserMasterKey(ctx, initiatorUserID)
+		if err != nil {
+			return initResponse{}, err
+		}
+	} else {
+		initiatorMasterKey, err = s.loadUserMasterKey(ctx, initiatorUserID)
+		if err != nil {
+			return initResponse{}, err
+		}
 	}
-	defer zeroBytes(initiatorMasterKey)
+	if len(initiatorMasterKey) > 0 {
+		defer zeroBytes(initiatorMasterKey)
+	}
+	initiatorHasAccess := len(initiatorMasterKey) == 32
 
 	tenantKey, err := generateTenantMasterKey()
 	if err != nil {
@@ -37,9 +63,12 @@ func (s Service) InitTenantVault(ctx context.Context, tenantID, initiatorUserID,
 	}
 	defer zeroBytes(tenantKey)
 
-	encKeyForInitiator, err := encryptTenantKey(tenantKey, initiatorMasterKey)
-	if err != nil {
-		return initResponse{}, fmt.Errorf("encrypt tenant key for initiator: %w", err)
+	var encKeyForInitiator encryptedField
+	if initiatorHasAccess {
+		encKeyForInitiator, err = encryptTenantKey(tenantKey, initiatorMasterKey)
+		if err != nil {
+			return initResponse{}, fmt.Errorf("encrypt tenant key for initiator: %w", err)
+		}
 	}
 
 	var distributedCount, pendingCount int
@@ -49,6 +78,9 @@ func (s Service) InitTenantVault(ctx context.Context, tenantID, initiatorUserID,
 			return err
 		}
 		if hasKey {
+			if allowExisting {
+				return nil
+			}
 			return &requestError{status: http.StatusBadRequest, message: "Tenant vault is already initialized"}
 		}
 
@@ -61,12 +93,25 @@ UPDATE "Tenant"
 			return fmt.Errorf("initialize tenant vault: %w", err)
 		}
 
-		if _, err := tx.Exec(ctx, `
+		if initiatorHasAccess {
+			if _, err := tx.Exec(ctx, `
 INSERT INTO "TenantVaultMember" (
 	id, "tenantId", "userId", "encryptedTenantVaultKey", "tenantVaultKeyIV", "tenantVaultKeyTag", "createdAt"
 ) VALUES ($1, $2, $3, $4, $5, $6, NOW())
 `, uuid.NewString(), tenantID, initiatorUserID, encKeyForInitiator.Ciphertext, encKeyForInitiator.IV, encKeyForInitiator.Tag); err != nil {
-			return fmt.Errorf("create initiator tenant vault membership: %w", err)
+				return fmt.Errorf("create initiator tenant vault membership: %w", err)
+			}
+		} else {
+			escrowKey := deriveEscrowKey(s.ServerKey, tenantID)
+			encKey, encErr := encryptTenantKey(tenantKey, escrowKey)
+			zeroBytes(escrowKey)
+			if encErr != nil {
+				return fmt.Errorf("encrypt tenant key with escrow for initiator: %w", encErr)
+			}
+			if err := s.upsertPendingDistribution(ctx, tx, tenantID, initiatorUserID, initiatorUserID, encKey); err != nil {
+				return err
+			}
+			pendingCount++
 		}
 
 		userIDs, err := s.listAcceptedTenantUsers(ctx, tx, tenantID, initiatorUserID)
@@ -114,15 +159,131 @@ INSERT INTO "TenantVaultMember" (
 		return s.insertAuditLogTx(ctx, tx, initiatorUserID, "TENANT_VAULT_INIT", "Tenant", tenantID, map[string]any{
 			"distributedMembers": distributedCount,
 			"pendingMembers":     pendingCount,
+			"initiatorHasAccess": initiatorHasAccess,
 		}, ipAddress)
 	}); err != nil {
 		return initResponse{}, err
 	}
 
-	if err := s.storeTenantVaultSession(ctx, tenantID, initiatorUserID, tenantKey); err != nil {
-		return initResponse{}, err
+	if initiatorHasAccess && requireInitiatorAccess {
+		if err := s.storeTenantVaultSession(ctx, tenantID, initiatorUserID, tenantKey); err != nil {
+			return initResponse{}, err
+		}
 	}
 	return initResponse{Initialized: true}, nil
+}
+
+func (s Service) ProcessPendingDistributionsForUser(ctx context.Context, userID string) error {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("FEATURE_KEYCHAIN_ENABLED")), "false") {
+		return nil
+	}
+	if strings.TrimSpace(userID) == "" {
+		return nil
+	}
+	if err := s.ensureAvailable(); err != nil {
+		return err
+	}
+
+	masterKey, err := s.loadUserMasterKey(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if len(masterKey) != 32 {
+		return nil
+	}
+	defer zeroBytes(masterKey)
+
+	type pendingDistributionRecord struct {
+		TenantID string
+		Field    encryptedField
+	}
+
+	var pendingDistributions []pendingDistributionRecord
+	if err := s.withTx(ctx, func(tx pgx.Tx) error {
+		rows, err := tx.Query(ctx, `
+SELECT "tenantId", "encryptedTenantVaultKey", "tenantVaultKeyIV", "tenantVaultKeyTag"
+  FROM "PendingVaultKeyDistribution"
+ WHERE "targetUserId" = $1
+ FOR UPDATE
+`, userID)
+		if err != nil {
+			return fmt.Errorf("list pending tenant vault distributions: %w", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var record pendingDistributionRecord
+			if err := rows.Scan(&record.TenantID, &record.Field.Ciphertext, &record.Field.IV, &record.Field.Tag); err != nil {
+				return fmt.Errorf("scan pending tenant vault distribution: %w", err)
+			}
+			pendingDistributions = append(pendingDistributions, record)
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("iterate pending tenant vault distributions: %w", err)
+		}
+
+		for _, record := range pendingDistributions {
+			ok, err := s.isAcceptedTenantMember(ctx, tx, record.TenantID, userID)
+			if err != nil {
+				return err
+			}
+			if !ok {
+				if _, err := tx.Exec(ctx, `
+DELETE FROM "PendingVaultKeyDistribution"
+ WHERE "tenantId" = $1 AND "targetUserId" = $2
+`, record.TenantID, userID); err != nil {
+					return fmt.Errorf("clear stale tenant vault distribution: %w", err)
+				}
+				continue
+			}
+
+			escrowKey := deriveEscrowKey(s.ServerKey, record.TenantID)
+			tenantKey, err := decryptTenantKey(record.Field, escrowKey)
+			zeroBytes(escrowKey)
+			if err != nil {
+				return fmt.Errorf("decrypt pending tenant vault key: %w", err)
+			}
+
+			encKey, err := encryptTenantKey(tenantKey, masterKey)
+			zeroBytes(tenantKey)
+			if err != nil {
+				return fmt.Errorf("encrypt tenant key for pending distribution: %w", err)
+			}
+
+			if _, err := tx.Exec(ctx, `
+INSERT INTO "TenantVaultMember" (
+	id, "tenantId", "userId", "encryptedTenantVaultKey", "tenantVaultKeyIV", "tenantVaultKeyTag", "createdAt"
+) VALUES ($1, $2, $3, $4, $5, $6, NOW())
+ON CONFLICT ("tenantId", "userId")
+DO UPDATE
+      SET "encryptedTenantVaultKey" = EXCLUDED."encryptedTenantVaultKey",
+          "tenantVaultKeyIV" = EXCLUDED."tenantVaultKeyIV",
+          "tenantVaultKeyTag" = EXCLUDED."tenantVaultKeyTag"
+`, uuid.NewString(), record.TenantID, userID, encKey.Ciphertext, encKey.IV, encKey.Tag); err != nil {
+				return fmt.Errorf("upsert tenant vault membership from pending distribution: %w", err)
+			}
+
+			if _, err := tx.Exec(ctx, `
+DELETE FROM "PendingVaultKeyDistribution"
+ WHERE "tenantId" = $1 AND "targetUserId" = $2
+`, record.TenantID, userID); err != nil {
+				return fmt.Errorf("clear fulfilled tenant vault distribution: %w", err)
+			}
+
+			if err := s.insertAuditLogTx(ctx, tx, userID, "TENANT_VAULT_KEY_DISTRIBUTE", "User", userID, map[string]any{
+				"tenantId":  record.TenantID,
+				"pending":   false,
+				"automatic": true,
+			}, ""); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s Service) DistributeTenantKeyToUser(ctx context.Context, tenantID, targetUserID, distributorUserID, ipAddress string) (distributeResponse, error) {

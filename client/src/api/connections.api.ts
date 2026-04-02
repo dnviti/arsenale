@@ -24,6 +24,8 @@ export type OracleRole = 'normal' | 'sysdba' | 'sysoper' | 'sysasm' | 'sysbackup
 export interface DbSettings {
   protocol: DbProtocol;
   databaseName?: string;
+  /** Persist execution plans in DB audit logs for supported SQL protocols. */
+  persistExecutionPlan?: boolean;
   /** Oracle: connection mode (defaults to 'basic' for backward compat). */
   oracleConnectionType?: OracleConnectionType;
   /** Oracle Basic: SID for the target instance (mutually exclusive with serviceName). */

@@ -138,7 +138,12 @@ VALUES ($1, $2, $3, 'OWNER', 'ACCEPTED', true, NOW())
 	created.TeamCount = 0
 
 	if err := s.ensureTenantSSHKeyPair(ctx, created.ID); err != nil {
-		// SSH key generation is best-effort and must not block tenant creation.
+		// Post-commit provisioning is best-effort so the committed tenant remains usable.
+	}
+	if s.TenantVaultService != nil {
+		if err := s.TenantVaultService.EnsureTenantVaultProvisioned(ctx, created.ID, userID, ipAddress); err != nil {
+			// Post-commit provisioning is best-effort so the committed tenant remains usable.
+		}
 	}
 
 	return created, nil

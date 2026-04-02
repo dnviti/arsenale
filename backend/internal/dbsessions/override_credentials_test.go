@@ -56,23 +56,33 @@ func TestShouldUseOwnedDatabaseSessionRuntimeHonorsExplicitDisable(t *testing.T)
 func TestShouldCaptureExecutionPlan(t *testing.T) {
 	testCases := []struct {
 		name     string
+		enabled  bool
 		protocol string
 		want     bool
 	}{
-		{name: "postgres", protocol: "postgresql", want: true},
-		{name: "mysql", protocol: "mysql", want: true},
-		{name: "mariadb alias", protocol: "mariadb", want: true},
-		{name: "mongodb", protocol: "mongodb", want: false},
-		{name: "oracle", protocol: "oracle", want: false},
-		{name: "mssql", protocol: "mssql", want: false},
+		{name: "postgres", enabled: true, protocol: "postgresql", want: true},
+		{name: "mysql", enabled: true, protocol: "mysql", want: true},
+		{name: "mariadb alias", enabled: true, protocol: "mariadb", want: true},
+		{name: "disabled postgres", enabled: false, protocol: "postgresql", want: false},
+		{name: "mongodb", enabled: true, protocol: "mongodb", want: false},
+		{name: "oracle", enabled: true, protocol: "oracle", want: false},
+		{name: "mssql", enabled: true, protocol: "mssql", want: false},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := shouldCaptureExecutionPlan(tc.protocol); got != tc.want {
-				t.Fatalf("shouldCaptureExecutionPlan(%q) = %v, want %v", tc.protocol, got, tc.want)
+			got := tc.enabled && supportsStoredExecutionPlan(tc.protocol)
+			if got != tc.want {
+				t.Fatalf("enabled=%v supportsStoredExecutionPlan(%q) = %v, want %v", tc.enabled, tc.protocol, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseDatabaseSettingsPersistExecutionPlan(t *testing.T) {
+	settings := parseDatabaseSettings([]byte(`{"protocol":"postgresql","databaseName":"arsenale_demo","persistExecutionPlan":true}`))
+	if !settings.PersistExecutionPlan {
+		t.Fatal("parseDatabaseSettings() did not retain persistExecutionPlan")
 	}
 }
 

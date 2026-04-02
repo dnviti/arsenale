@@ -374,6 +374,11 @@ func (s Service) storeVaultSession(ctx context.Context, userID string, masterKey
 	if err := s.Redis.Set(ctx, "vault:recovery:"+userID, raw, 7*24*time.Hour).Err(); err != nil {
 		return fmt.Errorf("store setup vault recovery: %w", err)
 	}
+	if s.TenantVaultService != nil {
+		if err := s.TenantVaultService.ProcessPendingDistributionsForUser(ctx, userID); err != nil {
+			return fmt.Errorf("process pending tenant vault distributions: %w", err)
+		}
+	}
 	return nil
 }
 

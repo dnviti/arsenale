@@ -13,6 +13,7 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/authservice"
 	"github.com/dnviti/arsenale/backend/internal/storage"
 	"github.com/dnviti/arsenale/backend/internal/tenants"
+	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -21,12 +22,13 @@ import (
 var versionPattern = regexp.MustCompile(`^(\w+)\s+([\d]+(?:\.[\d]+)?)`)
 
 type Service struct {
-	DB            *pgxpool.Pool
-	Redis         *redis.Client
-	ServerKey     []byte
-	VaultTTL      time.Duration
-	AuthService   *authservice.Service
-	TenantService *tenants.Service
+	DB                 *pgxpool.Pool
+	Redis              *redis.Client
+	ServerKey          []byte
+	VaultTTL           time.Duration
+	AuthService        *authservice.Service
+	TenantService      *tenants.Service
+	TenantVaultService *tenantvaultapi.Service
 }
 
 type statusResponse struct {

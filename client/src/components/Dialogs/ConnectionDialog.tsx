@@ -3,7 +3,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
   FormControl, InputLabel, Select, MenuItem, Box, Alert,
   FormControlLabel, Checkbox, Accordion, AccordionSummary, AccordionDetails, Typography,
-  ToggleButtonGroup, ToggleButton,
+  ToggleButtonGroup, ToggleButton, Switch,
 } from '@mui/material';
 import { ExpandMore as ExpandMoreIcon, Keyboard, VpnKey, Cloud as CloudIcon } from '@mui/icons-material';
 import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData, DlpPolicy, DbSettings, DbProtocol, OracleConnectionType, OracleRole } from '../../api/connections.api';
@@ -35,6 +35,24 @@ interface ConnectionDialogProps {
   connection?: ConnectionData | null;
   folderId?: string | null;
   teamId?: string | null;
+}
+
+function supportsPersistedExecutionPlans(protocol?: DbProtocol): boolean {
+  return protocol === 'postgresql' || protocol === 'mysql' || protocol === 'oracle' || protocol === 'mssql';
+}
+
+function normalizeDbSettings(settings: Partial<DbSettings>): DbSettings | null {
+  if (!settings.protocol) {
+    return null;
+  }
+
+  return {
+    ...settings,
+    protocol: settings.protocol,
+    persistExecutionPlan: supportsPersistedExecutionPlans(settings.protocol)
+      ? settings.persistExecutionPlan
+      : undefined,
+  };
 }
 
 export default function ConnectionDialog({ open, onClose, connection, folderId, teamId }: ConnectionDialogProps) {
@@ -219,7 +237,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
             vncSettings: Object.keys(vncSettings).length > 0 ? vncSettings : null,
           }),
           ...(type === 'DATABASE' && {
-            dbSettings: dbSettings.protocol ? dbSettings as DbSettings : null,
+            dbSettings: normalizeDbSettings(dbSettings),
           }),
           defaultCredentialMode: (defaultConnectMode as 'saved' | 'domain' | 'prompt') || null,
           ...((type === 'RDP' || type === 'VNC') && {
@@ -263,7 +281,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
             vncSettings,
           }),
           ...(type === 'DATABASE' && dbSettings.protocol && {
-            dbSettings: dbSettings as DbSettings,
+            dbSettings: normalizeDbSettings(dbSettings) as DbSettings,
           }),
           ...(defaultConnectMode ? { defaultCredentialMode: defaultConnectMode as 'saved' | 'domain' | 'prompt' } : {}),
           ...((type === 'RDP' || type === 'VNC') && Object.values(dlpPolicy).some(Boolean) && {
@@ -597,7 +615,14 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                       label="Database Protocol"
                       onChange={(e) => {
                         const proto = e.target.value as DbProtocol;
-                        setDbSettings({ protocol: proto, ...(proto === 'oracle' ? { oracleConnectionType: 'basic' as OracleConnectionType } : {}) });
+                        setDbSettings((prev) => ({
+                          protocol: proto,
+                          databaseName: prev.databaseName,
+                          persistExecutionPlan: supportsPersistedExecutionPlans(proto)
+                            ? prev.persistExecutionPlan
+                            : undefined,
+                          ...(proto === 'oracle' ? { oracleConnectionType: 'basic' as OracleConnectionType } : {}),
+                        }));
                         const protoPorts: Record<string, string> = { postgresql: '5432', mysql: '3306', mongodb: '27017', oracle: '1521', mssql: '1433', db2: '50000' };
                         setPort(protoPorts[proto] ?? '5432');
                       }}
@@ -617,6 +642,25 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                     fullWidth
                     placeholder="e.g. mydb"
                   />
+                  {supportsPersistedExecutionPlans(dbSettings.protocol ?? 'postgresql') && (
+                    <Box>
+                      <FormControlLabel
+                        control={(
+                          <Switch
+                            checked={Boolean(dbSettings.persistExecutionPlan)}
+                            onChange={(e) => setDbSettings((prev) => ({
+                              ...prev,
+                              persistExecutionPlan: e.target.checked || undefined,
+                            }))}
+                          />
+                        )}
+                        label="Persist execution plans in audit logs"
+                      />
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -0.5 }}>
+                        Store the DB proxy execution plan with each audited query so it remains visible after the session closes.
+                      </Typography>
+                    </Box>
+                  )}
                   {dbSettings.protocol === 'oracle' && (
                     <>
                       {/* Connection type toggle: Basic | TNS | Custom */}
@@ -629,6 +673,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                           setDbSettings((prev) => ({
                             protocol: 'oracle' as DbProtocol,
                             databaseName: prev.databaseName,
+                            persistExecutionPlan: prev.persistExecutionPlan,
                             oracleConnectionType: val as OracleConnectionType,
                             oracleRole: prev.oracleRole,
                             // Keep only fields relevant to the selected mode

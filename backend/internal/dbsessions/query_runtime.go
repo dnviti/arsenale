@@ -40,6 +40,7 @@ type ownedQueryRuntime struct {
 	Connection              ownedConnectionSnapshot
 	Target                  *contracts.DatabaseTarget
 	Protocol                string
+	PersistExecutionPlan    bool
 	SessionConfig           *contracts.DatabaseSessionConfig
 	UsesOverrideCredentials bool
 	DatabaseName            string
@@ -199,15 +200,7 @@ func (s Service) executeOwnedQuery(ctx context.Context, userID, tenantID, tenant
 		return contracts.QueryExecutionResponse{}, classifyQueryOperationError(err)
 	}
 
-	var executionPlan any
-	if shouldCaptureExecutionPlan(runtime.Protocol) {
-		if plan, planErr := s.explainViaDBProxy(ctx, runtime.GatewayID, runtime.InstanceID, contracts.QueryPlanRequest{
-			SQL:    sqlText,
-			Target: runtime.Target,
-		}); planErr == nil && plan.Supported {
-			executionPlan = plan
-		}
-	}
+	executionPlan := s.captureStoredExecutionPlan(ctx, runtime, sqlText)
 
 	policies := s.loadMaskingPolicies(ctx, tenantID)
 	maskedColumns := findMaskedColumns(policies, result.Columns, tenantRole, runtime.DatabaseName, primaryTable)
@@ -394,6 +387,7 @@ WHERE id = $1
 		Connection:              connection,
 		Target:                  target,
 		Protocol:                dbProtocol,
+		PersistExecutionPlan:    settings.PersistExecutionPlan,
 		SessionConfig:           sessionConfig,
 		UsesOverrideCredentials: usesOverrideCredentials,
 		DatabaseName:            target.Database,
@@ -418,13 +412,31 @@ func validateWritableQueryAccess(queryType dbQueryType, tenantRole string, expla
 	return &requestError{status: http.StatusForbidden, message: string(queryType) + " queries require OPERATOR role or above"}
 }
 
-func shouldCaptureExecutionPlan(protocol string) bool {
+func supportsStoredExecutionPlan(protocol string) bool {
 	switch normalizeDatabaseProtocol(protocol) {
 	case "postgresql", "mysql":
 		return true
 	default:
 		return false
 	}
+}
+
+func (s Service) captureStoredExecutionPlan(ctx context.Context, runtime *ownedQueryRuntime, sqlText string) any {
+	if runtime == nil || !runtime.PersistExecutionPlan {
+		return nil
+	}
+	if !supportsStoredExecutionPlan(runtime.Protocol) {
+		return contracts.QueryPlanResponse{Supported: false}
+	}
+
+	plan, err := s.explainViaDBProxy(ctx, runtime.GatewayID, runtime.InstanceID, contracts.QueryPlanRequest{
+		SQL:    sqlText,
+		Target: runtime.Target,
+	})
+	if err != nil {
+		return nil
+	}
+	return plan
 }
 
 func classifyQueryOperationError(err error) error {

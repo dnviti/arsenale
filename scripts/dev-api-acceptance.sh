@@ -1844,21 +1844,30 @@ curl --silent --show-error --fail \
   "${api_base}/tenants/${switch_tenant_temp_id}" \
   | jq -e --arg tenant_id "${switch_tenant_temp_id}" '.id == $tenant_id and .name == "Acceptance Switch Tenant Updated" and .defaultSessionTimeoutSeconds == 4200' >/dev/null
 
-echo '2.1.11.1.0.1 /api/secrets tenant-vault init/distribute'
+echo '2.1.11.1.0.1 /api/gateways/ssh-keypair and /api/secrets tenant-vault init/distribute'
+curl --silent --show-error --fail \
+  --cacert "${ca_cert}" \
+  -H "authorization: Bearer ${access_token}" \
+  "${api_base}/gateways/ssh-keypair" \
+  | jq -e '.publicKey != null and .publicKey != "" and .fingerprint != null and .fingerprint != ""' >/dev/null
+
 curl --silent --show-error --fail \
   --cacert "${ca_cert}" \
   -H "authorization: Bearer ${access_token}" \
   "${api_base}/secrets/tenant-vault/status" \
-  | jq -e '.initialized == false and .hasAccess == false' >/dev/null
+  | jq -e '.initialized == true and .hasAccess == true' >/dev/null
 
-curl --silent --show-error --fail \
+tenant_vault_init_status="$(curl --silent --show-error \
   --cacert "${ca_cert}" \
   -H "authorization: Bearer ${access_token}" \
   -H 'content-type: application/json' \
   -X POST \
   -d '{}' \
-  "${api_base}/secrets/tenant-vault/init" \
-  | jq -e '.initialized == true' >/dev/null
+  -o /tmp/tenant-vault-init-response.json \
+  -w '%{http_code}' \
+  "${api_base}/secrets/tenant-vault/init")"
+[[ "${tenant_vault_init_status}" == "400" ]]
+jq -e '.error == "Tenant vault is already initialized"' /tmp/tenant-vault-init-response.json >/dev/null
 
 curl --silent --show-error --fail \
   --cacert "${ca_cert}" \
