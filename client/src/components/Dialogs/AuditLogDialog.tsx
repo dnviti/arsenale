@@ -1,11 +1,35 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, Fragment } from "react";
 import {
-  Dialog, AppBar, Toolbar, Typography, Box, IconButton, Card, CardContent,
-  Table, TableHead, TableBody, TableRow, TableCell, TablePagination,
-  Select, MenuItem, FormControl, InputLabel, TextField, Stack,
-  CircularProgress, Chip, Alert, Collapse, TableSortLabel, InputAdornment,
-  Tooltip, Tabs, Tab,
-} from '@mui/material';
+  Dialog,
+  AppBar,
+  Toolbar,
+  Typography,
+  Box,
+  IconButton,
+  Card,
+  CardContent,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  TablePagination,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  TextField,
+  Stack,
+  CircularProgress,
+  Chip,
+  Alert,
+  Collapse,
+  TableSortLabel,
+  InputAdornment,
+  Tooltip,
+  Tabs,
+  Tab,
+} from "@mui/material";
 import {
   Close as CloseIcon,
   Search as SearchIcon,
@@ -17,24 +41,47 @@ import {
   Storage as StorageIcon,
   List as ListIcon,
   Visibility as VisualizeIcon,
-} from '@mui/icons-material';
-import { getAuditLogs, getAuditGateways, getAuditCountries, AuditLogEntry, AuditAction, AuditLogParams, AuditGateway } from '../../api/audit.api';
+} from "@mui/icons-material";
 import {
-  getDbAuditLogs, getDbAuditConnections, getDbAuditUsers,
-  DbAuditLogEntry, DbAuditLogParams, DbAuditConnection, DbAuditUser, DbQueryType,
-} from '../../api/dbAudit.api';
-import type { AuditStreamSnapshot, DbAuditStreamSnapshot } from '../../api/live.api';
-import { connectSSE } from '../../api/sse';
-import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
-import { useAuthStore } from '../../store/authStore';
-import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS, TARGET_TYPES } from '../Audit/auditConstants';
-import IpGeoCell from '../Audit/IpGeoCell';
-import { SlideUp } from '../common/SlideUp';
-import QueryVisualizer from '../DatabaseClient/QueryVisualizer';
-import RecordingPlayerDialog from '../Recording/RecordingPlayerDialog';
-import { getRecording } from '../../api/recordings.api';
-import type { Recording } from '../../api/recordings.api';
-import { getSessionRecording } from '../../api/audit.api';
+  getAuditLogs,
+  getAuditGateways,
+  getAuditCountries,
+  AuditLogEntry,
+  AuditAction,
+  AuditLogParams,
+  AuditGateway,
+} from "../../api/audit.api";
+import {
+  getDbAuditLogs,
+  getDbAuditConnections,
+  getDbAuditUsers,
+  DbAuditLogEntry,
+  DbAuditLogParams,
+  DbAuditConnection,
+  DbAuditUser,
+  DbQueryType,
+} from "../../api/dbAudit.api";
+import type {
+  AuditStreamSnapshot,
+  DbAuditStreamSnapshot,
+} from "../../api/live.api";
+import { connectSSE } from "../../api/sse";
+import { useUiPreferencesStore } from "../../store/uiPreferencesStore";
+import { useAuthStore } from "../../store/authStore";
+import {
+  ACTION_LABELS,
+  getActionColor,
+  formatDetails,
+  ALL_ACTIONS,
+  TARGET_TYPES,
+} from "../Audit/auditConstants";
+import IpGeoCell from "../Audit/IpGeoCell";
+import { SlideUp } from "../common/SlideUp";
+import QueryVisualizer from "../DatabaseClient/QueryVisualizer";
+import RecordingPlayerDialog from "../Recording/RecordingPlayerDialog";
+import { getRecording } from "../../api/recordings.api";
+import type { Recording } from "../../api/recordings.api";
+import { getSessionRecording } from "../../api/audit.api";
 
 interface AuditLogDialogProps {
   open: boolean;
@@ -43,26 +90,40 @@ interface AuditLogDialogProps {
 }
 
 const QUERY_TYPE_LABELS: Record<DbQueryType, string> = {
-  SELECT: 'SELECT',
-  INSERT: 'INSERT',
-  UPDATE: 'UPDATE',
-  DELETE: 'DELETE',
-  DDL: 'DDL',
-  OTHER: 'Other',
+  SELECT: "SELECT",
+  INSERT: "INSERT",
+  UPDATE: "UPDATE",
+  DELETE: "DELETE",
+  DDL: "DDL",
+  OTHER: "Other",
 };
 
-const QUERY_TYPE_COLORS: Record<DbQueryType, 'default' | 'primary' | 'secondary' | 'error' | 'warning' | 'success' | 'info'> = {
-  SELECT: 'info',
-  INSERT: 'success',
-  UPDATE: 'primary',
-  DELETE: 'error',
-  DDL: 'warning',
-  OTHER: 'default',
+const QUERY_TYPE_COLORS: Record<
+  DbQueryType,
+  "default" | "primary" | "secondary" | "error" | "warning" | "success" | "info"
+> = {
+  SELECT: "info",
+  INSERT: "success",
+  UPDATE: "primary",
+  DELETE: "error",
+  DDL: "warning",
+  OTHER: "default",
 };
 
-const ALL_QUERY_TYPES: DbQueryType[] = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'DDL', 'OTHER'];
+const ALL_QUERY_TYPES: DbQueryType[] = [
+  "SELECT",
+  "INSERT",
+  "UPDATE",
+  "DELETE",
+  "DDL",
+  "OTHER",
+];
 
-export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLogDialogProps) {
+export default function AuditLogDialog({
+  open,
+  onClose,
+  onGeoIpClick,
+}: AuditLogDialogProps) {
   const user = useAuthStore((s) => s.user);
   const accessToken = useAuthStore((s) => s.accessToken);
   const hasTenant = Boolean(user?.tenantId);
@@ -72,7 +133,9 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
   const auditLogGatewayId = useUiPreferencesStore((s) => s.auditLogGatewayId);
   const auditLogSortBy = useUiPreferencesStore((s) => s.auditLogSortBy);
   const auditLogSortOrder = useUiPreferencesStore((s) => s.auditLogSortOrder);
-  const autoRefreshPaused = useUiPreferencesStore((s) => s.auditLogAutoRefreshPaused);
+  const autoRefreshPaused = useUiPreferencesStore(
+    (s) => s.auditLogAutoRefreshPaused,
+  );
   const auditLogTab = useUiPreferencesStore((s) => s.auditLogDialogTab);
   const setUiPref = useUiPreferencesStore((s) => s.set);
 
@@ -81,16 +144,16 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [ipAddress, setIpAddress] = useState('');
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [ipAddress, setIpAddress] = useState("");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(auditLogSearch);
   const [gateways, setGateways] = useState<AuditGateway[]>([]);
   const [countries, setCountries] = useState<string[]>([]);
-  const [geoCountry, setGeoCountry] = useState('');
+  const [geoCountry, setGeoCountry] = useState("");
   const [flaggedOnly, setFlaggedOnly] = useState(false);
 
   // ---- SQL Audit Log state ----
@@ -99,32 +162,37 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
   const [dbPage, setDbPage] = useState(0);
   const [dbRowsPerPage, setDbRowsPerPage] = useState(25);
   const [dbLoading, setDbLoading] = useState(false);
-  const [dbError, setDbError] = useState('');
-  const [dbSearch, setDbSearch] = useState('');
-  const [dbQueryType, setDbQueryType] = useState('');
-  const [dbConnectionId, setDbConnectionId] = useState('');
-  const [dbUserId, setDbUserId] = useState('');
-  const [dbBlocked, setDbBlocked] = useState('');
-  const [dbStartDate, setDbStartDate] = useState('');
-  const [dbEndDate, setDbEndDate] = useState('');
+  const [dbError, setDbError] = useState("");
+  const [dbSearch, setDbSearch] = useState("");
+  const [dbQueryType, setDbQueryType] = useState("");
+  const [dbConnectionId, setDbConnectionId] = useState("");
+  const [dbUserId, setDbUserId] = useState("");
+  const [dbBlocked, setDbBlocked] = useState("");
+  const [dbStartDate, setDbStartDate] = useState("");
+  const [dbEndDate, setDbEndDate] = useState("");
   const [dbExpandedRowId, setDbExpandedRowId] = useState<string | null>(null);
   const [dbConnections, setDbConnections] = useState<DbAuditConnection[]>([]);
   const [dbUsers, setDbUsers] = useState<DbAuditUser[]>([]);
 
   // ---- Query Visualizer state ----
-  const [visualizerEntry, setVisualizerEntry] = useState<DbAuditLogEntry | null>(null);
+  const [visualizerEntry, setVisualizerEntry] =
+    useState<DbAuditLogEntry | null>(null);
 
   // ---- Recording Player state ----
-  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(null);
+  const [selectedRecording, setSelectedRecording] = useState<Recording | null>(
+    null,
+  );
   const [recordingPlayerOpen, setRecordingPlayerOpen] = useState(false);
-  const [loadingRecordingId, setLoadingRecordingId] = useState<string | null>(null);
+  const [loadingRecordingId, setLoadingRecordingId] = useState<string | null>(
+    null,
+  );
 
-  const activeTab = auditLogTab || 'general';
+  const activeTab = auditLogTab || "general";
 
   // Debounce search input -> store
   useEffect(() => {
     const timer = setTimeout(() => {
-      setUiPref('auditLogSearch', searchInput);
+      setUiPref("auditLogSearch", searchInput);
       setPage(0);
     }, 300);
     return () => clearTimeout(timer);
@@ -132,13 +200,13 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
-    setError('');
+    setError("");
     try {
       const params: AuditLogParams = {
         page: page + 1,
         limit: rowsPerPage,
-        sortBy: auditLogSortBy as 'createdAt' | 'action',
-        sortOrder: auditLogSortOrder as 'asc' | 'desc',
+        sortBy: auditLogSortBy as "createdAt" | "action",
+        sortOrder: auditLogSortOrder as "asc" | "desc",
       };
       if (auditLogAction) params.action = auditLogAction as AuditAction;
       if (auditLogSearch) params.search = auditLogSearch;
@@ -154,28 +222,42 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
       setLogs(result.data);
       setTotal(result.total);
     } catch {
-      setError('Failed to load audit logs');
+      setError("Failed to load audit logs");
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, auditLogAction, auditLogSearch, auditLogTargetType, auditLogGatewayId, ipAddress, geoCountry, startDate, endDate, auditLogSortBy, auditLogSortOrder, flaggedOnly]);
+  }, [
+    page,
+    rowsPerPage,
+    auditLogAction,
+    auditLogSearch,
+    auditLogTargetType,
+    auditLogGatewayId,
+    ipAddress,
+    geoCountry,
+    startDate,
+    endDate,
+    auditLogSortBy,
+    auditLogSortOrder,
+    flaggedOnly,
+  ]);
 
   const fetchDbLogs = useCallback(async () => {
     setDbLoading(true);
-    setDbError('');
+    setDbError("");
     try {
       const params: DbAuditLogParams = {
         page: dbPage + 1,
         limit: dbRowsPerPage,
-        sortBy: 'createdAt',
-        sortOrder: 'desc',
+        sortBy: "createdAt",
+        sortOrder: "desc",
       };
       if (dbSearch) params.search = dbSearch;
       if (dbQueryType) params.queryType = dbQueryType as DbQueryType;
       if (dbConnectionId) params.connectionId = dbConnectionId;
       if (dbUserId) params.userId = dbUserId;
-      if (dbBlocked === 'true') params.blocked = true;
-      if (dbBlocked === 'false') params.blocked = false;
+      if (dbBlocked === "true") params.blocked = true;
+      if (dbBlocked === "false") params.blocked = false;
       if (dbStartDate) params.startDate = dbStartDate;
       if (dbEndDate) params.endDate = dbEndDate;
 
@@ -183,57 +265,82 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
       setDbLogs(result.data);
       setDbTotal(result.total);
     } catch {
-      setDbError('Failed to load SQL audit logs');
+      setDbError("Failed to load SQL audit logs");
     } finally {
       setDbLoading(false);
     }
-  }, [dbPage, dbRowsPerPage, dbSearch, dbQueryType, dbConnectionId, dbUserId, dbBlocked, dbStartDate, dbEndDate]);
+  }, [
+    dbPage,
+    dbRowsPerPage,
+    dbSearch,
+    dbQueryType,
+    dbConnectionId,
+    dbUserId,
+    dbBlocked,
+    dbStartDate,
+    dbEndDate,
+  ]);
 
   useEffect(() => {
-    if (open && activeTab === 'general') {
+    if (open && activeTab === "general") {
       fetchLogs();
-      getAuditGateways().then(setGateways).catch(() => {});
-      getAuditCountries().then(setCountries).catch(() => {});
+      getAuditGateways()
+        .then(setGateways)
+        .catch(() => {});
+      getAuditCountries()
+        .then(setCountries)
+        .catch(() => {});
     }
   }, [open, fetchLogs, activeTab]);
 
   useEffect(() => {
-    if (open && activeTab === 'sql' && hasTenant) {
+    if (open && activeTab === "sql" && hasTenant) {
       fetchDbLogs();
-      getDbAuditConnections().then(setDbConnections).catch(() => {});
-      getDbAuditUsers().then(setDbUsers).catch(() => {});
+      getDbAuditConnections()
+        .then(setDbConnections)
+        .catch(() => {});
+      getDbAuditUsers()
+        .then(setDbUsers)
+        .catch(() => {});
     }
   }, [open, fetchDbLogs, activeTab, hasTenant]);
 
   useEffect(() => {
-    if (!open || !accessToken || autoRefreshPaused || activeTab !== 'general' || page !== 0) return undefined;
+    if (
+      !open ||
+      !accessToken ||
+      autoRefreshPaused ||
+      activeTab !== "general" ||
+      page !== 0
+    )
+      return undefined;
 
     const params = new URLSearchParams({
-      page: '1',
+      page: "1",
       limit: String(rowsPerPage),
       sortBy: auditLogSortBy as string,
       sortOrder: auditLogSortOrder as string,
     });
-    if (auditLogAction) params.set('action', auditLogAction);
-    if (auditLogSearch) params.set('search', auditLogSearch);
-    if (auditLogTargetType) params.set('targetType', auditLogTargetType);
-    if (auditLogGatewayId) params.set('gatewayId', auditLogGatewayId);
-    if (ipAddress) params.set('ipAddress', ipAddress);
-    if (geoCountry) params.set('geoCountry', geoCountry);
-    if (startDate) params.set('startDate', startDate);
-    if (endDate) params.set('endDate', endDate);
-    if (flaggedOnly) params.set('flaggedOnly', 'true');
+    if (auditLogAction) params.set("action", auditLogAction);
+    if (auditLogSearch) params.set("search", auditLogSearch);
+    if (auditLogTargetType) params.set("targetType", auditLogTargetType);
+    if (auditLogGatewayId) params.set("gatewayId", auditLogGatewayId);
+    if (ipAddress) params.set("ipAddress", ipAddress);
+    if (geoCountry) params.set("geoCountry", geoCountry);
+    if (startDate) params.set("startDate", startDate);
+    if (endDate) params.set("endDate", endDate);
+    if (flaggedOnly) params.set("flaggedOnly", "true");
 
     return connectSSE({
       url: `/api/audit/stream?${params.toString()}`,
       accessToken,
       onEvent: ({ event, data }) => {
-        if (event !== 'snapshot') return;
+        if (event !== "snapshot") return;
         const snapshot = data as AuditStreamSnapshot;
         setLogs(snapshot.data);
         setTotal(snapshot.total);
         setLoading(false);
-        setError('');
+        setError("");
       },
     });
   }, [
@@ -257,32 +364,41 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
   ]);
 
   useEffect(() => {
-    if (!open || !accessToken || !hasTenant || autoRefreshPaused || activeTab !== 'sql' || dbPage !== 0) return undefined;
+    if (
+      !open ||
+      !accessToken ||
+      !hasTenant ||
+      autoRefreshPaused ||
+      activeTab !== "sql" ||
+      dbPage !== 0
+    )
+      return undefined;
 
     const params = new URLSearchParams({
-      page: '1',
+      page: "1",
       limit: String(dbRowsPerPage),
-      sortBy: 'createdAt',
-      sortOrder: 'desc',
+      sortBy: "createdAt",
+      sortOrder: "desc",
     });
-    if (dbSearch) params.set('search', dbSearch);
-    if (dbQueryType) params.set('queryType', dbQueryType);
-    if (dbConnectionId) params.set('connectionId', dbConnectionId);
-    if (dbUserId) params.set('userId', dbUserId);
-    if (dbBlocked === 'true' || dbBlocked === 'false') params.set('blocked', dbBlocked);
-    if (dbStartDate) params.set('startDate', dbStartDate);
-    if (dbEndDate) params.set('endDate', dbEndDate);
+    if (dbSearch) params.set("search", dbSearch);
+    if (dbQueryType) params.set("queryType", dbQueryType);
+    if (dbConnectionId) params.set("connectionId", dbConnectionId);
+    if (dbUserId) params.set("userId", dbUserId);
+    if (dbBlocked === "true" || dbBlocked === "false")
+      params.set("blocked", dbBlocked);
+    if (dbStartDate) params.set("startDate", dbStartDate);
+    if (dbEndDate) params.set("endDate", dbEndDate);
 
     return connectSSE({
       url: `/api/db-audit/logs/stream?${params.toString()}`,
       accessToken,
       onEvent: ({ event, data }) => {
-        if (event !== 'snapshot') return;
+        if (event !== "snapshot") return;
         const snapshot = data as DbAuditStreamSnapshot;
         setDbLogs(snapshot.data);
         setDbTotal(snapshot.total);
         setDbLoading(false);
-        setDbError('');
+        setDbError("");
       },
     });
   }, [
@@ -311,22 +427,44 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
     setPage(0);
   };
 
-  const handleSort = (field: 'createdAt' | 'action') => {
+  const handleSort = (field: "createdAt" | "action") => {
     if (auditLogSortBy === field) {
-      setUiPref('auditLogSortOrder', auditLogSortOrder === 'asc' ? 'desc' : 'asc');
+      setUiPref(
+        "auditLogSortOrder",
+        auditLogSortOrder === "asc" ? "desc" : "asc",
+      );
     } else {
-      setUiPref('auditLogSortBy', field);
-      setUiPref('auditLogSortOrder', field === 'createdAt' ? 'desc' : 'asc');
+      setUiPref("auditLogSortBy", field);
+      setUiPref("auditLogSortOrder", field === "createdAt" ? "desc" : "asc");
     }
     setPage(0);
   };
 
-  const hasActiveFilters = auditLogAction || auditLogSearch || auditLogTargetType || auditLogGatewayId || ipAddress || geoCountry || startDate || endDate || flaggedOnly;
-  const hasDbActiveFilters = dbSearch || dbQueryType || dbConnectionId || dbUserId || dbBlocked || dbStartDate || dbEndDate;
+  const hasActiveFilters =
+    auditLogAction ||
+    auditLogSearch ||
+    auditLogTargetType ||
+    auditLogGatewayId ||
+    ipAddress ||
+    geoCountry ||
+    startDate ||
+    endDate ||
+    flaggedOnly;
+  const hasDbActiveFilters =
+    dbSearch ||
+    dbQueryType ||
+    dbConnectionId ||
+    dbUserId ||
+    dbBlocked ||
+    dbStartDate ||
+    dbEndDate;
 
   const handleViewRecording = async (log: AuditLogEntry) => {
-    const sessionId = (log.details as Record<string, unknown>)?.sessionId as string | undefined;
-    const recordingId = (log.details as Record<string, unknown>)?.recordingId as string | undefined;
+    const sessionId = (log.details as Record<string, unknown>)?.sessionId as
+      | string
+      | undefined;
+    const recordingId = (log.details as Record<string, unknown>)
+      ?.recordingId as string | undefined;
     if (!sessionId && !recordingId) return;
 
     setLoadingRecordingId(log.id);
@@ -355,43 +493,56 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
       onClose={onClose}
       TransitionComponent={SlideUp}
     >
-      <AppBar position="static" sx={{ position: 'relative' }}>
+      <AppBar position="static" sx={{ position: "relative" }}>
         <Toolbar variant="dense">
-          <IconButton edge="start" color="inherit" onClick={onClose} sx={{ mr: 1 }}>
+          <IconButton
+            edge="start"
+            color="inherit"
+            onClick={onClose}
+            sx={{ mr: 1 }}
+          >
             <CloseIcon />
           </IconButton>
-          <Typography variant="h6" sx={{ flex: 1 }}>Activity Log</Typography>
-          <Tooltip title={autoRefreshPaused ? 'Resume live updates' : 'Pause live updates'}>
+          <Typography variant="h6" sx={{ flex: 1 }}>
+            Activity Log
+          </Typography>
+          <Tooltip
+            title={
+              autoRefreshPaused ? "Resume live updates" : "Pause live updates"
+            }
+          >
             <IconButton
               color="inherit"
-              onClick={() => setUiPref('auditLogAutoRefreshPaused', !autoRefreshPaused)}
+              onClick={() =>
+                setUiPref("auditLogAutoRefreshPaused", !autoRefreshPaused)
+              }
               sx={{ mr: 0.5 }}
             >
               {autoRefreshPaused ? <PlayArrowIcon /> : <PauseIcon />}
             </IconButton>
           </Tooltip>
           <Chip
-            label={autoRefreshPaused ? 'Paused' : 'Live'}
+            label={autoRefreshPaused ? "Paused" : "Live"}
             size="small"
-            color={autoRefreshPaused ? 'default' : 'success'}
-            variant={autoRefreshPaused ? 'outlined' : 'filled'}
+            color={autoRefreshPaused ? "default" : "success"}
+            variant={autoRefreshPaused ? "outlined" : "filled"}
             sx={{
-              color: autoRefreshPaused ? 'inherit' : undefined,
+              color: autoRefreshPaused ? "inherit" : undefined,
               fontWeight: 600,
               ...(!autoRefreshPaused && {
-                '& .MuiChip-label::before': {
+                "& .MuiChip-label::before": {
                   content: '""',
-                  display: 'inline-block',
+                  display: "inline-block",
                   width: 6,
                   height: 6,
-                  borderRadius: '50%',
-                  backgroundColor: 'currentColor',
+                  borderRadius: "50%",
+                  backgroundColor: "currentColor",
                   mr: 0.75,
-                  animation: 'auditLivePulse 1.5s ease-in-out infinite',
+                  animation: "auditLivePulse 1.5s ease-in-out infinite",
                 },
-                '@keyframes auditLivePulse': {
-                  '0%, 100%': { opacity: 1 },
-                  '50%': { opacity: 0.3 },
+                "@keyframes auditLivePulse": {
+                  "0%, 100%": { opacity: 1 },
+                  "50%": { opacity: 0.3 },
                 },
               }),
             }}
@@ -400,22 +551,34 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
         {hasTenant && (
           <Tabs
             value={activeTab}
-            onChange={(_, v) => setUiPref('auditLogDialogTab', v as string)}
-            sx={{ bgcolor: 'background.paper', minHeight: 36 }}
+            onChange={(_, v) => setUiPref("auditLogDialogTab", v as string)}
+            sx={{ bgcolor: "background.paper", minHeight: 36 }}
             textColor="primary"
             indicatorColor="primary"
           >
-            <Tab value="general" label="General" icon={<ListIcon />} iconPosition="start" sx={{ minHeight: 36, textTransform: 'none' }} />
-            <Tab value="sql" label="SQL Audit" icon={<StorageIcon />} iconPosition="start" sx={{ minHeight: 36, textTransform: 'none' }} />
+            <Tab
+              value="general"
+              label="General"
+              icon={<ListIcon />}
+              iconPosition="start"
+              sx={{ minHeight: 36, textTransform: "none" }}
+            />
+            <Tab
+              value="sql"
+              label="SQL Audit"
+              icon={<StorageIcon />}
+              iconPosition="start"
+              sx={{ minHeight: 36, textTransform: "none" }}
+            />
           </Tabs>
         )}
       </AppBar>
 
-      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-        {activeTab === 'general' && (
+      <Box sx={{ flex: 1, overflow: "auto", p: 2 }}>
+        {activeTab === "general" && (
           <>
             <Card sx={{ mb: 2 }}>
-              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+              <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
                 <TextField
                   size="small"
                   fullWidth
@@ -425,20 +588,28 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                   slotProps={{
                     input: {
                       startAdornment: (
-                        <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
                       ),
                     },
                   }}
                   sx={{ mb: 1.5 }}
                 />
-                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Stack
+                  direction="row"
+                  spacing={2}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                >
                   <FormControl size="small" sx={{ minWidth: 200 }}>
                     <InputLabel>Action</InputLabel>
                     <Select
                       value={auditLogAction}
                       label="Action"
                       onChange={(e) => {
-                        setUiPref('auditLogAction', e.target.value);
+                        setUiPref("auditLogAction", e.target.value);
                         setPage(0);
                       }}
                     >
@@ -456,13 +627,15 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                       value={auditLogTargetType}
                       label="Target Type"
                       onChange={(e) => {
-                        setUiPref('auditLogTargetType', e.target.value);
+                        setUiPref("auditLogTargetType", e.target.value);
                         setPage(0);
                       }}
                     >
                       <MenuItem value="">All Types</MenuItem>
                       {TARGET_TYPES.map((type) => (
-                        <MenuItem key={type} value={type}>{type}</MenuItem>
+                        <MenuItem key={type} value={type}>
+                          {type}
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -473,13 +646,15 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                         value={auditLogGatewayId}
                         label="Gateway"
                         onChange={(e) => {
-                          setUiPref('auditLogGatewayId', e.target.value);
+                          setUiPref("auditLogGatewayId", e.target.value);
                           setPage(0);
                         }}
                       >
                         <MenuItem value="">All Gateways</MenuItem>
                         {gateways.map((gw) => (
-                          <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
+                          <MenuItem key={gw.id} value={gw.id}>
+                            {gw.name}
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
@@ -497,7 +672,9 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                       >
                         <MenuItem value="">All Countries</MenuItem>
                         {countries.map((c) => (
-                          <MenuItem key={c} value={c}>{c}</MenuItem>
+                          <MenuItem key={c} value={c}>
+                            {c}
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
@@ -506,7 +683,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     size="small"
                     label="IP Address"
                     value={ipAddress}
-                    onChange={(e) => { setIpAddress(e.target.value); setPage(0); }}
+                    onChange={(e) => {
+                      setIpAddress(e.target.value);
+                      setPage(0);
+                    }}
                     sx={{ width: 160 }}
                   />
                   <TextField
@@ -514,7 +694,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     type="date"
                     label="From"
                     value={startDate}
-                    onChange={(e) => { setStartDate(e.target.value); setPage(0); }}
+                    onChange={(e) => {
+                      setStartDate(e.target.value);
+                      setPage(0);
+                    }}
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                   <TextField
@@ -522,7 +705,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     type="date"
                     label="To"
                     value={endDate}
-                    onChange={(e) => { setEndDate(e.target.value); setPage(0); }}
+                    onChange={(e) => {
+                      setEndDate(e.target.value);
+                      setPage(0);
+                    }}
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                   <Tooltip title="Show only flagged entries (e.g. impossible travel)">
@@ -530,29 +716,36 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                       icon={<WarningIcon fontSize="small" />}
                       label="Flagged"
                       size="small"
-                      color={flaggedOnly ? 'warning' : 'default'}
-                      variant={flaggedOnly ? 'filled' : 'outlined'}
-                      onClick={() => { setFlaggedOnly(!flaggedOnly); setPage(0); }}
-                      sx={{ cursor: 'pointer' }}
+                      color={flaggedOnly ? "warning" : "default"}
+                      variant={flaggedOnly ? "filled" : "outlined"}
+                      onClick={() => {
+                        setFlaggedOnly(!flaggedOnly);
+                        setPage(0);
+                      }}
+                      sx={{ cursor: "pointer" }}
                     />
                   </Tooltip>
                 </Stack>
               </CardContent>
             </Card>
 
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            {error && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+              </Alert>
+            )}
 
             <Card>
               {loading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
                   <CircularProgress />
                 </Box>
               ) : logs.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Box sx={{ textAlign: "center", py: 6 }}>
                   <Typography color="text.secondary">
                     {hasActiveFilters
-                      ? 'No logs match your filters'
-                      : 'No activity recorded yet'}
+                      ? "No logs match your filters"
+                      : "No activity recorded yet"}
                   </Typography>
                 </Box>
               ) : (
@@ -563,18 +756,26 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                         <TableCell padding="checkbox" />
                         <TableCell>
                           <TableSortLabel
-                            active={auditLogSortBy === 'createdAt'}
-                            direction={auditLogSortBy === 'createdAt' ? (auditLogSortOrder as 'asc' | 'desc') : 'asc'}
-                            onClick={() => handleSort('createdAt')}
+                            active={auditLogSortBy === "createdAt"}
+                            direction={
+                              auditLogSortBy === "createdAt"
+                                ? (auditLogSortOrder as "asc" | "desc")
+                                : "asc"
+                            }
+                            onClick={() => handleSort("createdAt")}
                           >
                             Date/Time
                           </TableSortLabel>
                         </TableCell>
                         <TableCell>
                           <TableSortLabel
-                            active={auditLogSortBy === 'action'}
-                            direction={auditLogSortBy === 'action' ? (auditLogSortOrder as 'asc' | 'desc') : 'asc'}
-                            onClick={() => handleSort('action')}
+                            active={auditLogSortBy === "action"}
+                            direction={
+                              auditLogSortBy === "action"
+                                ? (auditLogSortOrder as "asc" | "desc")
+                                : "asc"
+                            }
+                            onClick={() => handleSort("action")}
                           >
                             Action
                           </TableSortLabel>
@@ -591,77 +792,168 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                           <Fragment key={log.id}>
                             <TableRow
                               hover
-                              onClick={() => setExpandedRowId(isExpanded ? null : log.id)}
-                              sx={{ cursor: 'pointer', '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }}
+                              onClick={() =>
+                                setExpandedRowId(isExpanded ? null : log.id)
+                              }
+                              sx={{
+                                cursor: "pointer",
+                                "& > *": {
+                                  borderBottom: isExpanded
+                                    ? "unset"
+                                    : undefined,
+                                },
+                              }}
                             >
                               <TableCell padding="checkbox">
                                 <IconButton size="small">
-                                  {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
+                                  {isExpanded ? (
+                                    <CollapseIcon />
+                                  ) : (
+                                    <ExpandIcon />
+                                  )}
                                 </IconButton>
                               </TableCell>
-                              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                              <TableCell sx={{ whiteSpace: "nowrap" }}>
                                 {new Date(log.createdAt).toLocaleString()}
                               </TableCell>
                               <TableCell>
-                                <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+                                <Box
+                                  sx={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 0.5,
+                                  }}
+                                >
                                   <Chip
-                                    label={ACTION_LABELS[log.action] || log.action}
+                                    label={
+                                      ACTION_LABELS[log.action] || log.action
+                                    }
                                     color={getActionColor(log.action)}
                                     size="small"
                                   />
-                                  {log.flags?.includes('IMPOSSIBLE_TRAVEL') && (
+                                  {log.flags?.includes("IMPOSSIBLE_TRAVEL") && (
                                     <Tooltip title="Impossible travel detected">
-                                      <WarningIcon color="warning" fontSize="small" />
+                                      <WarningIcon
+                                        color="warning"
+                                        fontSize="small"
+                                      />
                                     </Tooltip>
                                   )}
-                                  {['SESSION_START', 'SESSION_END', 'SESSION_TERMINATED_POLICY_VIOLATION'].includes(log.action) &&
-                                    Boolean((log.details as Record<string, unknown>)?.sessionId) && (
-                                    <Tooltip title="View Recording">
-                                      <IconButton
-                                        size="small"
-                                        onClick={(e) => { e.stopPropagation(); handleViewRecording(log); }}
-                                        disabled={loadingRecordingId === log.id}
-                                      >
-                                        {loadingRecordingId === log.id ? <CircularProgress size={16} /> : <PlayArrowIcon fontSize="small" />}
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
+                                  {[
+                                    "SESSION_START",
+                                    "SESSION_END",
+                                    "SESSION_TERMINATED_POLICY_VIOLATION",
+                                  ].includes(log.action) &&
+                                    Boolean(
+                                      (log.details as Record<string, unknown>)
+                                        ?.sessionId,
+                                    ) && (
+                                      <Tooltip title="View Recording">
+                                        <IconButton
+                                          size="small"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleViewRecording(log);
+                                          }}
+                                          disabled={
+                                            loadingRecordingId === log.id
+                                          }
+                                        >
+                                          {loadingRecordingId === log.id ? (
+                                            <CircularProgress size={16} />
+                                          ) : (
+                                            <PlayArrowIcon fontSize="small" />
+                                          )}
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
                                 </Box>
                               </TableCell>
                               <TableCell>
                                 {log.targetType
-                                  ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ''}`
-                                  : '\u2014'}
+                                  ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ""}`
+                                  : "\u2014"}
                               </TableCell>
                               <TableCell>
-                                <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} onGeoIpClick={onGeoIpClick} />
+                                <IpGeoCell
+                                  ipAddress={log.ipAddress}
+                                  geoCountry={log.geoCountry}
+                                  geoCity={log.geoCity}
+                                  onGeoIpClick={onGeoIpClick}
+                                />
                               </TableCell>
-                              <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <TableCell
+                                sx={{
+                                  maxWidth: 300,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
                                 {formatDetails(log.details)}
                               </TableCell>
                             </TableRow>
                             <TableRow>
-                              <TableCell colSpan={6} sx={{ py: 0, borderBottom: isExpanded ? undefined : 'none' }}>
-                                <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                              <TableCell
+                                colSpan={6}
+                                sx={{
+                                  py: 0,
+                                  borderBottom: isExpanded ? undefined : "none",
+                                }}
+                              >
+                                <Collapse
+                                  in={isExpanded}
+                                  timeout="auto"
+                                  unmountOnExit
+                                >
                                   <Box sx={{ py: 2, px: 3 }}>
-                                    {log.details && typeof log.details === 'object' && Object.keys(log.details).length > 0 ? (
-                                      <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 1, maxWidth: 600 }}>
-                                        {Object.entries(log.details).map(([key, value]) => (
-                                          <Fragment key={key}>
-                                            <Typography variant="body2" fontWeight={600} color="text.secondary">
-                                              {key}
-                                            </Typography>
-                                            <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-                                              {Array.isArray(value) ? value.join(', ') : String(value)}
-                                            </Typography>
-                                          </Fragment>
-                                        ))}
+                                    {log.details &&
+                                    typeof log.details === "object" &&
+                                    Object.keys(log.details).length > 0 ? (
+                                      <Box
+                                        sx={{
+                                          display: "grid",
+                                          gridTemplateColumns: "auto 1fr",
+                                          gap: 1,
+                                          maxWidth: 600,
+                                        }}
+                                      >
+                                        {Object.entries(log.details).map(
+                                          ([key, value]) => (
+                                            <Fragment key={key}>
+                                              <Typography
+                                                variant="body2"
+                                                fontWeight={600}
+                                                color="text.secondary"
+                                              >
+                                                {key}
+                                              </Typography>
+                                              <Typography
+                                                variant="body2"
+                                                sx={{ wordBreak: "break-all" }}
+                                              >
+                                                {Array.isArray(value)
+                                                  ? value.join(", ")
+                                                  : String(value)}
+                                              </Typography>
+                                            </Fragment>
+                                          ),
+                                        )}
                                       </Box>
                                     ) : (
-                                      <Typography variant="body2" color="text.secondary">No additional details</Typography>
+                                      <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                      >
+                                        No additional details
+                                      </Typography>
                                     )}
                                     {log.targetId && (
-                                      <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                                      <Typography
+                                        variant="caption"
+                                        color="text.secondary"
+                                        sx={{ mt: 1, display: "block" }}
+                                      >
                                         Full Target ID: {log.targetId}
                                       </Typography>
                                     )}
@@ -689,36 +981,52 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
           </>
         )}
 
-        {activeTab === 'sql' && hasTenant && (
+        {activeTab === "sql" && hasTenant && (
           <>
             <Card sx={{ mb: 2 }}>
-              <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
+              <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
                 <TextField
                   size="small"
                   fullWidth
                   placeholder="Search SQL queries, tables, or block reasons..."
                   value={dbSearch}
-                  onChange={(e) => { setDbSearch(e.target.value); setDbPage(0); }}
+                  onChange={(e) => {
+                    setDbSearch(e.target.value);
+                    setDbPage(0);
+                  }}
                   slotProps={{
                     input: {
                       startAdornment: (
-                        <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
+                        <InputAdornment position="start">
+                          <SearchIcon fontSize="small" />
+                        </InputAdornment>
                       ),
                     },
                   }}
                   sx={{ mb: 1.5 }}
                 />
-                <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+                <Stack
+                  direction="row"
+                  spacing={2}
+                  alignItems="center"
+                  flexWrap="wrap"
+                  useFlexGap
+                >
                   <FormControl size="small" sx={{ minWidth: 140 }}>
                     <InputLabel>Query Type</InputLabel>
                     <Select
                       value={dbQueryType}
                       label="Query Type"
-                      onChange={(e) => { setDbQueryType(e.target.value); setDbPage(0); }}
+                      onChange={(e) => {
+                        setDbQueryType(e.target.value);
+                        setDbPage(0);
+                      }}
                     >
                       <MenuItem value="">All Types</MenuItem>
                       {ALL_QUERY_TYPES.map((qt) => (
-                        <MenuItem key={qt} value={qt}>{QUERY_TYPE_LABELS[qt]}</MenuItem>
+                        <MenuItem key={qt} value={qt}>
+                          {QUERY_TYPE_LABELS[qt]}
+                        </MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -728,11 +1036,16 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                       <Select
                         value={dbConnectionId}
                         label="Connection"
-                        onChange={(e) => { setDbConnectionId(e.target.value); setDbPage(0); }}
+                        onChange={(e) => {
+                          setDbConnectionId(e.target.value);
+                          setDbPage(0);
+                        }}
                       >
                         <MenuItem value="">All Connections</MenuItem>
                         {dbConnections.map((c) => (
-                          <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                          <MenuItem key={c.id} value={c.id}>
+                            {c.name}
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
@@ -743,11 +1056,16 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                       <Select
                         value={dbUserId}
                         label="User"
-                        onChange={(e) => { setDbUserId(e.target.value); setDbPage(0); }}
+                        onChange={(e) => {
+                          setDbUserId(e.target.value);
+                          setDbPage(0);
+                        }}
                       >
                         <MenuItem value="">All Users</MenuItem>
                         {dbUsers.map((u) => (
-                          <MenuItem key={u.id} value={u.id}>{u.username || u.email}</MenuItem>
+                          <MenuItem key={u.id} value={u.id}>
+                            {u.username || u.email}
+                          </MenuItem>
                         ))}
                       </Select>
                     </FormControl>
@@ -757,7 +1075,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     <Select
                       value={dbBlocked}
                       label="Status"
-                      onChange={(e) => { setDbBlocked(e.target.value); setDbPage(0); }}
+                      onChange={(e) => {
+                        setDbBlocked(e.target.value);
+                        setDbPage(0);
+                      }}
                     >
                       <MenuItem value="">All</MenuItem>
                       <MenuItem value="true">Blocked</MenuItem>
@@ -769,7 +1090,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     type="date"
                     label="From"
                     value={dbStartDate}
-                    onChange={(e) => { setDbStartDate(e.target.value); setDbPage(0); }}
+                    onChange={(e) => {
+                      setDbStartDate(e.target.value);
+                      setDbPage(0);
+                    }}
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                   <TextField
@@ -777,26 +1101,33 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     type="date"
                     label="To"
                     value={dbEndDate}
-                    onChange={(e) => { setDbEndDate(e.target.value); setDbPage(0); }}
+                    onChange={(e) => {
+                      setDbEndDate(e.target.value);
+                      setDbPage(0);
+                    }}
                     slotProps={{ inputLabel: { shrink: true } }}
                   />
                 </Stack>
               </CardContent>
             </Card>
 
-            {dbError && <Alert severity="error" sx={{ mb: 2 }}>{dbError}</Alert>}
+            {dbError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {dbError}
+              </Alert>
+            )}
 
             <Card>
               {dbLoading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
                   <CircularProgress />
                 </Box>
               ) : dbLogs.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Box sx={{ textAlign: "center", py: 6 }}>
                   <Typography color="text.secondary">
                     {hasDbActiveFilters
-                      ? 'No SQL audit logs match your filters'
-                      : 'No SQL queries recorded yet'}
+                      ? "No SQL audit logs match your filters"
+                      : "No SQL queries recorded yet"}
                   </Typography>
                 </Box>
               ) : (
@@ -821,67 +1152,164 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                           <Fragment key={entry.id}>
                             <TableRow
                               hover
-                              onClick={() => setDbExpandedRowId(isExpanded ? null : entry.id)}
-                              sx={{ cursor: 'pointer', '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }}
+                              onClick={() =>
+                                setDbExpandedRowId(isExpanded ? null : entry.id)
+                              }
+                              sx={{
+                                cursor: "pointer",
+                                "& > *": {
+                                  borderBottom: isExpanded
+                                    ? "unset"
+                                    : undefined,
+                                },
+                              }}
                             >
                               <TableCell padding="checkbox">
                                 <IconButton size="small">
-                                  {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
+                                  {isExpanded ? (
+                                    <CollapseIcon />
+                                  ) : (
+                                    <ExpandIcon />
+                                  )}
                                 </IconButton>
                               </TableCell>
-                              <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                              <TableCell sx={{ whiteSpace: "nowrap" }}>
                                 {new Date(entry.createdAt).toLocaleString()}
                               </TableCell>
-                              <TableCell>{entry.userName || entry.userEmail || entry.userId.slice(0, 8)}</TableCell>
-                              <TableCell>{entry.connectionName || entry.connectionId.slice(0, 8)}</TableCell>
+                              <TableCell>
+                                {entry.userName ||
+                                  entry.userEmail ||
+                                  entry.userId.slice(0, 8)}
+                              </TableCell>
+                              <TableCell>
+                                {entry.connectionName ||
+                                  entry.connectionId.slice(0, 8)}
+                              </TableCell>
                               <TableCell>
                                 <Chip
-                                  label={QUERY_TYPE_LABELS[entry.queryType] || entry.queryType}
-                                  color={QUERY_TYPE_COLORS[entry.queryType] || 'default'}
+                                  label={
+                                    QUERY_TYPE_LABELS[entry.queryType] ||
+                                    entry.queryType
+                                  }
+                                  color={
+                                    QUERY_TYPE_COLORS[entry.queryType] ||
+                                    "default"
+                                  }
                                   size="small"
                                 />
                               </TableCell>
-                              <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {entry.tablesAccessed.length > 0 ? entry.tablesAccessed.join(', ') : '\u2014'}
+                              <TableCell
+                                sx={{
+                                  maxWidth: 200,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {entry.tablesAccessed.length > 0
+                                  ? entry.tablesAccessed.join(", ")
+                                  : "\u2014"}
                               </TableCell>
                               <TableCell>
                                 {entry.blocked ? (
-                                  <Chip label="Blocked" color="error" size="small" />
+                                  <Chip
+                                    label="Blocked"
+                                    color="error"
+                                    size="small"
+                                  />
                                 ) : entry.blockReason ? (
-                                  <Chip label="Alert" color="warning" size="small" />
+                                  <Chip
+                                    label="Alert"
+                                    color="warning"
+                                    size="small"
+                                  />
                                 ) : (
-                                  <Chip label="OK" color="success" size="small" variant="outlined" />
+                                  <Chip
+                                    label="OK"
+                                    color="success"
+                                    size="small"
+                                    variant="outlined"
+                                  />
                                 )}
                               </TableCell>
                               <TableCell>
-                                {entry.executionTimeMs !== null ? `${entry.executionTimeMs}` : '\u2014'}
+                                {entry.executionTimeMs !== null
+                                  ? `${entry.executionTimeMs}`
+                                  : "\u2014"}
                               </TableCell>
                             </TableRow>
                             <TableRow>
-                              <TableCell colSpan={8} sx={{ py: 0, borderBottom: isExpanded ? undefined : 'none' }}>
-                                <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                              <TableCell
+                                colSpan={8}
+                                sx={{
+                                  py: 0,
+                                  borderBottom: isExpanded ? undefined : "none",
+                                }}
+                              >
+                                <Collapse
+                                  in={isExpanded}
+                                  timeout="auto"
+                                  unmountOnExit
+                                >
                                   <Box sx={{ py: 2, px: 3, maxWidth: 800 }}>
-                                    <Typography variant="body2" fontWeight={600} color="text.secondary" gutterBottom>
+                                    <Typography
+                                      variant="body2"
+                                      fontWeight={600}
+                                      color="text.secondary"
+                                      gutterBottom
+                                    >
                                       Query
                                     </Typography>
                                     <Box
                                       sx={{
-                                        p: 1.5, bgcolor: 'action.hover', borderRadius: 1,
-                                        fontFamily: 'monospace', fontSize: '0.85rem',
-                                        whiteSpace: 'pre-wrap', wordBreak: 'break-all', mb: 1.5,
+                                        p: 1.5,
+                                        bgcolor: "action.hover",
+                                        borderRadius: 1,
+                                        fontFamily: "monospace",
+                                        fontSize: "0.85rem",
+                                        whiteSpace: "pre-wrap",
+                                        wordBreak: "break-all",
+                                        mb: 1.5,
                                       }}
                                     >
                                       {entry.queryText}
                                     </Box>
-                                    <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 1 }}>
-                                      <Typography variant="body2" fontWeight={600} color="text.secondary">Rows Affected</Typography>
-                                      <Typography variant="body2">{entry.rowsAffected ?? '\u2014'}</Typography>
+                                    <Box
+                                      sx={{
+                                        display: "grid",
+                                        gridTemplateColumns: "auto 1fr",
+                                        gap: 1,
+                                      }}
+                                    >
+                                      <Typography
+                                        variant="body2"
+                                        fontWeight={600}
+                                        color="text.secondary"
+                                      >
+                                        Rows Affected
+                                      </Typography>
+                                      <Typography variant="body2">
+                                        {entry.rowsAffected ?? "\u2014"}
+                                      </Typography>
                                       {entry.blockReason && (
                                         <>
-                                          <Typography variant="body2" fontWeight={600} color="text.secondary">
-                                            {entry.blocked ? 'Block Reason' : 'Firewall Alert'}
+                                          <Typography
+                                            variant="body2"
+                                            fontWeight={600}
+                                            color="text.secondary"
+                                          >
+                                            {entry.blocked
+                                              ? "Block Reason"
+                                              : "Firewall Alert"}
                                           </Typography>
-                                          <Typography variant="body2" color={entry.blocked ? 'error.main' : 'warning.main'}>
+                                          <Typography
+                                            variant="body2"
+                                            color={
+                                              entry.blocked
+                                                ? "error.main"
+                                                : "warning.main"
+                                            }
+                                          >
                                             {entry.blockReason}
                                           </Typography>
                                         </>
@@ -916,7 +1344,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
                     page={dbPage}
                     onPageChange={(_, p) => setDbPage(p)}
                     rowsPerPage={dbRowsPerPage}
-                    onRowsPerPageChange={(e) => { setDbRowsPerPage(parseInt(e.target.value, 10)); setDbPage(0); }}
+                    onRowsPerPageChange={(e) => {
+                      setDbRowsPerPage(parseInt(e.target.value, 10));
+                      setDbPage(0);
+                    }}
                     rowsPerPageOptions={[25, 50, 100]}
                   />
                 </>
@@ -930,8 +1361,8 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
       <QueryVisualizer
         open={Boolean(visualizerEntry)}
         onClose={() => setVisualizerEntry(null)}
-        queryText={visualizerEntry?.queryText ?? ''}
-        queryType={visualizerEntry?.queryType ?? ''}
+        queryText={visualizerEntry?.queryText ?? ""}
+        queryType={visualizerEntry?.queryType ?? ""}
         executionTimeMs={visualizerEntry?.executionTimeMs ?? null}
         rowsAffected={visualizerEntry?.rowsAffected ?? null}
         tablesAccessed={visualizerEntry?.tablesAccessed ?? []}
@@ -942,7 +1373,10 @@ export default function AuditLogDialog({ open, onClose, onGeoIpClick }: AuditLog
 
       <RecordingPlayerDialog
         open={recordingPlayerOpen}
-        onClose={() => { setRecordingPlayerOpen(false); setSelectedRecording(null); }}
+        onClose={() => {
+          setRecordingPlayerOpen(false);
+          setSelectedRecording(null);
+        }}
         recording={selectedRecording}
       />
     </Dialog>

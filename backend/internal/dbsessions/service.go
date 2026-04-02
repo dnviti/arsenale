@@ -320,8 +320,8 @@ func (s Service) GetQueryHistory(ctx context.Context, userID, sessionID string, 
 		return nil, err
 	}
 
-	args := []any{userID, state.Record.ConnectionID, limit}
-	where := `WHERE "userId" = $1 AND "connectionId" = $2`
+	args := []any{userID, state.Record.ID, limit}
+	where := `WHERE "userId" = $1 AND "sessionId" = $2`
 	if search != "" {
 		args = append(args, "%"+search+"%")
 		where += fmt.Sprintf(` AND "queryText" ILIKE $%d`, len(args))

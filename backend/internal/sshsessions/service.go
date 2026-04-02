@@ -26,6 +26,8 @@ type Service struct {
 	TerminalBrokerURL   string
 	TunnelBrokerURL     string
 	HTTPClient          *http.Client
+	RecordingPath       string
+	RecordingEnabled    bool
 }
 
 type createRequest struct {
@@ -228,6 +230,21 @@ func (s Service) StartSession(ctx context.Context, claims authn.Claims, payload 
 		return coreResult{}, fmt.Errorf("close stale SSH sessions: %w", err)
 	}
 
+	recordingRef, err := s.maybeStartSessionRecording(ctx, claims.TenantID, claims.UserID, access.Connection.ID, "SSH", recordingGatewayDir(gatewayID, instanceID))
+	if err != nil {
+		return coreResult{}, err
+	}
+
+	sessionMetadata := map[string]any{
+		"host":             access.Connection.Host,
+		"port":             access.Connection.Port,
+		"credentialSource": credentials.CredentialSource,
+		"transport":        "terminal-broker",
+	}
+	if recordingRef != nil {
+		sessionMetadata["recording"] = recordingMetadata(*recordingRef)
+	}
+
 	sessionID, err := s.SessionStore.StartSession(ctx, sessions.StartSessionParams{
 		UserID:       claims.UserID,
 		ConnectionID: access.Connection.ID,
@@ -235,14 +252,13 @@ func (s Service) StartSession(ctx context.Context, claims authn.Claims, payload 
 		InstanceID:   instanceID,
 		Protocol:     "SSH",
 		IPAddress:    ipAddress,
-		Metadata: map[string]any{
-			"host":             access.Connection.Host,
-			"port":             access.Connection.Port,
-			"credentialSource": credentials.CredentialSource,
-			"transport":        "terminal-broker",
-		},
+		Metadata:     sessionMetadata,
+		RecordingID:  recordingID(recordingRef),
 	})
 	if err != nil {
+		if recordingRef != nil {
+			_ = s.deleteSessionRecording(ctx, *recordingRef)
+		}
 		return coreResult{}, fmt.Errorf("start SSH session: %w", err)
 	}
 
@@ -274,6 +290,9 @@ func (s Service) StartSession(ctx context.Context, claims authn.Claims, payload 
 		"metadata": map[string]string{
 			"credentialSource": credentials.CredentialSource,
 		},
+	}
+	if recordingRef != nil {
+		grant["metadata"] = mergeStringMaps(grant["metadata"].(map[string]string), recordingTokenMetadata(*recordingRef))
 	}
 	if bastion != nil {
 		grant["bastion"] = bastion

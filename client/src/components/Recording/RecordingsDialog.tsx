@@ -1,33 +1,60 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 import {
-  Dialog, AppBar, Toolbar, IconButton, Typography, Box,
-  Table, TableHead, TableRow, TableCell, TableBody, Chip,
-  Select, MenuItem, FormControl, InputLabel, Button, Tooltip,
-  DialogTitle, DialogContent, DialogActions, CircularProgress,
-} from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import DeleteIcon from '@mui/icons-material/Delete';
-import DownloadIcon from '@mui/icons-material/Download';
-import MovieIcon from '@mui/icons-material/Movie';
-import { listRecordings, deleteRecording, exportRecordingVideo } from '../../api/recordings.api';
-import type { Recording } from '../../api/recordings.api';
-import api from '../../api/client';
-import RecordingPlayerDialog from './RecordingPlayerDialog';
-import { SlideUp } from '../common/SlideUp';
+  Dialog,
+  AppBar,
+  Toolbar,
+  IconButton,
+  Typography,
+  Box,
+  Table,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableBody,
+  Chip,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Button,
+  Tooltip,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
+} from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import DeleteIcon from "@mui/icons-material/Delete";
+import DownloadIcon from "@mui/icons-material/Download";
+import MovieIcon from "@mui/icons-material/Movie";
+import {
+  listRecordings,
+  deleteRecording,
+  exportRecordingVideo,
+} from "../../api/recordings.api";
+import type { Recording } from "../../api/recordings.api";
+import api from "../../api/client";
+import RecordingPlayerDialog from "./RecordingPlayerDialog";
+import { SlideUp } from "../common/SlideUp";
 
 interface RecordingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
-export default function RecordingsDialog({ open, onClose }: RecordingsDialogProps) {
+export default function RecordingsDialog({
+  open,
+  onClose,
+}: RecordingsDialogProps) {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [protocolFilter, setProtocolFilter] = useState<string>('');
+  const [protocolFilter, setProtocolFilter] = useState<string>("");
   const [page, setPage] = useState(0);
-  const [playingRecording, setPlayingRecording] = useState<Recording | null>(null);
+  const [playingRecording, setPlayingRecording] = useState<Recording | null>(
+    null,
+  );
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null);
   const [convertingIds, setConvertingIds] = useState<Set<string>>(new Set());
   const limit = 25;
@@ -37,7 +64,7 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
     try {
       const result = await listRecordings({
         protocol: protocolFilter || undefined,
-        status: 'COMPLETE',
+        status: "COMPLETE",
         limit,
         offset: page * limit,
       });
@@ -66,25 +93,27 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
   };
 
   const formatDuration = (seconds: number | null) => {
-    if (seconds === null) return '-';
+    if (seconds === null) return "-";
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
+    return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
   const formatSize = (bytes: number | null) => {
-    if (bytes === null) return '-';
+    if (bytes === null) return "-";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   };
 
   const handleDownload = async (rec: Recording) => {
-    const { data } = await api.get(`/recordings/${rec.id}/stream`, { responseType: 'blob' });
+    const { data } = await api.get(`/recordings/${rec.id}/stream`, {
+      responseType: "blob",
+    });
     const url = URL.createObjectURL(data);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `recording-${rec.id}.${rec.format === 'asciicast' ? 'cast' : rec.format}`;
+    a.download = `recording-${rec.id}.${rec.format === "asciicast" ? "cast" : rec.format}`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -94,7 +123,7 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
     try {
       const blob = await exportRecordingVideo(rec.id);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = `recording-${rec.id}.m4v`;
       a.click();
@@ -112,17 +141,26 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
 
   const protocolColor = (protocol: string) => {
     switch (protocol) {
-      case 'SSH': return 'success';
-      case 'RDP': return 'primary';
-      case 'VNC': return 'warning';
-      default: return 'default';
+      case "SSH":
+        return "success";
+      case "RDP":
+        return "primary";
+      case "VNC":
+        return "warning";
+      default:
+        return "default";
     }
   };
 
   return (
     <>
-      <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
-        <AppBar position="static" sx={{ position: 'relative' }}>
+      <Dialog
+        fullScreen
+        open={open}
+        onClose={onClose}
+        TransitionComponent={SlideUp}
+      >
+        <AppBar position="static" sx={{ position: "relative" }}>
           <Toolbar variant="dense">
             <IconButton edge="start" color="inherit" onClick={onClose}>
               <CloseIcon />
@@ -133,14 +171,25 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
           </Toolbar>
         </AppBar>
 
-        <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 2 }}>
+        <Box
+          sx={{
+            flex: 1,
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            p: 2,
+          }}
+        >
           {/* Filters */}
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+          <Box sx={{ display: "flex", gap: 2, mb: 2 }}>
             <FormControl size="small" sx={{ minWidth: 120 }}>
               <InputLabel>Protocol</InputLabel>
               <Select
                 value={protocolFilter}
-                onChange={(e) => { setProtocolFilter(e.target.value); setPage(0); }}
+                onChange={(e) => {
+                  setProtocolFilter(e.target.value);
+                  setPage(0);
+                }}
                 label="Protocol"
               >
                 <MenuItem value="">All</MenuItem>
@@ -149,20 +198,27 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
                 <MenuItem value="VNC">VNC</MenuItem>
               </Select>
             </FormControl>
-            <Typography variant="body2" sx={{ alignSelf: 'center', color: 'text.secondary' }}>
-              {total} recording{total !== 1 ? 's' : ''}
+            <Typography
+              variant="body2"
+              sx={{ alignSelf: "center", color: "text.secondary" }}
+            >
+              {total} recording{total !== 1 ? "s" : ""}
             </Typography>
           </Box>
 
           {/* Recordings table */}
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
+          <Box sx={{ flex: 1, overflow: "auto" }}>
             {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+              <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
                 <CircularProgress />
               </Box>
             ) : recordings.length === 0 ? (
-              <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
-                No recordings found. Enable session recording in your environment configuration.
+              <Typography
+                color="text.secondary"
+                sx={{ textAlign: "center", mt: 4 }}
+              >
+                No recordings found. Enable session recording in your
+                environment configuration.
               </Typography>
             ) : (
               <Table size="small" stickyHeader>
@@ -185,25 +241,43 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
                         <Chip
                           label={rec.protocol}
                           size="small"
-                          color={protocolColor(rec.protocol) as 'success' | 'primary' | 'warning' | 'default'}
+                          color={
+                            protocolColor(rec.protocol) as
+                              | "success"
+                              | "primary"
+                              | "warning"
+                              | "info"
+                              | "default"
+                          }
                         />
                       </TableCell>
-                      <TableCell>{rec.user?.username || rec.user?.email || '-'}</TableCell>
+                      <TableCell>
+                        {rec.user?.username || rec.user?.email || "-"}
+                      </TableCell>
                       <TableCell>{formatDuration(rec.duration)}</TableCell>
                       <TableCell>{formatSize(rec.fileSize)}</TableCell>
-                      <TableCell>{new Date(rec.createdAt).toLocaleString()}</TableCell>
+                      <TableCell>
+                        {new Date(rec.createdAt).toLocaleString()}
+                      </TableCell>
                       <TableCell align="right">
                         <Tooltip title="Play">
-                          <IconButton size="small" onClick={() => setPlayingRecording(rec)}>
+                          <IconButton
+                            size="small"
+                            onClick={() => setPlayingRecording(rec)}
+                          >
                             <PlayArrowIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
                         <Tooltip title="Download">
-                          <IconButton size="small" onClick={() => handleDownload(rec)}>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleDownload(rec)}
+                          >
                             <DownloadIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
-                        {(rec.format === 'guac' || rec.format === 'asciicast') && (
+                        {(rec.format === "guac" ||
+                          rec.format === "asciicast") && (
                           <Tooltip title="Download MP4">
                             <span>
                               <IconButton
@@ -221,7 +295,10 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
                           </Tooltip>
                         )}
                         <Tooltip title="Delete">
-                          <IconButton size="small" onClick={() => setDeleteTarget(rec)}>
+                          <IconButton
+                            size="small"
+                            onClick={() => setDeleteTarget(rec)}
+                          >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Tooltip>
@@ -235,14 +312,24 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
 
           {/* Pagination */}
           {total > limit && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, gap: 1 }}>
-              <Button size="small" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+            <Box
+              sx={{ display: "flex", justifyContent: "center", mt: 2, gap: 1 }}
+            >
+              <Button
+                size="small"
+                disabled={page === 0}
+                onClick={() => setPage((p) => p - 1)}
+              >
                 Previous
               </Button>
-              <Typography variant="body2" sx={{ alignSelf: 'center' }}>
+              <Typography variant="body2" sx={{ alignSelf: "center" }}>
                 Page {page + 1} of {Math.ceil(total / limit)}
               </Typography>
-              <Button size="small" disabled={(page + 1) * limit >= total} onClick={() => setPage((p) => p + 1)}>
+              <Button
+                size="small"
+                disabled={(page + 1) * limit >= total}
+                onClick={() => setPage((p) => p + 1)}
+              >
                 Next
               </Button>
             </Box>
@@ -262,12 +349,15 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
         <DialogTitle>Delete Recording</DialogTitle>
         <DialogContent>
           <Typography>
-            Delete the recording for &quot;{deleteTarget?.connection.name}&quot;? This action cannot be undone.
+            Delete the recording for &quot;{deleteTarget?.connection.name}
+            &quot;? This action cannot be undone.
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button color="error" onClick={handleDelete}>Delete</Button>
+          <Button color="error" onClick={handleDelete}>
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </>

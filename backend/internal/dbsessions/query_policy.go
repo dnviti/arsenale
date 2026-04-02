@@ -636,7 +636,7 @@ func getOrCreateBucketLocked(key string, policy rateLimitPolicyRecord, now time.
 	return bucket
 }
 
-func (s Service) interceptQuery(ctx context.Context, userID, connectionID, tenantID, queryText string, rowsAffected, executionTimeMS *int, blocked bool, blockReason string, executionPlan any) {
+func (s Service) interceptQuery(ctx context.Context, userID, connectionID, tenantID, sessionID, queryText string, rowsAffected, executionTimeMS *int, blocked bool, blockReason string, executionPlan any) {
 	if s.DB == nil || strings.TrimSpace(userID) == "" || strings.TrimSpace(connectionID) == "" || strings.TrimSpace(queryText) == "" {
 		return
 	}
@@ -652,16 +652,17 @@ func (s Service) interceptQuery(ctx context.Context, userID, connectionID, tenan
 
 	_, _ = s.DB.Exec(ctx, `
 INSERT INTO "DbAuditLog" (
-	id, "userId", "connectionId", "tenantId", "queryText", "queryType", "tablesAccessed",
+	id, "userId", "connectionId", "tenantId", "sessionId", "queryText", "queryType", "tablesAccessed",
 	"rowsAffected", "executionTimeMs", blocked, "blockReason", "executionPlan", "createdAt"
 ) VALUES (
-	$1, $2, $3, NULLIF($4, ''), $5, $6::"DbQueryType", $7::text[],
-	$8, $9, $10, NULLIF($11, ''), $12::jsonb, NOW()
+	$1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), $6, $7::"DbQueryType", $8::text[],
+	$9, $10, $11, NULLIF($12, ''), $13::jsonb, NOW()
 )`,
 		uuid.NewString(),
 		strings.TrimSpace(userID),
 		strings.TrimSpace(connectionID),
 		strings.TrimSpace(tenantID),
+		strings.TrimSpace(sessionID),
 		queryText,
 		string(queryType),
 		tables,

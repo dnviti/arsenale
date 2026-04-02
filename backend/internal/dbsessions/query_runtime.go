@@ -128,7 +128,7 @@ func (s Service) executeOwnedQuery(ctx context.Context, userID, tenantID, tenant
 
 	if err := validateWritableQueryAccess(queryType, tenantRole, false); err != nil {
 		blockReason := err.Error()
-		s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sqlText, nil, nil, true, blockReason, nil)
+		s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sessionID, sqlText, nil, nil, true, blockReason, nil)
 		s.insertQueryAuditEvent(ctx, userID, "DB_QUERY_BLOCKED", runtime.Connection.ID, map[string]any{
 			"sessionId":   sessionID,
 			"protocol":    "DATABASE",
@@ -144,7 +144,7 @@ func (s Service) executeOwnedQuery(ctx context.Context, userID, tenantID, tenant
 		if strings.TrimSpace(firewallResult.RuleName) != "" {
 			blockReason = "Blocked by firewall rule: " + firewallResult.RuleName
 		}
-		s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sqlText, nil, nil, true, blockReason, nil)
+		s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sessionID, sqlText, nil, nil, true, blockReason, nil)
 		s.insertQueryAuditEvent(ctx, userID, "DB_QUERY_BLOCKED", runtime.Connection.ID, map[string]any{
 			"sessionId":      sessionID,
 			"protocol":       "DATABASE",
@@ -169,7 +169,7 @@ func (s Service) executeOwnedQuery(ctx context.Context, userID, tenantID, tenant
 	rateLimit := s.evaluateRateLimit(ctx, userID, tenantID, queryType, tenantRole, runtime.DatabaseName, primaryTable)
 	if rateLimit.Matched && !rateLimit.Allowed {
 		blockReason := "Rate limit exceeded: " + rateLimit.PolicyName
-		s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sqlText, nil, nil, true, blockReason, nil)
+		s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sessionID, sqlText, nil, nil, true, blockReason, nil)
 		s.insertQueryAuditEvent(ctx, userID, "DB_QUERY_BLOCKED", runtime.Connection.ID, map[string]any{
 			"sessionId":       sessionID,
 			"protocol":        "DATABASE",
@@ -214,7 +214,7 @@ func (s Service) executeOwnedQuery(ctx context.Context, userID, tenantID, tenant
 	if firewallResult.Matched && firewallResult.Action != "BLOCK" && strings.TrimSpace(firewallResult.RuleName) != "" {
 		firewallNote = "Firewall " + firewallResult.Action + ": " + firewallResult.RuleName
 	}
-	s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sqlText, &rowsAffected, &executionTimeMS, false, firewallNote, executionPlan)
+	s.interceptQuery(ctx, userID, runtime.Connection.ID, tenantID, sessionID, sqlText, &rowsAffected, &executionTimeMS, false, firewallNote, executionPlan)
 	s.insertQueryAuditEvent(ctx, userID, "DB_QUERY_EXECUTED", runtime.Connection.ID, map[string]any{
 		"sessionId":       sessionID,
 		"protocol":        "DATABASE",

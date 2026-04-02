@@ -11,6 +11,7 @@ export interface DbAuditLogEntry {
   userId: string;
   connectionId: string;
   tenantId: string | null;
+  sessionId: string | null;
   queryText: string;
   queryType: DbQueryType;
   tablesAccessed: string[];

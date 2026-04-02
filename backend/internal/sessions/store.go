@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/sessionrecording"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -132,6 +133,7 @@ func (s *Store) CloseStaleSessionsForConnection(ctx context.Context, userID, con
 	}
 
 	closedAt := time.Now().UTC()
+	recordingIDs := make([]string, 0, len(stale))
 	for _, record := range stale {
 		if _, err := tx.Exec(
 			ctx,
@@ -143,6 +145,17 @@ func (s *Store) CloseStaleSessionsForConnection(ctx context.Context, userID, con
 			closedAt,
 		); err != nil {
 			return 0, fmt.Errorf("close stale session %s: %w", record.ID, err)
+		}
+
+		recordingID := ""
+		if shouldAutoCompleteRecording(record.Protocol) {
+			recordingID, err = lookupRecordingID(ctx, tx, record.ID)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return 0, fmt.Errorf("lookup recording id for stale session %s: %w", record.ID, err)
+			}
+			if recordingID != "" {
+				recordingIDs = append(recordingIDs, recordingID)
+			}
 		}
 
 		var gatewayName any
@@ -161,6 +174,7 @@ func (s *Store) CloseStaleSessionsForConnection(ctx context.Context, userID, con
 			"durationFormatted": formatDuration(closedAt.Sub(record.StartedAt).Milliseconds()),
 			"gatewayName":       gatewayName,
 			"instanceId":        stringPtrValue(record.InstanceID),
+			"recordingId":       emptyToNil(recordingID),
 		})
 		if err != nil {
 			return 0, fmt.Errorf("marshal stale session audit details: %w", err)
@@ -181,6 +195,9 @@ func (s *Store) CloseStaleSessionsForConnection(ctx context.Context, userID, con
 
 	if err := tx.Commit(ctx); err != nil {
 		return 0, fmt.Errorf("commit stale session close: %w", err)
+	}
+	if err := completeSessionRecordings(ctx, s.db, recordingIDs); err != nil {
+		return 0, err
 	}
 
 	return len(stale), nil
@@ -405,6 +422,11 @@ func (s *Store) EndOwnedSession(ctx context.Context, sessionID, userID, reason s
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit end session: %w", err)
+	}
+	if shouldAutoCompleteRecording(record.Protocol) {
+		if err := completeSessionRecordings(ctx, s.db, []string{recordingID}); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -655,4 +677,43 @@ func stringPtrValue(value *string) any {
 		return nil
 	}
 	return *value
+}
+
+func shouldAutoCompleteRecording(protocol string) bool {
+	switch strings.ToUpper(strings.TrimSpace(protocol)) {
+	case "SSH":
+		return true
+	default:
+		return false
+	}
+}
+
+func completeSessionRecordings(ctx context.Context, db *pgxpool.Pool, recordingIDs []string) error {
+	if db == nil || len(recordingIDs) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(recordingIDs))
+	for _, recordingID := range recordingIDs {
+		recordingID = strings.TrimSpace(recordingID)
+		if recordingID == "" {
+			continue
+		}
+		if _, ok := seen[recordingID]; ok {
+			continue
+		}
+		seen[recordingID] = struct{}{}
+		if err := sessionrecording.CompleteRecording(ctx, db, recordingID); err != nil {
+			return fmt.Errorf("complete session recording %s: %w", recordingID, err)
+		}
+	}
+	return nil
+}
+
+func emptyToNil(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
 }

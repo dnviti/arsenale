@@ -245,6 +245,8 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		ServerEncryptionKey: serverEncryptionKey,
 		TerminalBrokerURL:   getenv("TERMINAL_BROKER_URL", "http://terminal-broker:8090"),
 		TunnelBrokerURL:     getenv("GO_TUNNEL_BROKER_URL", "http://tunnel-broker:8092"),
+		RecordingPath:       getenv("RECORDING_PATH", "/recordings"),
+		RecordingEnabled:    strings.EqualFold(getenv("RECORDING_ENABLED", "false"), "true"),
 	}
 	authService := authservice.Service{
 		DB:                 db,

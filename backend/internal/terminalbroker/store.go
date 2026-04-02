@@ -6,20 +6,21 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/sessionrecording"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type SessionStore interface {
-	FinalizeTerminalSession(ctx context.Context, sessionID string) error
+	FinalizeTerminalSession(ctx context.Context, sessionID, recordingID string) error
 	HeartbeatTerminalSession(ctx context.Context, sessionID string) error
 	GetTerminalSessionState(ctx context.Context, sessionID string) (TerminalSessionState, error)
 }
 
 type NoopSessionStore struct{}
 
-func (NoopSessionStore) FinalizeTerminalSession(context.Context, string) error {
+func (NoopSessionStore) FinalizeTerminalSession(context.Context, string, string) error {
 	return nil
 }
 
@@ -58,8 +59,11 @@ type TerminalSessionState struct {
 	Reason string
 }
 
-func (s *PostgresSessionStore) FinalizeTerminalSession(ctx context.Context, sessionID string) error {
+func (s *PostgresSessionStore) FinalizeTerminalSession(ctx context.Context, sessionID, recordingID string) error {
 	if sessionID == "" {
+		if recordingID != "" {
+			return sessionrecording.CompleteRecording(ctx, s.db, recordingID)
+		}
 		return nil
 	}
 
@@ -72,9 +76,18 @@ func (s *PostgresSessionStore) FinalizeTerminalSession(ctx context.Context, sess
 	record, err := loadSession(ctx, tx, sessionID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
+			if recordingID != "" {
+				return sessionrecording.CompleteRecording(ctx, s.db, recordingID)
+			}
 			return nil
 		}
 		return fmt.Errorf("load terminal session: %w", err)
+	}
+	if recordingID == "" {
+		recordingID, err = lookupRecordingID(ctx, tx, record.ID)
+		if err != nil && err != pgx.ErrNoRows {
+			return fmt.Errorf("lookup terminal recording: %w", err)
+		}
 	}
 
 	closedAt := time.Now().UTC()
@@ -132,7 +145,31 @@ func (s *PostgresSessionStore) FinalizeTerminalSession(ctx context.Context, sess
 		return fmt.Errorf("commit terminal finalization: %w", err)
 	}
 
+	if recordingID != "" {
+		if err := sessionrecording.CompleteRecording(ctx, s.db, recordingID); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func lookupRecordingID(ctx context.Context, tx pgx.Tx, sessionID string) (string, error) {
+	row := tx.QueryRow(
+		ctx,
+		`SELECT id
+		 FROM "SessionRecording"
+		 WHERE "sessionId" = $1
+		 ORDER BY "createdAt" DESC
+		 LIMIT 1`,
+		sessionID,
+	)
+
+	var recordingID string
+	if err := row.Scan(&recordingID); err != nil {
+		return "", err
+	}
+	return recordingID, nil
 }
 
 func (s *PostgresSessionStore) HeartbeatTerminalSession(ctx context.Context, sessionID string) error {

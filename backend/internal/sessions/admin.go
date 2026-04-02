@@ -250,6 +250,7 @@ func (s *Store) TerminateTenantSession(ctx context.Context, sessionID, tenantID,
 		return nil, err
 	}
 
+	recordingID := ""
 	if record.Status != "CLOSED" {
 		closedAt := time.Now().UTC()
 		if _, err := tx.Exec(
@@ -264,7 +265,7 @@ func (s *Store) TerminateTenantSession(ctx context.Context, sessionID, tenantID,
 			return nil, fmt.Errorf("close tenant session: %w", err)
 		}
 
-		recordingID, err := lookupRecordingID(ctx, tx, record.ID)
+		recordingID, err = lookupRecordingID(ctx, tx, record.ID)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("lookup recording id: %w", err)
 		}
@@ -326,6 +327,11 @@ func (s *Store) TerminateTenantSession(ctx context.Context, sessionID, tenantID,
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit terminate session: %w", err)
+	}
+	if shouldAutoCompleteRecording(record.Protocol) {
+		if err := completeSessionRecordings(ctx, s.db, []string{recordingID}); err != nil {
+			return nil, err
+		}
 	}
 
 	return &TerminatedSession{

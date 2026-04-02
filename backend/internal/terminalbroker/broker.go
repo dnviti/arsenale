@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/sessionrecording"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
@@ -185,6 +186,7 @@ func (b *Broker) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		stdin:        stdin,
 		sessionStore: b.config.SessionStore,
 		sessionID:    grant.SessionID,
+		recording:    recordingReference(grant.Metadata),
 		closed:       make(chan struct{}),
 	}
 
@@ -206,11 +208,13 @@ type terminalRuntime struct {
 	stdin        io.WriteCloser
 	sessionStore SessionStore
 	sessionID    string
+	recording    *sessionrecording.Reference
 
-	wsWriteMu sync.Mutex
-	closeOnce sync.Once
-	closed    chan struct{}
-	outputWG  sync.WaitGroup
+	wsWriteMu   sync.Mutex
+	recordingMu sync.Mutex
+	closeOnce   sync.Once
+	closed      chan struct{}
+	outputWG    sync.WaitGroup
 
 	activityMu       sync.Mutex
 	lastActivityAt   time.Time
@@ -270,7 +274,9 @@ func (r *terminalRuntime) streamOutput(reader io.Reader) {
 	for {
 		n, err := reader.Read(buffer)
 		if n > 0 {
-			if writeErr := r.send(serverMessage{Type: "data", Data: string(buffer[:n])}); writeErr != nil {
+			output := string(buffer[:n])
+			r.appendRecordingOutput(output)
+			if writeErr := r.send(serverMessage{Type: "data", Data: output}); writeErr != nil {
 				r.close()
 				return
 			}
@@ -356,7 +362,7 @@ func (r *terminalRuntime) close() {
 		_ = r.send(serverMessage{Type: "closed"})
 		closeWebSocketConnection(r.wsConn, websocket.CloseNormalClosure, "")
 		if !r.wasExternallyClosed() {
-			if err := r.sessionStore.FinalizeTerminalSession(context.Background(), r.sessionID); err != nil {
+			if err := r.sessionStore.FinalizeTerminalSession(context.Background(), r.sessionID, r.recordingID()); err != nil {
 				r.logger.Warn("finalize terminal session failed", "error", err)
 			}
 		}
@@ -393,6 +399,34 @@ func (r *terminalRuntime) wasExternallyClosed() bool {
 	r.externalCloseMu.Lock()
 	defer r.externalCloseMu.Unlock()
 	return r.externalCloseSet
+}
+
+func (r *terminalRuntime) appendRecordingOutput(output string) {
+	if r.recording == nil || output == "" {
+		return
+	}
+
+	r.recordingMu.Lock()
+	defer r.recordingMu.Unlock()
+
+	if err := sessionrecording.AppendAsciicastOutputAt(r.recording.FilePath, r.recording.StartedAt, time.Now().UTC(), output); err != nil {
+		r.logger.Warn("append terminal recording output failed", "error", err)
+	}
+}
+
+func (r *terminalRuntime) recordingID() string {
+	if r.recording == nil {
+		return ""
+	}
+	return strings.TrimSpace(r.recording.ID)
+}
+
+func recordingReference(metadata map[string]string) *sessionrecording.Reference {
+	ref, ok := sessionrecording.ReferenceFromMetadataStrings(metadata)
+	if !ok {
+		return nil
+	}
+	return &ref
 }
 
 func connectSSH(grant contracts.TerminalSessionGrant) (*ssh.Client, func(), error) {

@@ -187,7 +187,7 @@ func (s Service) ListRecordings(ctx context.Context, claims authn.Claims, query 
 		return recordingsResponse{}, fmt.Errorf("database is unavailable")
 	}
 	args := make([]any, 0, 8)
-	conditions := make([]string, 0, 4)
+	conditions := []string{`sr.protocol <> 'DATABASE'::"SessionProtocol"`}
 	baseSQL := `
 FROM "SessionRecording" sr
 JOIN "Connection" c ON c.id = sr."connectionId"
@@ -415,9 +415,9 @@ func parseListQuery(r *http.Request) (listQuery, error) {
 	}
 	if value := strings.TrimSpace(r.URL.Query().Get("protocol")); value != "" {
 		switch value {
-		case "SSH", "RDP", "VNC", "DATABASE":
+		case "SSH", "RDP", "VNC":
 		default:
-			return listQuery{}, &requestError{status: http.StatusBadRequest, message: "protocol must be SSH, RDP, VNC, or DATABASE"}
+			return listQuery{}, &requestError{status: http.StatusBadRequest, message: "protocol must be SSH, RDP, or VNC"}
 		}
 		query.Protocol = &value
 	}

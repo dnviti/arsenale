@@ -731,6 +731,7 @@ services:
       terminal-target:
         condition: service_healthy
     volumes:
+      - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/healthz >/dev/null || exit 1"]

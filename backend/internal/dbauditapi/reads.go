@@ -31,6 +31,7 @@ SELECT
 	l."userId",
 	l."connectionId",
 	l."tenantId",
+	l."sessionId",
 	l."queryText",
 	l."queryType"::text,
 	l."tablesAccessed",
@@ -60,6 +61,7 @@ LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2)
 		var (
 			item            dbAuditLogEntry
 			tenantIDValue   sql.NullString
+			sessionIDValue  sql.NullString
 			rowsAffected    sql.NullInt32
 			executionTimeMS sql.NullInt32
 			blockReason     sql.NullString
@@ -73,6 +75,7 @@ LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2)
 			&item.UserID,
 			&item.ConnectionID,
 			&tenantIDValue,
+			&sessionIDValue,
 			&item.QueryText,
 			&item.QueryType,
 			&item.TablesAccessed,
@@ -90,6 +93,9 @@ LIMIT $` + strconv.Itoa(len(args)+1) + ` OFFSET $` + strconv.Itoa(len(args)+2)
 		}
 		if tenantIDValue.Valid {
 			item.TenantID = &tenantIDValue.String
+		}
+		if sessionIDValue.Valid {
+			item.SessionID = &sessionIDValue.String
 		}
 		if rowsAffected.Valid {
 			value := int(rowsAffected.Int32)

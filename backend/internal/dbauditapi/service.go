@@ -28,6 +28,7 @@ type dbAuditLogEntry struct {
 	UserID          string    `json:"userId"`
 	ConnectionID    string    `json:"connectionId"`
 	TenantID        *string   `json:"tenantId"`
+	SessionID       *string   `json:"sessionId"`
 	QueryText       string    `json:"queryText"`
 	QueryType       string    `json:"queryType"`
 	TablesAccessed  []string  `json:"tablesAccessed"`
