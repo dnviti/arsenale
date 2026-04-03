@@ -121,6 +121,7 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.35.0
         with:
+          cache: false
           image-ref: ${{ matrix.gateway.name }}:scan
           format: sarif
           output: trivy-results.sarif
