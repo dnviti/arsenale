@@ -13,7 +13,7 @@ source-files:
   - backend/internal/publicconfig/service.go
 ---
 
-![Project Logo](assets/logo.svg)
+![Project Logo](../icons/Arsenale_logo_transparent.png)
 
 # Arsenale Documentation
 
