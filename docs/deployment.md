@@ -28,7 +28,9 @@ source-files:
   - .compose-project/manage.sh
 ---
 
-## 🎯 Deployment Model
+## Deployment Model
+
+> **Detailed Ansible documentation**: For a comprehensive guide covering all installation modes, backends, Ansible roles, capabilities, configuration variables, and step-by-step walkthroughs, see [`deployment/ansible/README.md`](../deployment/ansible/README.md). For the installer artifact model and rerun/recovery behavior, see [`docs/installer.md`](installer.md).
 
 Arsenale now has one installer-driven deployment story for both development and production:
 

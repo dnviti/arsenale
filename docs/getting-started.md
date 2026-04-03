@@ -19,7 +19,7 @@ source-files:
   - deployment/ansible/inventory/group_vars/all/vars.yml
 ---
 
-## 🎯 Overview
+## Overview
 
 The fastest way to work on Arsenale locally is to let the installer-aware Ansible flow bring up the containerized Go stack and then run the React frontend in local Vite mode. That gives you:
 
@@ -29,6 +29,8 @@ The fastest way to work on Arsenale locally is to let the installer-aware Ansibl
 - managed and tunneled gateway fixtures,
 - local HTTPS,
 - and hot reloading for frontend changes.
+
+For detailed Ansible deployment documentation (all modes, backends, roles, capabilities, and walkthroughs), see [`deployment/ansible/README.md`](../deployment/ansible/README.md). For the installer model reference, see [`docs/installer.md`](installer.md).
 
 ## ✅ Prerequisites
 
