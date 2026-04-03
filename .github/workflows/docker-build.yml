@@ -65,6 +65,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: backend/go.mod
+          cache-dependency-path: |
+            go.work.sum
+            backend/go.mod
+            backend/go.sum
 
       - name: Verify sqlc generation
         working-directory: backend

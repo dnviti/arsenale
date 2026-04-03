@@ -32,6 +32,9 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: "1.25.8"
+          cache-dependency-path: |
+            gateways/**/go.mod
+            gateways/**/go.sum
 
       - name: Run Go tests
         run: |
