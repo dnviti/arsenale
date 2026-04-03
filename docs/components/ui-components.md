@@ -146,6 +146,23 @@ All full-screen dialogs use the MUI `Dialog` component with `fullScreen` prop an
 | `AuditGeoMap` | Interactive map visualization of audit log geo-locations |
 | `auditConstants` | Audit action label constants mapping action codes to human-readable strings |
 
+### Database Client (`client/src/components/DatabaseClient/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `DbEditor` | Monaco-based SQL editor with AI-assisted query generation, syntax highlighting, and auto-completion |
+| `DbSchemaBrowser` | Schema introspection panel showing tables, columns, indexes, and relationships |
+| `DbResultsTable` | Paginated query results table with sorting, column resizing, and export |
+| `QueryVisualizer` | Execution plan tree visualization with node cost analysis |
+| `AiQueryOptimizer` | Natural-language-to-SQL conversion panel with AI-powered query optimization |
+| `DbQueryHistory` | Per-session query execution history with replay and timing |
+| `DbConnectionStatus` | Database connection health indicator and protocol info |
+| `DbSessionConfigPopover` | Session configuration popover (schema, search path, read-only mode) |
+| `ExecutionPlanTree` | Interactive execution plan tree with cost breakdown per node |
+| `sqlCompletionProvider` | Monaco intellisense provider with table/column completions from schema |
+| `sqlValidation` | Real-time SQL validation markers in the editor |
+| `dbQueryHistoryUtils` | Utility functions for query history formatting and filtering |
+
 ### Overlays (`client/src/components/Overlays/`)
 
 | Component | Purpose |

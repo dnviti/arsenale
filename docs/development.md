@@ -2,7 +2,7 @@
 title: Development
 description: Local workflow, quality gates, testing strategy, feature alignment, and contribution conventions for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - AGENT.md
   - CONTRIBUTING.md
@@ -105,6 +105,20 @@ The backend, gateway modules, and CLI are all first-class test targets. `scripts
 - `gateways/ssh-gateway/grpc-server`
 - `tools/arsenale-cli`
 
+### Database-specific tests
+
+The backend includes focused test files for critical subsystems:
+
+- `backend/cmd/control-plane-api/config_test.go` — control plane config parsing
+- `backend/cmd/control-plane-api/dev_bootstrap_test.go` — dev bootstrap flow
+- `backend/cmd/control-plane-api/routes_auth_test.go` — auth route registration
+- `backend/cmd/control-plane-api/routes_feature_test.go` — feature flag routing
+- `backend/internal/authservice/ip_allowlist_test.go` — IP allowlist logic
+- `backend/internal/authservice/mfa_test.go` — MFA verification
+- `backend/internal/authz/pdp_test.go` — policy decision point
+- `backend/internal/connections/host_validation_test.go` — connection host validation
+- `backend/internal/connections/list_response_test.go` — connection list response shaping
+
 ### End-to-end
 
 `scripts/dev-api-acceptance.sh` is the highest-signal integration check in the repo. It touches:
@@ -151,6 +165,57 @@ go build -o /tmp/arsenale-cli ./tools/arsenale-cli
 /tmp/arsenale-cli --server https://localhost:3000 gateway list
 ```
 
+## 🖥 Frontend Architecture
+
+The React SPA in `client/` follows a layered architecture:
+
+| Layer | Location | Count |
+|-------|----------|-------|
+| Pages | `client/src/pages/` | 11 pages |
+| Components | `client/src/components/` | 88+ components across 20+ directories |
+| Stores | `client/src/store/` | 17 Zustand stores |
+| Hooks | `client/src/hooks/` | 15 custom hooks |
+| API modules | `client/src/api/` | 40 Axios-based modules |
+
+Key stores and their purposes:
+
+| Store | Purpose |
+|-------|---------|
+| `authStore` | Authentication state, user context, JWT tokens |
+| `connectionsStore` | Connection list, filters, selection |
+| `tabsStore` | Open session tabs, tab state sync |
+| `vaultStore` | Vault lock/unlock state, auto-lock |
+| `secretStore` | Keychain secrets state |
+| `gatewayStore` | Gateway availability and health |
+| `featureFlagsStore` | Runtime feature manifest from server |
+| `tenantStore` | Current tenant context |
+| `teamStore` | Team CRUD and membership |
+| `accessPolicyStore` | ABAC access policy state |
+| `checkoutStore` | Credential checkout/check-in workflow |
+| `notificationStore` | Ephemeral toast notifications |
+| `notificationListStore` | Server-persisted notifications |
+| `uiPreferencesStore` | UI layout and theme (persisted to localStorage) |
+| `themeStore` | Light/dark mode toggle |
+| `terminalSettingsStore` | SSH terminal preferences |
+| `rdpSettingsStore` | RDP-specific settings |
+
+Notable custom hooks:
+
+| Hook | Purpose |
+|------|---------|
+| `useAuth` | Authentication state and refresh |
+| `useAutoReconnect` | Auto-reconnect on disconnect |
+| `useGatewayMonitor` | Gateway health polling |
+| `useSftpTransfers` | SFTP file operation tracking |
+| `useDlpBrowserHardening` | DLP policy enforcement in browser |
+| `useVaultStatusStream` | Real-time vault status updates |
+| `useDesktopNotifications` | Web Notifications API for push alerts |
+| `useGuacToolbarActions` | RDP/VNC toolbar actions with DLP awareness |
+| `useKeyboardCapture` | Keyboard capture for session viewers |
+| `useFullscreen` | Fullscreen state tracking per container |
+
+For detailed component inventory, see the [components/](components/) directory.
+
 ## 📝 Conventions That Matter
 
 | Area | Convention |
@@ -163,6 +228,10 @@ go build -o /tmp/arsenale-cli ./tools/arsenale-cli
 | Client API modules | `client/src/api/*.ts` |
 | Client stores | `client/src/store/*Store.ts` |
 | Root env | Single `.env` at repo root |
+| Database sessions | `backend/internal/dbsessions/` |
+| Session recording | `backend/internal/sshsessions/`, `backend/internal/desktopsessions/` |
+| Agent capabilities | `backend/internal/catalog/catalog.go` |
+| Service contracts | `backend/pkg/contracts/` |
 
 Additional notes:
 

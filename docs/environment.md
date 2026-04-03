@@ -287,6 +287,28 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 <!-- manual-start -->
 <!-- manual-end -->
 
+## Installer And Feature Flags
+
+These variables are emitted by the Ansible installer and control runtime feature gating.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `ARSENALE_INSTALL_MODE` | string | `development` | Install mode: `development` or `production` |
+| `ARSENALE_INSTALL_BACKEND` | string | `podman` | Install backend: `podman` or `kubernetes` |
+| `ARSENALE_INSTALL_CAPABILITIES` | string | — | Comma-separated enabled capability set |
+| `FEATURE_CONNECTIONS_ENABLED` | boolean | `true` | Enable SSH, RDP, VNC connections and folders |
+| `FEATURE_DATABASE_PROXY_ENABLED` | boolean | `true` | Enable database sessions and DB audit |
+| `FEATURE_KEYCHAIN_ENABLED` | boolean | `true` | Enable vault, secrets, files, and external vault providers |
+| `FEATURE_RECORDINGS_ENABLED` | boolean | `true` | Enable recording APIs and UI |
+| `FEATURE_ZERO_TRUST_ENABLED` | boolean | `true` | Enable gateways, tunnel broker, and managed zero-trust routing |
+| `FEATURE_AGENTIC_AI_ENABLED` | boolean | `true` | Enable AI-assisted database tooling |
+| `FEATURE_ENTERPRISE_AUTH_ENABLED` | boolean | `true` | Enable SAML, OAuth, OIDC, LDAP surfaces |
+| `FEATURE_SHARING_APPROVALS_ENABLED` | boolean | `true` | Enable public sharing, approvals, and checkouts |
+| `CLI_ENABLED` | boolean | `false` | Enable CLI device auth and CLI-specific APIs |
+| `GATEWAY_ROUTING_MODE` | string | — | Direct vs gateway-mandatory routing behavior |
+
+These flags are converted to a runtime manifest in `backend/internal/runtimefeatures/manifest.go` and exposed via `GET /api/auth/config`.
+
 ## Development Defaults
 
 In development (`NODE_ENV=development`):

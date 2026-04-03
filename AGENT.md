@@ -72,3 +72,60 @@ The most commonly used CLI entry points are:
 - `connect`
 
 Use `arsenale [command] --help` before assuming flag names or subcommand availability.
+
+## Documentation Management
+
+The project documentation lives in `docs/` and covers the full platform: architecture, API reference, configuration, deployment, development workflow, security, database schema, frontend components, and guides.
+
+### Structure
+
+```
+docs/
+├── index.md                     # Landing page and table of contents
+├── getting-started.md           # Prerequisites and first-run setup
+├── architecture.md              # Service planes, capability gating, data flow
+├── configuration.md             # Env vars, installer inputs, precedence
+├── api-reference.md             # Public API routes and internal contracts
+├── deployment.md                # Installer flow, Podman/K8s backends, CI/CD
+├── development.md               # Local workflow, quality gates, conventions
+├── environment.md               # Complete 121+ env var catalog
+├── troubleshooting.md           # Health checks, debugging, reset options
+├── installer.md                 # Installer artifacts and recovery
+├── llm-context.md               # Condensed single-file context for AI/bots
+├── rag-summary.md               # High-level RAG summary
+├── api/                         # Detailed API endpoint specs (9 files)
+├── components/                  # Frontend architecture (5 files)
+├── database/                    # Schema models and enums (7 files)
+├── security/                    # Auth, encryption, policies, production (4 files)
+└── guides/                      # Zero-trust tunnel guides (2 files)
+```
+
+### When To Update Docs
+
+Update documentation when any of the following change:
+
+- **New or removed services** → `architecture.md`, `llm-context.md`
+- **API routes added or changed** → `api-reference.md`, `api/*.md`
+- **Feature flags or capabilities** → `configuration.md`, `environment.md`, `llm-context.md`
+- **Frontend stores, hooks, or API modules** → `components/*.md`, `development.md`
+- **Database schema or migrations** → `database/*.md`
+- **Security policies or encryption** → `security/*.md`
+- **Installer or deployment changes** → `deployment.md`, `installer.md`
+- **New env variables** → `environment.md`, `configuration.md`
+
+### How To Update
+
+1. Read the affected doc files to understand current state.
+2. Cross-reference with the actual source code (the codebase is always the source of truth).
+3. Edit the doc files directly — they are a mix of auto-generated and hand-authored content.
+4. Update counts and inventories (stores, hooks, API modules, components) when adding new ones.
+5. Update `docs/.docs-manifest.json` timestamp after edits.
+6. Keep `llm-context.md` aligned — it is a condensed single-file reference consumed by AI tools.
+
+### Key Rules
+
+- **Codebase is truth.** If docs and code disagree, trust the code and fix the docs.
+- **Subdirectory docs have `<!-- manual-start -->` / `<!-- manual-end -->` markers.** Content inside those markers is preserved across regeneration. Content outside is auto-generated.
+- **Do not create new doc files** unless covering a genuinely new major feature area. Prefer extending existing files.
+- **Counts matter.** When adding a new store, hook, API module, or component, update the counts in `components/overview.md` and `development.md`.
+- **Keep index.md in sync.** If you add a new doc file, add a row to the table of contents in `index.md`.

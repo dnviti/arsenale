@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Common failures, debugging commands, and operator guidance for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - Makefile
   - scripts/dev-api-acceptance.sh
@@ -32,6 +32,9 @@ curl http://127.0.0.1:18080/api/ready
 curl http://127.0.0.1:18080/healthz
 curl http://127.0.0.1:18090/healthz
 curl http://127.0.0.1:18091/healthz
+curl http://127.0.0.1:18092/healthz
+curl http://127.0.0.1:18093/healthz
+curl http://127.0.0.1:18094/healthz
 ```
 
 Useful log tail:
@@ -79,6 +82,36 @@ make logs SVC=arsenale-dev-tunnel-db-proxy
 | Gateway inventory looks empty | Current install profile has `zeroTrustEnabled` off, or dev bootstrap did not finish | Inspect `/api/auth/config`, then rerun `make dev` if needed |
 | Tunneled gateway stays disconnected | Tunnel certs or tunnel-broker state issue | Check `arsenale-dev-tunnel-*` logs and `tunnel-broker` health |
 | Managed SSH gateway never becomes usable in dev | Post-bootstrap SSH key push did not complete | Inspect `arsenale-control-plane-api` logs for managed key push retries |
+
+## 🎬 Recording Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Recordings not appearing | `RECORDING_ENABLED` is `false` | Set `RECORDING_ENABLED=true` and redeploy |
+| SSH recording empty or missing | SSH gateway did not write `.cast` file | Check `ssh-gateway` logs and `RECORDING_PATH` permissions |
+| Desktop recording black or corrupt | `guacd` recording params misconfigured | Check `guacd` container logs and verify `GUACAMOLE_SECRET` |
+| Video export fails | `guacenc` sidecar unreachable or timed out | Check `guacenc` health and `GUACENC_SERVICE_URL` |
+| Recording conversion hangs | Large recording or insufficient resources | Increase `GUACENC_TIMEOUT_MS` and check worker resources |
+| Old recordings not cleaned up | Retention job not running | Check `recording-worker` logs and `RECORDING_RETENTION_DAYS` |
+
+## 🤖 AI and Query Generation Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| AI tab missing in database UI | `agenticAIEnabled` is off or `AI_PROVIDER` not set | Set `FEATURE_AGENTIC_AI_ENABLED=true` and configure an AI provider |
+| "Query generation failed" error | Provider API error or model unavailable | Check `AI_API_KEY`, `AI_BASE_URL`, and provider connectivity |
+| Daily limit reached | Tenant hit `AI_MAX_REQUESTS_PER_DAY` | Wait for reset or increase the limit |
+| Ollama connection refused | Ollama service not running or wrong URL | Verify `AI_BASE_URL` points to the correct Ollama endpoint |
+
+## 🔑 Credential Checkout And Policy Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Checkout request stuck in PENDING | No admin or operator online to approve | Check notification delivery and admin availability |
+| Checkout expired but credentials still accessible | Cleanup job not running | Check `control-plane-controller` logs for checkout expiry reconciliation |
+| Keystroke policy not triggering | Policy not enabled or regex mismatch | Verify policy via `/api/keystroke-policies` and test regex against expected input |
+| ABAC denied but no time window applies | Policy on a parent scope (team/tenant) is restricting | Check all applicable policies at folder, team, and tenant levels |
+| SQL firewall blocking legitimate queries | Overly broad regex pattern | Review `/api/db-audit/firewall-rules` and refine patterns |
 
 ## 🗄 Database Query And Migration Issues
 
@@ -146,3 +179,23 @@ Use these in order, from least disruptive to most disruptive:
 5. `make dev-down && make dev` to recreate the local stack.
 
 Avoid deleting PostgreSQL volumes unless you intentionally want to lose the local application database.
+
+## 🛡 Production Security Checklist
+
+Before deploying to production, verify:
+
+1. `JWT_SECRET` is a unique 64-byte hex value (not `CHANGE_ME`)
+2. `GUACAMOLE_SECRET` is a unique 32-byte hex value
+3. `SERVER_ENCRYPTION_KEY` is set (not auto-generated)
+4. `DATABASE_URL` uses `sslmode=verify-full` with a proper CA cert
+5. `COOKIE_SECURE=true` when behind HTTPS
+6. `HOST_VALIDATION_ENABLED=true` to prevent DNS rebinding
+7. `SELF_SIGNUP_ENABLED=false` unless public registration is intended
+8. `TRUST_PROXY` is set to the correct hop count for your reverse proxy chain
+9. All `*_FILE` secret variants are used instead of inline env values
+10. `RECORDING_ENABLED` is set according to compliance requirements
+11. `TUNNEL_STRICT_MTLS=true` for zero-trust gateway deployments
+12. Email provider is configured (not dev mode console logging)
+13. `WEBAUTHN_RP_ID` and `WEBAUTHN_RP_ORIGIN` match the production domain
+
+For the full checklist, see [security/production.md](security/production.md).

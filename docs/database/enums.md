@@ -5,8 +5,8 @@
 
 | Enum | Values |
 |------|--------|
-| **ConnectionType** | `RDP`, `SSH`, `VNC` |
-| **GatewayType** | `GUACD`, `SSH_BASTION`, `MANAGED_SSH` |
+| **ConnectionType** | `RDP`, `SSH`, `VNC`, `DATABASE` |
+| **GatewayType** | `GUACD`, `SSH_BASTION`, `MANAGED_SSH`, `DB_PROXY` |
 | **Permission** | `READ_ONLY`, `FULL_ACCESS` |
 | **TenantRole** | `OWNER`, `ADMIN`, `OPERATOR`, `MEMBER`, `CONSULTANT`, `AUDITOR`, `GUEST` |
 | **TeamRole** | `TEAM_ADMIN`, `TEAM_EDITOR`, `TEAM_VIEWER` |
@@ -37,6 +37,25 @@ The following `AuditAction` values were added for zero-trust tunnel and ABAC fea
 | `TUNNEL_TOKEN_GENERATE` | A new tunnel agent token was generated for a gateway |
 | `TUNNEL_TOKEN_ROTATE` | A tunnel agent token was revoked/rotated |
 | `SESSION_DENIED_ABAC` | A session was denied by an ABAC access policy evaluation |
+| `DB_QUERY_EXECUTED` | A database query was executed through the DB proxy |
+| `DB_QUERY_BLOCKED` | A database query was blocked by the SQL firewall |
+| `CHECKOUT_REQUESTED` | A credential checkout was requested |
+| `CHECKOUT_APPROVED` | A credential checkout was approved |
+| `CHECKOUT_DENIED` | A credential checkout was denied |
+| `CHECKOUT_RETURNED` | A credential checkout was checked back in |
+| `PASSWORD_ROTATED` | An automatic password rotation was performed |
+| `KEYSTROKE_ALERT` | A keystroke policy triggered an alert |
+| `KEYSTROKE_BLOCKED` | A keystroke policy blocked and terminated a session |
+| `LATERAL_MOVEMENT_DETECTED` | Lateral movement anomaly detected (MITRE T1021) |
+
+### Database Session and Audit Enums
+
+| Enum | Values |
+|------|--------|
+| **CheckoutStatus** | `PENDING`, `APPROVED`, `DENIED`, `ACTIVE`, `RETURNED`, `EXPIRED` |
+| **FirewallAction** | `BLOCK`, `ALLOW` |
+| **MaskingType** | `FULL`, `PARTIAL`, `HASH`, `REDACT` |
+| **KeystrokePolicyAction** | `BLOCK_AND_TERMINATE`, `ALERT_ONLY` |
 
 <!-- manual-start -->
 <!-- manual-end -->

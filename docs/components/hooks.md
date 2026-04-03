@@ -87,5 +87,17 @@ Manages keyboard capture, focus tracking, and fullscreen for session viewer elem
 **Parameters**: `{ focusRef, fullscreenRef, isActive, onBlur?, onFocus?, onMouseDown?, onFullscreenChange?, suppressBrowserKeys? }`
 **Returns**: `{ isFocused, isFullscreen, enterFullscreen, exitFullscreen, toggleFullscreen }`
 
+### `useDesktopNotifications` (`client/src/hooks/useDesktopNotifications.ts`)
+
+Integrates with the Web Notifications API for desktop push notifications. Requests permission on mount and dispatches browser notifications for share events, recordings, and security alerts when the tab is not focused.
+
+**Returns**: `{ permissionGranted: boolean, requestPermission: () => Promise<void> }`
+
+### `useVaultStatusStream` (`client/src/hooks/useVaultStatusStream.ts`)
+
+Subscribes to the `GET /api/vault/status/stream` SSE endpoint for real-time vault lock/unlock state changes. Updates the vault store on status events.
+
+**Returns**: void (side-effect hook)
+
 <!-- manual-start -->
 <!-- manual-end -->

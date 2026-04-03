@@ -2,7 +2,7 @@
 title: API Reference
 description: Public API groups, session flows, live streams, and internal service contracts for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - backend/internal/runtimefeatures/manifest.go
   - backend/internal/publicconfig/service.go
@@ -51,6 +51,7 @@ One architectural change matters more than any raw endpoint count: the surface i
 | `enterpriseAuthEnabled` | Enables SAML, OAuth, OIDC, LDAP, and auth-provider admin APIs |
 | `sharingApprovalsEnabled` | Enables public sharing, approvals, checkouts, and connection sharing APIs |
 | `cliEnabled` | Enables CLI device auth and CLI connection list surfaces |
+| `agenticAIEnabled` | Enables AI provider configuration, natural-language-to-SQL generation, and query optimization |
 
 The practical source of truth is:
 
@@ -142,6 +143,16 @@ Recovery endpoints stay under `/api/auth/*`:
 | `GET` | `/api/user/2fa/status` | MFA status |
 | `POST` | `/api/user/2fa/setup` | Start TOTP setup |
 | `POST` | `/api/user/2fa/webauthn/register` | Register WebAuthn credential |
+| `PUT` | `/api/user/ssh-defaults` | Update SSH connection defaults |
+| `PUT` | `/api/user/rdp-defaults` | Update RDP connection defaults |
+| `DELETE` | `/api/user/domain-profile` | Clear directory profile |
+| `GET` | `/api/user/notification-schedule` | Read notification schedule |
+| `PUT` | `/api/user/notification-schedule` | Update notification schedule |
+| `POST` | `/api/user/password-change/initiate` | Initiate password change with verification |
+| `POST` | `/api/user/identity/initiate` | Initiate identity verification |
+| `POST` | `/api/user/identity/confirm` | Confirm identity verification |
+| `POST` | `/api/user/email-change/initiate` | Initiate email change |
+| `POST` | `/api/user/email-change/confirm` | Confirm email change |
 
 ### Tenant administration
 
@@ -157,6 +168,14 @@ Recovery endpoints stay under `/api/auth/*`:
 | `PUT` | `/api/tenants/{id}/users/{userId}` | Update user role |
 | `PATCH` | `/api/tenants/{id}/users/{userId}/expiry` | Set membership expiry |
 | `PUT` | `/api/tenants/{id}/ip-allowlist` | Update tenant IP allowlist |
+| `POST` | `/api/tenants/{id}/users` | Create user directly in tenant |
+| `GET` | `/api/tenants/{id}/users/{userId}/profile` | Get user profile details |
+| `PATCH` | `/api/tenants/{id}/users/{userId}/enabled` | Toggle user enabled state |
+| `PUT` | `/api/tenants/{id}/users/{userId}/email` | Admin change user email |
+| `PUT` | `/api/tenants/{id}/users/{userId}/password` | Admin change user password |
+| `GET` | `/api/tenants/{id}/users/{userId}/permissions` | Get user permissions |
+| `PUT` | `/api/tenants/{id}/users/{userId}/permissions` | Update user permissions |
+| `GET` | `/api/tenants/{id}/mfa-stats` | Get tenant MFA adoption stats |
 
 ### Connections, folders, files, teams, and sync profiles
 
@@ -193,6 +212,27 @@ The secrets surface uses plural `/api/secrets` paths. That is the current author
 | `GET` | `/api/secrets/tenant-vault/status` | Tenant vault state |
 | `POST` | `/api/secrets/tenant-vault/init` | Initialize tenant vault |
 | `POST` | `/api/secrets/tenant-vault/distribute` | Distribute tenant vault shares |
+| `POST` | `/api/vault/unlock-mfa/totp` | Unlock vault with TOTP verification |
+| `POST` | `/api/vault/unlock-mfa/webauthn-options` | Request WebAuthn unlock options |
+| `POST` | `/api/vault/unlock-mfa/webauthn` | Unlock vault with WebAuthn |
+| `POST` | `/api/vault/unlock-mfa/request-sms` | Request SMS code for vault unlock |
+| `POST` | `/api/vault/unlock-mfa/sms` | Unlock vault with SMS code |
+| `POST` | `/api/vault/reveal-password` | Reveal stored password from vault |
+| `GET` | `/api/vault/recovery-status` | Check vault recovery key status |
+| `GET` | `/api/secrets/{id}` | Get secret details |
+| `PUT` | `/api/secrets/{id}` | Update secret |
+| `DELETE` | `/api/secrets/{id}` | Delete secret |
+| `POST` | `/api/secrets/{id}/breach-check` | Check single secret for breaches |
+| `GET` | `/api/secrets/{id}/versions` | List secret versions |
+| `GET` | `/api/secrets/{id}/versions/{version}/data` | Get version data |
+| `POST` | `/api/secrets/{id}/versions/{version}/restore` | Restore a version |
+| `POST` | `/api/secrets/{id}/share` | Share secret with user |
+| `DELETE` | `/api/secrets/{id}/share/{userId}` | Revoke secret share |
+| `PUT` | `/api/secrets/{id}/share/{userId}` | Update share permission |
+| `GET` | `/api/secrets/{id}/shares` | List secret shares |
+| `POST` | `/api/secrets/{id}/external-shares` | Create external share link |
+| `GET` | `/api/secrets/{id}/external-shares` | List external shares |
+| `DELETE` | `/api/secrets/external-shares/{shareId}` | Revoke external share |
 
 Password rotation endpoints remain nested under `/api/secrets`:
 
@@ -319,6 +359,42 @@ Notable gateway subpaths:
 - `/api/gateways/{id}/tunnel-metrics`
 - `/api/gateways/templates`
 
+### Audit Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/audit` | Search audit logs |
+| `GET` | `/api/audit/tenant` | Tenant-scoped audit logs |
+| `GET` | `/api/audit/connection/{connectionId}` | Connection-specific audit logs |
+| `GET` | `/api/audit/connection/{connectionId}/users` | Users who accessed a connection |
+| `GET` | `/api/audit/session/{sessionId}/recording` | Get session recording from audit |
+| `GET` | `/api/audit/gateways` | List gateways in audit context |
+| `GET` | `/api/audit/countries` | List countries in audit data |
+| `GET` | `/api/audit/tenant/gateways` | Tenant-scoped gateway audit |
+| `GET` | `/api/audit/tenant/countries` | Tenant-scoped country audit |
+| `GET` | `/api/audit/tenant/geo-summary` | Geographic summary of tenant audit |
+| `GET` | `/api/geoip/{ip}` | GeoIP lookup for IP address |
+
+### Notification Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/notifications` | List notifications |
+| `GET` | `/api/notifications/preferences` | Get notification preferences |
+| `PUT` | `/api/notifications/preferences` | Bulk update preferences |
+| `PUT` | `/api/notifications/preferences/{type}` | Update single preference |
+| `PUT` | `/api/notifications/read-all` | Mark all read |
+| `PUT` | `/api/notifications/{id}/read` | Mark one read |
+| `DELETE` | `/api/notifications/{id}` | Delete notification |
+
+### Tabs Sync
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/tabs` | List saved tab state |
+| `PUT` | `/api/tabs` | Sync tab state |
+| `DELETE` | `/api/tabs` | Clear tab state |
+
 ## 📡 Live Streams
 
 Server-sent event endpoints in `routes_live.go`:
@@ -332,6 +408,36 @@ Server-sent event endpoints in `routes_live.go`:
 - `GET /api/db-audit/logs/stream`
 
 These are feature-gated in the same way as their non-stream route families.
+
+## 🔌 WebSocket and Real-Time Protocols
+
+In addition to the REST API, Arsenale exposes real-time WebSocket endpoints for terminal, desktop, and notification services.
+
+### SSH Terminal WebSocket
+
+The terminal broker exposes a WebSocket endpoint at `/ws/terminal` (port 8090 in dev). The protocol uses binary frames:
+
+| Event | Direction | Purpose |
+|-------|-----------|---------|
+| `input` | Client → Server | Terminal keystrokes |
+| `output` | Server → Client | Terminal output data |
+| `resize` | Client → Server | Terminal dimensions change |
+| `sftp:list` | Client → Server | List remote directory |
+| `sftp:mkdir` | Client → Server | Create remote directory |
+| `sftp:delete` | Client → Server | Delete remote file/directory |
+| `sftp:rename` | Client → Server | Rename remote file |
+| `sftp:upload` | Client → Server | Upload file to remote |
+| `sftp:download` | Client → Server | Download file from remote |
+
+### Desktop WebSocket (Guacamole)
+
+RDP and VNC sessions use the Guacamole WebSocket protocol at `/guacamole` (port 8091 in dev). The desktop broker translates between the Guacamole wire protocol and the browser client.
+
+### Server-Sent Events (SSE)
+
+Live streaming endpoints (listed in the Live Streams section above) use standard SSE. The client subscribes with `EventSource` and receives JSON-encoded event payloads.
+
+For detailed WebSocket event specifications, see [api/websocket.md](api/websocket.md).
 
 ## 🧪 Internal `/v1` Contracts
 

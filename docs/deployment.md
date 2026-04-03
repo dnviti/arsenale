@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -24,6 +24,8 @@ source-files:
   - .github/workflows/security.yml
   - .github/workflows/verify.yml
   - .github/workflows/release.yml
+  - .compose-project/install.sh
+  - .compose-project/manage.sh
 ---
 
 ## 🎯 Deployment Model
@@ -104,6 +106,7 @@ Development mode always deploys the full stack and fixture set regardless of pro
 | `guacd` | `gateways/guacd/Dockerfile` | Alpine runtime, Guacamole server packages, tunnel agent |
 | `guacenc` | `gateways/guacenc/Dockerfile` | Custom build with `guacenc`, `agg`, and Go wrapper |
 | `tunnel-agent` | `gateways/tunnel-agent/Dockerfile` | Standalone tunnel agent workspace |
+| `recording-worker` | `backend/Dockerfile` with `SERVICE=recording-worker` | Recording conversion and retention worker |
 
 Important implementation details:
 
@@ -129,6 +132,7 @@ Key host-to-container mappings from `docker-compose.yml`:
 | `18091` | `desktop-broker` | `8091` |
 | `18092` | `tunnel-broker` | `8092` |
 | `18093` | `query-runner` | `8093` |
+| `18094` | `recording-worker` | `8094` |
 | `18095` | `runtime-agent` | `8095` |
 
 Primary internal networks:
@@ -237,6 +241,19 @@ Notable facts from the workflow definitions:
 - backend verification includes `go vet` and `go test -race`,
 - gateway verification runs `go vet` and `go test -race` for the Go modules under `gateways/`,
 - release artifacts currently center on the CLI, not full application bundles.
+
+## 📦 Compose Project Helper
+
+The `.compose-project/` directory contains standalone helpers for environments where the full Ansible installer is not needed:
+
+| File | Purpose |
+|------|---------|
+| `install.sh` | Standalone installer script that renders and applies the compose stack |
+| `manage.sh` | Management script for common operations (start, stop, status, logs, backup) |
+| `docker-compose.yml` | Generated compose file for the current profile |
+| `config/ssh-gateway/authorized_keys` | SSH gateway authorized keys |
+
+These helpers provide a lighter-weight alternative to the full Ansible installer for simple deployments.
 
 ## 🛠 Common Deployment Operations
 

@@ -39,6 +39,12 @@ The database models a multi-tenant remote access management system:
 - **OpenTab** persists the user's open connection tabs server-side.
 - **AccessPolicy** stores ABAC (Attribute-Based Access Control) policies scoped to tenants, teams, or folders, enforcing time windows, trusted device, and MFA step-up constraints.
 - **AppConfig** stores key-value application settings (e.g., self-signup toggle).
+- **Checkout** tracks temporary credential checkout/check-in requests with approval workflow for PAM.
+- **KeystrokePolicy** defines real-time SSH keystroke inspection patterns with block or alert actions.
+- **FirewallRule** stores SQL firewall rules for query pattern matching and blocking in the DB proxy.
+- **MaskingPolicy** defines column-level data masking applied after database query execution.
+- **RateLimitPolicy** enforces per-connection query rate limits in the DB audit subsystem.
+- **DbAuditLog** records all database queries executed through the DB proxy with timing and firewall status.
 
 <!-- manual-start -->
 <!-- manual-end -->

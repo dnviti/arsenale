@@ -10,13 +10,13 @@ The client is built with:
 - **React 19** with TypeScript
 - **Vite** — build tool and dev server
 - **Material-UI (MUI) v7** — component library and theming
-- **Zustand** — state management (14 stores with localStorage persistence for UI preferences)
+- **Zustand** — state management (17 stores with localStorage persistence for UI preferences)
 - **Axios** — HTTP client with JWT auto-refresh
 - **WebSocket / Guacamole clients** — real-time SSH terminals, desktop sessions, and broker transport
 - **XTerm.js** — SSH terminal emulation
 - **guacamole-common-js** — RDP/VNC remote desktop rendering
 
-**Total**: 10 pages, 88 components, 14 stores, 13 hooks, 29 API modules.
+**Total**: 11 pages, 88+ components, 17 stores, 15 hooks, 40 API modules.
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -35,6 +35,7 @@ The client is built with:
 | `VaultSetupPage` | `/vault-setup` | Post-OAuth vault password setup for OAuth-only users | authStore |
 | `ForgotPasswordPage` | `/forgot-password` | Password reset email request form | — |
 | `ResetPasswordPage` | `/reset-password` | Multi-step password reset (token validation, optional SMS, new password) | — |
+| `SetupWizardPage` | `/setup` | First-run setup wizard for initial admin account and tenant configuration | authStore |
 
 <!-- manual-start -->
 <!-- manual-end -->

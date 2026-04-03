@@ -2,7 +2,7 @@
 title: Getting Started
 description: Installation, prerequisites, and first-run instructions for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - README.md
   - AGENT.md
@@ -115,6 +115,7 @@ What actually happens:
 | `http://127.0.0.1:18091/healthz` | Desktop broker health |
 | `http://127.0.0.1:18092/healthz` | Tunnel broker health |
 | `http://127.0.0.1:18093/healthz` | Query runner health |
+| `http://127.0.0.1:18094/healthz` | Recording worker health |
 
 ### 5. Sign in with the seeded dev admin
 
@@ -167,6 +168,25 @@ npm run dev:api-acceptance
 ```
 
 The acceptance script exercises auth, sessions, audit, gateways, secrets, recordings, and database operations against the running dev stack.
+
+## 🗄 Database Operations
+
+### Migrations
+
+```bash
+npm run db:migrate    # Apply pending migrations
+npm run db:status     # Check migration status
+```
+
+The migration runner is built into every backend service image. `scripts/db-migrate.sh` provides a wrapper that auto-detects the container runtime and supports compose file overrides via `ARSENALE_COMPOSE_FILE`.
+
+### Direct Database Access
+
+The application PostgreSQL database is separate from the demo databases used for testing. To connect directly:
+
+```bash
+psql "postgresql://arsenale:arsenale_password@localhost:5432/arsenale?sslmode=verify-full"
+```
 
 ## 🧰 Everyday Commands
 

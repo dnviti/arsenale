@@ -2,7 +2,7 @@
 title: Configuration
 description: Environment variables, installer inputs, secret delivery, and configuration precedence for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - .env.example
   - deployment/ansible/inventory/group_vars/all/vars.yml
@@ -125,6 +125,11 @@ Production and local containers prefer secret files over inline env values. Comm
 | `REDIS_URL` | `redis://redis:6379/0` | Coordination, locks, rate limits, streams |
 | `RECORDING_PATH` | `/recordings` | Session artifact location |
 | `DESKTOP_BROKER_HEALTH_URL` | `http://desktop-broker:8091/healthz` | Included in `/api/ready` when connection features are enabled |
+| `GUACAMOLE_WS_PORT` | `3002` | Guacamole WebSocket port |
+| `LOG_LEVEL` | `info` | Logging verbosity (error, warn, info, verbose, debug) |
+| `LOG_FORMAT` | `text` | Log output format (text or json) |
+| `LOG_TIMESTAMPS` | `true` | Include ISO-8601 timestamps |
+| `LOG_HTTP_REQUESTS` | `false` | Log HTTP request details |
 
 ## 🛡 Authentication, Security, And Public Config
 
@@ -150,6 +155,29 @@ Production and local containers prefer secret files over inline env values. Comm
 - the full runtime feature manifest
 
 The SPA starts fail-open with enabled defaults in `client/src/store/featureFlagsStore.ts`, then replaces them with the server response once it loads.
+
+## 📧 Email and SMS Providers
+
+### Email
+
+| Variable | Purpose |
+|----------|---------|
+| `EMAIL_PROVIDER` | Provider type: `smtp`, `sendgrid`, `ses`, `resend`, `mailgun` |
+| `EMAIL_VERIFY_REQUIRED` | Require email verification before login |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP configuration |
+| `SENDGRID_API_KEY` | SendGrid API key |
+| `AWS_SES_REGION` / `AWS_SES_ACCESS_KEY_ID` / `AWS_SES_SECRET_ACCESS_KEY` | Amazon SES |
+| `RESEND_API_KEY` | Resend API key |
+| `MAILGUN_API_KEY` / `MAILGUN_DOMAIN` / `MAILGUN_REGION` | Mailgun |
+
+### SMS
+
+| Variable | Purpose |
+|----------|---------|
+| `SMS_PROVIDER` | Provider type: `twilio`, `sns`, `vonage` (empty for dev mode) |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Twilio |
+| `AWS_SNS_REGION` / `AWS_SNS_ACCESS_KEY_ID` / `AWS_SNS_SECRET_ACCESS_KEY` | AWS SNS |
+| `VONAGE_API_KEY` / `VONAGE_API_SECRET` / `VONAGE_FROM_NUMBER` | Vonage |
 
 ## 🌉 Broker, Gateway, And Orchestrator Variables
 
@@ -209,6 +237,53 @@ The containerized client relies on `client/nginx.dev.conf` plus injected env suc
 - `NGINX_RESOLVER`
 
 That nginx config accepts both `localhost` and `arsenale.home.arpa.viti`. For WebAuthn, OAuth, and cookie-sensitive flows, the hostname you use in the browser should match the configured public URL and RP values.
+
+## 🔒 Login Security Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LOGIN_RATE_LIMIT_WINDOW_MS` | `900000` (15 min) | Sliding window for login rate limiting |
+| `LOGIN_RATE_LIMIT_MAX_ATTEMPTS` | `5` | Max login attempts per IP in window |
+| `ACCOUNT_LOCKOUT_THRESHOLD` | `10` | Failed logins before account lockout |
+| `ACCOUNT_LOCKOUT_DURATION_MS` | `1800000` (30 min) | Lockout duration |
+| `MAX_CONCURRENT_SESSIONS` | `0` (unlimited) | Max concurrent user sessions |
+| `ABSOLUTE_SESSION_TIMEOUT_SECONDS` | `43200` (12h) | Force re-login after this duration |
+| `TRUST_PROXY` | `false` | Express-style proxy trust setting |
+| `RATE_LIMIT_WHITELIST_CIDRS` | Private ranges | CIDR ranges bypassing rate limits |
+| `ALLOW_LOCAL_NETWORK` | `true` | Allow connections to private IPs |
+| `ALLOW_LOOPBACK` | `false` | Allow connections to localhost |
+| `IMPOSSIBLE_TRAVEL_SPEED_KMH` | `900` | Speed threshold for impossible travel detection |
+| `HIBP_FAIL_OPEN` | `false` | Allow password if HIBP API is unreachable |
+
+## 🎬 Recording Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RECORDING_ENABLED` | `false` | Enable automatic session recording |
+| `RECORDING_PATH` | `./data/recordings` | Path for recording files |
+| `RECORDING_VOLUME` | (empty) | Named Docker/Podman volume for recordings |
+| `RECORDING_RETENTION_DAYS` | `90` | Auto-cleanup retention period |
+| `GUACENC_SERVICE_URL` | `http://guacenc:3003` | Guacenc conversion sidecar URL |
+| `GUACENC_TIMEOUT_MS` | `120000` | Conversion timeout |
+| `GUACENC_AUTH_TOKEN` | (required in prod) | Bearer token for guacenc |
+| `GUACENC_USE_TLS` / `GUACENC_TLS_CA` | `false` | TLS for guacenc communication |
+| `GUACENC_RECORDING_PATH` | `/recordings` | Container-side mount point |
+| `ASCIICAST_CONVERTER_URL` | (guacenc default) | Override URL for asciicast-to-MP4 |
+
+## 🤖 AI and LLM Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `AI_PROVIDER` | Provider: `anthropic`, `openai`, `ollama`, `openai-compatible` |
+| `AI_API_KEY` | API key (not needed for Ollama) |
+| `AI_MODEL` | Model name (empty uses provider default) |
+| `AI_BASE_URL` | Base URL (required for Ollama and OpenAI-compatible) |
+| `AI_MAX_TOKENS` | Max tokens per request (default: 4096) |
+| `AI_TEMPERATURE` | Temperature (default: 0.2) |
+| `AI_TIMEOUT_MS` | Request timeout (default: 60000) |
+| `AI_QUERY_GENERATION_ENABLED` | Enable natural-language-to-SQL |
+| `AI_QUERY_GENERATION_MODEL` | Override model for query generation |
+| `AI_MAX_REQUESTS_PER_DAY` | Tenant daily request limit (default: 100) |
 
 ## 📌 Precedence And Gotchas
 

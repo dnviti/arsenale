@@ -108,5 +108,32 @@ Ephemeral toast notifications. **State**: `notification` ({message, severity}). 
 
 Server-persisted notifications. **State**: `notifications`, `unreadCount`, `total`, `loading`. **Actions**: `fetchNotifications`, `markAsRead`, `markAllAsRead`, `removeNotification`, `addNotification`, `reset`.
 
+### `featureFlagsStore` (`client/src/store/featureFlagsStore.ts`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `connectionsEnabled` | boolean | SSH, RDP, VNC connections and folders |
+| `databaseProxyEnabled` | boolean | Database sessions and DB audit |
+| `keychainEnabled` | boolean | Vault, secrets, files, external vault providers |
+| `recordingsEnabled` | boolean | Session recording APIs and UI |
+| `zeroTrustEnabled` | boolean | Gateways, tunnel broker, managed zero-trust routing |
+| `agenticAIEnabled` | boolean | AI-assisted database tooling |
+| `enterpriseAuthEnabled` | boolean | SAML, OAuth, OIDC, LDAP surfaces |
+| `sharingApprovalsEnabled` | boolean | Public sharing, approvals, and checkouts |
+| `cliEnabled` | boolean | CLI device auth and CLI-specific APIs |
+| `loaded` | boolean | Whether config has been fetched from server |
+
+**Actions**: `loadFromServer`, `reset`. Starts fail-open with all features enabled, then narrows to the server manifest from `GET /api/auth/config`.
+
+### `accessPolicyStore` (`client/src/store/accessPolicyStore.ts`)
+
+**State**: `policies`, `loading`, `error`.
+**Actions**: `fetchPolicies`, `createPolicy`, `updatePolicy`, `deletePolicy`, `reset`.
+
+### `checkoutStore` (`client/src/store/checkoutStore.ts`)
+
+**State**: `checkouts`, `pendingCheckouts`, `loading`, `error`.
+**Actions**: `fetchCheckouts`, `requestCheckout`, `approveCheckout`, `denyCheckout`, `checkinCheckout`, `reset`.
+
 <!-- manual-start -->
 <!-- manual-end -->

@@ -1,6 +1,6 @@
 {
   "version": "1.0",
-  "generated_at": "2026-04-03T11:29:03Z",
+  "generated_at": "2026-04-03T16:00:00.000000Z",
   "visual_richness": "tiny",
   "sections": [
     {
@@ -34,9 +34,13 @@
         {
           "path": "backend/internal/publicconfig/service.go",
           "hash": "8a2872f182a0fae51ee33e538f5a71c9a9da45ed82a1dc379dc16dadf4bc3546"
+        },
+        {
+          "path": "backend/internal/catalog/catalog.go",
+          "hash": "f9464c64678552cd9263255039f88cd64baf01f296cbdf1c6bada8541ee0bfa3"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.009277Z"
     },
     {
       "name": "architecture",
@@ -103,6 +107,26 @@
           "hash": "f4a8cf12ce689f66e3ac9d9a0facae345242197f4ccd961e4cf90fc24e83c8f5"
         },
         {
+          "path": "backend/cmd/recording-worker/main.go",
+          "hash": "2ec1e2bcdc0f90b14b12f0726efb4091115c4ffd6bdb6c5aced38b0a7f7ccb1a"
+        },
+        {
+          "path": "backend/internal/sshsessions/service.go",
+          "hash": "97200bd46abecf81b11ff0155f17ed77bdb77f82d298348c6a0e9bafd9098ded"
+        },
+        {
+          "path": "backend/internal/desktopsessions/service.go",
+          "hash": "ae955dc34d66d35f21b524b26f81c1fd3069027779d9fb69ae2614120290e989"
+        },
+        {
+          "path": "backend/internal/desktopbroker/service.go",
+          "hash": ""
+        },
+        {
+          "path": "backend/internal/recordingsapi/service.go",
+          "hash": "a91004948577caebb932d33c16ddd081504efdca0f2e405870de3c5305075633"
+        },
+        {
           "path": "client/src/api/client.ts",
           "hash": "d563fbb1ea711d2bd8dc8f7f2df3184bdd6837c2a4233165f2b9d354d2bac615"
         },
@@ -123,7 +147,7 @@
           "hash": "5fb85c43832361399b37a14d944667e594c7faef3bf760bc2bad9bbc52980cac"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.011297Z"
     },
     {
       "name": "getting-started",
@@ -154,35 +178,15 @@
           "hash": "65ad728d7ce4e53d07a9ec2186b1181c098f0e34abc6bc75f1387d1d399c8e25"
         },
         {
-          "path": "dev-certs/generate.sh",
-          "hash": "ee41f19f437557bfc6e141eda07b9ea22c806bdd1cf26d515a1088d70511265e"
-        },
-        {
           "path": "scripts/db-migrate.sh",
           "hash": "354ffcc3b9b7d1be2800ef697979e342234e3fec924060bbfc34f52f06fba7ef"
         },
         {
           "path": "scripts/dev-api-acceptance.sh",
           "hash": "e40cfa86ecd50eca096d2d1202f960279118c713cf1fca6d13a3f94554c07abe"
-        },
-        {
-          "path": "deployment/ansible/README.md",
-          "hash": "6d72cce908eef7fe04a0badef4d3b82abd7f86ec71ae4215b5709f4a88f38bde"
-        },
-        {
-          "path": "deployment/ansible/playbooks/install.yml",
-          "hash": "2f3ed0a2f2e66294e4c43f431251e94283d039ee057de4763e825488b1c161fa"
-        },
-        {
-          "path": "deployment/ansible/playbooks/status.yml",
-          "hash": "4512b183b4b239be0400fb69ff3150e3966137af1f156deacfb452075ea17a6f"
-        },
-        {
-          "path": "deployment/ansible/inventory/group_vars/all/vars.yml",
-          "hash": "7dc79c6e2b647b68e9db3d39211fdd1f4bed5fab06becc610cca0f1b7beb0365"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.012630Z"
     },
     {
       "name": "configuration",
@@ -191,18 +195,6 @@
         {
           "path": ".env.example",
           "hash": "65ad728d7ce4e53d07a9ec2186b1181c098f0e34abc6bc75f1387d1d399c8e25"
-        },
-        {
-          "path": "deployment/ansible/inventory/group_vars/all/vars.yml",
-          "hash": "7dc79c6e2b647b68e9db3d39211fdd1f4bed5fab06becc610cca0f1b7beb0365"
-        },
-        {
-          "path": "deployment/ansible/install/capabilities.yml",
-          "hash": "016bd16094f53cb73aede0898f299970e72e504e206ab837570c226e8053da70"
-        },
-        {
-          "path": "deployment/ansible/roles/deploy/templates/compose.yml.j2",
-          "hash": "ba5e75d1ee7515641fafdf5c12f76448b0cc8ed4468d62913e2089493bc101c5"
         },
         {
           "path": "backend/internal/app/app.go",
@@ -221,16 +213,8 @@
           "hash": "0a63aadb6b75b8ca273d8eb110e7ba6bb34be92211546fab3194604af8a9eca4"
         },
         {
-          "path": "backend/internal/storage/postgres.go",
-          "hash": "26aa9c5aad275c64e9c0430ea5272db4ba6ba5ca8f8b77cdf0cc7c83fd2c7a88"
-        },
-        {
           "path": "client/vite.config.ts",
           "hash": "3d12c45ddeb27f92f2bd72d8820617ac162accd260ae14c2e0ebbb1820627bee"
-        },
-        {
-          "path": "client/nginx.dev.conf",
-          "hash": "8861c16b999c5442262281689843d2bd21e2f967478880ff9671d5b9d9cf8cc9"
         },
         {
           "path": "client/src/api/auth.api.ts",
@@ -241,7 +225,7 @@
           "hash": "0ff8e62b9ac8ec766e66c685a2663da33c8d522a24a451dc4b7ff4d35281870c"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.013335Z"
     },
     {
       "name": "api-reference",
@@ -332,7 +316,7 @@
           "hash": "69f2149956f5e0b4132ead558a5f7cfed6811190f30ac5727c17ea11427933f8"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.014656Z"
     },
     {
       "name": "deployment",
@@ -351,52 +335,16 @@
           "hash": "cd1664b5e615661b76e5a34033251c18564d274b2b82339f6c5e8d5c4e86bdbe"
         },
         {
-          "path": "gateways/db-proxy/Dockerfile",
-          "hash": "38eb4588c23d16b3b72e40138f5d497f8f96189f5787a7671a7cf8be2af3fbc2"
-        },
-        {
-          "path": "gateways/ssh-gateway/Dockerfile",
-          "hash": "a7528d78c57ab15c4eaf16576bb6980d58d134bbaa4135d8d584922576b0fa01"
-        },
-        {
-          "path": "gateways/guacd/Dockerfile",
-          "hash": "55ad719a462c1fb257bc21df5a9f13821d7792cb6bf9109c18398422e89e05d1"
-        },
-        {
-          "path": "gateways/guacenc/Dockerfile",
-          "hash": "6f2d20b97f8074d12e052b6ffa7d567ead2d2cbac91fe584dd714181310e0745"
-        },
-        {
-          "path": "gateways/tunnel-agent/Dockerfile",
-          "hash": "ac3f281e2ed6b9294b507dd3ad6b49e46f50619c0749076e737920c8ef37adc4"
-        },
-        {
           "path": "docker-compose.yml",
           "hash": "5fb85c43832361399b37a14d944667e594c7faef3bf760bc2bad9bbc52980cac"
         },
         {
-          "path": "deployment/ansible/README.md",
-          "hash": "6d72cce908eef7fe04a0badef4d3b82abd7f86ec71ae4215b5709f4a88f38bde"
+          "path": ".compose-project/install.sh",
+          "hash": ""
         },
         {
-          "path": "deployment/ansible/install/capabilities.yml",
-          "hash": "016bd16094f53cb73aede0898f299970e72e504e206ab837570c226e8053da70"
-        },
-        {
-          "path": "deployment/ansible/playbooks/install.yml",
-          "hash": "2f3ed0a2f2e66294e4c43f431251e94283d039ee057de4763e825488b1c161fa"
-        },
-        {
-          "path": "deployment/ansible/playbooks/status.yml",
-          "hash": "4512b183b4b239be0400fb69ff3150e3966137af1f156deacfb452075ea17a6f"
-        },
-        {
-          "path": "deployment/ansible/playbooks/deploy.yml",
-          "hash": "0424e4191014c23cb07b1271e5f3a50f513ce2848272308f4b96568578990ded"
-        },
-        {
-          "path": "deployment/ansible/roles/deploy/templates/compose.yml.j2",
-          "hash": "ba5e75d1ee7515641fafdf5c12f76448b0cc8ed4468d62913e2089493bc101c5"
+          "path": ".compose-project/manage.sh",
+          "hash": ""
         },
         {
           "path": ".github/workflows/docker-build.yml",
@@ -419,7 +367,7 @@
           "hash": "cedf1f697ed32f891ba360e1a465865b131c3bc205e0fe3d4ca1c6bacfcd3910"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.015343Z"
     },
     {
       "name": "development",
@@ -428,10 +376,6 @@
         {
           "path": "AGENT.md",
           "hash": "d1459d3ff24bc9fa0fc7d3a238534b29759f7e21ba7b392723f108deecee8210"
-        },
-        {
-          "path": "CONTRIBUTING.md",
-          "hash": "eaa2af08ddf3775e1efe8d976fca8c73cd5a984bb291e84b5e813423c4517760"
         },
         {
           "path": "package.json",
@@ -466,14 +410,6 @@
           "hash": "8a2872f182a0fae51ee33e538f5a71c9a9da45ed82a1dc379dc16dadf4bc3546"
         },
         {
-          "path": "client/src/api/auth.api.ts",
-          "hash": "0272303b8287adeeada870c6823f3f77eba0999f14e87337765f345aedde90c8"
-        },
-        {
-          "path": "client/src/store/featureFlagsStore.ts",
-          "hash": "0ff8e62b9ac8ec766e66c685a2663da33c8d522a24a451dc4b7ff4d35281870c"
-        },
-        {
           "path": "scripts/go-build-all.sh",
           "hash": "4193a6dfb13c7424fb5a74121fc835fdc80f29d433772a3e4383fe56fbd8287a"
         },
@@ -496,9 +432,13 @@
         {
           "path": "tools/arsenale-cli/cmd/root.go",
           "hash": "0c7178dfe83b8cce70ae7a23cba9e5f8ec5f6fe797882f64a88da296ef4883e4"
+        },
+        {
+          "path": "backend/internal/catalog/catalog.go",
+          "hash": "f9464c64678552cd9263255039f88cd64baf01f296cbdf1c6bada8541ee0bfa3"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.017317Z"
     },
     {
       "name": "troubleshooting",
@@ -515,26 +455,6 @@
         {
           "path": "scripts/db-migrate.sh",
           "hash": "354ffcc3b9b7d1be2800ef697979e342234e3fec924060bbfc34f52f06fba7ef"
-        },
-        {
-          "path": "dev-certs/generate.sh",
-          "hash": "ee41f19f437557bfc6e141eda07b9ea22c806bdd1cf26d515a1088d70511265e"
-        },
-        {
-          "path": "deployment/ansible/playbooks/install.yml",
-          "hash": "2f3ed0a2f2e66294e4c43f431251e94283d039ee057de4763e825488b1c161fa"
-        },
-        {
-          "path": "deployment/ansible/playbooks/status.yml",
-          "hash": "4512b183b4b239be0400fb69ff3150e3966137af1f156deacfb452075ea17a6f"
-        },
-        {
-          "path": "client/vite.config.ts",
-          "hash": "3d12c45ddeb27f92f2bd72d8820617ac162accd260ae14c2e0ebbb1820627bee"
-        },
-        {
-          "path": "client/nginx.dev.conf",
-          "hash": "8861c16b999c5442262281689843d2bd21e2f967478880ff9671d5b9d9cf8cc9"
         },
         {
           "path": "backend/internal/runtimefeatures/manifest.go",
@@ -565,7 +485,7 @@
           "hash": "5fb85c43832361399b37a14d944667e594c7faef3bf760bc2bad9bbc52980cac"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.019032Z"
     },
     {
       "name": "llm-context",
@@ -624,18 +544,6 @@
           "hash": "922bd2cadbad504f4e184bca5f7162325bb11fce547b47fdd29aee03a08d9435"
         },
         {
-          "path": "deployment/ansible/playbooks/install.yml",
-          "hash": "2f3ed0a2f2e66294e4c43f431251e94283d039ee057de4763e825488b1c161fa"
-        },
-        {
-          "path": "deployment/ansible/playbooks/status.yml",
-          "hash": "4512b183b4b239be0400fb69ff3150e3966137af1f156deacfb452075ea17a6f"
-        },
-        {
-          "path": "deployment/ansible/install/capabilities.yml",
-          "hash": "016bd16094f53cb73aede0898f299970e72e504e206ab837570c226e8053da70"
-        },
-        {
           "path": "client/vite.config.ts",
           "hash": "3d12c45ddeb27f92f2bd72d8820617ac162accd260ae14c2e0ebbb1820627bee"
         },
@@ -652,7 +560,7 @@
           "hash": "0c7178dfe83b8cce70ae7a23cba9e5f8ec5f6fe797882f64a88da296ef4883e4"
         }
       ],
-      "generated_at": "2026-04-03T11:29:03Z"
+      "generated_at": "2026-04-03T14:49:59.020280Z"
     }
   ]
 }

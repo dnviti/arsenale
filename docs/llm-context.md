@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T11:29:03Z
+generated-at: 2026-04-03T14:30:00Z
 source-files:
   - README.md
   - AGENT.md
@@ -56,6 +56,23 @@ Every Go service shares these meta endpoints via `backend/internal/app/app.go`:
 - `/v1/meta/service`
 - `/v1/meta/architecture`
 
+## 🎬 Session Recording
+
+SSH sessions are recorded as asciicast `.cast` files by the SSH gateway. Desktop sessions (RDP/VNC) are recorded as Guacamole `.guac` files by guacd. The `recording-worker` (port 8094) handles conversion and retention. Key env vars: `RECORDING_ENABLED`, `RECORDING_PATH`, `RECORDING_VOLUME`, `RECORDING_RETENTION_DAYS`.
+
+## 🤖 Agent and AI Capabilities
+
+The capability catalog in `backend/internal/catalog/catalog.go` defines risk-rated permissions:
+
+- `connection.read` (Low), `connection.connect.ssh` (Medium), `connection.connect.rdp` (Medium)
+- `db.schema.read` (Low), `db.query.execute.readonly` (Medium), `db.query.execute.write` (High, requires approval)
+- `gateway.read` (Low), `gateway.scale` (High, requires approval), `workload.deploy` (Critical, requires approval)
+- `memory.read` (Low), `memory.write` (Medium), `audit.search` (Low)
+
+Memory types: `working`, `episodic`, `semantic`, `procedural`, `artifact`.
+Memory scopes: `tenant`, `principal`, `agent`, `run`, `workflow`.
+AI providers: `anthropic`, `openai`, `ollama`, `openai-compatible`.
+
 ## 🧩 Installer And Feature Profile
 
 Current runtime shape is not static. `backend/internal/runtimefeatures/manifest.go` builds a manifest from:
@@ -108,16 +125,25 @@ Authoritative route registration files:
 
 Highest-value public prefixes:
 
-- `/api/auth`
-- `/api/user`
-- `/api/secrets`
-- `/api/connections`
-- `/api/sessions`
-- `/api/gateways`
-- `/api/db-audit`
-- `/api/recordings`
-- `/api/tenants`
-- `/api/admin`
+- `/api/auth` — login, registration, OAuth, SAML, MFA, recovery
+- `/api/user` — profile, password, avatar, MFA lifecycle, notification schedule
+- `/api/secrets` — keychain CRUD, versioning, sharing, breach check, rotation
+- `/api/vault` — personal vault lock/unlock (including MFA unlock), recovery
+- `/api/connections` — connection CRUD, sharing, import/export, favorites
+- `/api/sessions` — SSH, RDP, VNC, database, DB tunnel, heartbeat, terminate
+- `/api/gateways` — gateway CRUD, templates, scaling, tunnel controls, instances
+- `/api/db-audit` — query audit logs, firewall rules, masking policies, rate limits
+- `/api/recordings` — recording list, stream, analyze, video export, audit trail
+- `/api/tenants` — tenant CRUD, users, invite, permissions, IP allowlist, MFA stats
+- `/api/admin` — email status, app config, system settings, auth providers
+- `/api/ai` — AI config, natural-language-to-SQL generation, query optimization
+- `/api/audit` — audit log search, geo summary, connection/tenant audit
+- `/api/notifications` — notification list, preferences, read state
+- `/api/access-policies` — access policy CRUD
+- `/api/keystroke-policies` — keystroke policy CRUD
+- `/api/checkouts` — approval-style credential checkout flow
+- `/api/teams` — team CRUD and membership management
+- `/api/tabs` — UI tab state sync
 
 ## 🗄 Database Execution Model
 
@@ -192,6 +218,48 @@ The development installer flow provisions:
 - sample `DATABASE` connections for those fixtures
 - tunneled `ssh-gateway`, `guacd`, and `db-proxy` fixtures
 - tenant vault state, tenant SSH keys, and an orchestrator connection
+
+## 📧 Email, SMS, And Security Config
+
+- Email providers: `smtp`, `sendgrid`, `ses`, `resend`, `mailgun` (via `EMAIL_PROVIDER`)
+- SMS providers: `twilio`, `sns`, `vonage` (via `SMS_PROVIDER`; empty for dev mode)
+- Login rate limiting: `LOGIN_RATE_LIMIT_WINDOW_MS`, `LOGIN_RATE_LIMIT_MAX_ATTEMPTS`
+- Account lockout: `ACCOUNT_LOCKOUT_THRESHOLD`, `ACCOUNT_LOCKOUT_DURATION_MS`
+- Session limits: `MAX_CONCURRENT_SESSIONS`, `ABSOLUTE_SESSION_TIMEOUT_SECONDS`
+- Impossible travel detection: `IMPOSSIBLE_TRAVEL_SPEED_KMH` (default 900)
+- WebAuthn: `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGIN`, `WEBAUTHN_RP_NAME`
+- LDAP: `LDAP_ENABLED`, `LDAP_SERVER_URL`, `LDAP_SYNC_ENABLED`, `LDAP_AUTO_PROVISION`
+- External vault providers: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, CyberArk Conjur
+
+## 🔐 Security Model
+
+- **Vault encryption**: AES-256-GCM with Argon2id key derivation (65,536 KiB memory, 3 iterations)
+- **Server encryption**: Separate `SERVER_ENCRYPTION_KEY` for tenant SSH keys and server-held material
+- **Sharing**: Re-encrypted per recipient; external shares use HKDF-SHA256 with optional PIN
+- **ABAC policies**: Folder > Team > Tenant specificity with time windows, MFA step-up, trusted-device requirements
+- **DLP**: Tenant floor + per-connection overrides; server-side for SSH, Guacamole params for desktop
+- **SQL firewall**: Regex-based query blocking in db-proxy
+- **Impossible travel**: Haversine distance between logins, flagged above 900 km/h default
+
+Detailed specs: [security/encryption.md](security/encryption.md), [security/policies.md](security/policies.md), [security/authentication.md](security/authentication.md).
+
+## 🗃 Database Schema
+
+PostgreSQL 16 with versioned SQL migrations in `backend/migrations/`. Key entity groups: User, Tenant, Team, Connection, Session, VaultSecret, Gateway, AuditLog, AccessPolicy, Checkout, Notification. 100+ audit action types. 7 tenant roles (OWNER through GUEST). Detailed schemas: [database/](database/).
+
+## 🌐 WebSocket Protocols
+
+- SSH terminal: `/ws/terminal` (port 8090) — binary frames for input, output, resize, SFTP operations
+- Desktop (RDP/VNC): `/guacamole` (port 8091) — Guacamole wire protocol
+- SSE streams: gateway status, notifications, vault status, active sessions, audit, DB audit
+
+## 📁 Extended References
+
+- [guides/tunnel-implementation-guide.md](guides/tunnel-implementation-guide.md) — binary tunnel protocol spec
+- [guides/zero-trust-tunnel-user-guide.md](guides/zero-trust-tunnel-user-guide.md) — tunnel deployment for Docker, K8s, systemd
+- [agent-orchestration-gateway.md](agent-orchestration-gateway.md) — planned agent orchestration system
+- [environment.md](environment.md) — complete 100+ env var catalog
+- [components/](components/) — frontend component, store, and hook inventory
 
 ## ⚠️ Historical Notes
 
