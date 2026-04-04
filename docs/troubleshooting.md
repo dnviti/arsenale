@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Common failures, debugging commands, and operator guidance for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T14:30:00Z
+generated-at: 2026-04-04T00:00:00Z
 source-files:
   - Makefile
   - scripts/dev-api-acceptance.sh
@@ -55,9 +55,9 @@ make logs SVC=arsenale-dev-tunnel-db-proxy
 
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
-| Browser warns about the cert | Dev CA not trusted | Import `dev-certs/ca.pem` |
+| Browser warns about the cert | Dev CA not trusted | Import `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/ca.pem` |
 | `ERR_CERT_AUTHORITY_INVALID` | Fresh machine or browser profile | Re-import CA and restart browser |
-| Vite starts without HTTPS | Dev cert files missing | Run `make setup` or `./dev-certs/generate.sh` |
+| Vite starts without HTTPS | Dev cert files missing | Run `make setup` or `make certs` |
 | API calls fail only in local Vite | Proxy targets or TLS overrides wrong | Check `client/vite.config.ts` and `VITE_*` overrides |
 | Containerized client is up but UI assets fail | nginx template mismatch | Check `client/nginx.dev.conf` and `make logs SVC=arsenale-client` |
 | WebAuthn, OAuth, or cookie flows behave oddly on `localhost` | Hostname does not match the configured public URL or RP values | Use the installer-configured hostname such as `arsenale.home.arpa.viti`, or align `CLIENT_URL`, `WEBAUTHN_RP_ID`, and `WEBAUTHN_RP_ORIGIN` |

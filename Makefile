@@ -14,7 +14,12 @@ ANSIBLE_DIR := deployment/ansible
 PLAYBOOK := cd $(ANSIBLE_DIR) && ansible-playbook
 VAULT_FILE := $(ANSIBLE_DIR)/inventory/group_vars/all/vault.yml
 LOCAL_VAULT_PASS_FILE := $(ANSIBLE_DIR)/.vault-pass
-DEFAULT_INSTALL_PASSWORD_FILE := $(abspath install/password.txt)
+ARSENALE_STATE_HOME ?= $(if $(XDG_STATE_HOME),$(XDG_STATE_HOME),$(HOME)/.local/state)
+ARSENALE_DEV_HOME ?= $(ARSENALE_STATE_HOME)/arsenale-dev
+DEFAULT_INSTALL_PASSWORD_FILE := $(abspath $(ARSENALE_DEV_HOME)/install/password.txt)
+DEV_HOME_FLAG := -e arsenale_dev_home=$(ARSENALE_DEV_HOME)
+DEV_STATUS_FILE := $(abspath $(ARSENALE_DEV_HOME)/install/install-status.enc)
+STATUS_FLAG := $(if $(wildcard $(DEV_STATUS_FILE)),-e installer_status_file=$(DEV_STATUS_FILE),)
 VAULT_FLAG ?= $(shell \
 	if [ -n "$$ANSIBLE_VAULT_PASSWORD_FILE" ]; then \
 		printf -- '--vault-password-file %s' "$$ANSIBLE_VAULT_PASSWORD_FILE"; \
@@ -66,11 +71,11 @@ setup: _check-ansible  ## First-time setup: install collections, generate vault 
 
 .PHONY: dev
 dev: _check-ansible  ## Deploy full dev stack via installer-aware flow
-	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e installer_mode=development
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) -e installer_mode=development
 
 .PHONY: dev-down
 dev-down: _check-ansible  ## Stop dev stack
-	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e arsenale_env=development -e arsenale_state=absent
+	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) -e arsenale_env=development -e arsenale_state=absent
 
 # ── Production ──────────────────────────────────────────────────────────────
 
@@ -90,7 +95,7 @@ deploy: _check-ansible  ## Deploy or update production stack via installer
 
 .PHONY: status
 status: _check-ansible  ## Show encrypted installer status
-	$(PLAYBOOK) playbooks/status.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG)
+	$(PLAYBOOK) playbooks/status.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(STATUS_FLAG)
 
 .PHONY: recover
 recover: _check-ansible  ## Re-run installer recovery flow in production mode
@@ -98,7 +103,7 @@ recover: _check-ansible  ## Re-run installer recovery flow in production mode
 
 .PHONY: logs
 logs:  ## Follow service logs (pass SVC= for specific service)
-	podman compose -f $$(find /opt/arsenale -name docker-compose.yml 2>/dev/null || echo "docker-compose.yml") logs -f $(SVC)
+	podman compose -f $$(find "$(ARSENALE_DEV_HOME)" /opt/arsenale -name docker-compose.yml 2>/dev/null | head -n1 || echo "docker-compose.yml") logs -f $(SVC)
 
 .PHONY: backup
 backup: _check-ansible  ## Create database backup

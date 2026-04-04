@@ -276,6 +276,36 @@
       - { name: tunnel-db-proxy, cn: dev-tunnel-db-proxy, gateway_id: "33333333-3333-4333-8333-333333333333" }
   when: _is_dev | default(false) | bool
 
+- name: Validate development tunnel gateway certificates against current CA
+  shell: |
+    set -euo pipefail
+    cert="{{ arsenale_cert_dir }}/{{ item.name }}/client-cert.pem"
+    if [ ! -f "${cert}" ]; then
+      exit 0
+    fi
+    openssl verify -CAfile "{{ _ca_cert_path }}" "${cert}"
+  args:
+    executable: /bin/bash
+  loop: "{{ dev_tunnel_gateway_certs | default([]) }}"
+  register: _dev_tunnel_cert_verify
+  changed_when: false
+  failed_when: false
+  when: _is_dev | default(false) | bool
+
+- name: Collect stale development tunnel gateway certificates
+  set_fact:
+    _dev_tunnel_gateways_stale: "{{ _dev_tunnel_cert_verify.results | default([]) | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+  when: _is_dev | default(false) | bool
+
+- name: Remove stale development tunnel gateway certificates signed by previous CA
+  file:
+    path: "{{ arsenale_cert_dir }}/{{ item.0.name }}/{{ item.1 }}"
+    state: absent
+  loop: "{{ (_dev_tunnel_gateways_stale | default([])) | product(['client-cert.pem', 'client-key.pem', 'client.csr']) | list }}"
+  when:
+    - _is_dev | default(false) | bool
+    - (_dev_tunnel_gateways_stale | default([]) | length) > 0
+
 - name: Check which development tunnel gateway certs already exist
   stat:
     path: "{{ arsenale_cert_dir }}/{{ item.name }}/client-cert.pem"

@@ -135,7 +135,7 @@ The preferred way to interact with Ansible is through the root `Makefile`. All c
 
 ```bash
 # First-time setup
-make setup            # Install Ansible collections, generate vault + certs
+make setup            # Install Ansible collections and prepare the local vault
 
 # Development
 make dev              # Start the full installer-aware development stack
@@ -195,9 +195,11 @@ Development-specific behaviors:
 
 - Firewall rules are **not** applied.
 - All capabilities are force-enabled regardless of profile selection.
-- Certificates are generated under `dev-certs/` in the repo root.
+- Installer-managed development state defaults to `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev`.
+- Certificates are generated under `$ARSENALE_DEV_HOME/dev-certs/` by default.
 - The client binds to `0.0.0.0` for external access.
 - Demo databases are seeded with sample data for UI testing.
+- The seeded Oracle demo database uses an `8g` memory cap and `1g` shared-memory segment during first-start initialization.
 
 After `make dev` completes:
 
@@ -761,7 +763,7 @@ ansible-playbook playbooks/install.yml --ask-vault-pass \
   -e installer_mode=production
 
 # Repo wrapper auto-detect for local development
-printf '%s\n' 'your-technician-password' > ../../install/password.txt
+printf '%s\n' 'your-technician-password' > "${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/install/password.txt"
 make dev
 ```
 

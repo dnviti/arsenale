@@ -21,7 +21,14 @@
   vars:
     _is_dev: "{{ (arsenale_env | default('production')) == 'development' }}"
     _state: "{{ arsenale_state | default('present') }}"
-    _home: "{{ (playbook_dir + '/../../..') if _is_dev | bool else (arsenale_home | default('/opt/arsenale')) }}"
+    _repo_root: "{{ playbook_dir + '/../../..' }}"
+    _xdg_state_home: "{{ lookup('env', 'XDG_STATE_HOME') | default((lookup('env', 'HOME') ~ '/.local/state'), true) }}"
+    _dev_home: "{{ arsenale_dev_home | default(lookup('env', 'ARSENALE_DEV_HOME') | default(_xdg_state_home ~ '/arsenale-dev', true), true) }}"
+    _home: "{{ _dev_home if _is_dev | bool else (arsenale_home | default('/opt/arsenale')) }}"
+    arsenale_source_root: "{{ _repo_root if _is_dev | bool else (arsenale_home | default('/opt/arsenale')) + '/arsenale' }}"
+    installer_workspace_dir: "{{ _home }}/.installer-workspace"
+    installer_scripts_dir: "{{ installer_workspace_dir }}/scripts"
+    installer_catalog_dir: "{{ installer_workspace_dir }}/install"
     installer_runtime_assets_dir: "{{ _home }}/config/installer-assets"
     # Environment-specific overrides
     arsenale_node_env: "{{ 'development' if _is_dev | bool else 'production' }}"
@@ -431,12 +438,14 @@
         {{ container_runtime | default('podman') }} exec arsenale-redis sh -lc 'keys=$(redis-cli --scan --pattern "rl:*"); if [ -n "$keys" ]; then redis-cli DEL $keys >/dev/null; fi'
         {{ container_runtime | default('podman') }} exec arsenale-postgres sh -lc "printf '%s\n' \"UPDATE \\\"User\\\" SET \\\"failedLoginAttempts\\\" = 0, \\\"lockedUntil\\\" = NULL WHERE email = '{{ arsenale_dev_bootstrap_admin_email }}';\" | PGPASSWORD='{{ vault_postgres_password }}' psql -U '{{ arsenale_db_user }}' -d '{{ arsenale_db_name }}' >/dev/null"
         rm -f /tmp/arsenale-dev-access-token /tmp/arsenale-dev-tenant-id
+        ARSENALE_CA_CERT='{{ arsenale_cert_dir }}/client/ca.pem' \
         ARSENALE_SAMPLE_POSTGRES_HOST='{{ dev_sample_postgres_host }}' \
         ARSENALE_SAMPLE_POSTGRES_PORT='{{ dev_sample_postgres_port }}' \
         ARSENALE_SAMPLE_POSTGRES_DB_NAME='{{ dev_sample_postgres_database }}' \
         ARSENALE_SAMPLE_POSTGRES_USER='{{ dev_sample_postgres_user }}' \
         ARSENALE_SAMPLE_POSTGRES_PASSWORD='{{ dev_sample_postgres_password }}' \
         ARSENALE_SAMPLE_POSTGRES_SSL_MODE='{{ dev_sample_postgres_ssl_mode }}' \
+        ARSENALE_CONTAINER_RUNTIME='{{ container_runtime | default('podman') }}' \
         {{ playbook_dir }}/../../../scripts/dev-api-acceptance.sh >/tmp/arsenale-ansible-acceptance.log
       args:
         executable: /bin/bash

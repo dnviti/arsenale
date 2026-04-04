@@ -79,11 +79,14 @@ npm install
 make setup
 ```
 
-`make setup` installs required Ansible collections and creates:
+`make setup` installs required Ansible collections and prepares local vault input.
+The first `make dev` run then creates installer-managed development state under
+`${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev` by default.
+
+`make setup` creates:
 
 - `deployment/ansible/inventory/group_vars/all/vault.yml`
 - `deployment/ansible/.vault-pass` when generated locally
-- `dev-certs/` with a shared CA and per-service certificates
 
 ### 3. Start the development stack
 
@@ -103,12 +106,14 @@ npm run dev
 What actually happens:
 
 1. `make dev` runs `deployment/ansible/playbooks/install.yml -e installer_mode=development`.
-2. The playbook renders and applies the dev stack, runs `service dev-bootstrap`, and seeds demo PostgreSQL, MySQL, MongoDB, Oracle, and SQL Server datasets.
+2. The playbook renders and applies the dev stack under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev`, runs `service dev-bootstrap`, and seeds demo PostgreSQL, MySQL, MongoDB, Oracle, and SQL Server datasets.
 3. `npm run dev:client` starts Vite after `http://localhost:18080/healthz`, `:18090/healthz`, and `:18091/healthz` are reachable.
 
-If you need a headless rerun, place the technician password in `install/password.txt`
+If you need a headless rerun, place the technician password in
+`${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/install/password.txt`
 before calling `make dev`. The repo wrapper will auto-pass that file as
-`install_password_file` to the installer.
+`install_password_file` to the installer. Set `ARSENALE_DEV_HOME=/absolute/path`
+if you want a different state directory.
 
 ### 4. Open the application
 
@@ -146,6 +151,8 @@ Development mode provisions five non-application demo databases. They are seeded
 | `Dev Demo SQL Server` | SQL Server | `ArsenaleDemo` | `dbo.demo_customers` |
 
 These fixtures are separate from the application's own PostgreSQL database and are intended for DB proxy testing, UI smoke tests, and audit-policy validation.
+
+The Oracle fixture is the heaviest of the seeded demo databases and reserves `8g` plus a `1g` shared-memory segment during first-start initialization in the installer-managed dev stack.
 
 ## 🧪 Quick Verification
 
@@ -213,7 +220,7 @@ psql "postgresql://arsenale:arsenale_password@localhost:5432/arsenale?sslmode=ve
 
 ## 🔐 Certificates and Local Trust
 
-`dev-certs/generate.sh` creates a shared CA and the service certificates consumed by:
+The development deployment creates a shared CA and the service certificates consumed by:
 
 - the client HTTPS listener,
 - PostgreSQL TLS,
@@ -225,7 +232,7 @@ psql "postgresql://arsenale:arsenale_password@localhost:5432/arsenale?sslmode=ve
 If the browser does not trust the local certs yet, import the CA from:
 
 ```text
-dev-certs/ca.pem
+${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/ca.pem
 ```
 
 If you plan to validate WebAuthn, OAuth redirects, or the installer-configured public URL, align your browser hostname with `arsenale_public_url`. The default dev nginx config accepts both `localhost` and `arsenale.home.arpa.viti`.

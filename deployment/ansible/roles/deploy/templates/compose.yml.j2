@@ -6,7 +6,7 @@
 # Secrets are managed via Podman secrets (mounted at /run/secrets/).
 # =============================================================================
 {% set _compose_repo_root = arsenale_source_root | default((_home if (_is_dev | default(false) | bool) else (_home + '/arsenale'))) %}
-{% set _compose_project_name = (((_home | basename) | lower | regex_replace('[^a-z0-9]+', '')) or 'compose') %}
+{% set _compose_project_name = (((_compose_repo_root | realpath | basename) | lower | regex_replace('[^a-z0-9]+', '')) or 'compose') %}
 {% set _runtime_assets_root = installer_runtime_assets_dir | default(_home + '/config/installer-assets') %}
 {% set _component_images = arsenale_component_images | default({}) %}
 {% macro local_image(service_name) -%}
@@ -225,7 +225,7 @@ services:
     entrypoint:
       - /bin/sh
       - -lc
-      - mkdir -p /guacd-drive /recordings && chmod 1777 /guacd-drive /recordings && exec /usr/local/bin/service
+      - mkdir -p /guacd-drive /recordings && { chmod 1777 /guacd-drive /recordings || true; } && exec /usr/local/bin/service
     user: "0:0"
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
@@ -493,7 +493,7 @@ services:
     entrypoint:
       - /bin/sh
       - -lc
-      - mkdir -p /guacd-drive /recordings && chmod 1777 /guacd-drive /recordings && exec /usr/local/bin/service
+      - mkdir -p /guacd-drive /recordings && { chmod 1777 /guacd-drive /recordings || true; } && exec /usr/local/bin/service
     user: "0:0"
     read_only: true
     cpus: "{{ arsenale_resource_limits.go_service.cpus }}"
@@ -1209,7 +1209,8 @@ services:
     image: docker.io/gvenzl/oracle-free:23-slim
     container_name: arsenale-dev-demo-oracle
     cpus: "1.0"
-    mem_limit: "4g"
+    mem_limit: "8g"
+    shm_size: "1g"
     pids_limit: 512
     environment:
       ORACLE_PASSWORD: "{{ dev_sample_oracle_system_password }}"

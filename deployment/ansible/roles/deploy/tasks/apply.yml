@@ -20,9 +20,16 @@
   set_fact:
     _compose_base_cmd: podman-compose
 
+- name: Set compose project name
+  set_fact:
+    _compose_project_name: >-
+      {{
+        (((arsenale_source_root | default(_home) | realpath | basename) | lower | regex_replace('[^a-z0-9]+', '')) or 'compose')
+      }}
+
 - name: Set compose command
   set_fact:
-    _compose_cmd: "{{ _compose_base_cmd }}{{ _compose_env_file_arg }} -f {{ _home }}/docker-compose.yml"
+    _compose_cmd: "{{ _compose_base_cmd }} -p {{ _compose_project_name }}{{ _compose_env_file_arg }} -f {{ _home }}/docker-compose.yml"
 
 - name: Set compose service runner helper path
   set_fact:
@@ -114,6 +121,7 @@
     python3 {{ _compose_service_runner_script | quote }} \
       --runtime {{ (container_runtime | default('podman')) | quote }} \
       --compose-file {{ (_home ~ '/docker-compose.yml') | quote }} \
+      --project-name {{ _compose_project_name | quote }} \
       --service migrate \
       --recreate \
       -- up

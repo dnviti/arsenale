@@ -21,9 +21,16 @@
   set_fact:
     _hc_compose_base_cmd: podman-compose
 
+- name: Set compose project name for health checks
+  set_fact:
+    _compose_project_name: >-
+      {{
+        (((arsenale_source_root | default(_home) | realpath | basename) | lower | regex_replace('[^a-z0-9]+', '')) or 'compose')
+      }}
+
 - name: Set compose command for health checks
   set_fact:
-    _hc_compose_cmd: "{{ _hc_compose_base_cmd }}{{ _hc_compose_env_file_arg }} -f {{ _home }}/docker-compose.yml"
+    _hc_compose_cmd: "{{ _hc_compose_base_cmd }} -p {{ _compose_project_name }}{{ _hc_compose_env_file_arg }} -f {{ _home }}/docker-compose.yml"
 
 - name: Set compose status helper path
   set_fact:
@@ -76,6 +83,8 @@
       - "{{ container_runtime | default('podman') }}"
       - --compose-file
       - "{{ _home }}/docker-compose.yml"
+      - --project-name
+      - "{{ _compose_project_name }}"
       - --env-file
       - "{{ _hc_compose_env_file }}"
   register: compose_status
@@ -103,6 +112,8 @@
       - "{{ container_runtime | default('podman') }}"
       - --compose-file
       - "{{ _home }}/docker-compose.yml"
+      - --project-name
+      - "{{ _compose_project_name }}"
       - --env-file
       - "{{ _hc_compose_env_file }}"
   register: migrate_status

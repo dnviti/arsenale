@@ -61,6 +61,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime", choices=["podman"], required=True)
     parser.add_argument("--compose-file", required=True)
+    parser.add_argument("--project-name", default="")
     parser.add_argument("--env-file", default="")
     args = parser.parse_args()
 
@@ -69,6 +70,8 @@ def main() -> int:
         raise SystemExit(f"Compose file not found: {compose_file}")
 
     cmd = detect_compose_cmd(args.runtime)
+    if args.project_name:
+        cmd.extend(["-p", args.project_name])
     if args.env_file:
         cmd.extend(["--env-file", args.env_file])
     cmd.extend(["-f", str(compose_file), "ps", "--format", "json"])

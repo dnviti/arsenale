@@ -80,8 +80,11 @@
     installer_backend: podman
     _is_dev: true
     _state: present
-    _home: "{{ playbook_dir + '/../../..' }}"
-    arsenale_source_root: "{{ playbook_dir + '/../../..' }}"
+    _repo_root: "{{ playbook_dir + '/../../..' }}"
+    _xdg_state_home: "{{ lookup('env', 'XDG_STATE_HOME') | default((lookup('env', 'HOME') ~ '/.local/state'), true) }}"
+    _dev_home: "{{ arsenale_dev_home | default(lookup('env', 'ARSENALE_DEV_HOME') | default(_xdg_state_home ~ '/arsenale-dev', true), true) }}"
+    _home: "{{ _dev_home }}"
+    arsenale_source_root: "{{ _repo_root }}"
     installer_workspace_dir: "{{ _home }}/.installer-workspace"
     installer_scripts_dir: "{{ installer_workspace_dir }}/scripts"
     installer_catalog_dir: "{{ installer_workspace_dir }}/install"
@@ -278,8 +281,11 @@
     installer_backend: "{{ hostvars['localhost'].installer_backend_value | default('kubernetes') }}"
     _is_dev: false
     _state: present
-    _home: "{{ playbook_dir + '/../../..' }}"
-    arsenale_source_root: "{{ playbook_dir + '/../../..' }}"
+    _repo_root: "{{ playbook_dir + '/../../..' }}"
+    _xdg_state_home: "{{ lookup('env', 'XDG_STATE_HOME') | default((lookup('env', 'HOME') ~ '/.local/state'), true) }}"
+    _dev_home: "{{ arsenale_dev_home | default(lookup('env', 'ARSENALE_DEV_HOME') | default(_xdg_state_home ~ '/arsenale-dev', true), true) }}"
+    _home: "{{ _dev_home }}"
+    arsenale_source_root: "{{ _repo_root }}"
     installer_workspace_dir: "{{ _home }}/.installer-workspace"
     installer_scripts_dir: "{{ installer_workspace_dir }}/scripts"
     installer_catalog_dir: "{{ installer_workspace_dir }}/install"

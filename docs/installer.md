@@ -70,7 +70,7 @@ make dev
 - Provisions five demo database containers (PostgreSQL, MySQL, MongoDB, Oracle, SQL Server).
 - Creates direct and tunneled gateway fixtures.
 - Firewall rules are **not** applied.
-- Certificates are generated under `dev-certs/` in the repo root.
+- Certificates are generated under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
 
 After completion:
 

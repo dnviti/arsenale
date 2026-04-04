@@ -1,24 +1,28 @@
 # Arsenale Agent Guide
 
-## Purpose
-Use `tools/arsenale-cli` as the primary operator and smoke-test client for this platform. Prefer it over ad hoc `curl` when you want to verify behavior end-to-end.
+## Core Rule
 
-## Build And Verify
-Before relying on the CLI, build it from the repo root:
+- Use `tools/arsenale-cli` as the default operator and smoke-test client for end-to-end verification. Prefer it over ad hoc `curl`.
+- If a change affects API routes, response fields, auth flows, config defaults, server URLs, tenant selection, or deployment wiring, update `tools/arsenale-cli` in the same change set. Rebuild and retest it; CLI help output and smoke checks are acceptance criteria.
+
+## CLI Build, Config, And Smoke
+
+Build from the repo root before relying on the CLI:
 
 ```bash
 go test ./tools/arsenale-cli/...
 go build -o /tmp/arsenale-cli ./tools/arsenale-cli
 ```
 
-For the local dev stack, point the CLI at `https://localhost:3000`:
+Use the local dev stack at `https://localhost:3000`:
 
 ```bash
 /tmp/arsenale-cli --server https://localhost:3000 health
 /tmp/arsenale-cli --server https://localhost:3000 login
+/tmp/arsenale-cli --server https://localhost:3000 whoami
 ```
 
-The CLI stores credentials in `~/.arsenale/config.yaml`. The config defaults are:
+The CLI stores config and auth in `~/.arsenale/config.yaml`:
 
 ```bash
 /tmp/arsenale-cli config
@@ -26,18 +30,21 @@ The CLI stores credentials in `~/.arsenale/config.yaml`. The config defaults are
 /tmp/arsenale-cli config set server_url https://localhost:3000
 ```
 
-## Test Flow
-Use this sequence when checking the platform after a change:
+Common entry points: `health`, `login`, `whoami`, `config`, `connection`, `gateway`, `session`, `rdgw`, `vault`, `connect`.
 
-1. `arsenale health` to confirm the API is reachable.
-2. `arsenale login --server https://localhost:3000` to refresh local credentials.
-3. `arsenale whoami` to confirm the authenticated tenant/user context.
-4. `arsenale connection list` and `arsenale gateway list` to verify the resource layer.
-5. `arsenale session list` and `arsenale gateway instances <id>` to verify runtime state.
-6. `arsenale gateway test <id>` before trying a manual `arsenale connect ssh <name>` or `arsenale connect rdp <name>`.
-7. Use `-o json` for machine checks and `--quiet` when only IDs matter.
+Use `arsenale [command] --help` before assuming flags or subcommands. Prefer `-o json` for assertions and `--quiet` when only IDs matter.
 
-For gateway and session debugging, these commands are especially useful:
+### Standard Verification Flow
+
+1. `arsenale health`
+2. `arsenale login --server https://localhost:3000`
+3. `arsenale whoami`
+4. `arsenale connection list` and `arsenale gateway list`
+5. `arsenale session list` and `arsenale gateway instances <id>`
+6. `arsenale gateway test <id>`
+7. Only then try `arsenale connect ssh <name>` or `arsenale connect rdp <name>`
+
+Useful debugging commands:
 
 ```bash
 /tmp/arsenale-cli --server https://localhost:3000 gateway tunnel-overview
@@ -46,20 +53,21 @@ For gateway and session debugging, these commands are especially useful:
 /tmp/arsenale-cli --server https://localhost:3000 rdgw status
 ```
 
-## Red/Green On Real Infrastructure
-When the change needs more than isolated unit coverage, run the Red/Green loop against the local stack at `https://localhost:3000` and treat the CLI as the default smoke client:
+### Red/Green On Real Infrastructure
 
-1. Write or update the narrow regression test first and make it fail locally.
+For changes that need more than isolated unit coverage, run the loop against `https://localhost:3000` and treat the CLI as the default smoke client:
+
+1. Write or narrow the regression test and make it fail locally.
 2. Build the CLI, confirm the stack is up, and refresh auth if needed.
-3. Reproduce the bug against the live stack with `/tmp/arsenale-cli ... -o json` or a narrow API call.
-4. If the change touches frontend behavior, reproduce it in a real browser with Selenium/WebDriver against `https://localhost:3000`.
+3. Reproduce the bug with `/tmp/arsenale-cli ... -o json` or a narrow API call.
+4. If the change touches the frontend, reproduce it in a real browser with Selenium/WebDriver.
 5. Implement the fix.
-6. Rerun the focused test until it is green.
-7. Rerun the same live-stack smoke path to confirm the behavior end-to-end.
-8. For frontend changes, rerun the Selenium/WebDriver browser path and the matching `arsenale-cli` smoke.
+6. Rerun focused tests until green.
+7. Rerun the same live-stack smoke path.
+8. For frontend changes, rerun both the Selenium/WebDriver path and the matching CLI smoke.
 9. Finish with `npm run verify`.
 
-Use this baseline sequence:
+Baseline sequence:
 
 ```bash
 go test ./tools/arsenale-cli/...
@@ -72,14 +80,13 @@ npm run verify
 
 Notes:
 
-- The local seeded credentials are `admin@example.com` / `DevAdmin123!` for tenant `Development Environment`.
-- The CLI stores auth in `~/.arsenale/config.yaml`. If that file is stale, refresh it with `arsenale-cli login` instead of hand-editing tokens.
-- If you need non-interactive CLI auth for automation, use the device flow endpoints already exposed by the platform, especially `POST /api/cli/auth/device/authorize`, from an already authenticated browser session.
-- Prefer `-o json` for assertions and keep the live-stack check narrowly scoped to the behavior you changed.
-- Frontend acceptance should use Selenium/WebDriver against the real local stack, not only component-level mocks.
-- Frontend browser checks do not replace platform smoke. Run the matching `arsenale-cli` assertion as well so the UI path and backend contract are both covered.
+- Local seeded credentials: `admin@example.com` / `DevAdmin123!` for tenant `Development Environment`.
+- If `~/.arsenale/config.yaml` is stale, refresh with `arsenale-cli login` instead of hand-editing tokens.
+- For non-interactive CLI auth, use the existing device-flow endpoints, especially `POST /api/cli/auth/device/authorize`, from an already authenticated browser session.
+- Frontend acceptance must use Selenium/WebDriver against the real local stack, not only component mocks.
+- Frontend browser checks do not replace platform smoke; run the matching `arsenale-cli` assertion too.
 
-Example live-stack pattern for an end-to-end change:
+Example end-to-end pattern:
 
 ```bash
 # Red: focused tests fail first
@@ -92,46 +99,20 @@ go test ./backend/internal/dbauditapi -run TestValidateSafeRegex -count=1
 /tmp/arsenale-cli --server https://localhost:3000 db-audit firewall-rule list -o json
 ```
 
-## Alignment Rule
-Any change that affects API routes, response fields, auth flows, config defaults, server URLs, tenant selection, or deployment wiring must be reflected in `tools/arsenale-cli` in the same change set.
+## Deployment Workflow
 
-That means:
-
-1. Update the CLI command or output handling when backend contracts change.
-2. Rebuild and retest the CLI against the current stack.
-3. Treat CLI help output and smoke tests as acceptance criteria, not an afterthought.
-
-If the platform changes and the CLI is not updated to match, the change is incomplete.
-
-## Practical Scope
-The most commonly used CLI entry points are:
-
-- `health`
-- `login`
-- `whoami`
-- `config`
-- `connection`
-- `gateway`
-- `session`
-- `rdgw`
-- `vault`
-- `connect`
-
-Use `arsenale [command] --help` before assuming flag names or subcommand availability.
-
-## Ansible Deployment Workflow
-
-Use the Ansible installer and root `Makefile` targets as the default stack lifecycle interface. Do not replace normal install, deploy, or teardown work with ad hoc `podman compose` commands.
+Use the Ansible installer and root `Makefile` targets as the default lifecycle interface. Do not substitute ad hoc `podman compose` commands for normal install, deploy, or teardown work.
 
 Default rules:
 
-- Docker is not a supported installer backend. Use `podman` or `kubernetes`.
-- For client installs, the installer must remain standalone.
-- Production and Kubernetes installs default to pulling published images because `arsenale_build_images: false`.
-- Development installs still build locally from the source checkout.
+- Docker is not a supported installer backend; use `podman` or `kubernetes`.
+- Client installs must keep the installer standalone.
+- Production and Kubernetes installs default to published images because `arsenale_build_images: false`.
+- Development installs still build from the local source checkout.
+- Ansible installation/output directories must never be the current `arsenale` repository checkout; keep installer state and generated folders outside the repo when choosing installation targets to avoid repository pollution.
 - Do not reintroduce source-tree coupling into client install paths.
 
-Primary commands from the repo root:
+Primary repo-root targets:
 
 ```bash
 make setup
@@ -157,9 +138,10 @@ make dev
 - Runs `deployment/ansible/playbooks/install.yml` with `installer_mode=development`
 - Always uses the Podman backend
 - Builds images from the local checkout
+- Keeps installer-managed state under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev` by default; override with `ARSENALE_DEV_HOME=/absolute/path`
 - Brings up the full stack, demo databases, bootstrap data, and acceptance checks
 
-Stop the dev stack with:
+Stop development with:
 
 ```bash
 make dev-down
@@ -175,7 +157,7 @@ make configure
 
 - Uses the installer profile plus inventory/group vars
 - Pulls published images by default
-- Does not need the application source tree when `arsenale_build_images: false`
+- Does not require the application source tree when `arsenale_build_images: false`
 - Renders installer-owned runtime assets under the target config directory
 
 Only set `arsenale_build_images: true` when you intentionally want a source-based build workflow.
@@ -187,18 +169,16 @@ ansible-playbook playbooks/install.yml \
   --vault-password-file .vault-pass \
   -e install_password_file=/absolute/path/to/install/password.txt \
   -e installer_mode=production
-```
 
-```bash
 ansible-playbook playbooks/install.yml \
   --vault-password-file .vault-pass \
-  -e install_password_file=/absolute/path/to/install/password.txt \
+  -e install_password_file=/absolute/path/to/arsenale-dev/install/password.txt \
+  -e arsenale_dev_home=/absolute/path/to/arsenale-dev \
   -e installer_mode=development
-```
 
-```bash
 ansible-playbook playbooks/deploy.yml \
   --vault-password-file .vault-pass \
+  -e arsenale_dev_home=/absolute/path/to/arsenale-dev \
   -e arsenale_env=development \
   -e arsenale_state=absent
 ```
@@ -211,71 +191,49 @@ Important deployment files:
 - `deployment/ansible/inventory/group_vars/all/vault.yml`
 - `deployment/ansible/playbooks/install.yml`
 - `deployment/ansible/playbooks/deploy.yml`
-- `install/password.txt`
+- `$ARSENALE_DEV_HOME/install/password.txt` for local development reruns
 
 Installer-generated paths:
 
-- `install/`
-- `.installer-workspace/`
-- `.installer-tmp/`
-- `config/installer-assets/`
-- `dev-certs/` in development or `certs/` in production
+- Development defaults to `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/`
+- Development artifacts live under that directory: `install/`, `.installer-workspace/`, `.installer-tmp/`, `config/installer-assets/`, `dev-certs/`, `docker-compose.yml`, and `.env`
+- Production still uses the installer target, typically `/opt/arsenale/`, including `certs/`
 
-If you change image names, compose rendering, installer defaults, or deployment behavior, update the Ansible docs and workflows in the same change set.
+If you change image names, compose rendering, installer defaults, or deployment behavior, update the related Ansible docs and workflows in the same change set.
 
 ## Documentation Management
 
-The project documentation lives in `docs/` and covers the full platform: architecture, API reference, configuration, deployment, development workflow, security, database schema, frontend components, and guides.
+Project docs live in `docs/` and cover architecture, API reference, configuration, deployment, development workflow, security, database schema, frontend components, and guides.
 
-### Structure
+Key docs:
 
-```
-docs/
-├── index.md                     # Landing page and table of contents
-├── getting-started.md           # Prerequisites and first-run setup
-├── architecture.md              # Service planes, capability gating, data flow
-├── configuration.md             # Env vars, installer inputs, precedence
-├── api-reference.md             # Public API routes and internal contracts
-├── deployment.md                # Installer flow, Podman/K8s backends, CI/CD
-├── development.md               # Local workflow, quality gates, conventions
-├── environment.md               # Complete 121+ env var catalog
-├── troubleshooting.md           # Health checks, debugging, reset options
-├── installer.md                 # Installer artifacts and recovery
-├── llm-context.md               # Condensed single-file context for AI/bots
-├── rag-summary.md               # High-level RAG summary
-├── api/                         # Detailed API endpoint specs (9 files)
-├── components/                  # Frontend architecture (5 files)
-├── database/                    # Schema models and enums (7 files)
-├── security/                    # Auth, encryption, policies, production (4 files)
-└── guides/                      # Zero-trust tunnel guides (2 files)
-```
+- Top level: `index.md`, `getting-started.md`, `architecture.md`, `configuration.md`, `api-reference.md`, `deployment.md`, `development.md`, `environment.md`, `troubleshooting.md`, `installer.md`, `llm-context.md`, `rag-summary.md`
+- Subdirectories: `api/`, `components/`, `database/`, `security/`, `guides/`
 
-### When To Update Docs
+Update docs when these change:
 
-Update documentation when any of the following change:
+- Services: `architecture.md`, `llm-context.md`
+- API routes: `api-reference.md`, `api/*.md`
+- Feature flags or capabilities: `configuration.md`, `environment.md`, `llm-context.md`
+- Frontend stores, hooks, or API modules: `components/*.md`, `development.md`
+- Database schema or migrations: `database/*.md`
+- Security policy or encryption: `security/*.md`
+- Installer or deployment behavior: `deployment.md`, `installer.md`
+- Environment variables: `environment.md`, `configuration.md`
 
-- **New or removed services** → `architecture.md`, `llm-context.md`
-- **API routes added or changed** → `api-reference.md`, `api/*.md`
-- **Feature flags or capabilities** → `configuration.md`, `environment.md`, `llm-context.md`
-- **Frontend stores, hooks, or API modules** → `components/*.md`, `development.md`
-- **Database schema or migrations** → `database/*.md`
-- **Security policies or encryption** → `security/*.md`
-- **Installer or deployment changes** → `deployment.md`, `installer.md`
-- **New env variables** → `environment.md`, `configuration.md`
+Doc update workflow:
 
-### How To Update
+1. Read the affected docs first.
+2. Cross-check them against the source code; the codebase is the source of truth.
+3. Edit the existing docs directly.
+4. Update counts and inventories when adding stores, hooks, API modules, or components.
+5. Update the `docs/.docs-manifest.json` timestamp.
+6. Keep `llm-context.md` aligned.
 
-1. Read the affected doc files to understand current state.
-2. Cross-reference with the actual source code (the codebase is always the source of truth).
-3. Edit the doc files directly — they are a mix of auto-generated and hand-authored content.
-4. Update counts and inventories (stores, hooks, API modules, components) when adding new ones.
-5. Update `docs/.docs-manifest.json` timestamp after edits.
-6. Keep `llm-context.md` aligned — it is a condensed single-file reference consumed by AI tools.
+Rules:
 
-### Key Rules
-
-- **Codebase is truth.** If docs and code disagree, trust the code and fix the docs.
-- **Subdirectory docs have `<!-- manual-start -->` / `<!-- manual-end -->` markers.** Content inside those markers is preserved across regeneration. Content outside is auto-generated.
-- **Do not create new doc files** unless covering a genuinely new major feature area. Prefer extending existing files.
-- **Counts matter.** When adding a new store, hook, API module, or component, update the counts in `components/overview.md` and `development.md`.
-- **Keep index.md in sync.** If you add a new doc file, add a row to the table of contents in `index.md`.
+- If docs and code disagree, trust the code and fix the docs.
+- Subdirectory docs use `<!-- manual-start -->` / `<!-- manual-end -->`; preserve content inside those markers.
+- Do not create new doc files unless the change introduces a genuinely new major feature area.
+- When counts change, update `components/overview.md` and `development.md`.
+- If you add a doc file, update the table of contents in `docs/index.md`.

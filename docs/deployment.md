@@ -172,7 +172,7 @@ Arsenale deploys with TLS everywhere practical.
 ### Certificates
 
 - Dev and production certificate generation are handled by the `certificates` role.
-- Local development also uses `dev-certs/generate.sh`.
+- Local development writes the generated CA and service certificates under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
 - Generated certs cover client HTTPS, PostgreSQL TLS, `guacd`, `guacenc`, SSH gateway gRPC, and tunnel identities.
 
 ### Secrets

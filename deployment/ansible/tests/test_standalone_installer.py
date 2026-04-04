@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import unittest
 from pathlib import Path
@@ -14,6 +15,7 @@ INSTALL_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "install.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
 DOCKER_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "docker-build.yml"
 GATEWAYS_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "gateways-build.yml"
+MAKEFILE = ROOT / "Makefile"
 
 
 def _bool_filter(value: object) -> bool:
@@ -34,6 +36,10 @@ def _basename(value: object) -> str:
     return Path(str(value)).name
 
 
+def _realpath(value: object) -> str:
+    return os.path.realpath(str(value))
+
+
 def _render_compose(**overrides: object) -> dict[str, object]:
     env = Environment(
         loader=FileSystemLoader(str(COMPOSE_TEMPLATE.parent)),
@@ -44,6 +50,7 @@ def _render_compose(**overrides: object) -> dict[str, object]:
     env.filters["bool"] = _bool_filter
     env.filters["regex_replace"] = _regex_replace
     env.filters["basename"] = _basename
+    env.filters["realpath"] = _realpath
 
     component_images = {
         "migrate": "ghcr.io/dnviti/arsenale/control-plane-api:latest",
@@ -177,9 +184,10 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
     def test_development_compose_keeps_local_builds(self) -> None:
         compose = _render_compose(
             arsenale_env="development",
-            _home="/workspace/arsenale",
+            _home="/workspace/arsenale/deployment/ansible/playbooks/../../..",
             _is_dev=True,
             _build=True,
+            arsenale_source_root="/workspace/arsenale",
             installer_runtime_assets_dir="/workspace/arsenale/config/installer-assets",
             arsenale_cert_dir="/workspace/arsenale/dev-certs",
         )
@@ -187,6 +195,12 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
 
         self.assertEqual(services["control-plane-api"]["build"]["context"], "/workspace/arsenale")
         self.assertEqual(services["client"]["build"]["dockerfile"], "client/Dockerfile")
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["ORCHESTRATOR_SSH_GATEWAY_IMAGE"],
+            "localhost/arsenale_ssh-gateway:latest",
+        )
+        self.assertEqual(services["dev-demo-oracle"]["mem_limit"], "8g")
+        self.assertEqual(services["dev-demo-oracle"]["shm_size"], "1g")
         self.assertEqual(
             services["postgres"]["volumes"][1],
             "/workspace/arsenale/config/installer-assets/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro",
@@ -200,6 +214,26 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
 
         self.assertIn('_build: "{{ arsenale_build_images | default(false) }}"', install_text)
         self.assertIn('_build: "{{ true if _is_dev | bool else (arsenale_build_images | default(false)) }}"', deploy_text)
+
+    def test_dev_state_defaults_to_external_home_while_building_from_repo(self) -> None:
+        install_text = INSTALL_PLAYBOOK.read_text(encoding="utf-8")
+        deploy_text = DEPLOY_PLAYBOOK.read_text(encoding="utf-8")
+        makefile_text = MAKEFILE.read_text(encoding="utf-8")
+
+        self.assertIn("ARSENALE_DEV_HOME ?= $(ARSENALE_STATE_HOME)/arsenale-dev", makefile_text)
+        self.assertIn("DEFAULT_INSTALL_PASSWORD_FILE := $(abspath $(ARSENALE_DEV_HOME)/install/password.txt)", makefile_text)
+        self.assertIn("DEV_HOME_FLAG := -e arsenale_dev_home=$(ARSENALE_DEV_HOME)", makefile_text)
+
+        self.assertIn("_dev_home: \"{{ arsenale_dev_home | default(", install_text)
+        self.assertIn("_home: \"{{ _dev_home }}\"", install_text)
+        self.assertIn("arsenale_source_root: \"{{ _repo_root }}\"", install_text)
+
+        self.assertIn("_dev_home: \"{{ arsenale_dev_home | default(", deploy_text)
+        self.assertIn("_home: \"{{ _dev_home if _is_dev | bool else (arsenale_home | default('/opt/arsenale')) }}\"", deploy_text)
+        self.assertIn(
+            "arsenale_source_root: \"{{ _repo_root if _is_dev | bool else (arsenale_home | default('/opt/arsenale')) + '/arsenale' }}\"",
+            deploy_text,
+        )
 
     def test_ci_publishes_required_installer_images(self) -> None:
         docker_build = yaml.safe_load(DOCKER_BUILD_WORKFLOW.read_text(encoding="utf-8"))

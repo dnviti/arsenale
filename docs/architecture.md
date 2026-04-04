@@ -344,7 +344,7 @@ The bootstrap flow also ensures tenant vault state, tenant SSH key pairs, an orc
 | `arsenale_recordings` volume | Session recordings and exported artifacts |
 | S3 / object storage | Recordings, exported artifacts, and agent outputs |
 | Podman secrets | Runtime delivery for JWT, database URL, guacamole secret, encryption key, and provider credentials |
-| `dev-certs/` | Shared CA plus service, gateway, and tunnel certificates |
+| `$ARSENALE_DEV_HOME/dev-certs/` | Shared CA plus service, gateway, and tunnel certificates for local development |
 | `/opt/arsenale/install/*.enc` | Encrypted installer profile, state, status, log, and rendered artifacts |
 
 ## 🔐 Security Architecture

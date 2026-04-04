@@ -40,11 +40,11 @@ def normalize_project_name(path: Path) -> str:
     return re.sub(r"[^a-z0-9]+", "", path.parent.name.lower()) or "compose"
 
 
-def resolve_podman_image(compose_file: Path, service_name: str, service: dict[str, Any]) -> str:
+def resolve_podman_image(compose_file: Path, service_name: str, service: dict[str, Any], project_name: str | None = None) -> str:
     image = service.get("image")
     if image:
         return str(image)
-    project_name = normalize_project_name(compose_file)
+    project_name = project_name or normalize_project_name(compose_file)
     return f"localhost/{project_name}_{service_name}:latest"
 
 
@@ -79,13 +79,13 @@ def service_networks(service: dict[str, Any]) -> list[str]:
     return [str(name) for name in networks]
 
 
-def resolve_podman_network_name(compose_file: Path, network_name: str) -> str:
+def resolve_podman_network_name(compose_file: Path, network_name: str, project_name: str | None = None) -> str:
     compose = load_compose(compose_file)
     network_definition = (compose.get("networks") or {}).get(network_name) or {}
     explicit_name = network_definition.get("name")
     if explicit_name:
         return str(explicit_name)
-    project_name = normalize_project_name(compose_file)
+    project_name = project_name or normalize_project_name(compose_file)
     return f"{project_name}-{network_name}"
 
 
@@ -108,9 +108,10 @@ def build_podman_create_command(
     service_name: str,
     service: dict[str, Any],
     command_args: list[str],
+    project_name: str | None = None,
 ) -> tuple[list[str], list[str], str]:
     container_name = str(service.get("container_name") or service_name)
-    image = resolve_podman_image(compose_file, service_name, service)
+    image = resolve_podman_image(compose_file, service_name, service, project_name=project_name)
     command = [runtime, "create", "--name", container_name]
 
     if service.get("read_only"):
@@ -164,7 +165,10 @@ def build_podman_create_command(
             continue
         command.extend(["--secret", secret_name])
 
-    networks = [resolve_podman_network_name(compose_file, network) for network in service_networks(service)]
+    networks = [
+        resolve_podman_network_name(compose_file, network, project_name=project_name)
+        for network in service_networks(service)
+    ]
     extra_networks: list[str] = []
     if networks:
         command.extend(["--network", networks[0]])
@@ -232,6 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create and run a compose service via Podman.")
     parser.add_argument("--runtime", choices=["podman"], default="podman")
     parser.add_argument("--compose-file", required=True)
+    parser.add_argument("--project-name", default="")
     parser.add_argument("--service", required=True)
     parser.add_argument("--recreate", action="store_true")
     parser.add_argument("service_args", nargs=argparse.REMAINDER)
@@ -253,6 +258,7 @@ def main(argv: list[str] | None = None) -> int:
         service_name=args.service,
         service=service,
         command_args=command_args,
+        project_name=args.project_name or None,
     )
 
     if args.recreate:

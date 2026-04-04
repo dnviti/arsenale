@@ -93,6 +93,7 @@
     {{ container_runtime | default('podman') }} exec arsenale-redis sh -lc 'keys=$(redis-cli --scan --pattern "rl:*"); if [ -n "$keys" ]; then redis-cli DEL $keys >/dev/null; fi'
     {{ container_runtime | default('podman') }} exec arsenale-postgres sh -lc "printf '%s\n' \"UPDATE \\\"User\\\" SET \\\"failedLoginAttempts\\\" = 0, \\\"lockedUntil\\\" = NULL WHERE email = '{{ arsenale_dev_bootstrap_admin_email }}';\" | PGPASSWORD='{{ vault_postgres_password }}' psql -U '{{ arsenale_db_user }}' -d '{{ arsenale_db_name }}' >/dev/null"
     rm -f /tmp/arsenale-dev-access-token /tmp/arsenale-dev-tenant-id
+    ARSENALE_CA_CERT='{{ arsenale_cert_dir }}/client/ca.pem' \
     ARSENALE_SAMPLE_POSTGRES_HOST='{{ dev_sample_postgres_host }}' \
     ARSENALE_SAMPLE_POSTGRES_PORT='{{ dev_sample_postgres_port }}' \
     ARSENALE_SAMPLE_POSTGRES_DB_NAME='{{ dev_sample_postgres_database }}' \

@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+default_state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+default_dev_home="${ARSENALE_DEV_HOME:-$default_state_home/arsenale-dev}"
 vault_file="${ARSENALE_VAULT_FILE:-$repo_root/deployment/ansible/inventory/group_vars/all/vault.yml}"
 
 resolve_postgres_password() {
@@ -58,6 +60,9 @@ postgres_password="$(resolve_postgres_password)"
 server_encryption_key="$(resolve_server_encryption_key)"
 jwt_secret="$(resolve_jwt_secret)"
 ca_cert="${ARSENALE_CA_CERT:-$repo_root/dev-certs/client/ca.pem}"
+if [[ ! -f "${ca_cert}" && -f "${default_dev_home}/dev-certs/client/ca.pem" ]]; then
+  ca_cert="${default_dev_home}/dev-certs/client/ca.pem"
+fi
 api_base="${ARSENALE_API_BASE:-https://localhost:3000/api}"
 client_base="${ARSENALE_CLIENT_BASE:-}"
 expected_webauthn_rp_id="${ARSENALE_WEBAUTHN_RP_ID:-}"

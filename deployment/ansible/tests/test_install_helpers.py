@@ -593,6 +593,7 @@ class RunComposeServiceTest(unittest.TestCase):
                 service_name="migrate",
                 service=service,
                 command_args=["up"],
+                project_name="arsenale",
             )
             self.assertEqual(container_name, "arsenale-migrate")
             self.assertEqual(extra_networks, [])
@@ -629,6 +630,7 @@ class RunComposeServiceTest(unittest.TestCase):
                 service_name="migrate",
                 service=service,
                 command_args=["up"],
+                project_name="arsenale",
             )
             network_index = command.index("--network") + 1
             self.assertEqual(command[network_index], "arsenale-net-db")
