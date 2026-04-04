@@ -64,7 +64,7 @@ export function sanitizeSSLModeForProtocol(
     return undefined;
   }
   if (!supportsCloudProviderPresets(protocol)) {
-    return normalizedCurrent;
+    return undefined;
   }
 
   const validModes = new Set(
@@ -80,16 +80,11 @@ export function sanitizeSSLModeForProtocol(
 }
 
 export function remapSSLModeOnProtocolChange(
-  previousProtocol: DbProtocol | undefined,
+  _previousProtocol: DbProtocol | undefined,
   nextProtocol: DbProtocol | undefined,
   currentMode: string | undefined,
   provider?: DbCloudProvider,
 ): string | undefined {
-  const nextSupportsCloudPresets = supportsCloudProviderPresets(nextProtocol);
-  if (!nextSupportsCloudPresets && supportsCloudProviderPresets(previousProtocol)) {
-    return undefined;
-  }
-
   return sanitizeSSLModeForProtocol(nextProtocol, currentMode, provider);
 }
 

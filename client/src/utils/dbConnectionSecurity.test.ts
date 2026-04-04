@@ -75,15 +75,15 @@ describe('dbConnectionSecurity', () => {
     ).toBe('require');
     expect(
       sanitizeSSLModeForProtocol('mssql', 'require'),
-    ).toBe('require');
+    ).toBeUndefined();
   });
 
-  it('clears hidden TLS state when leaving cloud SQL protocols', () => {
+  it('clears hidden TLS state when moving to protocols without TLS controls', () => {
     expect(
       remapSSLModeOnProtocolChange('postgresql', 'oracle', 'require'),
     ).toBeUndefined();
     expect(
       remapSSLModeOnProtocolChange('mssql', 'oracle', 'require'),
-    ).toBe('require');
+    ).toBeUndefined();
   });
 });
