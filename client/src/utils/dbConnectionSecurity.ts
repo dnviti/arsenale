@@ -46,10 +46,37 @@ export function nextSSLModeForCloudProvider(
 ): string | undefined {
   const normalizedCurrent = normalizeOptionalString(currentMode);
   const previousRecommended = recommendedSSLMode(protocol, previousProvider);
-  if (!normalizedCurrent || normalizedCurrent === previousRecommended) {
-    return recommendedSSLMode(protocol, nextProvider);
+  const nextRecommended = recommendedSSLMode(protocol, nextProvider);
+
+  if ((!normalizedCurrent || normalizedCurrent === previousRecommended) && nextRecommended) {
+    return nextRecommended;
   }
   return normalizedCurrent;
+}
+
+export function sanitizeSSLModeForProtocol(
+  protocol: DbProtocol | undefined,
+  currentMode: string | undefined,
+  provider?: DbCloudProvider,
+): string | undefined {
+  const normalizedCurrent = normalizeOptionalString(currentMode);
+  if (!normalizedCurrent) {
+    return undefined;
+  }
+  if (!supportsCloudProviderPresets(protocol)) {
+    return normalizedCurrent;
+  }
+
+  const validModes = new Set(
+    tlsModeOptions(protocol)
+      .map((option) => option.value)
+      .filter((value) => value !== ''),
+  );
+  if (validModes.has(normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+
+  return recommendedSSLMode(protocol, provider);
 }
 
 export function cloudProviderHint(
@@ -77,7 +104,7 @@ export function tlsModeOptions(protocol?: DbProtocol): DbTLSModeOption[] {
         {
           value: '',
           label: 'Driver default',
-          helperText: 'Leave sslmode unset and let the PostgreSQL driver choose its default behaviour.',
+          helperText: 'Leave sslmode unset and let the PostgreSQL driver choose its default behavior.',
         },
         {
           value: 'disable',

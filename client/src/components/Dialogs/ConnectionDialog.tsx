@@ -32,6 +32,7 @@ import {
   cloudProviderHint,
   nextSSLModeForCloudProvider,
   normalizeCloudProviderSelection,
+  sanitizeSSLModeForProtocol,
   supportsCloudProviderPresets,
   tlsModeOptions,
 } from '../../utils/dbConnectionSecurity';
@@ -59,7 +60,7 @@ function normalizeDbSettings(settings: Partial<DbSettings>): DbSettings | null {
     ...settings,
     protocol: settings.protocol,
     cloudProvider: supportsCloudPresets ? settings.cloudProvider : undefined,
-    sslMode: supportsCloudPresets ? settings.sslMode : undefined,
+    sslMode: settings.sslMode,
     persistExecutionPlan: supportsPersistedExecutionPlans(settings.protocol)
       ? settings.persistExecutionPlan
       : undefined,
@@ -634,7 +635,11 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                           protocol: proto,
                           databaseName: prev.databaseName,
                           cloudProvider: supportsCloudProviderPresets(proto) ? prev.cloudProvider : undefined,
-                          sslMode: supportsCloudProviderPresets(proto) ? prev.sslMode : undefined,
+                          sslMode: sanitizeSSLModeForProtocol(
+                            proto,
+                            prev.sslMode,
+                            supportsCloudProviderPresets(proto) ? prev.cloudProvider : undefined,
+                          ),
                           persistExecutionPlan: supportsPersistedExecutionPlans(proto)
                             ? prev.persistExecutionPlan
                             : undefined,

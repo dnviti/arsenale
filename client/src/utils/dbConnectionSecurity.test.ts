@@ -4,6 +4,7 @@ import {
   cloudProviderHint,
   nextSSLModeForCloudProvider,
   recommendedSSLMode,
+  sanitizeSSLModeForProtocol,
   tlsModeOptions,
 } from './dbConnectionSecurity';
 
@@ -33,6 +34,12 @@ describe('dbConnectionSecurity', () => {
     ).toBe('skip-verify');
   });
 
+  it('keeps the current mode when moving back to the generic preset', () => {
+    expect(
+      nextSSLModeForCloudProvider('mysql', 'require', 'azure', undefined),
+    ).toBe('require');
+  });
+
   it('returns protocol-specific TLS options', () => {
     expect(tlsModeOptions('postgresql').map((option) => option.value)).toEqual([
       '',
@@ -56,5 +63,17 @@ describe('dbConnectionSecurity', () => {
     expect(cloudProviderHint('mysql', 'aws')).toContain('AWS');
     expect(cloudProviderHint('mongodb', 'gcp')).toBeUndefined();
     expect(cloudProviderHint('postgresql', undefined)).toBeUndefined();
+  });
+
+  it('sanitizes invalid TLS modes when switching between cloud SQL protocols', () => {
+    expect(
+      sanitizeSSLModeForProtocol('mysql', 'verify-full'),
+    ).toBeUndefined();
+    expect(
+      sanitizeSSLModeForProtocol('mysql', 'verify-full', 'azure'),
+    ).toBe('require');
+    expect(
+      sanitizeSSLModeForProtocol('mssql', 'require'),
+    ).toBe('require');
   });
 });
