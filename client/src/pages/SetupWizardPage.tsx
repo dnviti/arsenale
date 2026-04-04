@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, TextField, Button, Typography, Alert, Paper,
@@ -16,7 +16,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
 } from '@mui/icons-material';
-import { completeSetup, getDbStatus, type SetupCompleteData, type DbStatusResponse } from '../api/setup.api';
+import { completeSetup, getDbStatus, getSetupStatus, type SetupCompleteData, type DbStatusResponse } from '../api/setup.api';
 import { useAuthStore } from '../store/authStore';
 import { useVaultStore } from '../store/vaultStore';
 import PasswordStrengthMeter from '../components/common/PasswordStrengthMeter';
@@ -29,6 +29,7 @@ export default function SetupWizardPage() {
   const setAuth = useAuthStore((s) => s.setAuth);
   const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
 
+  const [statusChecking, setStatusChecking] = useState(true);
   const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -73,6 +74,20 @@ export default function SetupWizardPage() {
   const [recoveryKey, setRecoveryKey] = useState('');
   const [systemSecrets, setSystemSecrets] = useState<Array<{ name: string; value: string; description: string }>>([]);
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    getSetupStatus()
+      .then((status) => {
+        if (!status.required) {
+          navigate('/', { replace: true });
+          return;
+        }
+        setStatusChecking(false);
+      })
+      .catch(() => {
+        setStatusChecking(false);
+      });
+  }, [navigate]);
 
   const handleCopyRecoveryKey = () => {
     navigator.clipboard.writeText(recoveryKey).then(() => {
@@ -175,6 +190,10 @@ export default function SetupWizardPage() {
   const handleGetStarted = () => {
     navigate('/', { replace: true });
   };
+
+  if (statusChecking) {
+    return null;
+  }
 
   return (
     <Box sx={{
