@@ -141,7 +141,7 @@ WHERE t.id = $1
 		result.EnforcedConnectionSettings = json.RawMessage(enforcedConnectionSettings)
 	}
 
-	return result, nil
+	return normalizeTenantForRuntime(result, s.Features.RecordingsEnabled), nil
 }
 
 func (s Service) ListUserTenants(ctx context.Context, userID string) ([]tenantMembershipResponse, error) {
@@ -204,7 +204,7 @@ ORDER BY tm."joinedAt" ASC
 		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
 	})
 
-	return items, nil
+	return filterTenantMembershipsForRuntime(items, s.Features.MultiTenancyEnabled), nil
 }
 
 func (s Service) GetIPAllowlist(ctx context.Context, tenantID string) (ipAllowlistResponse, error) {

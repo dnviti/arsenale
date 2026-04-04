@@ -12,6 +12,7 @@ export const useFeatureFlagsStore = create<FeatureFlagsState>((set) => ({
   databaseProxyEnabled: true,
   connectionsEnabled: true,
   keychainEnabled: true,
+  multiTenancyEnabled: true,
   recordingsEnabled: true,
   zeroTrustEnabled: true,
   agenticAIEnabled: true,

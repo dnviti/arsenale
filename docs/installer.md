@@ -69,6 +69,7 @@ make dev
 - Runs `dev-bootstrap` to seed an admin user and tenant.
 - Firewall rules are **not** applied.
 - Certificates are generated under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
+- When `connections` is enabled, `dev-bootstrap` registers the local `ssh-gateway` and `guacd` containers as tenant gateways.
 - Demo database and tunnel fixture services are not force-enabled by `make dev`.
 
 After completion:
@@ -177,8 +178,9 @@ Capabilities control which services are included in the rendered runtime. They a
 
 | Capability | Title | Default | Description | Dependencies |
 |------------|-------|---------|-------------|-------------|
-| `core` | Core Platform | **Required** | CLI enabled, connections, keychain | -- |
-| `keychain` | Keychain | Enabled | Tenant vault, secret storage, external vault integration, password rotation | -- |
+| `core` | Core Platform | **Required** | Base platform services plus the tenant vault/keychain | -- |
+| `keychain` | Keychain | **Required** | Tenant vault, secret storage, external vault integration, password rotation | -- |
+| `multi_tenancy` | Multi-Tenancy | Enabled | Multiple organizations per platform with tenant switching and self-service organization creation | -- |
 | `connections` | Connections | Enabled | SSH, RDP, VNC connections and folders | -- |
 | `databases` | Databases | Enabled | Database proxy and SQL tooling | `connections` |
 | `recordings` | Recordings | Enabled | Session recording and video export | `connections` |
@@ -193,6 +195,7 @@ When a capability is disabled:
 - Its services are removed from the rendered Compose/Helm output via `install_model.py prune-compose`.
 - Backend routes and frontend affordances for that capability are removed.
 - Persistent data (database volumes) is **not** deleted during removal or recovery.
+- When `multi_tenancy` is disabled, setup and `dev-bootstrap` may still create the initial organization, but tenant creation and tenant switching are removed after install.
 
 In development mode, capabilities and routing resolve exactly like production. The development-specific difference is local Podman execution with source-built images.
 
@@ -364,12 +367,15 @@ ansible-playbook playbooks/install.yml --ask-vault-pass \
   -e install_password_file=/run/secrets/installer-password \
   -e installer_mode=production \
   -e installer_backend=podman \
-  -e installer_capabilities_csv="keychain,connections,databases,recordings,enterprise_auth,cli" \
+  -e installer_capabilities_csv="multi_tenancy,connections,databases,recordings,enterprise_auth,cli" \
   -e installer_direct_gateway=true \
   -e installer_zero_trust=false
 
 make dev DEV_CAPABILITIES=cli DEV_DIRECT_GATEWAY=false DEV_ZERO_TRUST=false
 ```
+
+`keychain` is part of the required core profile, so minimal installs still include vault routes and lock enforcement even when `DEV_CAPABILITIES` only lists optional modules such as `cli`.
+Omitting `multi_tenancy` keeps the install in single-tenant mode, where the initial organization is seeded during setup/bootstrap and end users no longer see tenant create or switch flows.
 
 For Kubernetes:
 
@@ -383,7 +389,7 @@ ansible-playbook playbooks/install.yml --ask-vault-pass \
   -e installer_ingress_host=arsenale.example.com \
   -e installer_ingress_tls=true \
   -e installer_kube_replicas=3 \
-  -e installer_capabilities_csv="keychain,connections,databases,recordings,enterprise_auth,cli"
+  -e installer_capabilities_csv="connections,databases,recordings,enterprise_auth,cli"
 ```
 
 ## Kubernetes Notes

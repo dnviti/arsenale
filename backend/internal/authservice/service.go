@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -25,6 +26,7 @@ type Service struct {
 	RefreshCookieTTL   time.Duration
 	AccessTokenTTL     time.Duration
 	VaultTTL           time.Duration
+	Features           runtimefeatures.Manifest
 	TenantVaultService *tenantvaultapi.Service
 }
 

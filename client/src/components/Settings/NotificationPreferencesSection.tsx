@@ -18,6 +18,7 @@ import {
   type NotificationPreference,
   type NotificationSchedule,
 } from '../../api/notifications.api';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { extractApiError } from '../../utils/apiError';
 
 interface NotificationCategory {
@@ -83,6 +84,7 @@ function getTimezoneOptions(): string[] {
 const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 export default function NotificationPreferencesSection() {
+  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const [prefs, setPrefs] = useState<Map<NotificationType, NotificationPreference>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -98,6 +100,10 @@ export default function NotificationPreferencesSection() {
   const [scheduleSaving, setScheduleSaving] = useState(false);
 
   const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
+  const categories = useMemo(
+    () => CATEGORIES.filter((category) => recordingsEnabled || !category.types.includes('RECORDING_READY')),
+    [recordingsEnabled],
+  );
 
   useEffect(() => {
     Promise.all([
@@ -199,7 +205,7 @@ export default function NotificationPreferencesSection() {
           </Alert>
         )}
 
-        {CATEGORIES.map((category) => (
+        {categories.map((category) => (
           <Box key={category.label} sx={{ mb: 3 }}>
             <Typography variant="body2" fontWeight="medium" color="text.secondary" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '0.7rem' }}>
               {category.label}

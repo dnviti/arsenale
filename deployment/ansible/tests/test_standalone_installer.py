@@ -180,6 +180,9 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             postgres_volumes,
         )
         self.assertTrue(all("/opt/arsenale/arsenale/" not in entry for entry in postgres_volumes))
+        self.assertIn("net-egress", services["guacd"]["networks"])
+        self.assertIn("net-egress", services["ssh-gateway"]["networks"])
+        self.assertIn("net-egress", services["query-runner"]["networks"])
 
     def test_development_compose_keeps_local_builds(self) -> None:
         compose = _render_compose(
@@ -199,12 +202,24 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             services["control-plane-api"]["environment"]["ORCHESTRATOR_SSH_GATEWAY_IMAGE"],
             "localhost/arsenale_ssh-gateway:latest",
         )
+        self.assertIn("multi_tenancy", services["control-plane-api"]["environment"]["ARSENALE_INSTALL_CAPABILITIES"])
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["FEATURE_MULTI_TENANCY_ENABLED"],
+            "${FEATURE_MULTI_TENANCY_ENABLED:-true}",
+        )
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["RECORDING_ENABLED"],
+            "${FEATURE_RECORDINGS_ENABLED:-true}",
+        )
         self.assertEqual(services["dev-demo-oracle"]["mem_limit"], "8g")
         self.assertEqual(services["dev-demo-oracle"]["shm_size"], "1g")
         self.assertEqual(
             services["postgres"]["volumes"][1],
             "/workspace/arsenale/config/installer-assets/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro",
         )
+        self.assertIn("net-egress", services["guacd"]["networks"])
+        self.assertIn("net-egress", services["ssh-gateway"]["networks"])
+        self.assertIn("net-egress", services["query-runner"]["networks"])
 
     def test_development_compose_can_disable_dev_fixtures(self) -> None:
         compose = _render_compose(
@@ -224,6 +239,10 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertNotIn("terminal-target", services)
         self.assertNotIn("dev-demo-postgres", services)
         self.assertNotIn("dev-tunnel-ssh-gateway", services)
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["FEATURE_MULTI_TENANCY_ENABLED"],
+            "${FEATURE_MULTI_TENANCY_ENABLED:-true}",
+        )
         self.assertEqual(services["control-plane-api"]["environment"]["DEV_BOOTSTRAP_TUNNEL_FIXTURES_ENABLED"], "false")
         self.assertEqual(services["control-plane-api"]["environment"]["DEV_BOOTSTRAP_DEMO_DATABASES_ENABLED"], "false")
 

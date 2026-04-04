@@ -79,9 +79,12 @@ export default function MainLayout() {
   const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
   const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
+  const multiTenancyEnabled = useFeatureFlagsStore((s) => s.multiTenancyEnabled);
+  const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
   const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const sharingApprovalsEnabled = useFeatureFlagsStore((s) => s.sharingApprovalsEnabled);
   const fetchFeatureFlags = useFeatureFlagsStore((s) => s.fetchFeatureFlags);
+  const checkVaultStatus = useVaultStore((s) => s.checkStatus);
   const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
 
   useGatewayMonitor();
@@ -106,6 +109,13 @@ export default function MainLayout() {
       fetchCounts();
     }
   }, [vaultUnlocked, fetchCounts]);
+
+  useEffect(() => {
+    if (!featureFlagsLoaded || !keychainEnabled) {
+      return;
+    }
+    void checkVaultStatus();
+  }, [checkVaultStatus, featureFlagsLoaded, keychainEnabled]);
 
   // PWA app shortcut deep-link: read ?action= query param to pre-open a dialog on mount (PWA-003)
   const [pwaAction] = useState(() => {
@@ -256,21 +266,25 @@ export default function MainLayout() {
           <Typography variant="h6" sx={{ flexGrow: 0, mr: 2, fontFamily: (theme) => theme.typography.h5.fontFamily, fontSize: '1.4rem', color: 'text.primary' }}>
             Arsenale
           </Typography>
-          <TenantSwitcher onCreateOrg={() => handleOpenSettings('organization')} />
-          <Chip
-            icon={vaultUnlocked ? <LockOpenIcon /> : <LockIcon />}
-            label={vaultUnlocked ? 'Vault Unlocked' : 'Vault Locked'}
-            size="small"
-            variant="outlined"
-            onClick={vaultUnlocked ? handleLockVault : undefined}
-            sx={{
-              mr: 1,
-              ...(vaultUnlocked
-                ? { bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', borderColor: (theme) => `${theme.palette.primary.main}26`, '& .MuiChip-icon': { color: 'primary.main' } }
-                : { bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.main', borderColor: (theme) => `${theme.palette.error.main}26`, '& .MuiChip-icon': { color: 'error.main' } }),
-            }}
-          />
-          {keychainEnabled && (
+          {featureFlagsLoaded && multiTenancyEnabled && (
+            <TenantSwitcher onCreateOrg={() => handleOpenSettings('organization')} />
+          )}
+          {featureFlagsLoaded && keychainEnabled && (
+            <Chip
+              icon={vaultUnlocked ? <LockOpenIcon /> : <LockIcon />}
+              label={vaultUnlocked ? 'Vault Unlocked' : 'Vault Locked'}
+              size="small"
+              variant="outlined"
+              onClick={vaultUnlocked ? handleLockVault : undefined}
+              sx={{
+                mr: 1,
+                ...(vaultUnlocked
+                  ? { bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', borderColor: (theme) => `${theme.palette.primary.main}26`, '& .MuiChip-icon': { color: 'primary.main' } }
+                  : { bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.main', borderColor: (theme) => `${theme.palette.error.main}26`, '& .MuiChip-icon': { color: 'error.main' } }),
+              }}
+            />
+          )}
+          {featureFlagsLoaded && keychainEnabled && (
             <IconButton
               color="inherit"
               onClick={() => setKeychainOpen(true)}

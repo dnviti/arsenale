@@ -300,6 +300,7 @@ These variables are emitted by the Ansible installer and control runtime feature
 | `FEATURE_CONNECTIONS_ENABLED` | boolean | `true` | Enable SSH, RDP, VNC connections and folders |
 | `FEATURE_DATABASE_PROXY_ENABLED` | boolean | `true` | Enable database sessions and DB audit |
 | `FEATURE_KEYCHAIN_ENABLED` | boolean | `true` | Enable vault, secrets, files, and external vault providers |
+| `FEATURE_MULTI_TENANCY_ENABLED` | boolean | `true` | Enable multiple organizations, tenant switching, and self-service organization creation |
 | `FEATURE_RECORDINGS_ENABLED` | boolean | `true` | Enable recording APIs and UI |
 | `FEATURE_ZERO_TRUST_ENABLED` | boolean | `true` | Enable gateways, tunnel broker, and managed zero-trust routing |
 | `FEATURE_AGENTIC_AI_ENABLED` | boolean | `true` | Enable AI-assisted database tooling |

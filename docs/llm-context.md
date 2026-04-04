@@ -88,7 +88,7 @@ That manifest controls:
 
 - which route families are registered in `backend/cmd/control-plane-api/routes*.go`
 - what the SPA exposes after it loads `GET /api/auth/config`
-- whether connections, DB proxy, keychain, recordings, zero trust, AI, enterprise auth, sharing, and CLI surfaces are active
+- whether connections, DB proxy, keychain, multi-tenancy, recordings, zero trust, AI, enterprise auth, sharing, and CLI surfaces are active
 
 The SPA reads the public config through `client/src/api/auth.api.ts` and stores it in `client/src/store/featureFlagsStore.ts`.
 
@@ -218,8 +218,10 @@ It still seeds:
 - admin credentials: `admin@example.com` / `DevAdmin123!`
 - a default tenant: `Development Environment`
 - tenant membership and baseline setup state
+- local `ssh-gateway` and `guacd` gateway records when `connections` is enabled
 
 Demo databases and tunnel gateway fixtures are no longer force-enabled by `make dev`.
+If `multi_tenancy` is disabled, the seeded tenant remains the platform's only organization and the create/switch organization flows stay off.
 
 ## 📧 Email, SMS, And Security Config
 

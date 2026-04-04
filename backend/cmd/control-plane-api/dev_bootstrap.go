@@ -25,6 +25,7 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -45,15 +46,18 @@ type devBootstrapOptions struct {
 }
 
 type devGatewaySpec struct {
-	ID          string
-	Name        string
-	Type        string
-	Host        string
-	Port        int
-	APIPort     *int
-	Token       string
-	CertDir     string
-	Description string
+	ID             string
+	Name           string
+	Type           string
+	Host           string
+	Port           int
+	APIPort        *int
+	DeploymentMode string
+	IsManaged      bool
+	TunnelEnabled  bool
+	Token          string
+	CertDir        string
+	Description    string
 }
 
 type devDemoDatabaseSpec struct {
@@ -112,15 +116,17 @@ func runDevBootstrap(ctx context.Context, deps *apiDependencies) error {
 	}
 
 	specs := buildDevGatewaySpecs(options.certDir, runtime)
-	if runtime.tunnelFixturesEnabled && len(specs) > 0 {
+	if hasTunnelGateway(specs) {
 		if err := syncTenantTunnelCA(ctx, deps, tenantID, options.certDir); err != nil {
 			return err
 		}
-		for _, spec := range specs {
-			if err := upsertDevGateway(ctx, deps, tenantID, userID, spec); err != nil {
-				return err
-			}
+	}
+	for _, spec := range specs {
+		if err := upsertDevGateway(ctx, deps, tenantID, userID, spec); err != nil {
+			return err
 		}
+	}
+	if hasTunnelGateway(specs) {
 		if err := ensureBootstrapOrchestratorConnection(ctx, deps, options); err != nil {
 			return err
 		}
@@ -132,7 +138,7 @@ func runDevBootstrap(ctx context.Context, deps *apiDependencies) error {
 		}
 	}
 
-	if runtime.tunnelFixturesEnabled && hasManagedSSHGateway(specs) {
+	if hasManagedSSHGateway(specs) {
 		const maxManagedSSHKeyPushAttempts = 15
 		const managedSSHKeyPushRetryDelay = 2 * time.Second
 		keyPushSucceeded := false
@@ -211,6 +217,15 @@ func hasManagedSSHGateway(specs []devGatewaySpec) bool {
 	return false
 }
 
+func hasTunnelGateway(specs []devGatewaySpec) bool {
+	for _, spec := range specs {
+		if spec.TunnelEnabled {
+			return true
+		}
+	}
+	return false
+}
+
 func loadDevBootstrapOptions() devBootstrapOptions {
 	certDir := strings.TrimSpace(os.Getenv("DEV_TUNNEL_CERT_DIR"))
 	if certDir == "" {
@@ -254,46 +269,83 @@ func requiredEnvInt(name string, fallback int) int {
 }
 
 func buildDevGatewaySpecs(certDir string, runtime devBootstrapRuntime) []devGatewaySpec {
-	if !runtime.features.ZeroTrustEnabled || !runtime.tunnelFixturesEnabled {
-		return nil
-	}
-
-	specs := make([]devGatewaySpec, 0, 3)
+	specs := make([]devGatewaySpec, 0, 5)
 	if runtime.features.ConnectionsEnabled {
 		specs = append(specs,
 			devGatewaySpec{
-				ID:          requiredEnv("DEV_TUNNEL_MANAGED_SSH_GATEWAY_ID", "11111111-1111-4111-8111-111111111111"),
-				Name:        "Dev Tunnel Managed SSH",
-				Type:        "MANAGED_SSH",
-				Host:        "dev-tunnel-ssh-gateway",
-				Port:        2222,
-				APIPort:     intPtr(9022),
-				Token:       requiredEnv("DEV_TUNNEL_MANAGED_SSH_TOKEN", "dev-tunnel-managed-ssh-token"),
-				CertDir:     filepath.Join(certDir, "tunnel-managed-ssh"),
-				Description: "Development managed SSH gateway registered through the zero-trust tunnel",
+				ID:             requiredEnv("DEV_LOCAL_MANAGED_SSH_GATEWAY_ID", "44444444-4444-4444-8444-444444444444"),
+				Name:           "Dev Local Managed SSH",
+				Type:           "MANAGED_SSH",
+				Host:           "ssh-gateway",
+				Port:           2222,
+				APIPort:        intPtr(9022),
+				DeploymentMode: "SINGLE_INSTANCE",
+				IsManaged:      false,
+				TunnelEnabled:  false,
+				Description:    "Development managed SSH gateway backed by the local ssh-gateway container",
 			},
 			devGatewaySpec{
-				ID:          requiredEnv("DEV_TUNNEL_GUACD_GATEWAY_ID", "22222222-2222-4222-8222-222222222222"),
-				Name:        "Dev Tunnel GUACD",
-				Type:        "GUACD",
-				Host:        "dev-tunnel-guacd",
-				Port:        4822,
-				Token:       requiredEnv("DEV_TUNNEL_GUACD_TOKEN", "dev-tunnel-guacd-token"),
-				CertDir:     filepath.Join(certDir, "tunnel-guacd"),
-				Description: "Development guacd gateway registered through the zero-trust tunnel",
+				ID:             requiredEnv("DEV_LOCAL_GUACD_GATEWAY_ID", "55555555-5555-4555-8555-555555555555"),
+				Name:           "Dev Local GUACD",
+				Type:           "GUACD",
+				Host:           "guacd",
+				Port:           4822,
+				DeploymentMode: "SINGLE_INSTANCE",
+				IsManaged:      false,
+				TunnelEnabled:  false,
+				Description:    "Development GUACD gateway backed by the local guacd container",
+			},
+		)
+	}
+
+	if !runtime.features.ZeroTrustEnabled || !runtime.tunnelFixturesEnabled {
+		return specs
+	}
+
+	if runtime.features.ConnectionsEnabled {
+		specs = append(specs,
+			devGatewaySpec{
+				ID:             requiredEnv("DEV_TUNNEL_MANAGED_SSH_GATEWAY_ID", "11111111-1111-4111-8111-111111111111"),
+				Name:           "Dev Tunnel Managed SSH",
+				Type:           "MANAGED_SSH",
+				Host:           "dev-tunnel-ssh-gateway",
+				Port:           2222,
+				APIPort:        intPtr(9022),
+				DeploymentMode: "MANAGED_GROUP",
+				IsManaged:      true,
+				TunnelEnabled:  true,
+				Token:          requiredEnv("DEV_TUNNEL_MANAGED_SSH_TOKEN", "dev-tunnel-managed-ssh-token"),
+				CertDir:        filepath.Join(certDir, "tunnel-managed-ssh"),
+				Description:    "Development managed SSH gateway registered through the zero-trust tunnel",
+			},
+			devGatewaySpec{
+				ID:             requiredEnv("DEV_TUNNEL_GUACD_GATEWAY_ID", "22222222-2222-4222-8222-222222222222"),
+				Name:           "Dev Tunnel GUACD",
+				Type:           "GUACD",
+				Host:           "dev-tunnel-guacd",
+				Port:           4822,
+				DeploymentMode: "MANAGED_GROUP",
+				IsManaged:      true,
+				TunnelEnabled:  true,
+				Token:          requiredEnv("DEV_TUNNEL_GUACD_TOKEN", "dev-tunnel-guacd-token"),
+				CertDir:        filepath.Join(certDir, "tunnel-guacd"),
+				Description:    "Development guacd gateway registered through the zero-trust tunnel",
 			},
 		)
 	}
 	if runtime.features.DatabaseProxyEnabled {
 		specs = append(specs, devGatewaySpec{
-			ID:          requiredEnv("DEV_TUNNEL_DB_PROXY_GATEWAY_ID", "33333333-3333-4333-8333-333333333333"),
-			Name:        "Dev Tunnel DB Proxy",
-			Type:        "DB_PROXY",
-			Host:        "dev-tunnel-db-proxy",
-			Port:        5432,
-			Token:       requiredEnv("DEV_TUNNEL_DB_PROXY_TOKEN", "dev-tunnel-db-proxy-token"),
-			CertDir:     filepath.Join(certDir, "tunnel-db-proxy"),
-			Description: "Development database proxy gateway registered through the zero-trust tunnel",
+			ID:             requiredEnv("DEV_TUNNEL_DB_PROXY_GATEWAY_ID", "33333333-3333-4333-8333-333333333333"),
+			Name:           "Dev Tunnel DB Proxy",
+			Type:           "DB_PROXY",
+			Host:           "dev-tunnel-db-proxy",
+			Port:           5432,
+			DeploymentMode: "MANAGED_GROUP",
+			IsManaged:      true,
+			TunnelEnabled:  true,
+			Token:          requiredEnv("DEV_TUNNEL_DB_PROXY_TOKEN", "dev-tunnel-db-proxy-token"),
+			CertDir:        filepath.Join(certDir, "tunnel-db-proxy"),
+			Description:    "Development database proxy gateway registered through the zero-trust tunnel",
 		})
 	}
 	return specs
@@ -455,6 +507,18 @@ func ensureBootstrapTenant(ctx context.Context, deps *apiDependencies, userID, t
 	err := deps.db.QueryRow(ctx, `SELECT id FROM "Tenant" WHERE name = $1`, strings.TrimSpace(tenantName)).Scan(&tenantID)
 	if err == nil {
 		return tenantID, nil
+	}
+	if err != nil && err != pgx.ErrNoRows {
+		return "", fmt.Errorf("resolve bootstrap tenant: %w", err)
+	}
+	if !deps.features.MultiTenancyEnabled {
+		err = deps.db.QueryRow(ctx, `SELECT id FROM "Tenant" ORDER BY "createdAt" ASC LIMIT 1`).Scan(&tenantID)
+		if err == nil {
+			return tenantID, nil
+		}
+		if err != nil && err != pgx.ErrNoRows {
+			return "", fmt.Errorf("resolve single-tenant bootstrap tenant: %w", err)
+		}
 	}
 
 	created, err := deps.tenantService.CreateTenant(ctx, userID, tenantName, devBootstrapIP)
@@ -666,17 +730,39 @@ LIMIT 1
 }
 
 func upsertDevGateway(ctx context.Context, deps *apiDependencies, tenantID, userID string, spec devGatewaySpec) error {
-	certPEM, keyPEM, expiry, err := readClientCertBundle(spec.CertDir)
-	if err != nil {
-		return err
-	}
-	encryptedToken, err := encryptBootstrapValue(deps.gatewayService.ServerEncryptionKey, spec.Token)
-	if err != nil {
-		return fmt.Errorf("encrypt tunnel token for %s: %w", spec.ID, err)
-	}
-	encryptedKey, err := encryptBootstrapValue(deps.gatewayService.ServerEncryptionKey, keyPEM)
-	if err != nil {
-		return fmt.Errorf("encrypt tunnel client key for %s: %w", spec.ID, err)
+	var (
+		encryptedTokenCipher any
+		encryptedTokenIV     any
+		encryptedTokenTag    any
+		tunnelTokenHash      any
+		tunnelClientCert     any
+		tunnelClientCertExp  any
+		tunnelClientKey      any
+		tunnelClientKeyIV    any
+		tunnelClientKeyTag   any
+	)
+	if spec.TunnelEnabled {
+		certPEM, keyPEM, expiry, err := readClientCertBundle(spec.CertDir)
+		if err != nil {
+			return err
+		}
+		encryptedToken, err := encryptBootstrapValue(deps.gatewayService.ServerEncryptionKey, spec.Token)
+		if err != nil {
+			return fmt.Errorf("encrypt tunnel token for %s: %w", spec.ID, err)
+		}
+		encryptedKey, err := encryptBootstrapValue(deps.gatewayService.ServerEncryptionKey, keyPEM)
+		if err != nil {
+			return fmt.Errorf("encrypt tunnel client key for %s: %w", spec.ID, err)
+		}
+		encryptedTokenCipher = encryptedToken.Ciphertext
+		encryptedTokenIV = encryptedToken.IV
+		encryptedTokenTag = encryptedToken.Tag
+		tunnelTokenHash = hashToken(spec.Token)
+		tunnelClientCert = certPEM
+		tunnelClientCertExp = expiry
+		tunnelClientKey = encryptedKey.Ciphertext
+		tunnelClientKeyIV = encryptedKey.IV
+		tunnelClientKeyTag = encryptedKey.Tag
 	}
 
 	if _, err := deps.db.Exec(ctx, `
@@ -699,9 +785,9 @@ INSERT INTO "Gateway" (
   "monitoringEnabled", "monitorIntervalMs", "inactivityTimeoutSeconds", "updatedAt"
 ) VALUES (
   $1, $2, $3::"GatewayType", $4, $5, $6, $7, $8, $9,
-  true, 'MANAGED_GROUP'::"GatewayDeploymentMode", true, false, 1, 'ROUND_ROBIN'::"LoadBalancingStrategy",
-  true, $10, $11, $12, $13,
-  $14, $15, $16, $17, $18,
+  true, $10::"GatewayDeploymentMode", $11, false, 1, 'ROUND_ROBIN'::"LoadBalancingStrategy",
+  $12, $13, $14, $15, $16,
+  $17, $18, $19, $20, $21,
   true, 5000, 3600, NOW()
 )
 ON CONFLICT (id) DO UPDATE
@@ -714,12 +800,12 @@ SET name = EXCLUDED.name,
     "tenantId" = EXCLUDED."tenantId",
     "createdById" = EXCLUDED."createdById",
     "isDefault" = true,
-    "deploymentMode" = 'MANAGED_GROUP'::"GatewayDeploymentMode",
-    "isManaged" = true,
+    "deploymentMode" = EXCLUDED."deploymentMode",
+    "isManaged" = EXCLUDED."isManaged",
     "publishPorts" = false,
     "desiredReplicas" = 1,
     "lbStrategy" = 'ROUND_ROBIN'::"LoadBalancingStrategy",
-    "tunnelEnabled" = true,
+    "tunnelEnabled" = EXCLUDED."tunnelEnabled",
     "encryptedTunnelToken" = EXCLUDED."encryptedTunnelToken",
     "tunnelTokenIV" = EXCLUDED."tunnelTokenIV",
     "tunnelTokenTag" = EXCLUDED."tunnelTokenTag",
@@ -734,8 +820,9 @@ SET name = EXCLUDED.name,
     "inactivityTimeoutSeconds" = 3600,
     "updatedAt" = NOW()
 `, spec.ID, spec.Name, spec.Type, spec.Host, spec.Port, spec.APIPort, spec.Description, tenantID, userID,
-		encryptedToken.Ciphertext, encryptedToken.IV, encryptedToken.Tag, hashToken(spec.Token),
-		certPEM, expiry, encryptedKey.Ciphertext, encryptedKey.IV, encryptedKey.Tag); err != nil {
+		spec.DeploymentMode, spec.IsManaged, spec.TunnelEnabled,
+		encryptedTokenCipher, encryptedTokenIV, encryptedTokenTag, tunnelTokenHash,
+		tunnelClientCert, tunnelClientCertExp, tunnelClientKey, tunnelClientKeyIV, tunnelClientKeyTag); err != nil {
 		return fmt.Errorf("upsert gateway %s: %w", spec.ID, err)
 	}
 	return nil

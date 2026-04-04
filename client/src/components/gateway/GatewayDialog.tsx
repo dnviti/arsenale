@@ -31,6 +31,7 @@ import {
 import SessionTimeoutConfig from '../orchestration/SessionTimeoutConfig';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { extractApiError } from '../../utils/apiError';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 
 interface GatewayDialogProps {
   open: boolean;
@@ -82,6 +83,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const updateScalingConfig = useGatewayStore((s) => s.updateScalingConfig);
   const generateTunnelTokenAction = useGatewayStore((s) => s.generateTunnelToken);
   const revokeTunnelTokenAction = useGatewayStore((s) => s.revokeTunnelToken);
+  const zeroTrustEnabled = useFeatureFlagsStore((s) => s.zeroTrustEnabled);
 
   const tunnelSectionOpen = useUiPreferencesStore((s) => s.tunnelSectionOpen);
   const tunnelEventLogOpen = useUiPreferencesStore((s) => s.tunnelEventLogOpen);
@@ -750,7 +752,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           )}
 
           {/* Zero-Trust Tunnel Section (edit mode only) */}
-          {isEditMode && (
+          {isEditMode && zeroTrustEnabled && (
             <Accordion
               expanded={tunnelSectionOpen}
               onChange={(_, expanded) => setUiPref('tunnelSectionOpen', expanded)}

@@ -16,6 +16,7 @@ type Manifest struct {
 	DatabaseProxyEnabled    bool    `json:"databaseProxyEnabled"`
 	ConnectionsEnabled      bool    `json:"connectionsEnabled"`
 	KeychainEnabled         bool    `json:"keychainEnabled"`
+	MultiTenancyEnabled     bool    `json:"multiTenancyEnabled"`
 	RecordingsEnabled       bool    `json:"recordingsEnabled"`
 	ZeroTrustEnabled        bool    `json:"zeroTrustEnabled"`
 	AgenticAIEnabled        bool    `json:"agenticAIEnabled"`
@@ -37,6 +38,7 @@ func FromEnv() Manifest {
 		DatabaseProxyEnabled:    boolEnv("FEATURE_DATABASE_PROXY_ENABLED", true),
 		ConnectionsEnabled:      boolEnv("FEATURE_CONNECTIONS_ENABLED", true),
 		KeychainEnabled:         boolEnv("FEATURE_KEYCHAIN_ENABLED", true),
+		MultiTenancyEnabled:     boolEnv("FEATURE_MULTI_TENANCY_ENABLED", true),
 		RecordingsEnabled:       boolEnv("FEATURE_RECORDINGS_ENABLED", boolEnv("RECORDING_ENABLED", true)),
 		ZeroTrustEnabled:        zeroTrustEnabled,
 		AgenticAIEnabled:        boolEnv("FEATURE_AGENTIC_AI_ENABLED", true),

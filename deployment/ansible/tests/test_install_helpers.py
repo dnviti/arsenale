@@ -53,6 +53,7 @@ class InstallModelTest(unittest.TestCase):
             "capabilities": {
                 "core": True,
                 "keychain": True,
+                "multi_tenancy": True,
                 "connections": True,
                 "databases": True,
                 "recordings": True,
@@ -77,6 +78,7 @@ class InstallModelTest(unittest.TestCase):
             "capabilities": {
                 "core": True,
                 "keychain": False,
+                "multi_tenancy": False,
                 "connections": False,
                 "databases": False,
                 "recordings": False,
@@ -91,15 +93,41 @@ class InstallModelTest(unittest.TestCase):
         resolved = install_model.resolve_profile(profile, self.catalog)
         self.assertEqual(
             {name for name, enabled in resolved["capabilities"].items() if enabled},
-            {"core", "cli"},
+            {"core", "keychain", "cli"},
         )
         self.assertEqual(
             resolved["services"],
             ["client", "control-plane-api", "migrate", "postgres", "redis"],
         )
+        self.assertEqual(resolved["environment"]["FEATURE_KEYCHAIN_ENABLED"], "true")
+        self.assertEqual(resolved["environment"]["FEATURE_MULTI_TENANCY_ENABLED"], "false")
         self.assertFalse(resolved["routing"]["zeroTrust"])
         self.assertFalse(resolved["routing"]["directGateway"])
         self.assertFalse(resolved["devFullStack"])
+
+    def test_core_always_resolves_keychain(self) -> None:
+        profile = {
+            "schemaVersion": "1.0.0",
+            "mode": "production",
+            "backend": "podman",
+            "capabilities": {
+                "core": True,
+                "keychain": False,
+                "multi_tenancy": False,
+                "connections": False,
+                "databases": False,
+                "recordings": False,
+                "zero_trust": False,
+                "agentic_ai": False,
+                "enterprise_auth": False,
+                "sharing_approvals": False,
+                "cli": False,
+            },
+            "routing": {"directGateway": True, "zeroTrust": False},
+        }
+        resolved = install_model.resolve_profile(profile, self.catalog)
+        self.assertTrue(resolved["capabilities"]["keychain"])
+        self.assertEqual(resolved["environment"]["FEATURE_KEYCHAIN_ENABLED"], "true")
 
     def test_capability_dependency_resolution(self) -> None:
         profile = {
@@ -109,6 +137,7 @@ class InstallModelTest(unittest.TestCase):
             "capabilities": {
                 "core": True,
                 "recordings": True,
+                "multi_tenancy": True,
                 "connections": False,
                 "databases": False,
                 "zero_trust": False,
@@ -132,6 +161,7 @@ class InstallModelTest(unittest.TestCase):
             "capabilities": {
                 "core": True,
                 "keychain": True,
+                "multi_tenancy": True,
                 "connections": True,
                 "databases": False,
                 "recordings": False,
@@ -158,6 +188,7 @@ class InstallModelTest(unittest.TestCase):
             "capabilities": {
                 "core": True,
                 "keychain": True,
+                "multi_tenancy": True,
                 "connections": True,
                 "databases": False,
                 "recordings": False,
@@ -195,6 +226,7 @@ class InstallModelTest(unittest.TestCase):
             "capabilities": {
                 "core": True,
                 "keychain": True,
+                "multi_tenancy": True,
                 "connections": True,
                 "databases": True,
                 "recordings": True,

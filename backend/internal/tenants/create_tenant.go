@@ -73,6 +73,18 @@ func (s Service) CreateTenant(ctx context.Context, userID, name, ipAddress strin
 	if s.DB == nil {
 		return createdTenantResponse{}, errors.New("postgres is not configured")
 	}
+	if !s.Features.MultiTenancyEnabled {
+		var tenantCount int
+		if err := s.DB.QueryRow(ctx, `SELECT COUNT(*)::int FROM "Tenant"`).Scan(&tenantCount); err != nil {
+			return createdTenantResponse{}, err
+		}
+		if tenantCount > 0 {
+			return createdTenantResponse{}, &requestError{
+				status:  http.StatusForbidden,
+				message: "Multi-tenancy is disabled. This platform supports only one organization.",
+			}
+		}
+	}
 
 	name = strings.TrimSpace(name)
 	if len(name) < 2 || len(name) > 100 {

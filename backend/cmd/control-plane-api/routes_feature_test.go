@@ -17,6 +17,7 @@ func TestRegisterFeatureGatedRoutes(t *testing.T) {
 			ConnectionsEnabled:      false,
 			DatabaseProxyEnabled:    false,
 			KeychainEnabled:         false,
+			MultiTenancyEnabled:     false,
 			RecordingsEnabled:       false,
 			ZeroTrustEnabled:        false,
 			AgenticAIEnabled:        false,
@@ -31,9 +32,37 @@ func TestRegisterFeatureGatedRoutes(t *testing.T) {
 	expectRouteAbsent(t, mux, "GET", "/api/secrets")
 	expectRouteAbsent(t, mux, "GET", "/api/recordings")
 	expectRouteAbsent(t, mux, "GET", "/api/gateways")
+	expectRouteAbsent(t, mux, "POST", "/api/tenants")
+	expectRouteAbsent(t, mux, "POST", "/api/auth/switch-tenant")
 	expectRouteAbsent(t, mux, "POST", "/api/cli/auth/device")
 	expectRoutePresent(t, mux, "GET", "/api/auth/config")
 	expectRoutePresent(t, mux, "GET", "/api/setup/status")
+}
+
+func TestGatewayRoutesRemainAvailableWithoutZeroTrust(t *testing.T) {
+	deps := &apiDependencies{
+		authenticator:       &authn.Authenticator{},
+		publicConfigService: publicconfig.Service{Features: runtimefeatures.Manifest{}},
+		features: runtimefeatures.Manifest{
+			ConnectionsEnabled:      true,
+			DatabaseProxyEnabled:    false,
+			KeychainEnabled:         false,
+			MultiTenancyEnabled:     true,
+			RecordingsEnabled:       false,
+			ZeroTrustEnabled:        false,
+			AgenticAIEnabled:        false,
+			EnterpriseAuthEnabled:   false,
+			SharingApprovalsEnabled: false,
+			CLIEnabled:              false,
+		},
+	}
+	mux := http.NewServeMux()
+	deps.register(mux)
+
+	expectRoutePresent(t, mux, "GET", "/api/gateways")
+	expectRoutePresent(t, mux, "GET", "/api/gateways/templates")
+	expectRoutePresent(t, mux, "POST", "/api/tenants")
+	expectRoutePresent(t, mux, "POST", "/api/auth/switch-tenant")
 }
 
 func expectRouteAbsent(t *testing.T, mux *http.ServeMux, method, path string) {

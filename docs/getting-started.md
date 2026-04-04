@@ -2,7 +2,7 @@
 title: Getting Started
 description: Installation, prerequisites, and first-run instructions for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T14:30:00Z
+generated-at: 2026-04-04T21:15:00Z
 source-files:
   - README.md
   - AGENT.md
@@ -145,6 +145,12 @@ Minimal local example:
 ```bash
 make dev DEV_CAPABILITIES=cli DEV_DIRECT_GATEWAY=false DEV_ZERO_TRUST=false
 ```
+
+The vault/keychain remains enabled in that minimal profile because it is part of the required core install.
+Because `multi_tenancy` is optional, that minimal example also runs in single-tenant mode. Add `multi_tenancy` to `DEV_CAPABILITIES` if you want tenant switching and self-service organization creation enabled.
+
+When you enable `connections`, the development bootstrap registers the built-in
+`ssh-gateway` and `guacd` containers in the tenant so they appear in the Gateways UI.
 
 If you do not pass overrides, `make dev` uses the same capability defaults as production and leaves zero trust disabled by default.
 

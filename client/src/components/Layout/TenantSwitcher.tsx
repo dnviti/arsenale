@@ -5,6 +5,7 @@ import {
 import { SwapHoriz, Business, Add } from '@mui/icons-material';
 import { useTenantStore } from '../../store/tenantStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 
 interface TenantSwitcherProps {
   onCreateOrg?: () => void;
@@ -14,12 +15,16 @@ export default function TenantSwitcher({ onCreateOrg }: TenantSwitcherProps) {
   const memberships = useTenantStore((s) => s.memberships);
   const fetchMemberships = useTenantStore((s) => s.fetchMemberships);
   const switchTenant = useTenantStore((s) => s.switchTenant);
+  const multiTenancyEnabled = useFeatureFlagsStore((s) => s.multiTenancyEnabled);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [switching, setSwitching] = useState(false);
 
   useEffect(() => {
+    if (!multiTenancyEnabled) return;
     fetchMemberships();
-  }, [fetchMemberships]);
+  }, [fetchMemberships, multiTenancyEnabled]);
+
+  if (!multiTenancyEnabled) return null;
 
   const hasPending = memberships.some((m) => m.pending);
   if (memberships.length <= 1 && !hasPending) return null;

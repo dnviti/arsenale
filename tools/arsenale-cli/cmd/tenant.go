@@ -152,6 +152,9 @@ func runTenantCreate(cmd *cobra.Command, args []string) {
 	if err := ensureAuthenticated(cfg); err != nil {
 		fatal("%v", err)
 	}
+	if err := ensureMultiTenancyEnabled(cfg); err != nil {
+		fatal("%v", err)
+	}
 
 	var data []byte
 	var err error
@@ -217,6 +220,9 @@ func runTenantDelete(cmd *cobra.Command, args []string) {
 func runTenantSwitch(cmd *cobra.Command, args []string) {
 	cfg := getCfg()
 	if err := ensureAuthenticated(cfg); err != nil {
+		fatal("%v", err)
+	}
+	if err := ensureMultiTenancyEnabled(cfg); err != nil {
 		fatal("%v", err)
 	}
 

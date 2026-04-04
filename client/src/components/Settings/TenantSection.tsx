@@ -19,6 +19,7 @@ import PermissionOverridesDialog from './PermissionOverridesDialog';
 import { extractApiError } from '../../utils/apiError';
 import { ALL_ROLES, ROLE_LABELS, isAdminOrAbove, type TenantRole } from '../../utils/roles';
 import { useNotificationStore } from '../../store/notificationStore';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 
 interface TenantSectionProps {
   onViewUserProfile?: (userId: string) => void;
@@ -158,6 +159,8 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
   const [savingExpiry, setSavingExpiry] = useState(false);
 
   const notify = useNotificationStore((s) => s.notify);
+  const multiTenancyEnabled = useFeatureFlagsStore((s) => s.multiTenancyEnabled);
+  const recordingsFeatureEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const tenantRole = user?.tenantRole;
   const isAdmin = isAdminOrAbove(tenantRole);
 
@@ -454,28 +457,36 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
       <Box sx={{ maxWidth: 500, mx: 'auto', mt: 2 }}>
         <Card>
           <CardContent>
-            <Typography variant="h6" gutterBottom>Create Your Organization</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Create an organization to collaborate with your team. You can invite members and create teams after setup.
+            <Typography variant="h6" gutterBottom>
+              {multiTenancyEnabled ? 'Create Your Organization' : 'Organization Required'}
             </Typography>
-            {createError && <Alert severity="error" sx={{ mb: 2 }}>{createError}</Alert>}
-            <TextField
-              label="Organization Name"
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-              fullWidth
-              autoFocus
-              inputProps={{ maxLength: 100 }}
-              sx={{ mb: 2 }}
-            />
-            <Button
-              variant="contained"
-              onClick={handleCreateTenant}
-              disabled={creating || !createName.trim()}
-              fullWidth
-            >
-              {creating ? 'Creating...' : 'Create Organization'}
-            </Button>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: multiTenancyEnabled ? 3 : 0 }}>
+              {multiTenancyEnabled
+                ? 'Create an organization to collaborate with your team. You can invite members and create teams after setup.'
+                : 'This deployment is running in single-tenant mode. An administrator must provision the platform organization during setup.'}
+            </Typography>
+            {multiTenancyEnabled && (
+              <>
+                {createError && <Alert severity="error" sx={{ mb: 2 }}>{createError}</Alert>}
+                <TextField
+                  label="Organization Name"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  fullWidth
+                  autoFocus
+                  inputProps={{ maxLength: 100 }}
+                  sx={{ mb: 2 }}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleCreateTenant}
+                  disabled={creating || !createName.trim()}
+                  fullWidth
+                >
+                  {creating ? 'Creating...' : 'Create Organization'}
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       </Box>
@@ -1157,78 +1168,82 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
                 ))}
               </Box>
 
-              {/* Session Recording */}
-              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Typography variant="subtitle2" gutterBottom>Session Recording</Typography>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                  When enabled, all SSH, RDP, and VNC sessions are recorded. Requires the global recording feature to be enabled by the system administrator.
-                </Typography>
-                {recordingError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setRecordingError('')}>{recordingError}</Alert>}
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={recordingEnabled}
-                      disabled={savingRecording}
-                      onChange={async (_, checked) => {
-                        setRecordingError('');
-                        setSavingRecording(true);
-                        try {
-                          await updateTenant({ recordingEnabled: checked });
-                          setRecordingEnabled(checked);
-                        } catch (err: unknown) {
-                          setRecordingError(extractApiError(err, 'Failed to update recording policy'));
-                        } finally {
-                          setSavingRecording(false);
-                        }
-                      }}
-                    />
-                  }
-                  label="Enable session recording"
-                  sx={{ display: 'block' }}
-                />
-              </Box>
-
-              {/* Recording Retention */}
-              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Typography variant="subtitle2" gutterBottom>Recording Retention</Typography>
-                {retentionError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setRetentionError('')}>{retentionError}</Alert>}
-                <Stack direction="row" spacing={2} alignItems="center">
-                  <TextField
-                    label="Retention (days)"
-                    type="number"
-                    size="small"
-                    value={recordingRetentionDays}
-                    onChange={(e) => setRecordingRetentionDays(e.target.value)}
-                    placeholder="System default"
-                    helperText="Leave empty to use system default."
-                    slotProps={{ htmlInput: { min: 1, max: 3650 } }}
-                    sx={{ width: 240 }}
-                  />
-                  <Button
-                    variant="contained"
-                    size="small"
-                    disabled={savingRetention}
-                    onClick={async () => {
-                      setRetentionError('');
-                      setSavingRetention(true);
-                      try {
-                        const val = recordingRetentionDays.trim() === '' ? null : parseInt(recordingRetentionDays, 10);
-                        if (val !== null && (isNaN(val) || val < 1 || val > 3650)) {
-                          setRetentionError('Must be between 1 and 3650 days');
-                          return;
-                        }
-                        await updateTenant({ recordingRetentionDays: val });
-                      } catch (err: unknown) {
-                        setRetentionError(extractApiError(err, 'Failed to update retention'));
-                      } finally {
-                        setSavingRetention(false);
+              {recordingsFeatureEnabled && (
+                <>
+                  {/* Session Recording */}
+                  <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                    <Typography variant="subtitle2" gutterBottom>Session Recording</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+                      When enabled, all SSH, RDP, and VNC sessions are recorded. Requires the global recording feature to be enabled by the system administrator.
+                    </Typography>
+                    {recordingError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setRecordingError('')}>{recordingError}</Alert>}
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={recordingEnabled}
+                          disabled={savingRecording}
+                          onChange={async (_, checked) => {
+                            setRecordingError('');
+                            setSavingRecording(true);
+                            try {
+                              await updateTenant({ recordingEnabled: checked });
+                              setRecordingEnabled(checked);
+                            } catch (err: unknown) {
+                              setRecordingError(extractApiError(err, 'Failed to update recording policy'));
+                            } finally {
+                              setSavingRecording(false);
+                            }
+                          }}
+                        />
                       }
-                    }}
-                  >
-                    {savingRetention ? <CircularProgress size={20} /> : 'Save'}
-                  </Button>
-                </Stack>
-              </Box>
+                      label="Enable session recording"
+                      sx={{ display: 'block' }}
+                    />
+                  </Box>
+
+                  {/* Recording Retention */}
+                  <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                    <Typography variant="subtitle2" gutterBottom>Recording Retention</Typography>
+                    {retentionError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setRetentionError('')}>{retentionError}</Alert>}
+                    <Stack direction="row" spacing={2} alignItems="center">
+                      <TextField
+                        label="Retention (days)"
+                        type="number"
+                        size="small"
+                        value={recordingRetentionDays}
+                        onChange={(e) => setRecordingRetentionDays(e.target.value)}
+                        placeholder="System default"
+                        helperText="Leave empty to use system default."
+                        slotProps={{ htmlInput: { min: 1, max: 3650 } }}
+                        sx={{ width: 240 }}
+                      />
+                      <Button
+                        variant="contained"
+                        size="small"
+                        disabled={savingRetention}
+                        onClick={async () => {
+                          setRetentionError('');
+                          setSavingRetention(true);
+                          try {
+                            const val = recordingRetentionDays.trim() === '' ? null : parseInt(recordingRetentionDays, 10);
+                            if (val !== null && (isNaN(val) || val < 1 || val > 3650)) {
+                              setRetentionError('Must be between 1 and 3650 days');
+                              return;
+                            }
+                            await updateTenant({ recordingRetentionDays: val });
+                          } catch (err: unknown) {
+                            setRetentionError(extractApiError(err, 'Failed to update retention'));
+                          } finally {
+                            setSavingRetention(false);
+                          }
+                        }}
+                      >
+                        {savingRetention ? <CircularProgress size={20} /> : 'Save'}
+                      </Button>
+                    </Stack>
+                  </Box>
+                </>
+              )}
 
               {/* Storage & Quotas */}
               <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>

@@ -2,7 +2,7 @@
 title: Configuration
 description: Environment variables, installer inputs, secret delivery, and configuration precedence for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T14:30:00Z
+generated-at: 2026-04-04T21:15:00Z
 source-files:
   - .env.example
   - deployment/ansible/inventory/group_vars/all/vars.yml
@@ -72,7 +72,8 @@ The installer now passes install profile context directly into the runtime.
 | `FEATURE_CONNECTIONS_ENABLED` | Enables SSH, RDP, VNC connections and folders |
 | `FEATURE_DATABASE_PROXY_ENABLED` | Enables database sessions and DB audit |
 | `FEATURE_KEYCHAIN_ENABLED` | Enables vault, secrets, files, and external vault providers |
-| `FEATURE_RECORDINGS_ENABLED` | Enables recording APIs and UI |
+| `FEATURE_MULTI_TENANCY_ENABLED` | Enables multiple organizations, tenant switching, and self-service organization creation |
+| `FEATURE_RECORDINGS_ENABLED` | Enables recording APIs, session capture, and recording-ready notifications |
 | `FEATURE_ZERO_TRUST_ENABLED` | Enables gateways, tunnel broker, and managed zero-trust routing |
 | `FEATURE_AGENTIC_AI_ENABLED` | Enables AI-assisted database tooling |
 | `FEATURE_ENTERPRISE_AUTH_ENABLED` | Enables SAML, OAuth, OIDC, LDAP, and auth-provider admin APIs |
@@ -87,6 +88,7 @@ The installer now passes install profile context directly into the runtime.
 - `databaseProxyEnabled`
 - `connectionsEnabled`
 - `keychainEnabled`
+- `multiTenancyEnabled`
 - `recordingsEnabled`
 - `zeroTrustEnabled`
 - `agenticAIEnabled`

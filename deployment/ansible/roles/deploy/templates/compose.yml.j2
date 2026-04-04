@@ -148,6 +148,7 @@ services:
       retries: 3
       start_period: 10s
     networks:
+      - net-egress
       - net-guacd
 
   # ---------------------------------------------------------------------------
@@ -260,12 +261,13 @@ services:
       ARSENALE_INSTALLER_ENABLED: "${ARSENALE_INSTALLER_ENABLED:-false}"
       ARSENALE_INSTALL_MODE: "${ARSENALE_INSTALL_MODE:-production}"
       ARSENALE_INSTALL_BACKEND: "${ARSENALE_INSTALL_BACKEND:-podman}"
-      ARSENALE_INSTALL_CAPABILITIES: "${ARSENALE_INSTALL_CAPABILITIES:-core,keychain,connections,databases,recordings,zero_trust,agentic_ai,enterprise_auth,sharing_approvals,cli}"
+      ARSENALE_INSTALL_CAPABILITIES: "${ARSENALE_INSTALL_CAPABILITIES:-core,keychain,multi_tenancy,connections,databases,recordings,zero_trust,agentic_ai,enterprise_auth,sharing_approvals,cli}"
       ARSENALE_DIRECT_ROUTING_ENABLED: "${ARSENALE_DIRECT_ROUTING_ENABLED:-true}"
       ARSENALE_ZERO_TRUST_ENABLED: "${ARSENALE_ZERO_TRUST_ENABLED:-true}"
       FEATURE_CONNECTIONS_ENABLED: "${FEATURE_CONNECTIONS_ENABLED:-true}"
       FEATURE_DATABASE_PROXY_ENABLED: "${FEATURE_DATABASE_PROXY_ENABLED:-true}"
       FEATURE_KEYCHAIN_ENABLED: "${FEATURE_KEYCHAIN_ENABLED:-true}"
+      FEATURE_MULTI_TENANCY_ENABLED: "${FEATURE_MULTI_TENANCY_ENABLED:-true}"
       FEATURE_RECORDINGS_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       FEATURE_ZERO_TRUST_ENABLED: "${FEATURE_ZERO_TRUST_ENABLED:-true}"
       FEATURE_AGENTIC_AI_ENABLED: "${FEATURE_AGENTIC_AI_ENABLED:-true}"
@@ -274,7 +276,7 @@ services:
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
-      RECORDING_ENABLED: "{{ 'true' if arsenale_recording_enabled else 'false' }}"
+      RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
       GUACENC_AUTH_TOKEN_FILE: /run/secrets/guacenc_auth_token
@@ -392,6 +394,7 @@ services:
       start_period: 5s
     restart: always
     networks:
+      - net-egress
       - net-edge
       - net-db
 
@@ -579,12 +582,13 @@ services:
       ARSENALE_INSTALLER_ENABLED: "${ARSENALE_INSTALLER_ENABLED:-false}"
       ARSENALE_INSTALL_MODE: "${ARSENALE_INSTALL_MODE:-development}"
       ARSENALE_INSTALL_BACKEND: "${ARSENALE_INSTALL_BACKEND:-podman}"
-      ARSENALE_INSTALL_CAPABILITIES: "${ARSENALE_INSTALL_CAPABILITIES:-core,keychain,connections,databases,recordings,zero_trust,agentic_ai,enterprise_auth,sharing_approvals,cli}"
+      ARSENALE_INSTALL_CAPABILITIES: "${ARSENALE_INSTALL_CAPABILITIES:-core,keychain,multi_tenancy,connections,databases,recordings,zero_trust,agentic_ai,enterprise_auth,sharing_approvals,cli}"
       ARSENALE_DIRECT_ROUTING_ENABLED: "${ARSENALE_DIRECT_ROUTING_ENABLED:-true}"
       ARSENALE_ZERO_TRUST_ENABLED: "${ARSENALE_ZERO_TRUST_ENABLED:-true}"
       FEATURE_CONNECTIONS_ENABLED: "${FEATURE_CONNECTIONS_ENABLED:-true}"
       FEATURE_DATABASE_PROXY_ENABLED: "${FEATURE_DATABASE_PROXY_ENABLED:-true}"
       FEATURE_KEYCHAIN_ENABLED: "${FEATURE_KEYCHAIN_ENABLED:-true}"
+      FEATURE_MULTI_TENANCY_ENABLED: "${FEATURE_MULTI_TENANCY_ENABLED:-true}"
       FEATURE_RECORDINGS_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       FEATURE_ZERO_TRUST_ENABLED: "${FEATURE_ZERO_TRUST_ENABLED:-true}"
       FEATURE_AGENTIC_AI_ENABLED: "${FEATURE_AGENTIC_AI_ENABLED:-true}"
@@ -593,7 +597,7 @@ services:
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
-      RECORDING_ENABLED: "{{ 'true' if arsenale_recording_enabled else 'false' }}"
+      RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
       GUACENC_AUTH_TOKEN_FILE: /run/secrets/guacenc_auth_token
@@ -919,6 +923,7 @@ services:
       start_period: 5s
     restart: always
     networks:
+      - net-egress
       - net-edge
       - net-db
 
@@ -1361,6 +1366,7 @@ services:
       retries: 3
     restart: always
     networks:
+      - net-egress
       - net-gateway
 
 {% if _dev_tunnel_fixtures_enabled %}

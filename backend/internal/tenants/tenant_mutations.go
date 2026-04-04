@@ -183,12 +183,18 @@ func (s Service) UpdateTenant(ctx context.Context, tenantID string, payload map[
 			}
 			add(`"vaultDefaultTtlMinutes" = $%d`, value)
 		case "recordingEnabled":
+			if !s.Features.RecordingsEnabled {
+				return tenantResponse{}, &requestError{status: http.StatusNotFound, message: "recordings are disabled on this platform"}
+			}
 			value, err := parseRequiredBool(raw, key)
 			if err != nil {
 				return tenantResponse{}, err
 			}
 			add(`"recordingEnabled" = $%d`, value)
 		case "recordingRetentionDays":
+			if !s.Features.RecordingsEnabled {
+				return tenantResponse{}, &requestError{status: http.StatusNotFound, message: "recordings are disabled on this platform"}
+			}
 			value, err := parseNullableInt(raw, 1, 3650, key)
 			if err != nil {
 				return tenantResponse{}, err

@@ -151,7 +151,7 @@
 
 - name: Prompt for capabilities
   pause:
-    prompt: "Enabled capabilities (comma-separated)"
+    prompt: "Enabled optional capabilities (comma-separated)"
     echo: true
   register: installer_capabilities_prompt
   when:
@@ -179,6 +179,7 @@
         | selectattr('value')
         | map(attribute='key')
         | reject('equalto', 'core')
+        | reject('equalto', 'keychain')
         | join(',')
       }}
     installer_capability_csv_value: >-
@@ -220,7 +221,8 @@
           'backend': installer_backend_value,
           'capabilities': {
             'core': true,
-            'keychain': ('keychain' in installer_capability_selection),
+            'keychain': true,
+            'multi_tenancy': ('multi_tenancy' in installer_capability_selection),
             'connections': ('connections' in installer_capability_selection),
             'databases': ('databases' in installer_capability_selection),
             'recordings': ('recordings' in installer_capability_selection),

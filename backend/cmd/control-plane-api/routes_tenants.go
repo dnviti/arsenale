@@ -3,7 +3,9 @@ package main
 import "net/http"
 
 func (d *apiDependencies) registerTenantRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /api/tenants", d.authenticator.Middleware(d.tenantService.HandleCreate))
+	if d.features.MultiTenancyEnabled {
+		mux.HandleFunc("POST /api/tenants", d.authenticator.Middleware(d.tenantService.HandleCreate))
+	}
 	mux.HandleFunc("GET /api/tenants/mine", d.authenticator.Middleware(d.tenantService.HandleGetMine))
 	mux.HandleFunc("GET /api/tenants/mine/all", d.authenticator.Middleware(d.tenantService.HandleListMine))
 	mux.HandleFunc("PUT /api/tenants/{id}", d.authenticator.Middleware(d.tenantService.HandleUpdate))

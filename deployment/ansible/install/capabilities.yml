@@ -11,10 +11,17 @@ capabilities:
       FEATURE_KEYCHAIN_ENABLED: "true"
   keychain:
     title: Keychain
+    required: true
     enabledByDefault: true
     description: Tenant vault, secret storage, external vault integration, password rotation.
     legacyEnv:
       FEATURE_KEYCHAIN_ENABLED: "true"
+  multi_tenancy:
+    title: Multi-Tenancy
+    enabledByDefault: true
+    description: Multiple organizations per platform with tenant switching and self-service organization creation.
+    legacyEnv:
+      FEATURE_MULTI_TENANCY_ENABLED: "true"
   connections:
     title: Connections
     enabledByDefault: true

@@ -464,6 +464,11 @@ func (s Service) loadLoginUserByIDOrEmail(ctx context.Context, field, value stri
 		}
 	}
 
+	user, err = s.normalizeLoginUserForRuntime(ctx, user)
+	if err != nil {
+		return loginUser{}, err
+	}
+
 	user.HasLegacyOrAdvancedAuth = user.WebAuthnEnabled
 	return user, nil
 }

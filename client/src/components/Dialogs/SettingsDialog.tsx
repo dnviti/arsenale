@@ -121,7 +121,7 @@ export default function SettingsDialog({ open, onClose, initialTab, linkedProvid
     const t = BASE_TABS.filter((tab) => tab.id !== 'connections' || anyConnectionFeature);
     if (hasTenant) {
       t.push(...TENANT_TABS.filter((tab) => {
-        if (tab.id === 'gateways') return zeroTrustEnabled;
+        if (tab.id === 'gateways') return anyConnectionFeature;
         if (tab.id === 'integrations') return integrationsEnabled;
         return true;
       }));

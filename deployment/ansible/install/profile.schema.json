@@ -44,6 +44,9 @@
         "keychain": {
           "type": "boolean"
         },
+        "multi_tenancy": {
+          "type": "boolean"
+        },
         "connections": {
           "type": "boolean"
         },

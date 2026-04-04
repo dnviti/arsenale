@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T14:30:00Z
+generated-at: 2026-04-04T23:50:20Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -147,7 +147,7 @@ Primary internal networks:
 | `net-guacd` | Desktop broker and `guacd` |
 | `net-guacenc` | Recording conversion |
 | `net-gateway` | SSH gateway and managed gateway workloads |
-| `net-egress` | Tunneled gateway egress fixtures |
+| `net-egress` | Outbound egress network for endpoint-facing services: SSH, RDP/VNC, direct database execution, and tunneled gateway fixtures |
 
 ## ⚙️ Runtime Env Emitted By The Installer
 

@@ -99,6 +99,7 @@ export interface FeatureFlags {
   databaseProxyEnabled: boolean;
   connectionsEnabled: boolean;
   keychainEnabled: boolean;
+  multiTenancyEnabled: boolean;
   recordingsEnabled: boolean;
   zeroTrustEnabled: boolean;
   agenticAIEnabled: boolean;

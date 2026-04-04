@@ -2,14 +2,17 @@ import { useEffect } from 'react';
 import type { VaultStatusStreamSnapshot } from '../api/live.api';
 import { connectSSE } from '../api/sse';
 import { useAuthStore } from '../store/authStore';
+import { useFeatureFlagsStore } from '../store/featureFlagsStore';
 import { useVaultStore } from '../store/vaultStore';
 
 export function useVaultStatusStream() {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
+  const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
   const applyStatus = useVaultStore((s) => s.applyStatus);
 
   useEffect(() => {
-    if (!accessToken) return undefined;
+    if (!accessToken || !featureFlagsLoaded || !keychainEnabled) return undefined;
 
     return connectSSE({
       url: '/api/vault/status/stream',
@@ -19,5 +22,5 @@ export function useVaultStatusStream() {
         applyStatus(data as VaultStatusStreamSnapshot);
       },
     });
-  }, [accessToken, applyStatus]);
+  }, [accessToken, applyStatus, featureFlagsLoaded, keychainEnabled]);
 }

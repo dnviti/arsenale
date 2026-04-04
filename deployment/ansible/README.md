@@ -196,6 +196,9 @@ Development-specific behaviors:
 - Installer-managed development state defaults to `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev`.
 - Certificates are generated under `$ARSENALE_DEV_HOME/dev-certs/` by default.
 - The client binds to `0.0.0.0` for external access.
+- When `connections` is enabled, `dev-bootstrap` registers the local `ssh-gateway` and `guacd` containers as tenant gateways.
+- Endpoint-facing runtime services attach to `net-egress`: local `ssh-gateway` and `guacd` for SSH/RDP/VNC access, local `query-runner` for direct database access, and the dev tunnel gateway fixtures for zero-trust SSH/RDP/VNC/database access.
+- When `recordings` is disabled, the installer also disables session capture and recording-ready notifications, not just the `/api/recordings` routes.
 - Demo database and tunnel fixture services are not force-enabled by `make dev`.
 
 After `make dev` completes:
@@ -342,7 +345,7 @@ Enable zero-trust routing [true/false]: false
 **Step 6: Select capabilities** (production only)
 
 ```
-Enabled capabilities (comma-separated): keychain,connections,databases,recordings,agentic_ai,enterprise_auth,sharing_approvals,cli
+Enabled optional capabilities (comma-separated): multi_tenancy,connections,databases,recordings,agentic_ai,enterprise_auth,sharing_approvals,cli
 ```
 
 **Step 7: Review the execution plan**
@@ -354,7 +357,7 @@ Run type:  fresh_install
 Backend:   podman
 Mode:      production
 Services:  control-plane-api, client, postgres, guacd, guacenc, ssh-gateway, ...
-Added:     keychain, connections, databases, recordings, agentic_ai, enterprise_auth, sharing_approvals, cli
+Added:     keychain, multi_tenancy, connections, databases, recordings, agentic_ai, enterprise_auth, sharing_approvals, cli
 Removed:   none
 ```
 
@@ -439,8 +442,9 @@ Capabilities control which services are included in the rendered runtime. They a
 
 | Capability | Title | Default | Description | Dependencies |
 |------------|-------|---------|-------------|-------------|
-| `core` | Core Platform | **Required** | CLI enabled, connections, keychain enabled | -- |
-| `keychain` | Keychain | Enabled | Tenant vault, secret storage, external vault integration, password rotation | -- |
+| `core` | Core Platform | **Required** | Base platform services plus the tenant vault/keychain | -- |
+| `keychain` | Keychain | **Required** | Tenant vault, secret storage, external vault integration, password rotation | -- |
+| `multi_tenancy` | Multi-Tenancy | Enabled | Multiple organizations per platform with tenant switching and self-service organization creation | -- |
 | `connections` | Connections | Enabled | SSH, RDP, VNC connections and folders | -- |
 | `databases` | Databases | Enabled | Database proxy and SQL tooling | `connections` |
 | `recordings` | Recordings | Enabled | Session recording and video export | `connections` |
@@ -455,6 +459,7 @@ When a capability is disabled:
 - Its services are removed from the rendered Compose/Helm output.
 - Backend routes and frontend affordances for that capability are removed.
 - Persistent data is **not** deleted during capability removal or recovery.
+- When `multi_tenancy` is disabled, setup and `dev-bootstrap` can still provision the initial organization, but tenant creation and tenant switching are removed from the product surface afterward.
 
 In **development mode**, capability selection and routing resolve exactly like production; the development-specific difference is local Podman execution with source-built images.
 
@@ -750,7 +755,7 @@ make install
 ansible-playbook playbooks/install.yml --ask-vault-pass \
   -e installer_mode=production \
   -e installer_backend=podman \
-  -e installer_capabilities_csv="keychain,connections,databases" \
+  -e installer_capabilities_csv="multi_tenancy,connections,databases" \
   -e installer_direct_gateway=true \
   -e installer_zero_trust=false
 
@@ -766,6 +771,9 @@ make dev
 # Minimal local development install
 make dev DEV_CAPABILITIES=cli DEV_DIRECT_GATEWAY=false DEV_ZERO_TRUST=false
 ```
+
+`keychain` is part of the required core profile, so minimal installs still include the vault even when `DEV_CAPABILITIES` is only `cli`.
+Omit `multi_tenancy` to keep the platform in single-tenant mode; the initial organization is still created by setup or `dev-bootstrap`, but users cannot create or switch organizations afterward.
 
 ### deploy.yml -- Unified Apply Engine
 

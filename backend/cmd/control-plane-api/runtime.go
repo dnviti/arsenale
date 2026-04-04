@@ -229,6 +229,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	store := orchestration.NewStore(db)
 	modelGatewayStore := modelgateway.NewStore(db)
 	featureManifest := runtimefeatures.FromEnv()
+	recordingRuntimeEnabled := featureManifest.RecordingsEnabled && strings.EqualFold(getenv("RECORDING_ENABLED", "false"), "true")
 
 	sessionStore := sessions.NewStore(db)
 	tenantAuthService := tenantauth.Service{DB: db}
@@ -249,7 +250,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		TerminalBrokerURL:   getenv("TERMINAL_BROKER_URL", "http://terminal-broker:8090"),
 		TunnelBrokerURL:     getenv("GO_TUNNEL_BROKER_URL", "http://tunnel-broker:8092"),
 		RecordingPath:       getenv("RECORDING_PATH", "/recordings"),
-		RecordingEnabled:    strings.EqualFold(getenv("RECORDING_ENABLED", "false"), "true"),
+		RecordingEnabled:    recordingRuntimeEnabled,
 	}
 	authService := authservice.Service{
 		DB:                 db,
@@ -263,6 +264,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		AccessTokenTTL:     parseExpiry(getenv("JWT_EXPIRES_IN", "15m")),
 		RefreshCookieTTL:   parseExpiry(getenv("JWT_REFRESH_EXPIRES_IN", "7d")),
 		VaultTTL:           vaultTTL,
+		Features:           featureManifest,
 		TenantVaultService: &tenantVaultService,
 	}
 
@@ -277,7 +279,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			ConnectionResolver: sshSessionService,
 			RecordingPath:      getenv("RECORDING_PATH", "/recordings"),
 			DriveBasePath:      getenv("DRIVE_BASE_PATH", "/guacd-drive"),
-			RecordingEnabled:   strings.EqualFold(getenv("RECORDING_ENABLED", "false"), "true"),
+			RecordingEnabled:   recordingRuntimeEnabled,
 		},
 		databaseSessionService: dbsessions.Service{
 			Store:               sessionStore,
@@ -362,7 +364,8 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		},
 		features: featureManifest,
 		notificationService: notifications.Service{
-			DB: db,
+			DB:       db,
+			Features: featureManifest,
 		},
 		oauthService: oauthapi.Service{
 			DB:                 db,
@@ -405,6 +408,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			AuthService:         &authService,
 			TenantVaultService:  &tenantVaultService,
 			ServerEncryptionKey: serverEncryptionKey,
+			Features:            featureManifest,
 		},
 		teamService: teams.Service{
 			DB:                  db,

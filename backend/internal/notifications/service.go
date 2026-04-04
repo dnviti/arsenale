@@ -11,12 +11,14 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	DB *pgxpool.Pool
+	DB       *pgxpool.Pool
+	Features runtimefeatures.Manifest
 }
 
 type notificationEntry struct {
@@ -179,10 +181,15 @@ func (s Service) ListNotifications(ctx context.Context, userID string, limit, of
 		offset = 0
 	}
 
+	filterClause := ""
+	if !s.Features.RecordingsEnabled {
+		filterClause = ` AND type <> 'RECORDING_READY'::"NotificationType"`
+	}
+
 	rows, err := s.DB.Query(ctx, `
 SELECT id, type::text, message, read, "relatedId", "createdAt"
 FROM "Notification"
-WHERE "userId" = $1
+WHERE "userId" = $1`+filterClause+`
 ORDER BY "createdAt" DESC
 OFFSET $2 LIMIT $3
 `, userID, offset, limit)
@@ -208,11 +215,11 @@ OFFSET $2 LIMIT $3
 	}
 
 	var total int
-	if err := s.DB.QueryRow(ctx, `SELECT COUNT(*) FROM "Notification" WHERE "userId" = $1`, userID).Scan(&total); err != nil {
+	if err := s.DB.QueryRow(ctx, `SELECT COUNT(*) FROM "Notification" WHERE "userId" = $1`+filterClause, userID).Scan(&total); err != nil {
 		return notificationsResponse{}, fmt.Errorf("count notifications: %w", err)
 	}
 	var unreadCount int
-	if err := s.DB.QueryRow(ctx, `SELECT COUNT(*) FROM "Notification" WHERE "userId" = $1 AND read = false`, userID).Scan(&unreadCount); err != nil {
+	if err := s.DB.QueryRow(ctx, `SELECT COUNT(*) FROM "Notification" WHERE "userId" = $1 AND read = false`+filterClause, userID).Scan(&unreadCount); err != nil {
 		return notificationsResponse{}, fmt.Errorf("count unread notifications: %w", err)
 	}
 
@@ -254,7 +261,8 @@ WHERE "userId" = $1
 	}
 	defer rows.Close()
 
-	stored := make(map[string]notificationPreference, len(allTypes))
+	availableTypes := availableNotificationTypes(s.Features)
+	stored := make(map[string]notificationPreference, len(availableTypes))
 	for rows.Next() {
 		var pref notificationPreference
 		if err := rows.Scan(&pref.Type, &pref.InApp, &pref.Email); err != nil {
@@ -266,8 +274,8 @@ WHERE "userId" = $1
 		return nil, fmt.Errorf("iterate notification preferences: %w", err)
 	}
 
-	result := make([]notificationPreference, 0, len(allTypes))
-	for _, t := range allTypes {
+	result := make([]notificationPreference, 0, len(availableTypes))
+	for _, t := range availableTypes {
 		if pref, ok := stored[t]; ok {
 			result = append(result, pref)
 			continue
@@ -279,8 +287,8 @@ WHERE "userId" = $1
 
 func (s Service) UpsertPreference(ctx context.Context, userID, prefType string, inApp, email *bool) (notificationPreference, error) {
 	normalized := strings.ToUpper(strings.TrimSpace(prefType))
-	if _, ok := validTypeSet[normalized]; !ok {
-		return notificationPreference{}, fmt.Errorf("invalid notification type")
+	if !notificationTypeEnabled(s.Features, normalized) {
+		return notificationPreference{}, fmt.Errorf("notification type is unavailable on this platform")
 	}
 
 	defaults := defaultPreference(normalized)
@@ -331,4 +339,25 @@ func defaultPreference(prefType string) notificationPreference {
 		InApp: true,
 		Email: emailEnabled,
 	}
+}
+
+func availableNotificationTypes(features runtimefeatures.Manifest) []string {
+	types := make([]string, 0, len(allTypes))
+	for _, prefType := range allTypes {
+		if notificationTypeEnabled(features, prefType) {
+			types = append(types, prefType)
+		}
+	}
+	return types
+}
+
+func notificationTypeEnabled(features runtimefeatures.Manifest, prefType string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(prefType))
+	if _, ok := validTypeSet[normalized]; !ok {
+		return false
+	}
+	if normalized == "RECORDING_READY" && !features.RecordingsEnabled {
+		return false
+	}
+	return true
 }

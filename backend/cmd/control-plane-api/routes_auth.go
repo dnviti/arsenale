@@ -77,12 +77,14 @@ func (d *apiDependencies) registerAuthRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /api/auth/oauth/vault-setup", d.authenticator.Middleware(d.oauthService.HandleSetupVault))
 		mux.HandleFunc("DELETE /api/auth/oauth/link/{provider}", d.authenticator.Middleware(d.oauthService.HandleUnlink))
 	}
-	mux.HandleFunc("POST /api/auth/switch-tenant", func(w http.ResponseWriter, r *http.Request) {
-		claims, err := d.authenticator.Authenticate(r)
-		if err != nil {
-			app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
-			return
-		}
-		d.authService.HandleSwitchTenant(w, r, claims.UserID)
-	})
+	if d.features.MultiTenancyEnabled {
+		mux.HandleFunc("POST /api/auth/switch-tenant", func(w http.ResponseWriter, r *http.Request) {
+			claims, err := d.authenticator.Authenticate(r)
+			if err != nil {
+				app.ErrorJSON(w, http.StatusUnauthorized, "Invalid or expired token")
+				return
+			}
+			d.authService.HandleSwitchTenant(w, r, claims.UserID)
+		})
+	}
 }

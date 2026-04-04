@@ -10,6 +10,7 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/authn"
 	"github.com/dnviti/arsenale/backend/internal/authservice"
+	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +24,7 @@ type Service struct {
 	AuthService         *authservice.Service
 	TenantVaultService  *tenantvaultapi.Service
 	ServerEncryptionKey []byte
+	Features            runtimefeatures.Manifest
 }
 
 type tenantResponse struct {

@@ -42,7 +42,7 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("DELETE /api/keystroke-policies/{id}", d.authenticator.Middleware(d.keystrokePolicyService.HandleDelete))
 	}
 
-	if d.features.ZeroTrustEnabled {
+	if d.features.AnyConnectionFeature() {
 		mux.HandleFunc("GET /api/gateways", d.authenticator.Middleware(d.gatewayService.HandleList))
 		mux.HandleFunc("POST /api/gateways", d.authenticator.Middleware(d.gatewayService.HandleCreate))
 		mux.HandleFunc("POST /api/gateways/ssh-keypair", d.authenticator.Middleware(d.gatewayService.HandleGenerateSSHKeyPair))
@@ -51,12 +51,18 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /api/gateways/ssh-keypair/rotate", d.authenticator.Middleware(d.gatewayService.HandleRotateSSHKeyPair))
 		mux.HandleFunc("PATCH /api/gateways/ssh-keypair/rotation", d.authenticator.Middleware(d.gatewayService.HandleUpdateSSHKeyRotationPolicy))
 		mux.HandleFunc("GET /api/gateways/ssh-keypair/rotation", d.authenticator.Middleware(d.gatewayService.HandleGetSSHKeyRotationStatus))
-		mux.HandleFunc("GET /api/gateways/tunnel-overview", d.authenticator.Middleware(d.gatewayService.HandleTunnelOverview))
 		mux.HandleFunc("GET /api/gateways/templates", d.authenticator.Middleware(d.gatewayService.HandleListTemplates))
 		mux.HandleFunc("POST /api/gateways/templates", d.authenticator.Middleware(d.gatewayService.HandleCreateTemplate))
+		if d.features.ZeroTrustEnabled {
+			mux.HandleFunc("GET /api/gateways/tunnel-overview", d.authenticator.Middleware(d.gatewayService.HandleTunnelOverview))
+		}
 		mux.HandleFunc("/api/gateways/", d.authenticator.Middleware(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
 			path := strings.TrimPrefix(r.URL.Path, "/api/gateways/")
 			if path == "" {
+				app.ErrorJSON(w, http.StatusNotFound, "not found")
+				return
+			}
+			if path == "tunnel-overview" && !d.features.ZeroTrustEnabled {
 				app.ErrorJSON(w, http.StatusNotFound, "not found")
 				return
 			}
@@ -205,6 +211,10 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 				}
 				d.gatewayService.HandleScale(w, r, claims)
 			case "tunnel-token":
+				if !d.features.ZeroTrustEnabled {
+					app.ErrorJSON(w, http.StatusNotFound, "not found")
+					return
+				}
 				switch r.Method {
 				case http.MethodPost:
 					d.gatewayService.HandleGenerateTunnelToken(w, r, claims)
@@ -215,6 +225,10 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
 				}
 			case "tunnel-disconnect":
+				if !d.features.ZeroTrustEnabled {
+					app.ErrorJSON(w, http.StatusNotFound, "not found")
+					return
+				}
 				if r.Method != http.MethodPost {
 					w.Header().Set("Allow", http.MethodPost)
 					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -222,6 +236,10 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 				}
 				d.gatewayService.HandleForceDisconnectTunnel(w, r, claims)
 			case "tunnel-events":
+				if !d.features.ZeroTrustEnabled {
+					app.ErrorJSON(w, http.StatusNotFound, "not found")
+					return
+				}
 				if r.Method != http.MethodGet {
 					w.Header().Set("Allow", http.MethodGet)
 					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -229,6 +247,10 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 				}
 				d.gatewayService.HandleGetTunnelEvents(w, r, claims)
 			case "tunnel-metrics":
+				if !d.features.ZeroTrustEnabled {
+					app.ErrorJSON(w, http.StatusNotFound, "not found")
+					return
+				}
 				if r.Method != http.MethodGet {
 					w.Header().Set("Allow", http.MethodGet)
 					app.ErrorJSON(w, http.StatusMethodNotAllowed, "method not allowed")
