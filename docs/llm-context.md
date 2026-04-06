@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-05T00:24:48Z
+generated-at: 2026-04-05T18:35:00Z
 source-files:
   - README.md
   - AGENT.md
@@ -76,6 +76,7 @@ The capability catalog in `backend/internal/catalog/catalog.go` defines risk-rat
 Memory types: `working`, `episodic`, `semantic`, `procedural`, `artifact`.
 Memory scopes: `tenant`, `principal`, `agent`, `run`, `workflow`.
 AI providers: `anthropic`, `openai`, `ollama`, `openai-compatible`.
+The `/api/ai/*` routes run in `control-plane-api`, so external provider DNS and egress must be available from that service.
 
 ## 🧩 Installer And Feature Profile
 
@@ -221,10 +222,11 @@ The installer-driven development flow now resolves the same capability graph as 
 
 It still seeds:
 
-- admin credentials: `admin@example.com` / `DevAdmin123!`
+- admin credentials: `admin@example.com` / `ArsenaleTemp91Qx`
 - a default tenant: `Development Environment`
 - tenant membership and baseline setup state
 - local `ssh-gateway` and `guacd` gateway records when `connections` is enabled
+- demo databases with a deterministic ERP-style dataset: 60 customers, 72 products, 180 orders, 540 order lines, and 180 invoices per engine
 
 Demo databases and tunnel gateway fixtures are no longer force-enabled by `make dev`.
 If `multi_tenancy` is disabled, the seeded tenant remains the platform's only organization and the create/switch organization flows stay off.

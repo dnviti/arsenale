@@ -280,16 +280,17 @@
       changed_when: false
       when: _is_dev | bool and _state == 'present'
 
-    - name: Verify seeded development demo PostgreSQL dataset
+    - name: Verify seeded development demo PostgreSQL ERP dataset
       shell: |
         set -euo pipefail
-        count="$(
+        counts="$(
           {{ container_runtime | default('podman') }} exec \
             -e PGPASSWORD='{{ dev_sample_postgres_password }}' \
             arsenale-dev-demo-postgres \
-            psql -h 127.0.0.1 -U '{{ dev_sample_postgres_user }}' -d '{{ dev_sample_postgres_database }}' -Atqc 'SELECT COUNT(*) FROM public.demo_customers'
+            psql -h 127.0.0.1 -U '{{ dev_sample_postgres_user }}' -d '{{ dev_sample_postgres_database }}' -Atqc \
+            "SELECT (SELECT COUNT(*) FROM public.demo_customers), (SELECT COUNT(*) FROM public.demo_products), (SELECT COUNT(*) FROM public.demo_orders), (SELECT COUNT(*) FROM public.demo_order_items), (SELECT COUNT(*) FROM public.demo_invoices);"
         )"
-        [[ "${count}" == "2" ]]
+        [[ "${counts}" == "60|72|180|540|180" ]]
       args:
         executable: /bin/bash
       retries: 12
@@ -299,14 +300,15 @@
       changed_when: false
       when: _is_dev | bool and _state == 'present'
 
-    - name: Verify seeded development demo MySQL dataset
+    - name: Verify seeded development demo MySQL ERP dataset
       shell: |
         set -euo pipefail
-        count="$(
+        counts="$(
           {{ container_runtime | default('podman') }} exec arsenale-dev-demo-mysql sh -lc \
-            'mysql -N -B -h 127.0.0.1 -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" -e "SELECT COUNT(*) FROM demo_customers"'
+            'mysql -N -B -h 127.0.0.1 -u"${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" -e "SELECT (SELECT COUNT(*) FROM demo_customers), (SELECT COUNT(*) FROM demo_products), (SELECT COUNT(*) FROM demo_orders), (SELECT COUNT(*) FROM demo_order_items), (SELECT COUNT(*) FROM demo_invoices)"'
         )"
-        [[ "${count}" == "2" ]]
+        counts="$(printf '%s' "${counts}" | tr '\t' '|')"
+        [[ "${counts}" == "60|72|180|540|180" ]]
       args:
         executable: /bin/bash
       retries: 12
@@ -316,18 +318,18 @@
       changed_when: false
       when: _is_dev | bool and _state == 'present'
 
-    - name: Verify seeded development demo MongoDB dataset
+    - name: Verify seeded development demo MongoDB ERP dataset
       shell: |
         set -euo pipefail
-        count="$(
+        counts="$(
           {{ container_runtime | default('podman') }} exec arsenale-dev-demo-mongodb \
             mongosh --quiet --host 127.0.0.1 --port {{ dev_sample_mongodb_port }} \
             -u '{{ dev_sample_mongodb_user }}' \
             -p '{{ dev_sample_mongodb_password }}' \
             --authenticationDatabase '{{ dev_sample_mongodb_database }}' \
-            --eval 'db = db.getSiblingDB("{{ dev_sample_mongodb_database }}"); print(db.demo_customers.countDocuments())'
+            --eval 'db = db.getSiblingDB("{{ dev_sample_mongodb_database }}"); print([db.demo_customers.countDocuments(), db.demo_products.countDocuments(), db.demo_orders.countDocuments(), db.demo_order_items.countDocuments(), db.demo_invoices.countDocuments()].join("|"))'
         )"
-        [[ "${count}" == "2" ]]
+        [[ "${counts}" == "60|72|180|540|180" ]]
       args:
         executable: /bin/bash
       retries: 12
@@ -337,15 +339,15 @@
       changed_when: false
       when: _is_dev | bool and _state == 'present'
 
-    - name: Verify seeded development demo Oracle dataset
+    - name: Verify seeded development demo Oracle ERP dataset
       shell: |
         set -euo pipefail
-        count="$(
+        counts="$(
           {{ container_runtime | default('podman') }} exec arsenale-dev-demo-oracle bash -lc \
-            "printf 'SET HEADING OFF FEEDBACK OFF PAGESIZE 0 VERIFY OFF TERMOUT OFF\nSELECT COUNT(*) FROM demo_customers;\nEXIT;\n' | sqlplus -L -s '{{ dev_sample_oracle_user }}/{{ dev_sample_oracle_password }}@//127.0.0.1:{{ dev_sample_oracle_port }}/{{ dev_sample_oracle_service_name }}'"
+            "printf 'SET HEADING OFF FEEDBACK OFF PAGESIZE 0 VERIFY OFF TERMOUT OFF\nSELECT (SELECT COUNT(*) FROM demo_customers), (SELECT COUNT(*) FROM demo_products), (SELECT COUNT(*) FROM demo_orders), (SELECT COUNT(*) FROM demo_order_items), (SELECT COUNT(*) FROM demo_invoices) FROM dual;\nEXIT;\n' | sqlplus -L -s '{{ dev_sample_oracle_user }}/{{ dev_sample_oracle_password }}@//127.0.0.1:{{ dev_sample_oracle_port }}/{{ dev_sample_oracle_service_name }}'"
         )"
-        count="$(printf '%s' "${count}" | tr -d '\r[:space:]')"
-        [[ "${count}" == "2" ]]
+        counts="$(printf '%s' "${counts}" | tr -d '\r' | xargs | tr -s ' ' '|')"
+        [[ "${counts}" == "60|72|180|540|180" ]]
       args:
         executable: /bin/bash
       retries: 12
@@ -355,20 +357,19 @@
       changed_when: false
       when: _is_dev | bool and _state == 'present'
 
-    - name: Verify seeded development demo MSSQL dataset
+    - name: Verify seeded development demo MSSQL ERP dataset
       shell: |
         set -euo pipefail
-        count="$(
+        counts="$(
           {{ container_runtime | default('podman') }} exec arsenale-dev-demo-mssql bash -lc '
             sqlcmd_path="/opt/mssql-tools18/bin/sqlcmd"
             if [ ! -x "${sqlcmd_path}" ]; then
               sqlcmd_path="/opt/mssql-tools/bin/sqlcmd"
             fi
-            "${sqlcmd_path}" -S 127.0.0.1,{{ dev_sample_mssql_port }} -U {{ dev_sample_mssql_user }} -P "{{ dev_sample_mssql_password }}" -C -d {{ dev_sample_mssql_database }} -h -1 -W -Q "SET NOCOUNT ON; SELECT COUNT(*) FROM dbo.demo_customers;"
+            printf "SET NOCOUNT ON;\nSELECT (SELECT COUNT(*) FROM dbo.demo_customers), (SELECT COUNT(*) FROM dbo.demo_products), (SELECT COUNT(*) FROM dbo.demo_orders), (SELECT COUNT(*) FROM dbo.demo_order_items), (SELECT COUNT(*) FROM dbo.demo_invoices);\n" | "${sqlcmd_path}" -S 127.0.0.1,{{ dev_sample_mssql_port }} -U {{ dev_sample_mssql_user }} -P "{{ dev_sample_mssql_password }}" -C -d {{ dev_sample_mssql_database }} -h -1 -W -s "|"
           '
         )"
-        count="$(printf '%s' "${count}" | tr -d '\r[:space:]')"
-        [[ "${count}" == "2" ]]
+        [[ "${counts}" == "60|72|180|540|180" ]]
       args:
         executable: /bin/bash
       retries: 12
@@ -458,7 +459,10 @@
       register: user_profile_check
       until: user_profile_check.rc == 0
       changed_when: false
-      when: _is_dev | bool and _state == 'present'
+      when:
+        - _is_dev | bool
+        - _state == 'present'
+        - arsenale_dev_acceptance_enabled | default(false) | bool
 
     - name: Verify Go read-only query execution in development
       command: >
@@ -1058,7 +1062,10 @@
       delay: 5
       until: go_db_session_check.rc == 0
       changed_when: false
-      when: _is_dev | bool and _state == 'present'
+      when:
+        - _is_dev | bool
+        - _state == 'present'
+        - arsenale_dev_acceptance_enabled | default(false) | bool
 
     - name: Wait for development readiness endpoint
       command: >

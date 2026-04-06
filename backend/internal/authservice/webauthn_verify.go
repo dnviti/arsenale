@@ -81,7 +81,7 @@ func (s Service) VerifyWebAuthn(ctx context.Context, tempToken string, rawCreden
 func (s Service) loadStoredWebAuthnCredentials(ctx context.Context, userID string) ([]webauthnflow.StoredCredential, error) {
 	rows, err := s.DB.Query(
 		ctx,
-		`SELECT "credentialId", publicKey, counter
+		`SELECT "credentialId", "publicKey", counter
 		   FROM "WebAuthnCredential"
 		  WHERE "userId" = $1
 		  ORDER BY "createdAt" DESC`,

@@ -222,7 +222,7 @@ func (s Service) loadStoredWebAuthnCredentials(ctx context.Context, userID strin
 
 	rows, err := s.DB.Query(
 		ctx,
-		`SELECT "credentialId", publicKey, counter
+		`SELECT "credentialId", "publicKey", counter
 		   FROM "WebAuthnCredential"
 		  WHERE "userId" = $1
 		  ORDER BY "createdAt" DESC`,

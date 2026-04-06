@@ -213,7 +213,7 @@ Default dev credentials:
 
 ```
 Email:    admin@example.com
-Password: DevAdmin123!
+Password: ArsenaleTemp91Qx
 Tenant:   Development Environment
 ```
 
@@ -389,7 +389,7 @@ The development flow is simplified:
 4. **Capabilities**: All enabled automatically.
 5. **Routing**: Both direct gateway and zero-trust enabled.
 6. **Apply**: Full stack rendered and started locally.
-7. **Post-apply**: Bootstrap + demo database seeding + gateway fixture provisioning.
+7. **Post-apply**: Bootstrap + ERP-style demo database seeding + gateway fixture provisioning.
 
 ### Production Podman Install Walkthrough
 

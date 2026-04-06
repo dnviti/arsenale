@@ -110,7 +110,7 @@ def _render_compose(**overrides: object) -> dict[str, object]:
         "arsenale_map_assets_port": 18096,
         "arsenale_dev_bootstrap_admin_email": "admin@example.com",
         "arsenale_dev_bootstrap_admin_username": "admin",
-        "arsenale_dev_bootstrap_admin_password": "DevAdmin123!",
+        "arsenale_dev_bootstrap_admin_password": "ArsenaleTemp91Qx",
         "arsenale_dev_bootstrap_tenant_name": "Development Environment",
         "arsenale_uid": "1000",
         "arsenale_container_dns_servers": [],
@@ -219,6 +219,7 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             services["postgres"]["volumes"][1],
             "/workspace/arsenale/config/installer-assets/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro",
         )
+        self.assertIn("net-egress", services["control-plane-api"]["networks"])
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])

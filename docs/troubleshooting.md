@@ -2,7 +2,7 @@
 title: Troubleshooting
 description: Common failures, debugging commands, and operator guidance for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-04T00:00:00Z
+generated-at: 2026-04-05T18:35:00Z
 source-files:
   - Makefile
   - scripts/dev-api-acceptance.sh
@@ -98,8 +98,8 @@ make logs SVC=arsenale-dev-tunnel-db-proxy
 
 | Symptom | Likely cause | Action |
 |---------|--------------|--------|
-| AI tab missing in database UI | `agenticAIEnabled` is off or `AI_PROVIDER` not set | Set `FEATURE_AGENTIC_AI_ENABLED=true` and configure an AI provider |
-| "Query generation failed" error | Provider API error or model unavailable | Check `AI_API_KEY`, `AI_BASE_URL`, and provider connectivity |
+| AI tab missing in database UI | `agenticAIEnabled` is off or no tenant/env AI provider is configured | Set `FEATURE_AGENTIC_AI_ENABLED=true` and configure `/api/ai/config` or the `AI_*` env vars |
+| "Query generation failed" error | Provider API error, model unavailable, or `control-plane-api` lacks outbound DNS/egress | Check tenant AI settings, `AI_API_KEY`, `AI_BASE_URL`, model name, and `arsenale-control-plane-api` connectivity |
 | Daily limit reached | Tenant hit `AI_MAX_REQUESTS_PER_DAY` | Wait for reset or increase the limit |
 | Ollama connection refused | Ollama service not running or wrong URL | Verify `AI_BASE_URL` points to the correct Ollama endpoint |
 
@@ -129,10 +129,16 @@ make logs SVC=arsenale-dev-tunnel-db-proxy
 Representative direct fixture checks:
 
 ```bash
-podman exec arsenale-dev-demo-postgres psql -U demo_pg_user -d arsenale_demo -At -c "select count(*) from public.demo_customers;"
-podman exec arsenale-dev-demo-mysql mysql -u demo_mysql_user -pDemoMySqlPass123! -D arsenale_demo -Nse "select count(*) from demo_customers;"
-podman exec arsenale-dev-demo-mongodb mongosh --quiet -u demo_mongo_user -p DemoMongoPass123! --authenticationDatabase arsenale_demo arsenale_demo --eval "db.demo_customers.countDocuments({})"
+podman exec arsenale-dev-demo-postgres psql -U demo_pg_user -d arsenale_demo -At -c "select count(*) from public.demo_customers; select count(*) from public.demo_products; select count(*) from public.demo_orders;"
+podman exec arsenale-dev-demo-mysql mysql -u demo_mysql_user -pDemoMySqlPass123! -D arsenale_demo -Nse "select count(*) from demo_customers; select count(*) from demo_products; select count(*) from demo_orders;"
+podman exec arsenale-dev-demo-mongodb mongosh --quiet -u demo_mongo_user -p DemoMongoPass123! --authenticationDatabase arsenale_demo arsenale_demo --eval "print([db.demo_customers.countDocuments({}), db.demo_products.countDocuments({}), db.demo_orders.countDocuments({})].join('|'))"
 ```
+
+Expected baseline counts after a healthy demo-stack install:
+
+- `demo_customers`: `60`
+- `demo_products`: `72`
+- `demo_orders`: `180`
 
 ## 🧪 Deeper Diagnostics
 

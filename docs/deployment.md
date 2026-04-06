@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-04T23:50:20Z
+generated-at: 2026-04-05T18:35:00Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -150,7 +150,7 @@ Primary internal networks:
 | `net-guacd` | Desktop broker and `guacd` |
 | `net-guacenc` | Recording conversion |
 | `net-gateway` | SSH gateway and managed gateway workloads |
-| `net-egress` | Outbound egress network for endpoint-facing services: SSH, RDP/VNC, direct database execution, and tunneled gateway fixtures |
+| `net-egress` | Outbound egress network for endpoint-facing services: SSH, RDP/VNC, direct database execution, AI provider calls from `control-plane-api`, and tunneled gateway fixtures |
 
 ## ⚙️ Runtime Env Emitted By The Installer
 
@@ -209,7 +209,7 @@ The development installer flow does more than boot the app. It also:
 - runs `service dev-bootstrap` inside `arsenale-control-plane-api`,
 - creates development gateway fixtures,
 - provisions tunneled gateway fixtures,
-- seeds five sample database containers,
+- seeds five sample database containers with a deterministic ERP-style dataset (customers, products, inventory, sales, purchasing, invoices, and payments),
 - pushes managed tenant SSH keys to all managed gateways after bootstrap.
 
 Demo data containers:
@@ -229,6 +229,8 @@ Tunneled gateway fixtures:
 | `arsenale-dev-tunnel-ssh-gateway` | Managed SSH via tunnel broker |
 | `arsenale-dev-tunnel-guacd` | Desktop proxy via tunnel broker |
 | `arsenale-dev-tunnel-db-proxy` | Database proxy via tunnel broker |
+
+Each demo database now exposes the same richer baseline shape with `demo_customers`, `demo_products`, `demo_orders`, `demo_order_items`, `demo_purchase_orders`, `demo_invoices`, and related supporting tables/collections. The seeded counts are intentionally substantial enough for join-heavy SQL, AI query generation, and execution-plan testing.
 
 This makes the dev stack suitable for full-stack session, gateway, and DB proxy testing without touching the application's own PostgreSQL data.
 
