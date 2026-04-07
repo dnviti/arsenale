@@ -228,7 +228,7 @@ It still seeds:
 - local `ssh-gateway` and `guacd` gateway records when `connections` is enabled
 - demo databases with a deterministic ERP-style dataset: 60 customers, 72 products, 180 orders, 540 order lines, and 180 invoices per engine
 
-Demo databases and tunnel gateway fixtures are no longer force-enabled by `make dev`.
+With the default development capabilities, `make dev` includes the demo databases. Tunnel gateway fixtures still require `DEV_ZERO_TRUST=true`.
 If `multi_tenancy` is disabled, the seeded tenant remains the platform's only organization and the create/switch organization flows stay off.
 
 ## 📧 Email, SMS, And Security Config
@@ -236,6 +236,7 @@ If `multi_tenancy` is disabled, the seeded tenant remains the platform's only or
 - Email providers: `smtp`, `sendgrid`, `ses`, `resend`, `mailgun` (via `EMAIL_PROVIDER`)
 - SMS providers: `twilio`, `sns`, `vonage` (via `SMS_PROVIDER`; empty for dev mode)
 - Login rate limiting: `LOGIN_RATE_LIMIT_WINDOW_MS`, `LOGIN_RATE_LIMIT_MAX_ATTEMPTS`
+- Rate limit whitelist: `RATE_LIMIT_WHITELIST_CIDRS` bypasses global and auth login limiters for trusted CIDRs
 - Account lockout: `ACCOUNT_LOCKOUT_THRESHOLD`, `ACCOUNT_LOCKOUT_DURATION_MS`
 - Session limits: `MAX_CONCURRENT_SESSIONS`, `ABSOLUTE_SESSION_TIMEOUT_SECONDS`
 - Impossible travel detection: `IMPOSSIBLE_TRAVEL_SPEED_KMH` (default 900)

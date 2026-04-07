@@ -41,6 +41,7 @@ interface DockedToolbarProps {
 
 /** Threshold in px past container center before side flips during drag */
 const FLIP_THRESHOLD = 30;
+const DRAG_THRESHOLD_PX = 6;
 
 export default function DockedToolbar({ actions, containerRef }: DockedToolbarProps) {
   const dockedSide = useUiPreferencesStore((s) => s.toolbarDockedSide);
@@ -79,6 +80,7 @@ export default function DockedToolbar({ actions, containerRef }: DockedToolbarPr
   const toolbarRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
   const wasDragged = useRef(false);
+  const dragStartClientX = useRef(0);
   const dragStartClientY = useRef(0);
   const dragStartPercent = useRef(0);
 
@@ -102,25 +104,37 @@ export default function DockedToolbar({ actions, containerRef }: DockedToolbarPr
   }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
-    // Only drag from the handle, not from action buttons
-    if ((e.target as HTMLElement).closest('[data-toolbar-action]')) return;
+    // Only drag from the handle, not from the action panel.
+    if (!(e.target as HTMLElement).closest('[data-toolbar-handle]')) return;
     draggingRef.current = true;
     wasDragged.current = false;
-    setIsDragging(true);
+    setIsDragging(false);
+    dragStartClientX.current = e.clientX;
     dragStartClientY.current = e.clientY;
     dragStartPercent.current = localY;
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    if ('setPointerCapture' in e.currentTarget) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
     e.preventDefault();
   }, [localY]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!draggingRef.current) return;
-    wasDragged.current = true;
+
+    const deltaX = e.clientX - dragStartClientX.current;
+    const deltaY = e.clientY - dragStartClientY.current;
+    if (!wasDragged.current && Math.max(Math.abs(deltaX), Math.abs(deltaY)) < DRAG_THRESHOLD_PX) {
+      return;
+    }
+    if (!wasDragged.current) {
+      wasDragged.current = true;
+      setIsDragging(true);
+    }
 
     const container = containerRef?.current;
     const containerHeight = container ? container.clientHeight : window.innerHeight;
     if (!containerHeight) return;
-    const deltaPixels = e.clientY - dragStartClientY.current;
+    const deltaPixels = deltaY;
     const deltaPercent = (deltaPixels / containerHeight) * 100;
     setLocalY(clampY(dragStartPercent.current + deltaPercent, containerHeight));
 
@@ -156,6 +170,12 @@ export default function DockedToolbar({ actions, containerRef }: DockedToolbarPr
       return !prev;
     });
   }, []);
+
+  const handleTriggerKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    handleTriggerClick();
+  }, [handleTriggerClick]);
 
   const handleFlipSide = useCallback(() => {
     const newSide = localSide === 'left' ? 'right' : 'left';
@@ -214,6 +234,12 @@ export default function DockedToolbar({ actions, containerRef }: DockedToolbarPr
         <Paper
           elevation={2}
           onClick={handleTriggerClick}
+          onKeyDown={handleTriggerKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label={open ? 'Collapse toolbar' : 'Expand toolbar'}
+          aria-expanded={open}
+          data-toolbar-handle
           sx={{
             display: 'flex',
             alignItems: 'center',

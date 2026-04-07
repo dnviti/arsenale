@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	loginMFARateLimitWindow      = time.Minute
-	loginMFARateLimitMaxAttempts = 5
+	loginMFARateLimitWindow        = time.Minute
+	loginMFARateLimitMaxAttempts   = 5
+	defaultRateLimitWhitelistCIDRs = "127.0.0.1/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 )
 
 func (s Service) storeVaultSession(ctx context.Context, userID, password string, user loginUser) error {
@@ -103,7 +104,7 @@ func (s Service) enforceSlidingWindowLimit(ctx context.Context, key string, wind
 
 func (s Service) enforceLoginRateLimit(ctx context.Context, ipAddress string) error {
 	ipAddress = normalizeIP(ipAddress)
-	if ipAddress == "" {
+	if ipAddress == "" || shouldBypassRateLimit(ipAddress) {
 		return nil
 	}
 	window := s.loginRateLimitWindow()
@@ -118,6 +119,9 @@ func (s Service) enforceLoginRateLimit(ctx context.Context, ipAddress string) er
 }
 
 func (s Service) enforceLoginMFARateLimit(ctx context.Context, userID, ipAddress string) error {
+	if shouldBypassRateLimit(ipAddress) {
+		return nil
+	}
 	identity := strings.TrimSpace(userID)
 	if identity == "" {
 		identity = normalizeIP(ipAddress)
@@ -150,6 +154,38 @@ func (s Service) loginRateLimitMaxAttempts() int {
 		}
 	}
 	return 5
+}
+
+func shouldBypassRateLimit(ipAddress string) bool {
+	ipAddress = normalizeIP(ipAddress)
+	if ipAddress == "" {
+		return false
+	}
+	for _, entry := range rateLimitWhitelistEntries() {
+		if isIPInCIDR(ipAddress, entry) {
+			return true
+		}
+	}
+	return false
+}
+
+func rateLimitWhitelistEntries() []string {
+	value, exists := os.LookupEnv("RATE_LIMIT_WHITELIST_CIDRS")
+	switch {
+	case !exists:
+		value = defaultRateLimitWhitelistCIDRs
+	case strings.TrimSpace(value) == "":
+		return nil
+	}
+
+	entries := make([]string, 0)
+	for _, entry := range strings.Split(value, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry != "" {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 func deriveKeyFromPassword(password, saltHex string) []byte {

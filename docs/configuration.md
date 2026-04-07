@@ -248,13 +248,13 @@ That nginx config accepts both `localhost` and `arsenale.home.arpa.viti`. For We
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `LOGIN_RATE_LIMIT_WINDOW_MS` | `900000` (15 min) | Sliding window for login rate limiting |
-| `LOGIN_RATE_LIMIT_MAX_ATTEMPTS` | `5` | Max login attempts per IP in window |
+| `LOGIN_RATE_LIMIT_MAX_ATTEMPTS` | `5` | Max login attempts per non-whitelisted IP in window |
 | `ACCOUNT_LOCKOUT_THRESHOLD` | `10` | Failed logins before account lockout |
 | `ACCOUNT_LOCKOUT_DURATION_MS` | `1800000` (30 min) | Lockout duration |
 | `MAX_CONCURRENT_SESSIONS` | `0` (unlimited) | Max concurrent user sessions |
 | `ABSOLUTE_SESSION_TIMEOUT_SECONDS` | `43200` (12h) | Force re-login after this duration |
 | `TRUST_PROXY` | `false` | Express-style proxy trust setting |
-| `RATE_LIMIT_WHITELIST_CIDRS` | Private ranges | CIDR ranges bypassing rate limits |
+| `RATE_LIMIT_WHITELIST_CIDRS` | Private ranges | CIDR ranges bypassing global, login, and login MFA rate limits |
 | `ALLOW_LOCAL_NETWORK` | `true` | Allow connections to private IPs |
 | `ALLOW_LOOPBACK` | `false` | Allow connections to localhost |
 | `IMPOSSIBLE_TRAVEL_SPEED_KMH` | `900` | Speed threshold for impossible travel detection |
