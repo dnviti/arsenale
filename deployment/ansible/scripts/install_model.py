@@ -94,6 +94,8 @@ def normalize_capabilities(profile: dict[str, Any], catalog: dict[str, Any]) -> 
 def resolve_profile(profile: dict[str, Any], catalog: dict[str, Any]) -> dict[str, Any]:
     capabilities = normalize_capabilities(profile, catalog)
     routing = deepcopy(profile.get("routing", {}))
+    if bool(routing.get("zeroTrust", False)):
+        capabilities["zero_trust"] = True
 
     direct_enabled = bool(routing.get("directGateway", False))
     zero_trust_enabled = bool(routing.get("zeroTrust", False)) and capabilities.get("zero_trust", False)
@@ -110,6 +112,23 @@ def resolve_profile(profile: dict[str, Any], catalog: dict[str, Any]) -> dict[st
         service_names.extend(["model-gateway", "tool-gateway", "memory-service"])
     if zero_trust_enabled:
         service_names.extend(["tunnel-broker", "control-plane-controller", "runtime-agent", "agent-orchestrator"])
+    if profile["mode"] == "development":
+        if capabilities.get("connections"):
+            service_names.extend(["terminal-target", "dev-debian-ssh-target"])
+        if capabilities.get("databases"):
+            service_names.extend(
+                [
+                    "dev-demo-postgres",
+                    "dev-demo-mysql",
+                    "dev-demo-mongodb",
+                    "dev-demo-oracle",
+                    "dev-demo-mssql",
+                ]
+            )
+        if zero_trust_enabled and capabilities.get("connections"):
+            service_names.extend(["dev-tunnel-ssh-gateway", "dev-tunnel-guacd"])
+        if zero_trust_enabled and capabilities.get("databases"):
+            service_names.append("dev-tunnel-db-proxy")
 
     env = {
         "ARSENALE_INSTALLER_ENABLED": "true",

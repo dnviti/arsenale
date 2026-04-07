@@ -199,7 +199,7 @@ Development-specific behaviors:
 - When `connections` is enabled, `dev-bootstrap` registers the local `ssh-gateway` and `guacd` containers as tenant gateways.
 - Endpoint-facing runtime services attach to `net-egress`: local `ssh-gateway` and `guacd` for SSH/RDP/VNC access, local `query-runner` for direct database access, and the dev tunnel gateway fixtures for zero-trust SSH/RDP/VNC/database access.
 - When `recordings` is disabled, the installer also disables session capture and recording-ready notifications, not just the `/api/recordings` routes.
-- Demo database and tunnel fixture services are not force-enabled by `make dev`.
+- Demo database services follow the enabled development capabilities, so the default `make dev` profile includes them. Tunnel fixtures still require `DEV_ZERO_TRUST=true`.
 
 After `make dev` completes:
 

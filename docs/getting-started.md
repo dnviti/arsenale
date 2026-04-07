@@ -150,9 +150,9 @@ The vault/keychain remains enabled in that minimal profile because it is part of
 Because `multi_tenancy` is optional, that minimal example also runs in single-tenant mode. Add `multi_tenancy` to `DEV_CAPABILITIES` if you want tenant switching and self-service organization creation enabled.
 
 When you enable `connections`, the development bootstrap registers the built-in
-`ssh-gateway` and `guacd` containers in the tenant so they appear in the Gateways UI.
+`ssh-gateway` and `guacd` containers in the tenant so they appear in the Gateways UI, and the installer keeps the SSH target fixtures needed for local smoke tests.
 
-If you do not pass overrides, `make dev` uses the same capability defaults as production and leaves zero trust disabled by default.
+If you do not pass overrides, `make dev` uses the same capability defaults as production. That means the local demo databases are present by default because `databases` is enabled, while zero trust stays disabled until you set `DEV_ZERO_TRUST=true`.
 
 ## 🧪 Quick Verification
 

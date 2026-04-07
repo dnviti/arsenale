@@ -5,6 +5,14 @@
 - Use `tools/arsenale-cli` as the default operator and smoke-test client for end-to-end verification. Prefer it over ad hoc `curl`.
 - If a change affects API routes, response fields, auth flows, config defaults, server URLs, tenant selection, or deployment wiring, update `tools/arsenale-cli` in the same change set. Rebuild and retest it; CLI help output and smoke checks are acceptance criteria.
 
+## Code File Size And Naming
+
+- Aim for roughly `200` to `300` lines per non-generated code file.
+- Treat `400` lines as the split threshold. If a file is at or above that size, split it by concern on the next meaningful change unless it is a generated file, a test fixture, or a clearly single-purpose file that would become less readable if split.
+- Do not keep unrelated handlers, reads, writes, validation, provider logic, and formatting logic in one file. Split by concern early so a package does not drift into a single large entrypoint.
+- File names must describe the domain and concern directly so humans and LLMs can find context quickly. Prefer names like `gateway_handlers.go`, `oauth_callback_tokens.go`, `connection_reads.go`, or `vault_crypto.go`.
+- Avoid vague file names such as `utils.go`, `helpers.go`, `misc.go`, `common.go`, or `temp.go` unless the file truly contains a small, tightly related shared concern.
+
 ## CLI Build, Config, And Smoke
 
 Build from the repo root before relying on the CLI:

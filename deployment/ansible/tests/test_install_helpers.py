@@ -108,6 +108,68 @@ class InstallModelTest(unittest.TestCase):
         self.assertFalse(resolved["routing"]["directGateway"])
         self.assertFalse(resolved["devFullStack"])
 
+    def test_resolve_dev_includes_demo_services_for_enabled_capabilities(self) -> None:
+        profile = {
+            "schemaVersion": "1.0.0",
+            "mode": "development",
+            "backend": "podman",
+            "capabilities": {
+                "core": True,
+                "keychain": True,
+                "multi_tenancy": True,
+                "connections": True,
+                "ip_geolocation": True,
+                "databases": True,
+                "recordings": True,
+                "zero_trust": False,
+                "agentic_ai": True,
+                "enterprise_auth": True,
+                "sharing_approvals": True,
+                "cli": True,
+            },
+            "routing": {"directGateway": True, "zeroTrust": False},
+        }
+        resolved = install_model.resolve_profile(profile, self.catalog)
+
+        self.assertIn("terminal-target", resolved["services"])
+        self.assertIn("dev-debian-ssh-target", resolved["services"])
+        self.assertIn("dev-demo-postgres", resolved["services"])
+        self.assertIn("dev-demo-mysql", resolved["services"])
+        self.assertIn("dev-demo-mongodb", resolved["services"])
+        self.assertIn("dev-demo-oracle", resolved["services"])
+        self.assertIn("dev-demo-mssql", resolved["services"])
+        self.assertNotIn("dev-tunnel-ssh-gateway", resolved["services"])
+        self.assertNotIn("dev-tunnel-guacd", resolved["services"])
+        self.assertNotIn("dev-tunnel-db-proxy", resolved["services"])
+
+    def test_resolve_dev_includes_zero_trust_fixtures_when_enabled(self) -> None:
+        profile = {
+            "schemaVersion": "1.0.0",
+            "mode": "development",
+            "backend": "podman",
+            "capabilities": {
+                "core": True,
+                "keychain": True,
+                "multi_tenancy": True,
+                "connections": True,
+                "ip_geolocation": True,
+                "databases": True,
+                "recordings": True,
+                "zero_trust": False,
+                "agentic_ai": True,
+                "enterprise_auth": True,
+                "sharing_approvals": True,
+                "cli": True,
+            },
+            "routing": {"directGateway": True, "zeroTrust": True},
+        }
+        resolved = install_model.resolve_profile(profile, self.catalog)
+
+        self.assertTrue(resolved["capabilities"]["zero_trust"])
+        self.assertIn("dev-tunnel-ssh-gateway", resolved["services"])
+        self.assertIn("dev-tunnel-guacd", resolved["services"])
+        self.assertIn("dev-tunnel-db-proxy", resolved["services"])
+
     def test_core_always_resolves_keychain(self) -> None:
         profile = {
             "schemaVersion": "1.0.0",

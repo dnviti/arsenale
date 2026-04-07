@@ -70,7 +70,7 @@ make dev
 - Firewall rules are **not** applied.
 - Certificates are generated under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
 - When `connections` is enabled, `dev-bootstrap` registers the local `ssh-gateway` and `guacd` containers as tenant gateways.
-- Demo database and tunnel fixture services are not force-enabled by `make dev`.
+- Demo database services follow the enabled development capabilities, so the default `make dev` profile includes them. Tunnel fixtures still require `DEV_ZERO_TRUST=true`.
 
 After completion:
 
