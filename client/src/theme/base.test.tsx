@@ -1,71 +1,45 @@
-import { Dialog, DialogContent, CssBaseline, Menu, MenuItem, ThemeProvider } from '@mui/material';
-import { render } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { applyDocumentTheme } from './documentTheme';
 import { themes } from './index';
 
-describe('shared dialog theme overrides', () => {
-  it('disables pointer events as soon as a dialog begins closing', async () => {
-    const view = render(
-      <ThemeProvider theme={themes.primer.dark}>
-        <CssBaseline />
-        <Dialog open transitionDuration={1000}>
-          <DialogContent>Dialog body</DialogContent>
-        </Dialog>
-      </ThemeProvider>,
-    );
+const root = document.documentElement;
 
-    await vi.waitFor(() => {
-      expect(document.body.querySelector('.MuiDialog-root')).toBeInTheDocument();
-    });
+function resetThemeState() {
+  root.classList.remove('dark');
+  root.removeAttribute('data-theme-name');
+  root.removeAttribute('data-theme-mode');
+  root.removeAttribute('style');
+}
 
-    view.rerender(
-      <ThemeProvider theme={themes.primer.dark}>
-        <CssBaseline />
-        <Dialog open={false} transitionDuration={1000}>
-          <DialogContent>Dialog body</DialogContent>
-        </Dialog>
-      </ThemeProvider>,
-    );
-
-    await vi.waitFor(() => {
-      const root = document.body.querySelector('.MuiDialog-root');
-      expect(root).not.toBeNull();
-      expect(window.getComputedStyle(root as Element).pointerEvents).toBe('none');
-    });
+describe('document theme bridge', () => {
+  afterEach(() => {
+    resetThemeState();
   });
 
-  it('disables pointer events as soon as a menu begins closing', async () => {
-    const anchor = document.createElement('button');
-    document.body.appendChild(anchor);
+  it('maps the dark primer palette into shadcn document variables', () => {
+    applyDocumentTheme(themes.primer.dark, 'primer', 'dark');
 
-    const view = render(
-      <ThemeProvider theme={themes.primer.dark}>
-        <CssBaseline />
-        <Menu open anchorEl={anchor} transitionDuration={1000}>
-          <MenuItem>Example</MenuItem>
-        </Menu>
-      </ThemeProvider>,
-    );
+    expect(root.dataset.themeName).toBe('primer');
+    expect(root.dataset.themeMode).toBe('dark');
+    expect(root.classList.contains('dark')).toBe(true);
+    expect(root.style.getPropertyValue('--background')).toBe(themes.primer.dark.palette.background.default);
+    expect(root.style.getPropertyValue('--card')).toBe(themes.primer.dark.palette.background.paper);
+    expect(root.style.getPropertyValue('--primary')).toBe(themes.primer.dark.palette.primary.main);
+    expect(root.style.getPropertyValue('--ring')).toBe(themes.primer.dark.palette.primary.main);
+    expect(root.style.getPropertyValue('--font-sans')).toContain('Figtree');
+    expect(root.style.getPropertyValue('--font-mono')).toContain('Source Code Pro');
+  });
 
-    await vi.waitFor(() => {
-      expect(document.body.querySelector('.MuiMenu-root')).toBeInTheDocument();
-    });
+  it('updates mode-specific flags and typography when switching to solarized light', () => {
+    applyDocumentTheme(themes.solarized.light, 'solarized', 'light');
 
-    view.rerender(
-      <ThemeProvider theme={themes.primer.dark}>
-        <CssBaseline />
-        <Menu open={false} anchorEl={anchor} transitionDuration={1000}>
-          <MenuItem>Example</MenuItem>
-        </Menu>
-      </ThemeProvider>,
-    );
-
-    await vi.waitFor(() => {
-      const root = document.body.querySelector('.MuiMenu-root');
-      expect(root).not.toBeNull();
-      expect(window.getComputedStyle(root as Element).pointerEvents).toBe('none');
-    });
-
-    anchor.remove();
+    expect(root.dataset.themeName).toBe('solarized');
+    expect(root.dataset.themeMode).toBe('light');
+    expect(root.classList.contains('dark')).toBe(false);
+    expect(root.style.getPropertyValue('--foreground')).toBe(themes.solarized.light.palette.text.primary);
+    expect(root.style.getPropertyValue('--sidebar')).toBe(themes.solarized.light.palette.background.paper);
+    expect(root.style.getPropertyValue('--destructive')).toBe(themes.solarized.light.palette.error.main);
+    expect(root.style.getPropertyValue('--font-heading')).toContain('Newsreader');
+    expect(root.style.getPropertyValue('--arsenale-primary-14')).not.toBe('');
   });
 });

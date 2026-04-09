@@ -1,66 +1,149 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, TextField, Button, Typography, Alert, Paper,
-  Stepper, Step, StepLabel, Switch, FormControlLabel,
-  IconButton, Tooltip, Collapse, CircularProgress,
-} from '@mui/material';
+  CheckCircle2,
+  CircleX,
+  Copy,
+  Database,
+  Download,
+  Eye,
+  EyeOff,
+  LoaderCircle,
+} from 'lucide-react';
+import AuthLayout from '@/components/auth/AuthLayout';
+import PasswordStrengthMeter from '@/components/common/PasswordStrengthMeter';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { cn } from '@/lib/utils';
 import {
-  ContentCopy as CopyIcon,
-  Download as DownloadIcon,
-  Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon,
-} from '@mui/icons-material';
-import {
-  Storage as StorageIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-} from '@mui/icons-material';
-import { completeSetup, getDbStatus, getSetupStatus, type SetupCompleteData, type DbStatusResponse } from '../api/setup.api';
+  completeSetup,
+  getDbStatus,
+  getSetupStatus,
+  type DbStatusResponse,
+  type SetupCompleteData,
+} from '../api/setup.api';
 import { useAuthStore } from '../store/authStore';
 import { useVaultStore } from '../store/vaultStore';
-import PasswordStrengthMeter from '../components/common/PasswordStrengthMeter';
 import { extractApiError } from '../utils/apiError';
+import { downloadTextFile } from '../utils/downloadFile';
+import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
 
 const STEPS = ['Welcome', 'Database', 'Administrator', 'Organization', 'Settings', 'Complete'];
 
+function SetupStepIndicator({ activeStep }: { activeStep: number }) {
+  return (
+    <ol className="grid gap-3 md:grid-cols-6">
+      {STEPS.map((label, index) => {
+        const isActive = index === activeStep;
+        const isComplete = index < activeStep;
+
+        return (
+          <li
+            key={label}
+            className={cn(
+              'rounded-xl border px-3 py-3 transition-colors',
+              isActive
+                ? 'border-primary/40 bg-primary/10'
+                : isComplete
+                  ? 'border-primary/20 bg-primary/5'
+                  : 'border-border bg-muted/20',
+            )}
+          >
+            <div className="flex items-center gap-3">
+              <div
+                className={cn(
+                  'flex size-8 shrink-0 items-center justify-center rounded-full border text-xs font-semibold',
+                  isActive || isComplete
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border text-muted-foreground',
+                )}
+              >
+                {index + 1}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">{label}</p>
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-2">
+      <Label>{label}</Label>
+      <Input readOnly value={value} />
+    </div>
+  );
+}
+
+function SettingSwitchCard({
+  checked,
+  children,
+  description,
+  label,
+  onCheckedChange,
+}: {
+  checked: boolean;
+  children?: ReactNode;
+  description: string;
+  label: string;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="space-y-4 rounded-xl border bg-card p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-foreground">{label}</p>
+          <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+        </div>
+        <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      </div>
+      {checked ? children : null}
+    </div>
+  );
+}
+
+function CopyValueButton({ label, value }: { label: string; value: string }) {
+  const { copied, copy } = useCopyToClipboard();
+
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={`Copy ${label}`}
+      title={copied ? 'Copied!' : `Copy ${label}`}
+      onClick={() => void copy(value)}
+    >
+      <Copy className="size-4" />
+    </Button>
+  );
+}
+
 export default function SetupWizardPage() {
   const navigate = useNavigate();
-  const setAuth = useAuthStore((s) => s.setAuth);
-  const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
+  const setAuth = useAuthStore((state) => state.setAuth);
+  const setVaultUnlocked = useVaultStore((state) => state.setUnlocked);
 
   const [statusChecking, setStatusChecking] = useState(true);
   const [activeStep, setActiveStep] = useState(0);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // Step 1: Database
   const [dbStatus, setDbStatus] = useState<DbStatusResponse | null>(null);
   const [dbLoading, setDbLoading] = useState(false);
-
-  const testDbConnection = async () => {
-    setDbLoading(true);
-    try {
-      const status = await getDbStatus();
-      setDbStatus(status);
-    } catch {
-      setDbStatus({ host: '', port: 0, database: '', connected: false, version: null });
-    } finally {
-      setDbLoading(false);
-    }
-  };
-
-  // Step 2: Admin
   const [adminEmail, setAdminEmail] = useState('');
   const [adminUsername, setAdminUsername] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-
-  // Step 2: Organization
   const [tenantName, setTenantName] = useState('');
-
-  // Step 3: Settings
   const [selfSignupEnabled, setSelfSignupEnabled] = useState(false);
   const [configureSmtp, setConfigureSmtp] = useState(false);
   const [smtpHost, setSmtpHost] = useState('');
@@ -69,11 +152,12 @@ export default function SetupWizardPage() {
   const [smtpPass, setSmtpPass] = useState('');
   const [smtpFrom, setSmtpFrom] = useState('');
   const [smtpSecure, setSmtpSecure] = useState(false);
-
-  // Step 4: Result
   const [recoveryKey, setRecoveryKey] = useState('');
-  const [systemSecrets, setSystemSecrets] = useState<Array<{ name: string; value: string; description: string }>>([]);
-  const [copied, setCopied] = useState(false);
+  const [systemSecrets, setSystemSecrets] = useState<Array<{
+    description: string;
+    name: string;
+    value: string;
+  }>>([]);
 
   useEffect(() => {
     getSetupStatus()
@@ -89,45 +173,40 @@ export default function SetupWizardPage() {
       });
   }, [navigate]);
 
-  const handleCopyRecoveryKey = () => {
-    navigator.clipboard.writeText(recoveryKey).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  const testDbConnection = async () => {
+    setDbLoading(true);
+    try {
+      const status = await getDbStatus();
+      setDbStatus(status);
+    } catch {
+      setDbStatus({ host: '', port: 0, database: '', connected: false, version: null });
+    } finally {
+      setDbLoading(false);
+    }
   };
 
-  const handleDownloadRecoveryKey = () => {
-    const blob = new Blob(
-      [`Arsenale Recovery Key\n${'='.repeat(40)}\n\n${recoveryKey}\n\nStore this key in a safe place. It is the only way to recover your vault if you forget your password.\n`],
-      { type: 'text/plain' },
-    );
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'arsenale-recovery-key.txt';
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const canProceed = (): boolean => {
+  const canProceed = () => {
     switch (activeStep) {
-      case 0: return true; // Welcome
-      case 1: return dbStatus?.connected === true; // Database
-      case 2: // Admin
+      case 0:
+        return true;
+      case 1:
+        return dbStatus?.connected === true;
+      case 2:
         return adminEmail.length > 0
           && adminPassword.length >= 10
           && adminPassword === confirmPassword;
-      case 3: // Organization
+      case 3:
         return tenantName.length > 0;
-      case 4: return true; // Settings (all optional)
-      default: return false;
+      case 4:
+        return true;
+      default:
+        return false;
     }
   };
 
   const handleNext = async () => {
     setError('');
 
-    // On the Settings step (4), submit everything
     if (activeStep === 4) {
       setLoading(true);
       try {
@@ -140,16 +219,18 @@ export default function SetupWizardPage() {
           tenant: { name: tenantName },
           settings: {
             selfSignupEnabled,
-            ...(configureSmtp && smtpHost ? {
-              smtp: {
-                host: smtpHost,
-                port: parseInt(smtpPort, 10) || 587,
-                ...(smtpUser ? { user: smtpUser } : {}),
-                ...(smtpPass ? { pass: smtpPass } : {}),
-                ...(smtpFrom ? { from: smtpFrom } : {}),
-                secure: smtpSecure,
-              },
-            } : {}),
+            ...(configureSmtp && smtpHost
+              ? {
+                  smtp: {
+                    host: smtpHost,
+                    port: parseInt(smtpPort, 10) || 587,
+                    ...(smtpUser ? { user: smtpUser } : {}),
+                    ...(smtpPass ? { pass: smtpPass } : {}),
+                    ...(smtpFrom ? { from: smtpFrom } : {}),
+                    secure: smtpSecure,
+                  },
+                }
+              : {}),
           },
         };
 
@@ -157,8 +238,6 @@ export default function SetupWizardPage() {
 
         setRecoveryKey(result.recoveryKey);
         setSystemSecrets(result.systemSecrets || []);
-
-        // Auto-login
         setAuth(result.accessToken, result.csrfToken ?? '', {
           id: result.user.id,
           email: result.user.email,
@@ -169,9 +248,8 @@ export default function SetupWizardPage() {
           vaultSetupComplete: true,
         });
         setVaultUnlocked(true);
-
         setActiveStep(5);
-      } catch (err) {
+      } catch (err: unknown) {
         setError(extractApiError(err, 'Setup failed. Please try again.'));
       } finally {
         setLoading(false);
@@ -179,417 +257,432 @@ export default function SetupWizardPage() {
       return;
     }
 
-    setActiveStep((prev) => prev + 1);
+    setActiveStep((previous) => previous + 1);
   };
 
-  const handleBack = () => {
-    setError('');
-    setActiveStep((prev) => prev - 1);
+  const handleDownloadRecoveryKey = () => {
+    const content = [
+      'Arsenale Recovery Key',
+      '='.repeat(40),
+      '',
+      recoveryKey,
+      '',
+      'Store this key in a safe place. It is the only way to recover your vault if you forget your password.',
+    ].join('\n');
+    downloadTextFile(content, 'arsenale-recovery-key.txt');
   };
 
-  const handleGetStarted = () => {
-    navigate('/', { replace: true });
+  const handleDownloadSecrets = () => {
+    const content = systemSecrets.map((secret) => `${secret.name}=${secret.value}`).join('\n');
+    downloadTextFile(content, 'arsenale-system-secrets.env');
   };
+
+  const passwordsMismatch = confirmPassword.length > 0 && adminPassword !== confirmPassword;
+
+  let stepContent: ReactNode = null;
+
+  if (activeStep === 0) {
+    stepContent = (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-foreground">Welcome to Arsenale</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Arsenale is a secure remote access and privileged access management platform.
+            This wizard will guide you through the initial setup to get your platform ready.
+          </p>
+        </div>
+        <div className="rounded-xl border bg-card p-4">
+          <p className="mb-3 text-sm font-medium text-foreground">Here&apos;s what we&apos;ll do:</p>
+          <ul className="space-y-2 text-sm leading-6 text-muted-foreground">
+            <li><strong className="text-foreground">Verify database connection</strong> so the control plane can store state.</li>
+            <li><strong className="text-foreground">Create an administrator account</strong> with full platform control.</li>
+            <li><strong className="text-foreground">Create an organization</strong> for your users, teams, and policies.</li>
+            <li><strong className="text-foreground">Configure basic settings</strong> like sign-up and email delivery.</li>
+          </ul>
+        </div>
+        <p className="text-sm leading-6 text-muted-foreground">
+          This wizard runs only once. After completion, you&apos;ll be logged in and ready to go.
+        </p>
+      </div>
+    );
+  } else if (activeStep === 1) {
+    stepContent = (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="flex items-center gap-2 text-xl font-semibold text-foreground">
+            <Database className="size-5" />
+            Database Connection
+          </h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Verify the PostgreSQL database connection. These values come from `DATABASE_URL`.
+            To change them, update your environment and restart the server.
+          </p>
+        </div>
+
+        {dbStatus ? (
+          <div className="space-y-4 rounded-xl border bg-card p-4">
+            <div className="grid gap-4 md:grid-cols-3">
+              <ReadOnlyField label="Host" value={dbStatus.host || '(not set)'} />
+              <ReadOnlyField label="Port" value={String(dbStatus.port)} />
+              <ReadOnlyField label="Database" value={dbStatus.database || '(not set)'} />
+            </div>
+            <div className="flex items-center gap-2 text-sm">
+              {dbStatus.connected ? (
+                <>
+                  <CheckCircle2 className="size-4 text-primary" />
+                  <span className="font-medium text-primary">Connected</span>
+                </>
+              ) : (
+                <>
+                  <CircleX className="size-4 text-destructive" />
+                  <span className="font-medium text-destructive">Connection failed</span>
+                </>
+              )}
+            </div>
+            {dbStatus.version ? (
+              <p className="text-xs text-muted-foreground">{dbStatus.version}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <Button type="button" variant="outline" disabled={dbLoading} onClick={() => void testDbConnection()}>
+          {dbLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Database className="size-4" />}
+          {dbStatus ? 'Retest Connection' : 'Test Connection'}
+        </Button>
+      </div>
+    );
+  } else if (activeStep === 2) {
+    stepContent = (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-foreground">Create Administrator Account</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            This will be the first user with full platform control. All connection credentials
+            will be encrypted with a key derived from this password.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="setup-admin-email">Email</Label>
+          <Input
+            id="setup-admin-email"
+            autoFocus
+            required
+            type="email"
+            value={adminEmail}
+            onChange={(event) => setAdminEmail(event.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="setup-admin-username">Username</Label>
+          <Input
+            id="setup-admin-username"
+            placeholder="Optional display name"
+            value={adminUsername}
+            onChange={(event) => setAdminUsername(event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">A display name for your profile.</p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="setup-admin-password">Password</Label>
+          <div className="relative">
+            <Input
+              id="setup-admin-password"
+              required
+              type={showPassword ? 'text' : 'password'}
+              value={adminPassword}
+              onChange={(event) => setAdminPassword(event.target.value)}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-1 top-1 size-8"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              onClick={() => setShowPassword((previous) => !previous)}
+            >
+              {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Minimum 10 characters.</p>
+        </div>
+
+        <PasswordStrengthMeter password={adminPassword} />
+
+        <div className="space-y-2">
+          <Label htmlFor="setup-admin-confirm-password">Confirm Password</Label>
+          <Input
+            id="setup-admin-confirm-password"
+            required
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+          {passwordsMismatch ? (
+            <p className="text-xs text-destructive">Passwords do not match</p>
+          ) : null}
+        </div>
+      </div>
+    );
+  } else if (activeStep === 3) {
+    stepContent = (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-foreground">Create Your Organization</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            An organization groups your users, teams, connections, and security policies together.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="setup-tenant-name">Organization Name</Label>
+          <Input
+            id="setup-tenant-name"
+            autoFocus
+            placeholder="Acme Corp"
+            required
+            value={tenantName}
+            onChange={(event) => setTenantName(event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            For example: Acme Corp, IT Department, Home Lab.
+          </p>
+        </div>
+      </div>
+    );
+  } else if (activeStep === 4) {
+    stepContent = (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <h2 className="text-xl font-semibold text-foreground">Platform Settings</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Configure how your platform handles new users and notifications.
+            You can change all of these later in Settings.
+          </p>
+        </div>
+
+        <SettingSwitchCard
+          checked={selfSignupEnabled}
+          label="Allow self-registration"
+          description={
+            selfSignupEnabled
+              ? 'Anyone can create an account on the login page. You can assign them later.'
+              : 'Only administrators can create accounts. This is recommended for most deployments.'
+          }
+          onCheckedChange={setSelfSignupEnabled}
+        />
+
+        <SettingSwitchCard
+          checked={configureSmtp}
+          label="Configure email notifications"
+          description={
+            configureSmtp
+              ? 'Enter your SMTP server details to enable email verification and notifications.'
+              : 'Skip this for now. You can configure it later in Settings.'
+          }
+          onCheckedChange={setConfigureSmtp}
+        >
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="setup-smtp-host">SMTP Host</Label>
+              <Input
+                id="setup-smtp-host"
+                placeholder="smtp.example.com"
+                value={smtpHost}
+                onChange={(event) => setSmtpHost(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="setup-smtp-port">Port</Label>
+              <Input
+                id="setup-smtp-port"
+                type="number"
+                value={smtpPort}
+                onChange={(event) => setSmtpPort(event.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center justify-between rounded-xl border bg-background/60 px-4 py-3">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-foreground">Use TLS</p>
+                <p className="text-xs text-muted-foreground">Enable secure SMTP transport.</p>
+              </div>
+              <Switch checked={smtpSecure} onCheckedChange={setSmtpSecure} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="setup-smtp-user">Username</Label>
+              <Input
+                id="setup-smtp-user"
+                value={smtpUser}
+                onChange={(event) => setSmtpUser(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="setup-smtp-pass">Password</Label>
+              <Input
+                id="setup-smtp-pass"
+                type="password"
+                value={smtpPass}
+                onChange={(event) => setSmtpPass(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="setup-smtp-from">From Address</Label>
+              <Input
+                id="setup-smtp-from"
+                placeholder="noreply@example.com"
+                type="email"
+                value={smtpFrom}
+                onChange={(event) => setSmtpFrom(event.target.value)}
+              />
+            </div>
+          </div>
+        </SettingSwitchCard>
+      </div>
+    );
+  } else if (activeStep === 5) {
+    stepContent = (
+      <div className="space-y-4">
+        <Alert variant="success">
+          <AlertTitle>Setup complete</AlertTitle>
+          <AlertDescription className="text-foreground">
+            Your Arsenale platform is ready. You can enter the app as soon as you save the recovery material below.
+          </AlertDescription>
+        </Alert>
+
+        <div className="rounded-xl border bg-card p-4">
+          <ul className="space-y-2 text-sm text-muted-foreground">
+            <li>Administrator account: <strong className="text-foreground">{adminEmail}</strong></li>
+            <li>Organization: <strong className="text-foreground">{tenantName}</strong></li>
+            <li>Self-registration: <strong className="text-foreground">{selfSignupEnabled ? 'enabled' : 'disabled'}</strong></li>
+            {configureSmtp && smtpHost ? (
+              <li>Email delivery: <strong className="text-foreground">{smtpHost}:{smtpPort}</strong></li>
+            ) : null}
+          </ul>
+        </div>
+
+        <Alert variant="warning">
+          <AlertTitle>Save your recovery key</AlertTitle>
+          <AlertDescription className="text-foreground">
+            This key is the only way to recover your encrypted vault if you forget your password.
+            It will not be shown again.
+          </AlertDescription>
+        </Alert>
+
+        <div className="space-y-3 rounded-xl border bg-muted/30 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <p className="min-w-0 flex-1 break-all font-mono text-sm leading-6 text-foreground">
+              {recoveryKey}
+            </p>
+            <div className="flex shrink-0 items-center gap-1">
+              <CopyValueButton label="recovery key" value={recoveryKey} />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Download recovery key as file"
+                title="Download recovery key"
+                onClick={handleDownloadRecoveryKey}
+              >
+                <Download className="size-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {systemSecrets.length > 0 ? (
+          <div className="space-y-4">
+            <Alert variant="info">
+              <AlertTitle>System secrets</AlertTitle>
+              <AlertDescription className="text-foreground">
+                These secrets are auto-generated, stored encrypted, and managed automatically.
+                Save a backup now because they will not be shown again.
+              </AlertDescription>
+            </Alert>
+
+            <div className="space-y-3">
+              {systemSecrets.map((secret) => (
+                <div key={secret.name} className="space-y-2 rounded-xl border bg-card p-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-foreground">{secret.name}</p>
+                    <p className="text-xs leading-5 text-muted-foreground">{secret.description}</p>
+                  </div>
+                  <div className="flex items-start gap-2 rounded-lg border bg-background/80 p-3">
+                    <p className="min-w-0 flex-1 break-all font-mono text-xs leading-5 text-foreground">
+                      {secret.value}
+                    </p>
+                    <CopyValueButton label={secret.name} value={secret.value} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Button type="button" variant="outline" onClick={handleDownloadSecrets}>
+              <Download className="size-4" />
+              Download Secrets
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   if (statusChecking) {
-    return null;
+    return (
+      <AuthLayout
+        cardClassName="max-w-5xl"
+        title="Arsenale Setup"
+        description="Checking whether initial setup is required."
+      >
+        <div className="flex justify-center py-8">
+          <LoaderCircle className="size-6 animate-spin text-primary" />
+        </div>
+      </AuthLayout>
+    );
   }
 
   return (
-    <Box sx={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      bgcolor: 'background.default',
-      p: 2,
-    }}>
-      <Paper elevation={3} sx={{ maxWidth: 640, width: '100%', p: { xs: 3, sm: 4 } }}>
-        <Typography variant="h4" align="center" gutterBottom sx={{ fontWeight: 700 }}>
-          Arsenale Setup
-        </Typography>
+    <AuthLayout
+      cardClassName="max-w-5xl"
+      title="Arsenale Setup"
+      description="Initial platform configuration wizard."
+    >
+      <SetupStepIndicator activeStep={activeStep} />
 
-        <Stepper activeStep={activeStep} sx={{ mb: 4, mt: 2 }} alternativeLabel>
-          {STEPS.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription className="text-foreground">{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      {stepContent}
 
-        {/* Step 0: Welcome */}
-        {activeStep === 0 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>Welcome to Arsenale</Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              Arsenale is a secure remote access and privileged access management platform.
-              This wizard will guide you through the initial setup to get your platform ready.
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              Here's what we'll do:
-            </Typography>
-            <Typography component="ul" variant="body2" color="text.secondary" sx={{ pl: 2, '& li': { mb: 0.5 } }}>
-              <li><strong>Verify database connection</strong> — confirm the PostgreSQL database is reachable</li>
-              <li><strong>Create an administrator account</strong> — your first user with full platform control</li>
-              <li><strong>Create an organization</strong> — a workspace for your teams, connections, and policies</li>
-              <li><strong>Configure basic settings</strong> — choose who can join and optionally set up email notifications</li>
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              This wizard runs only once. After completion, you'll be logged in and ready to go.
-            </Typography>
-          </Box>
+      <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+        {activeStep > 0 && activeStep < 5 ? (
+          <Button type="button" variant="ghost" disabled={loading} onClick={() => setActiveStep((previous) => previous - 1)}>
+            Back
+          </Button>
+        ) : (
+          <div />
         )}
 
-        {/* Step 1: Database */}
-        {activeStep === 1 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              <StorageIcon sx={{ verticalAlign: 'middle', mr: 1 }} />
-              Database Connection
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Verify the PostgreSQL database connection. These values are configured via the DATABASE_URL environment variable.
-              To change them, update your .env file and restart the server.
-            </Typography>
-
-            {dbStatus && (
-              <Box sx={{ mb: 2 }}>
-                <TextField label="Host" value={dbStatus.host || '(not set)'} fullWidth size="small" sx={{ mb: 1.5 }} slotProps={{ input: { readOnly: true } }} />
-                <TextField label="Port" value={String(dbStatus.port)} fullWidth size="small" sx={{ mb: 1.5 }} slotProps={{ input: { readOnly: true } }} />
-                <TextField label="Database" value={dbStatus.database || '(not set)'} fullWidth size="small" sx={{ mb: 1.5 }} slotProps={{ input: { readOnly: true } }} />
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-                  {dbStatus.connected
-                    ? <><CheckCircleIcon color="success" /><Typography color="success.main">Connected</Typography></>
-                    : <><CancelIcon color="error" /><Typography color="error">Connection failed</Typography></>
-                  }
-                </Box>
-                {dbStatus.version && (
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    {dbStatus.version}
-                  </Typography>
-                )}
-              </Box>
-            )}
-
-            <Button
-              variant="outlined"
-              onClick={testDbConnection}
-              disabled={dbLoading}
-              startIcon={dbLoading ? <CircularProgress size={16} /> : <StorageIcon />}
-            >
-              {dbStatus ? 'Retest Connection' : 'Test Connection'}
-            </Button>
-          </Box>
+        {activeStep < 5 ? (
+          <Button type="button" disabled={!canProceed() || loading} onClick={() => void handleNext()}>
+            {loading ? <LoaderCircle className="size-4 animate-spin" /> : null}
+            {activeStep === 4 ? 'Complete Setup' : 'Next'}
+          </Button>
+        ) : (
+          <Button type="button" onClick={() => navigate('/', { replace: true })}>
+            Get Started
+          </Button>
         )}
-
-        {/* Step 2: Administrator Account */}
-        {activeStep === 2 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>Create Administrator Account</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              This will be the first user with full platform control. You can invite more users later.
-              All connection credentials will be encrypted with a key derived from this password.
-            </Typography>
-            <TextField
-              label="Email"
-              type="email"
-              fullWidth
-              required
-              value={adminEmail}
-              onChange={(e) => setAdminEmail(e.target.value)}
-              sx={{ mb: 2 }}
-              autoFocus
-            />
-            <TextField
-              label="Username (optional)"
-              fullWidth
-              value={adminUsername}
-              onChange={(e) => setAdminUsername(e.target.value)}
-              sx={{ mb: 2 }}
-              helperText="A display name for your profile"
-            />
-            <TextField
-              label="Password"
-              type={showPassword ? 'text' : 'password'}
-              fullWidth
-              required
-              value={adminPassword}
-              onChange={(e) => setAdminPassword(e.target.value)}
-              sx={{ mb: 1 }}
-              slotProps={{
-                input: {
-                  endAdornment: (
-                    <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" size="small">
-                      {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                    </IconButton>
-                  ),
-                },
-              }}
-              helperText="Minimum 10 characters"
-            />
-            <PasswordStrengthMeter password={adminPassword} />
-            <TextField
-              label="Confirm Password"
-              type="password"
-              fullWidth
-              required
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              sx={{ mt: 2 }}
-              error={confirmPassword.length > 0 && adminPassword !== confirmPassword}
-              helperText={confirmPassword.length > 0 && adminPassword !== confirmPassword ? 'Passwords do not match' : ''}
-            />
-          </Box>
-        )}
-
-        {/* Step 3: Organization */}
-        {activeStep === 3 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>Create Your Organization</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              An organization groups your users, teams, connections, and security policies together.
-              You can use your company name or any name that makes sense for your environment.
-            </Typography>
-            <TextField
-              label="Organization Name"
-              fullWidth
-              required
-              value={tenantName}
-              onChange={(e) => setTenantName(e.target.value)}
-              autoFocus
-              helperText="For example: Acme Corp, IT Department, Home Lab"
-            />
-          </Box>
-        )}
-
-        {/* Step 3: Platform Settings */}
-        {activeStep === 4 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>Platform Settings</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Configure how your platform handles new users and notifications.
-              You can change all of these later in Settings.
-            </Typography>
-
-            <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={selfSignupEnabled}
-                    onChange={(e) => setSelfSignupEnabled(e.target.checked)}
-                  />
-                }
-                label="Allow self-registration"
-              />
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 6 }}>
-                {selfSignupEnabled
-                  ? 'Anyone can create an account on the login page. You can assign them to your organization later.'
-                  : 'Only you (the admin) can create accounts. This is recommended for most deployments.'}
-              </Typography>
-            </Paper>
-
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={configureSmtp}
-                    onChange={(e) => setConfigureSmtp(e.target.checked)}
-                  />
-                }
-                label="Configure email notifications"
-              />
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 6, mb: configureSmtp ? 2 : 0 }}>
-                {configureSmtp
-                  ? 'Enter your SMTP server details to enable email verification and notifications.'
-                  : 'Skip for now — you can configure this later in Settings > Administration.'}
-              </Typography>
-
-              <Collapse in={configureSmtp}>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-                  <TextField
-                    label="SMTP Host"
-                    fullWidth
-                    value={smtpHost}
-                    onChange={(e) => setSmtpHost(e.target.value)}
-                    placeholder="smtp.example.com"
-                  />
-                  <Box sx={{ display: 'flex', gap: 2 }}>
-                    <TextField
-                      label="Port"
-                      type="number"
-                      value={smtpPort}
-                      onChange={(e) => setSmtpPort(e.target.value)}
-                      sx={{ width: 120 }}
-                    />
-                    <FormControlLabel
-                      control={<Switch checked={smtpSecure} onChange={(e) => setSmtpSecure(e.target.checked)} />}
-                      label="Use TLS"
-                    />
-                  </Box>
-                  <TextField
-                    label="Username"
-                    fullWidth
-                    value={smtpUser}
-                    onChange={(e) => setSmtpUser(e.target.value)}
-                  />
-                  <TextField
-                    label="Password"
-                    type="password"
-                    fullWidth
-                    value={smtpPass}
-                    onChange={(e) => setSmtpPass(e.target.value)}
-                  />
-                  <TextField
-                    label="From Address"
-                    type="email"
-                    fullWidth
-                    value={smtpFrom}
-                    onChange={(e) => setSmtpFrom(e.target.value)}
-                    placeholder="noreply@example.com"
-                  />
-                </Box>
-              </Collapse>
-            </Paper>
-          </Box>
-        )}
-
-        {/* Step 5: Complete / Recovery Key */}
-        {activeStep === 5 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>Setup Complete</Typography>
-            <Alert severity="success" sx={{ mb: 2 }}>
-              Your Arsenale platform is ready! Here's what was created:
-            </Alert>
-            <Typography component="ul" variant="body2" sx={{ pl: 2, mb: 3, '& li': { mb: 0.5 } }}>
-              <li>Administrator account: <strong>{adminEmail}</strong></li>
-              <li>Organization: <strong>{tenantName}</strong></li>
-              <li>Self-registration: <strong>{selfSignupEnabled ? 'enabled' : 'disabled'}</strong></li>
-              {configureSmtp && smtpHost && <li>Email: <strong>{smtpHost}:{smtpPort}</strong></li>}
-            </Typography>
-
-            <Alert severity="warning" sx={{ mb: 2 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
-                Save Your Recovery Key
-              </Typography>
-              <Typography variant="body2">
-                This key is the only way to recover your encrypted vault if you forget your password.
-                It will <strong>not</strong> be shown again.
-              </Typography>
-            </Alert>
-
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2, mb: 2,
-                bgcolor: 'action.hover',
-                fontFamily: 'monospace',
-                fontSize: '0.85rem',
-                wordBreak: 'break-all',
-                position: 'relative',
-              }}
-            >
-              {recoveryKey}
-              <Box sx={{ position: 'absolute', top: 4, right: 4, display: 'flex', gap: 0.5 }}>
-                <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-                  <IconButton size="small" onClick={handleCopyRecoveryKey} aria-label="Copy recovery key to clipboard">
-                    <CopyIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-                <Tooltip title="Download as file">
-                  <IconButton size="small" onClick={handleDownloadRecoveryKey} aria-label="Download recovery key as file">
-                    <DownloadIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              </Box>
-            </Paper>
-
-            {systemSecrets.length > 0 && (
-              <Box sx={{ mt: 3 }}>
-                <Typography variant="h6" gutterBottom>
-                  System Secrets
-                </Typography>
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  These secrets are auto-generated and stored encrypted in your database.
-                  They are managed automatically with periodic rotation.
-                  Save a backup copy now — they will not be shown again.
-                </Alert>
-                {systemSecrets.map((secret) => (
-                  <Box key={secret.name} sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary">
-                      {secret.name}
-                    </Typography>
-                    <Typography variant="caption" display="block" sx={{ mb: 0.5 }}>
-                      {secret.description}
-                    </Typography>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        value={secret.value}
-                        slotProps={{ input: { readOnly: true, sx: { fontFamily: 'monospace', fontSize: '0.75rem' } } }}
-                      />
-                      <Tooltip title="Copy to clipboard">
-                        <IconButton
-                          size="small"
-                          onClick={() => navigator.clipboard.writeText(secret.value)}
-                          aria-label={`Copy ${secret.name} to clipboard`}
-                        >
-                          <CopyIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </Box>
-                ))}
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => {
-                    const content = systemSecrets.map(s => `${s.name}=${s.value}`).join('\n');
-                    const blob = new Blob([content], { type: 'text/plain' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'arsenale-system-secrets.env';
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }}
-                >
-                  Download Secrets
-                </Button>
-              </Box>
-            )}
-          </Box>
-        )}
-
-        {/* Navigation buttons */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 3 }}>
-          {activeStep > 0 && activeStep < 5 ? (
-            <Button onClick={handleBack} disabled={loading}>
-              Back
-            </Button>
-          ) : (
-            <Box />
-          )}
-
-          {activeStep < 5 ? (
-            <Button
-              variant="contained"
-              onClick={handleNext}
-              disabled={!canProceed() || loading}
-              startIcon={loading ? <CircularProgress size={16} /> : undefined}
-            >
-              {activeStep === 4 ? 'Complete Setup' : 'Next'}
-            </Button>
-          ) : (
-            <Button variant="contained" onClick={handleGetStarted}>
-              Get Started
-            </Button>
-          )}
-        </Box>
-      </Paper>
-    </Box>
+      </div>
+    </AuthLayout>
   );
 }

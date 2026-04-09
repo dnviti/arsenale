@@ -1,46 +1,75 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { browserSupportsWebAuthn, startRegistration } from '@simplewebauthn/browser';
+import { KeyRound, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  Card, CardContent, Typography, Button, TextField, Alert, Stack, Chip,
-  List, ListItem, ListItemText, ListItemSecondaryAction, IconButton, Tooltip,
-  Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress,
-} from '@mui/material';
-import { Delete as DeleteIcon, Edit as EditIcon, Key as KeyIcon } from '@mui/icons-material';
-import { startRegistration, browserSupportsWebAuthn } from '@simplewebauthn/browser';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useNotificationStore } from '../../store/notificationStore';
+import { extractApiError } from '../../utils/apiError';
 import {
-  getWebAuthnStatus, getWebAuthnCredentials, getWebAuthnRegistrationOptions,
-  registerWebAuthnCredential, removeWebAuthnCredential, renameWebAuthnCredential,
+  getWebAuthnCredentials,
+  getWebAuthnRegistrationOptions,
+  getWebAuthnStatus,
+  registerWebAuthnCredential,
+  removeWebAuthnCredential,
+  renameWebAuthnCredential,
   type WebAuthnCredentialInfo,
 } from '../../api/webauthn.api';
-import { extractApiError } from '../../utils/apiError';
-import { useNotificationStore } from '../../store/notificationStore';
+import {
+  SettingsButtonRow,
+  SettingsPanel,
+  SettingsStatusBadge,
+} from './settings-ui';
+
+function credentialMetadata(credential: WebAuthnCredentialInfo) {
+  const parts = [`Added ${new Date(credential.createdAt).toLocaleDateString()}`];
+
+  if (credential.deviceType) {
+    parts.unshift(credential.deviceType);
+  }
+
+  if (credential.lastUsedAt) {
+    parts.push(`Last used ${new Date(credential.lastUsedAt).toLocaleDateString()}`);
+  }
+
+  return parts.join(' · ');
+}
 
 export default function WebAuthnSection() {
-  const notify = useNotificationStore((s) => s.notify);
+  const notify = useNotificationStore((state) => state.notify);
   const [enabled, setEnabled] = useState(false);
   const [credentials, setCredentials] = useState<WebAuthnCredentialInfo[]>([]);
   const [statusLoading, setStatusLoading] = useState(true);
   const [browserSupported, setBrowserSupported] = useState(true);
   const [registering, setRegistering] = useState(false);
-  const [friendlyName, setFriendlyName] = useState('');
-  const [nameDialogOpen, setNameDialogOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [pendingCredential, setPendingCredential] = useState<unknown>(null);
   const [pendingChallenge, setPendingChallenge] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editName, setEditName] = useState('');
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [friendlyName, setFriendlyName] = useState('');
+  const [renameTarget, setRenameTarget] = useState<WebAuthnCredentialInfo | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WebAuthnCredentialInfo | null>(null);
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [status, creds] = await Promise.all([
+      const [status, nextCredentials] = await Promise.all([
         getWebAuthnStatus(),
         getWebAuthnCredentials(),
       ]);
       setEnabled(status.enabled);
-      setCredentials(creds);
+      setCredentials(nextCredentials);
     } catch {
-      // Silently fail on load
+      setError('Failed to load passkeys and security keys.');
     } finally {
       setStatusLoading(false);
     }
@@ -48,19 +77,25 @@ export default function WebAuthnSection() {
 
   useEffect(() => {
     setBrowserSupported(browserSupportsWebAuthn());
-    loadData();
+    void loadData();
   }, [loadData]);
+
+  const resetRegistrationState = () => {
+    setPendingCredential(null);
+    setPendingChallenge(null);
+    setFriendlyName('');
+  };
 
   const handleStartRegistration = async () => {
     setError('');
     setRegistering(true);
+
     try {
       const options = await getWebAuthnRegistrationOptions();
       const credential = await startRegistration({ optionsJSON: options });
       setPendingCredential(credential);
       setPendingChallenge(options.challenge);
       setFriendlyName('');
-      setNameDialogOpen(true);
     } catch (err: unknown) {
       if ((err as Error)?.name === 'NotAllowedError') {
         setError('Registration was cancelled or timed out.');
@@ -74,194 +109,328 @@ export default function WebAuthnSection() {
 
   const handleCompleteRegistration = async () => {
     if (!pendingCredential) return;
-    setLoading(true);
+
+    setError('');
+    setSaving(true);
+
     try {
-      await registerWebAuthnCredential(pendingCredential, friendlyName || undefined, pendingChallenge || undefined);
+      await registerWebAuthnCredential(
+        pendingCredential,
+        friendlyName.trim() || undefined,
+        pendingChallenge || undefined,
+      );
       notify('Security key registered successfully.', 'success');
-      setNameDialogOpen(false);
-      setPendingCredential(null);
-      setPendingChallenge(null);
+      resetRegistrationState();
       await loadData();
     } catch (err: unknown) {
       setError(extractApiError(err, 'Registration verification failed.'));
-      setNameDialogOpen(false);
-      setPendingChallenge(null);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const handleRemove = async (id: string) => {
-    setError('');
-    setLoading(true);
-    try {
-      await removeWebAuthnCredential(id);
-      notify('Security key removed.', 'success');
-      setDeleteConfirmId(null);
-      await loadData();
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to remove credential.'));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleRename = async () => {
+    if (!renameTarget || !friendlyName.trim()) return;
 
-  const handleRename = async (id: string) => {
-    if (!editName.trim()) return;
     setError('');
-    setLoading(true);
+    setSaving(true);
+
     try {
-      await renameWebAuthnCredential(id, editName.trim());
-      setEditingId(null);
+      await renameWebAuthnCredential(renameTarget.id, friendlyName.trim());
+      notify('Security key renamed.', 'success');
+      setRenameTarget(null);
+      setFriendlyName('');
       await loadData();
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to rename credential.'));
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  if (statusLoading) return null;
+  const handleRemove = async () => {
+    if (!deleteTarget) return;
+
+    setError('');
+    setSaving(true);
+
+    try {
+      await removeWebAuthnCredential(deleteTarget.id);
+      notify('Security key removed.', 'success');
+      setDeleteTarget(null);
+      await loadData();
+    } catch (err: unknown) {
+      setError(extractApiError(err, 'Failed to remove credential.'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (statusLoading) {
+    return (
+      <SettingsPanel
+        title="Passkeys & Security Keys"
+        description="Use passkeys or hardware-backed keys for phishing-resistant sign-in."
+      >
+        <p className="text-sm text-muted-foreground">Loading passkey settings...</p>
+      </SettingsPanel>
+    );
+  }
 
   return (
-    <Card>
-      <CardContent>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-          <KeyIcon fontSize="small" />
-          <Typography variant="h6">Passkeys & Security Keys</Typography>
-          <Chip
-            label={enabled ? 'Enabled' : 'Disabled'}
-            color={enabled ? 'success' : 'default'}
-            size="small"
-          />
-          {credentials.length > 0 && (
-            <Chip label={`${credentials.length} key${credentials.length !== 1 ? 's' : ''}`} size="small" variant="outlined" />
+    <>
+      <SettingsPanel
+        title="Passkeys & Security Keys"
+        description="Use passkeys or hardware security keys for passwordless sign-in and stronger verification."
+        heading={
+          <div className="flex flex-wrap items-center gap-2">
+            <SettingsStatusBadge tone={enabled ? 'success' : 'neutral'}>
+              {enabled ? 'Enabled' : 'Disabled'}
+            </SettingsStatusBadge>
+            {credentials.length > 0 && (
+              <Badge variant="outline">
+                {credentials.length} key{credentials.length === 1 ? '' : 's'}
+              </Badge>
+            )}
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          {!browserSupported && (
+            <Alert variant="warning">
+              <AlertDescription>
+                Your browser does not support WebAuthn. Use a recent version of Chrome,
+                Firefox, Safari, or Edge.
+              </AlertDescription>
+            </Alert>
           )}
-        </Stack>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Use passkeys or hardware security keys (YubiKey, Titan, etc.) for passwordless sign-in and phishing-resistant verification.
-        </Typography>
 
-        {!browserSupported && (
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            Your browser does not support WebAuthn. Use a modern browser like Chrome, Firefox, Safari, or Edge.
-          </Alert>
-        )}
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {credentials.length > 0 ? (
+            <div className="space-y-3">
+              {credentials.map((credential) => (
+                <div
+                  key={credential.id}
+                  className="flex flex-wrap items-start justify-between gap-4 rounded-xl border border-border/70 bg-background/60 p-4"
+                >
+                  <div className="min-w-0 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium text-foreground">
+                        {credential.friendlyName}
+                      </p>
+                      {credential.backedUp && <Badge variant="outline">Synced</Badge>}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {credentialMetadata(credential)}
+                    </p>
+                  </div>
 
-        {/* Credential list */}
-        {credentials.length > 0 && (
-          <List dense sx={{ mb: 2 }}>
-            {credentials.map((cred) => (
-              <ListItem key={cred.id} divider>
-                {editingId === cred.id ? (
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ flex: 1 }}>
-                    <TextField
-                      size="small"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleRename(cred.id); if (e.key === 'Escape') setEditingId(null); }}
-                      slotProps={{ htmlInput: { maxLength: 64 } }}
-                      autoFocus
-                      sx={{ flex: 1 }}
-                    />
-                    <Button size="small" onClick={() => handleRename(cred.id)} disabled={loading || !editName.trim()}>Save</Button>
-                    <Button size="small" onClick={() => setEditingId(null)}>Cancel</Button>
-                  </Stack>
-                ) : (
-                  <>
-                    <ListItemText
-                      primary={cred.friendlyName}
-                      secondary={
-                        <>
-                          {cred.deviceType && `${cred.deviceType} · `}
-                          {`Added ${new Date(cred.createdAt).toLocaleDateString()}`}
-                          {cred.lastUsedAt && ` · Last used ${new Date(cred.lastUsedAt).toLocaleDateString()}`}
-                          {cred.backedUp && ' · Synced'}
-                        </>
-                      }
-                    />
-                    <ListItemSecondaryAction>
-                      <Tooltip title="Rename">
-                        <IconButton size="small" onClick={() => { setEditingId(cred.id); setEditName(cred.friendlyName); }}>
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Remove">
-                        <IconButton size="small" color="error" onClick={() => setDeleteConfirmId(cred.id)}>
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </ListItemSecondaryAction>
-                  </>
-                )}
-              </ListItem>
-            ))}
-          </List>
-        )}
+                  <SettingsButtonRow>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={saving}
+                      onClick={() => {
+                        setRenameTarget(credential);
+                        setFriendlyName(credential.friendlyName);
+                      }}
+                    >
+                      <Pencil className="size-4" />
+                      Rename
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={saving}
+                      onClick={() => setDeleteTarget(credential)}
+                    >
+                      <Trash2 className="size-4" />
+                      Remove
+                    </Button>
+                  </SettingsButtonRow>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-border/70 bg-background/40 p-4">
+              <p className="text-sm text-muted-foreground">
+                No passkeys or hardware security keys are registered yet.
+              </p>
+            </div>
+          )}
 
-        {/* Register button */}
-        {browserSupported && (
-          <Button
-            variant="contained"
-            startIcon={registering ? <CircularProgress size={16} color="inherit" /> : <KeyIcon />}
-            disabled={registering || loading}
-            onClick={handleStartRegistration}
-          >
-            {registering ? 'Waiting for device...' : 'Add Security Key'}
-          </Button>
-        )}
-
-        {/* Friendly name dialog */}
-        <Dialog open={nameDialogOpen} onClose={() => { setNameDialogOpen(false); setPendingCredential(null); setPendingChallenge(null); }}>
-          <DialogTitle>Name Your Security Key</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              Give this key a name so you can identify it later.
-            </Typography>
-            <TextField
-              fullWidth
-              label="Key Name"
-              value={friendlyName}
-              onChange={(e) => setFriendlyName(e.target.value)}
-              placeholder="e.g., YubiKey 5, MacBook Touch ID"
-              size="small"
-              slotProps={{ htmlInput: { maxLength: 64 } }}
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter') handleCompleteRegistration(); }}
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => { setNameDialogOpen(false); setPendingCredential(null); }}>Cancel</Button>
-            <Button variant="contained" onClick={handleCompleteRegistration} disabled={loading}>
-              {loading ? 'Saving...' : 'Save'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-
-        {/* Delete confirmation dialog */}
-        <Dialog open={!!deleteConfirmId} onClose={() => setDeleteConfirmId(null)}>
-          <DialogTitle>Remove Security Key?</DialogTitle>
-          <DialogContent>
-            <Typography>
-              This security key will be removed from your account.
-              {credentials.length === 1 && ' This is your last key — WebAuthn MFA will be disabled.'}
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setDeleteConfirmId(null)}>Cancel</Button>
+          {browserSupported && (
             <Button
-              color="error"
-              variant="contained"
-              onClick={() => deleteConfirmId && handleRemove(deleteConfirmId)}
-              disabled={loading}
+              type="button"
+              disabled={registering || saving}
+              onClick={() => void handleStartRegistration()}
             >
-              {loading ? 'Removing...' : 'Remove'}
+              {registering ? (
+                <LoaderCircle className="size-4 animate-spin" />
+              ) : (
+                <KeyRound className="size-4" />
+              )}
+              {registering ? 'Waiting for device...' : 'Add Security Key'}
             </Button>
-          </DialogActions>
-        </Dialog>
-      </CardContent>
-    </Card>
+          )}
+        </div>
+      </SettingsPanel>
+
+      <Dialog
+        open={Boolean(pendingCredential)}
+        onOpenChange={(open) => {
+          if (!open && !saving) {
+            resetRegistrationState();
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Name Your Security Key</DialogTitle>
+            <DialogDescription>
+              Give this device a recognisable name so you can manage it later.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="webauthn-friendly-name">Key name</Label>
+            <Input
+              id="webauthn-friendly-name"
+              value={friendlyName}
+              onChange={(event) => setFriendlyName(event.target.value)}
+              placeholder="YubiKey 5, MacBook Touch ID, iPhone Passkey"
+              maxLength={64}
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleCompleteRegistration();
+                }
+              }}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={resetRegistrationState}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={() => void handleCompleteRegistration()}
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(renameTarget)}
+        onOpenChange={(open) => {
+          if (!open && !saving) {
+            setRenameTarget(null);
+            setFriendlyName('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Rename Security Key</DialogTitle>
+            <DialogDescription>
+              Update the label shown for this credential in your account.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="webauthn-rename">Key name</Label>
+            <Input
+              id="webauthn-rename"
+              value={friendlyName}
+              onChange={(event) => setFriendlyName(event.target.value)}
+              maxLength={64}
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  void handleRename();
+                }
+              }}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => {
+                setRenameTarget(null);
+                setFriendlyName('');
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={saving || !friendlyName.trim()}
+              onClick={() => void handleRename()}
+            >
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open && !saving) {
+            setDeleteTarget(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Remove Security Key?</DialogTitle>
+            <DialogDescription>
+              This credential will no longer be available for sign-in.
+              {credentials.length === 1
+                ? ' Removing your last key disables WebAuthn until you add another one.'
+                : ''}
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => setDeleteTarget(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={saving}
+              onClick={() => void handleRemove()}
+            >
+              {saving ? 'Removing...' : 'Remove'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

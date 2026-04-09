@@ -1,17 +1,30 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
-  Box, Paper, Typography, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Chip, IconButton, Tooltip, FormControl, InputLabel,
-  Select, MenuItem, Button, Switch, FormControlLabel, Dialog, DialogTitle,
-  DialogContent, DialogContentText, DialogActions, Stack,
-} from '@mui/material';
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
 import {
-  Refresh as RefreshIcon,
-  Stop as StopIcon,
-  Computer as ComputerIcon,
-  Dns as DnsIcon,
-  Terminal as TerminalIcon,
-} from '@mui/icons-material';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  RefreshCw,
+  Square,
+  Monitor,
+  Server,
+  Terminal,
+} from 'lucide-react';
 import type { ActiveSessionStreamSnapshot } from '../../api/live.api';
 import { connectSSE } from '../../api/sse';
 import { useAuthStore } from '../../store/authStore';
@@ -19,10 +32,10 @@ import { useGatewayStore } from '../../store/gatewayStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { isGatewayGroup } from '../../utils/gatewayMode';
 
-const statusColor: Record<string, 'success' | 'warning' | 'default'> = {
-  ACTIVE: 'success',
-  IDLE: 'warning',
-  CLOSED: 'default',
+const statusBadgeClass: Record<string, string> = {
+  ACTIVE: 'bg-green-500/15 text-green-400 border-green-500/30',
+  IDLE: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  CLOSED: '',
 };
 
 export default function SessionDashboard() {
@@ -39,14 +52,14 @@ export default function SessionDashboard() {
   const autoRefresh = useUiPreferencesStore((s) => s.orchestrationAutoRefresh);
   const toggleAutoRefresh = useUiPreferencesStore((s) => s.toggle);
 
-  const [protocolFilter, setProtocolFilter] = useState<string>('');
-  const [gatewayFilter, setGatewayFilter] = useState<string>('');
+  const [protocolFilter, setProtocolFilter] = useState<string>('all');
+  const [gatewayFilter, setGatewayFilter] = useState<string>('all');
   const [terminateTarget, setTerminateTarget] = useState<{ id: string; label: string } | null>(null);
 
   const filters = useMemo(() => {
     const f: { protocol?: 'SSH' | 'RDP'; gatewayId?: string } = {};
-    if (protocolFilter) f.protocol = protocolFilter as 'SSH' | 'RDP';
-    if (gatewayFilter) f.gatewayId = gatewayFilter;
+    if (protocolFilter !== 'all') f.protocol = protocolFilter as 'SSH' | 'RDP';
+    if (gatewayFilter !== 'all') f.gatewayId = gatewayFilter;
     return f;
   }, [protocolFilter, gatewayFilter]);
 
@@ -93,161 +106,162 @@ export default function SessionDashboard() {
   };
 
   return (
-    <Box>
+    <div>
       {/* Metric cards */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-        <MetricCard label="Total Active" value={sessionCount} icon={<ComputerIcon />} />
-        <MetricCard label="SSH Sessions" value={sshCount} icon={<TerminalIcon />} />
-        <MetricCard label="RDP Sessions" value={rdpCount} icon={<DnsIcon />} />
-        <MetricCard label="Managed Gateways" value={managedGateways} icon={<DnsIcon />} />
-      </Box>
+      <div className="flex gap-3 mb-4 flex-wrap">
+        <MetricCard label="Total Active" value={sessionCount} icon={<Monitor className="h-4 w-4" />} />
+        <MetricCard label="SSH Sessions" value={sshCount} icon={<Terminal className="h-4 w-4" />} />
+        <MetricCard label="RDP Sessions" value={rdpCount} icon={<Server className="h-4 w-4" />} />
+        <MetricCard label="Managed Gateways" value={managedGateways} icon={<Server className="h-4 w-4" />} />
+      </div>
 
       {/* Filters */}
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }} flexWrap="wrap">
-        <FormControl size="small" sx={{ minWidth: 130 }}>
-          <InputLabel>Protocol</InputLabel>
-          <Select value={protocolFilter} label="Protocol" onChange={(e) => setProtocolFilter(e.target.value)}>
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="SSH">SSH</MenuItem>
-            <MenuItem value="RDP">RDP</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel>Gateway</InputLabel>
-          <Select value={gatewayFilter} label="Gateway" onChange={(e) => setGatewayFilter(e.target.value)}>
-            <MenuItem value="">All</MenuItem>
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <Select value={protocolFilter} onValueChange={setProtocolFilter}>
+          <SelectTrigger className="w-[130px] h-8 text-sm">
+            <SelectValue placeholder="Protocol" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="SSH">SSH</SelectItem>
+            <SelectItem value="RDP">RDP</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={gatewayFilter} onValueChange={setGatewayFilter}>
+          <SelectTrigger className="w-[180px] h-8 text-sm">
+            <SelectValue placeholder="Gateway" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
             {gateways.map((gw) => (
-              <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
+              <SelectItem key={gw.id} value={gw.id}>{gw.name}</SelectItem>
             ))}
-          </Select>
-        </FormControl>
+          </SelectContent>
+        </Select>
         <Button
-          startIcon={<RefreshIcon />}
+          variant="outline"
+          size="sm"
           onClick={refresh}
-          size="small"
-          variant="outlined"
           disabled={sessionsLoading}
         >
+          <RefreshCw className="h-3.5 w-3.5 mr-1" />
           Refresh
         </Button>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={autoRefresh}
-              onChange={() => toggleAutoRefresh('orchestrationAutoRefresh')}
-              size="small"
-            />
-          }
-          label="Live updates"
-        />
-      </Stack>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={autoRefresh}
+            onCheckedChange={() => toggleAutoRefresh('orchestrationAutoRefresh')}
+          />
+          <Label className="text-sm">Live updates</Label>
+        </div>
+      </div>
 
       {/* Sessions table */}
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>User</TableCell>
-              <TableCell>Connection</TableCell>
-              <TableCell>Protocol</TableCell>
-              <TableCell>Gateway</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Started</TableCell>
-              <TableCell>Last Activity</TableCell>
-              <TableCell>Duration</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
+      <div className="rounded-lg border">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="text-left py-2 px-3 font-medium">User</th>
+              <th className="text-left py-2 px-3 font-medium">Connection</th>
+              <th className="text-left py-2 px-3 font-medium">Protocol</th>
+              <th className="text-left py-2 px-3 font-medium">Gateway</th>
+              <th className="text-left py-2 px-3 font-medium">Status</th>
+              <th className="text-left py-2 px-3 font-medium">Started</th>
+              <th className="text-left py-2 px-3 font-medium">Last Activity</th>
+              <th className="text-left py-2 px-3 font-medium">Duration</th>
+              <th className="text-right py-2 px-3 font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
             {activeSessions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
-                  <Typography color="text.secondary">No active sessions</Typography>
-                </TableCell>
-              </TableRow>
+              <tr>
+                <td colSpan={9} className="text-center py-8 text-muted-foreground">
+                  No active sessions
+                </td>
+              </tr>
             ) : (
               activeSessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell>{session.username || session.email}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{session.connectionName}</Typography>
-                    <Typography variant="caption" color="text.secondary">
+                <tr key={session.id} className="border-b border-border/50">
+                  <td className="py-2 px-3">{session.username || session.email}</td>
+                  <td className="py-2 px-3">
+                    <p className="text-sm">{session.connectionName}</p>
+                    <p className="text-xs text-muted-foreground">
                       {session.connectionHost}:{session.connectionPort}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={session.protocol} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>{session.gatewayName || 'Direct'}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={session.status}
-                      size="small"
-                      color={statusColor[session.status] ?? 'default'}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption">
+                    </p>
+                  </td>
+                  <td className="py-2 px-3">
+                    <Badge variant="outline">{session.protocol}</Badge>
+                  </td>
+                  <td className="py-2 px-3">{session.gatewayName || 'Direct'}</td>
+                  <td className="py-2 px-3">
+                    <Badge className={statusBadgeClass[session.status] ?? ''}>
+                      {session.status}
+                    </Badge>
+                  </td>
+                  <td className="py-2 px-3">
+                    <span className="text-xs">
                       {new Date(session.startedAt).toLocaleString()}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption">
+                    </span>
+                  </td>
+                  <td className="py-2 px-3">
+                    <span className="text-xs">
                       {new Date(session.lastActivityAt).toLocaleString()}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{session.durationFormatted}</TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Terminate session">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() =>
-                          setTerminateTarget({
-                            id: session.id,
-                            label: `${session.username || session.email} - ${session.connectionName}`,
-                          })
-                        }
-                      >
-                        <StopIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
+                    </span>
+                  </td>
+                  <td className="py-2 px-3">{session.durationFormatted}</td>
+                  <td className="py-2 px-3 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-red-400 hover:text-red-300"
+                      onClick={() =>
+                        setTerminateTarget({
+                          id: session.id,
+                          label: `${session.username || session.email} - ${session.connectionName}`,
+                        })
+                      }
+                      title="Terminate session"
+                    >
+                      <Square className="h-4 w-4" />
+                    </Button>
+                  </td>
+                </tr>
               ))
             )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+          </tbody>
+        </table>
+      </div>
 
       {/* Terminate confirmation */}
-      <Dialog open={Boolean(terminateTarget)} onClose={() => setTerminateTarget(null)}>
-        <DialogTitle>Terminate Session</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to terminate the session for <strong>{terminateTarget?.label}</strong>?
-            The user&apos;s connection will be dropped immediately.
-          </DialogContentText>
+      <Dialog open={Boolean(terminateTarget)} onOpenChange={(v) => { if (!v) setTerminateTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Terminate Session</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to terminate the session for <strong>{terminateTarget?.label}</strong>?
+              The user&apos;s connection will be dropped immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTerminateTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleTerminate}>
+              Terminate
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTerminateTarget(null)}>Cancel</Button>
-          <Button onClick={handleTerminate} color="error" variant="contained">
-            Terminate
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }
 
 function MetricCard({ label, value, icon }: { label: string; value: number; icon: React.ReactElement }) {
   return (
-    <Paper variant="outlined" sx={{ p: 2, flex: '1 1 160px', minWidth: 160 }}>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+    <div className="flex-1 min-w-[160px] rounded-lg border p-4">
+      <div className="flex items-center gap-2 mb-1">
         {icon}
-        <Typography variant="caption" color="text.secondary">{label}</Typography>
-      </Stack>
-      <Typography variant="h4" fontWeight="bold">{value}</Typography>
-    </Paper>
+        <span className="text-xs text-muted-foreground">{label}</span>
+      </div>
+      <p className="text-3xl font-bold">{value}</p>
+    </div>
   );
 }

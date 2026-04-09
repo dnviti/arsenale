@@ -70,7 +70,7 @@ export function sanitizeSSLModeForProtocol(
   const validModes = new Set(
     tlsModeOptions(protocol)
       .map((option) => option.value)
-      .filter((value) => value !== ''),
+      .filter((value) => value !== '__default__'),
   );
   if (validModes.has(normalizedCurrent)) {
     return normalizedCurrent;
@@ -111,7 +111,7 @@ export function tlsModeOptions(protocol?: DbProtocol): DbTLSModeOption[] {
     case 'postgresql':
       return [
         {
-          value: '',
+          value: '__default__',
           label: 'Driver default',
           helperText: 'Leave sslmode unset and let the PostgreSQL driver choose its default behavior.',
         },
@@ -144,7 +144,7 @@ export function tlsModeOptions(protocol?: DbProtocol): DbTLSModeOption[] {
     case 'mysql':
       return [
         {
-          value: '',
+          value: '__default__',
           label: 'Driver default',
           helperText: 'Keep the current connector default for MySQL/MariaDB connections.',
         },

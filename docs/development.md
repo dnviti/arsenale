@@ -2,7 +2,7 @@
 title: Development
 description: Local workflow, quality gates, testing strategy, feature alignment, and contribution conventions for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T14:30:00Z
+generated-at: 2026-04-08T16:00:00Z
 source-files:
   - AGENT.md
   - CONTRIBUTING.md
@@ -12,6 +12,7 @@ source-files:
   - client/vite.config.ts
   - client/vitest.config.ts
   - Makefile
+  - deployment/ansible/playbooks/dev_refresh.yml
   - backend/internal/runtimefeatures/manifest.go
   - backend/internal/publicconfig/service.go
   - client/src/api/auth.api.ts
@@ -31,7 +32,7 @@ Arsenale is a mixed Go and JavaScript monorepo.
 | Area | Path | Stack |
 |------|------|-------|
 | Control and runtime services | `backend/` | Go 1.25 |
-| Web client | `client/` | React 19, Vite 8, Vitest |
+| Web client | `client/` | React 19, Vite 8, Vitest, Tailwind CSS 4, shadcn/ui, MUI 7 |
 | Tunnel agent | `gateways/tunnel-agent/` | TypeScript workspace |
 | Browser extension | `extra-clients/browser-extensions/` | Chrome MV3 workspace |
 | CLI | `tools/arsenale-cli/` | Go |
@@ -54,11 +55,14 @@ Recommended day-to-day loop:
 
 1. Use `npm run dev` when you want the repo root to deploy the stack and launch Vite for you.
 2. Use `make dev` plus `npm run dev:client` when you want explicit control over deploy and frontend startup.
-3. Run focused Go or Vitest commands while iterating.
-4. Run `npm run verify` before declaring a change complete.
-5. Use the CLI from `tools/arsenale-cli` as an acceptance client for auth, connection, gateway, and session flows.
+3. After the full stack exists, use `make dev client`, `make dev gateways`, or `make dev control-plane` to rebuild only the changed containers.
+4. Run focused Go or Vitest commands while iterating.
+5. Run `npm run verify` before declaring a change complete.
+6. Use the CLI from `tools/arsenale-cli` as an acceptance client for auth, connection, gateway, and session flows.
 
 Podman is required for installer-aware development deploys because `make dev` delegates to `deployment/ansible/playbooks/install.yml`.
+
+Service-scoped `make dev <selector>` refreshes reuse the saved dev installer profile and rendered compose/env artifacts, so they are intended for code/image iteration. When you change capability flags, certificates, secrets, or deployment wiring, rerun full `make dev`.
 
 For headless local reruns, put the technician password in `install/password.txt`.
 The repo `Makefile` auto-detects that file and passes `-e install_password_file=...`
@@ -162,12 +166,13 @@ That rule has practical consequences:
 Typical smoke sequence:
 
 ```bash
-go build -o /tmp/arsenale-cli ./tools/arsenale-cli
-/tmp/arsenale-cli --server https://localhost:3000 health
-/tmp/arsenale-cli --server https://localhost:3000 login
-/tmp/arsenale-cli --server https://localhost:3000 whoami
-/tmp/arsenale-cli --server https://localhost:3000 connection list
-/tmp/arsenale-cli --server https://localhost:3000 gateway list
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 login
+./build/go/arsenale-cli --server https://localhost:3000 whoami
+./build/go/arsenale-cli --server https://localhost:3000 connection list
+./build/go/arsenale-cli --server https://localhost:3000 gateway list
 ```
 
 ## 🖥 Frontend Architecture
@@ -191,7 +196,7 @@ Key stores and their purposes:
 | `tabsStore` | Open session tabs, tab state sync |
 | `vaultStore` | Vault lock/unlock state, auto-lock |
 | `secretStore` | Keychain secrets state |
-| `gatewayStore` | Gateway availability and health |
+| `gatewayStore` | Gateway inventory, derived operational status, tunnel state, and orchestration health |
 | `featureFlagsStore` | Runtime feature manifest from server |
 | `tenantStore` | Current tenant context |
 | `teamStore` | Team CRUD and membership |

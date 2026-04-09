@@ -1,15 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
-import {
-  Popover,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-  CircularProgress,
-  Divider,
-  Tooltip,
-} from '@mui/material';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 import type { DbSessionConfig } from '../../api/database.api';
 import { updateDbSessionConfig } from '../../api/database.api';
 import { extractApiError } from '../../utils/apiError';
@@ -70,6 +65,7 @@ export default function DbSessionConfigPopover({
   const [initCommandsText, setInitCommandsText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   // Sync local state when popover opens or currentConfig changes
   useEffect(() => {
@@ -79,6 +75,23 @@ export default function DbSessionConfigPopover({
       setError('');
     }
   }, [open, currentConfig]);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (
+        popoverRef.current &&
+        !popoverRef.current.contains(e.target as Node) &&
+        anchorEl &&
+        !anchorEl.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, anchorEl, onClose]);
 
   const fields = FIELD_SUPPORT[protocol] ?? {};
 
@@ -143,143 +156,153 @@ export default function DbSessionConfigPopover({
   const hasAnyField = Object.values(fields).some(Boolean);
   const hasChanges = Object.values(config).some((v) => v !== undefined && v !== '') || initCommandsText.trim() !== '';
 
+  if (!open) return null;
+
+  // Position relative to anchor
+  const anchorRect = anchorEl?.getBoundingClientRect();
+  const style: React.CSSProperties = anchorRect
+    ? {
+        position: 'fixed',
+        top: anchorRect.bottom + 4,
+        left: anchorRect.left,
+        zIndex: 50,
+      }
+    : { position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 50 };
+
   return (
-    <Popover
-      open={open}
-      anchorEl={anchorEl}
-      onClose={onClose}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-      transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-      slotProps={{
-        paper: {
-          sx: { width: 340, maxHeight: 480 },
-        },
-      }}
+    <div
+      ref={popoverRef}
+      style={style}
+      className="w-[340px] max-h-[480px] overflow-auto rounded-xl border border-border bg-popover shadow-lg p-4"
     >
-      <Box sx={{ p: 2 }}>
-        <Typography variant="subtitle2" gutterBottom>
-          Session Configuration
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-          {protocol.toUpperCase()} session parameters
-        </Typography>
+      <h4 className="text-sm font-semibold mb-1">
+        Session Configuration
+      </h4>
+      <p className="text-xs text-muted-foreground mb-3">
+        {protocol.toUpperCase()} session parameters
+      </p>
 
-        {!hasAnyField && (
-          <Typography variant="body2" color="text.secondary">
-            Session configuration is not available for {protocol.toUpperCase()}.
-          </Typography>
+      {!hasAnyField && (
+        <p className="text-sm text-muted-foreground">
+          Session configuration is not available for {protocol.toUpperCase()}.
+        </p>
+      )}
+
+      {error && (
+        <div className="mb-3 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-400 hover:text-red-300 ml-2 text-xs">dismiss</button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3">
+        {fields.activeDatabase && (
+          <div
+            title={protocol === 'postgresql' ? 'Changing database will recreate the connection pool' : ''}
+          >
+            <Label className="text-xs">{FIELD_LABELS.activeDatabase.label}</Label>
+            <Input
+              className="h-8 text-sm mt-1"
+              placeholder={FIELD_LABELS.activeDatabase.placeholder}
+              value={config.activeDatabase ?? ''}
+              onChange={(e) => handleFieldChange('activeDatabase', e.target.value)}
+              disabled={loading}
+            />
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {protocol === 'postgresql'
+                ? 'Warning: changes require pool recreation'
+                : FIELD_LABELS.activeDatabase.helperText}
+            </p>
+          </div>
         )}
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 1.5 }} onClose={() => setError('')}>
-            {error}
-          </Alert>
-        )}
-
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {fields.activeDatabase && (
-            <Tooltip
-              title={protocol === 'postgresql' ? 'Changing database will recreate the connection pool' : ''}
-              placement="top"
-            >
-              <TextField
-                size="small"
-                fullWidth
-                label={FIELD_LABELS.activeDatabase.label}
-                placeholder={FIELD_LABELS.activeDatabase.placeholder}
-                helperText={
-                  protocol === 'postgresql'
-                    ? 'Warning: changes require pool recreation'
-                    : FIELD_LABELS.activeDatabase.helperText
-                }
-                value={config.activeDatabase ?? ''}
-                onChange={(e) => handleFieldChange('activeDatabase', e.target.value)}
-                disabled={loading}
-              />
-            </Tooltip>
-          )}
-
-          {fields.timezone && (
-            <TextField
-              size="small"
-              fullWidth
-              label={FIELD_LABELS.timezone.label}
+        {fields.timezone && (
+          <div>
+            <Label className="text-xs">{FIELD_LABELS.timezone.label}</Label>
+            <Input
+              className="h-8 text-sm mt-1"
               placeholder={FIELD_LABELS.timezone.placeholder}
-              helperText={FIELD_LABELS.timezone.helperText}
               value={config.timezone ?? ''}
               onChange={(e) => handleFieldChange('timezone', e.target.value)}
               disabled={loading}
             />
-          )}
+            <p className="text-xs text-muted-foreground mt-0.5">{FIELD_LABELS.timezone.helperText}</p>
+          </div>
+        )}
 
-          {fields.searchPath && (
-            <TextField
-              size="small"
-              fullWidth
-              label={FIELD_LABELS.searchPath.label}
+        {fields.searchPath && (
+          <div>
+            <Label className="text-xs">{FIELD_LABELS.searchPath.label}</Label>
+            <Input
+              className="h-8 text-sm mt-1"
               placeholder={FIELD_LABELS.searchPath.placeholder}
-              helperText={FIELD_LABELS.searchPath.helperText}
               value={config.searchPath ?? ''}
               onChange={(e) => handleFieldChange('searchPath', e.target.value)}
               disabled={loading}
             />
-          )}
+            <p className="text-xs text-muted-foreground mt-0.5">{FIELD_LABELS.searchPath.helperText}</p>
+          </div>
+        )}
 
-          {fields.encoding && (
-            <TextField
-              size="small"
-              fullWidth
-              label={FIELD_LABELS.encoding.label}
+        {fields.encoding && (
+          <div>
+            <Label className="text-xs">{FIELD_LABELS.encoding.label}</Label>
+            <Input
+              className="h-8 text-sm mt-1"
               placeholder={FIELD_LABELS.encoding.placeholder}
-              helperText={FIELD_LABELS.encoding.helperText}
               value={config.encoding ?? ''}
               onChange={(e) => handleFieldChange('encoding', e.target.value)}
               disabled={loading}
             />
-          )}
+            <p className="text-xs text-muted-foreground mt-0.5">{FIELD_LABELS.encoding.helperText}</p>
+          </div>
+        )}
 
-          {fields.initCommands && (
-            <TextField
-              size="small"
-              fullWidth
-              multiline
-              minRows={2}
-              maxRows={4}
-              label="Init Commands"
-              placeholder="SET ...\nALTER SESSION SET ..."
-              helperText="One SET/ALTER SESSION command per line (OPERATOR+ only)"
+        {fields.initCommands && (
+          <div>
+            <Label className="text-xs">Init Commands</Label>
+            <textarea
+              className={cn(
+                'mt-1 w-full min-h-[60px] max-h-[120px] rounded-md border border-input bg-transparent px-3 py-2',
+                'text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                'disabled:cursor-not-allowed disabled:opacity-50',
+              )}
+              placeholder={'SET ...\nALTER SESSION SET ...'}
               value={initCommandsText}
               onChange={(e) => setInitCommandsText(e.target.value)}
               disabled={loading}
-              sx={{ '& .MuiInputBase-root': { fontFamily: 'monospace', fontSize: '0.8rem' } }}
+              rows={3}
             />
-          )}
-        </Box>
-
-        {hasAnyField && (
-          <>
-            <Divider sx={{ my: 1.5 }} />
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-              <Button
-                size="small"
-                onClick={handleReset}
-                disabled={loading || !Object.values(currentConfig).some((v) => v !== undefined)}
-              >
-                Reset
-              </Button>
-              <Button
-                size="small"
-                variant="contained"
-                onClick={handleApply}
-                disabled={loading || !hasChanges}
-                startIcon={loading ? <CircularProgress size={14} /> : undefined}
-              >
-                Apply
-              </Button>
-            </Box>
-          </>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              One SET/ALTER SESSION command per line (OPERATOR+ only)
+            </p>
+          </div>
         )}
-      </Box>
-    </Popover>
+      </div>
+
+      {hasAnyField && (
+        <>
+          <Separator className="my-3" />
+          <div className="flex gap-2 justify-end">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleReset}
+              disabled={loading || !Object.values(currentConfig).some((v) => v !== undefined)}
+            >
+              Reset
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleApply}
+              disabled={loading || !hasChanges}
+            >
+              {loading && <Loader2 className="size-3.5 animate-spin" />}
+              Apply
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

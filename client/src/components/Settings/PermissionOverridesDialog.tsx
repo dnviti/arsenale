@@ -1,15 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions,
-  Button, Alert, CircularProgress, Box, Typography,
-  Switch, FormControlLabel, Chip, Divider,
-} from '@mui/material';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import {
-  getUserPermissions, updateUserPermissions,
-  type PermissionFlag, type UserPermissionsData,
+  getUserPermissions,
+  updateUserPermissions,
+  type PermissionFlag,
+  type UserPermissionsData,
 } from '../../api/tenant.api';
 import { extractApiError } from '../../utils/apiError';
 import { ROLE_LABELS, type TenantRole } from '../../utils/roles';
+import {
+  SettingsLoadingState,
+  SettingsSectionBlock,
+  SettingsStatusBadge,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+} from './settings-ui';
 
 const PERMISSION_LABELS: Record<PermissionFlag, string> = {
   canConnect: 'Connect to machines',
@@ -25,11 +40,45 @@ const PERMISSION_LABELS: Record<PermissionFlag, string> = {
   canManageTenantSettings: 'Manage tenant settings',
 };
 
-const ALL_FLAGS: PermissionFlag[] = [
-  'canConnect', 'canCreateConnections', 'canManageConnections',
-  'canViewCredentials', 'canShareConnections', 'canViewAuditLog',
-  'canManageSessions', 'canManageGateways', 'canManageUsers',
-  'canManageSecrets', 'canManageTenantSettings',
+const PERMISSION_DESCRIPTIONS: Record<PermissionFlag, string> = {
+  canConnect: 'Allow the user to start remote sessions and database connections.',
+  canCreateConnections: 'Allow creating new saved connection records.',
+  canManageConnections: 'Allow editing and deleting saved connections.',
+  canViewCredentials: 'Allow seeing stored credentials and secret-backed values.',
+  canShareConnections: 'Allow granting other people access to shared resources.',
+  canViewAuditLog: 'Allow opening organization-wide audit history.',
+  canManageSessions: 'Allow terminating or administrating active sessions.',
+  canManageGateways: 'Allow editing gateway infrastructure and templates.',
+  canManageUsers: 'Allow inviting, editing, and removing members.',
+  canManageSecrets: 'Allow managing secrets in the keychain and external vault links.',
+  canManageTenantSettings: 'Allow editing organization-level settings and policy.',
+};
+
+const PERMISSION_GROUPS: Array<{
+  description: string;
+  flags: PermissionFlag[];
+  title: string;
+}> = [
+  {
+    title: 'Session access',
+    description: 'What the user can open and directly use.',
+    flags: ['canConnect', 'canViewCredentials', 'canShareConnections'],
+  },
+  {
+    title: 'Workspace management',
+    description: 'What the user can create or change in the shared workspace.',
+    flags: ['canCreateConnections', 'canManageConnections', 'canManageSecrets'],
+  },
+  {
+    title: 'Operations & review',
+    description: 'Operational control over sessions, audit visibility, and gateway health.',
+    flags: ['canViewAuditLog', 'canManageSessions', 'canManageGateways'],
+  },
+  {
+    title: 'Administration',
+    description: 'Administrative control over members and tenant-wide settings.',
+    flags: ['canManageUsers', 'canManageTenantSettings'],
+  },
 ];
 
 interface PermissionOverridesDialogProps {
@@ -41,7 +90,11 @@ interface PermissionOverridesDialogProps {
 }
 
 export default function PermissionOverridesDialog({
-  open, onClose, tenantId, userId, userName,
+  open,
+  onClose,
+  tenantId,
+  userId,
+  userName,
 }: PermissionOverridesDialogProps) {
   const [data, setData] = useState<UserPermissionsData | null>(null);
   const [localOverrides, setLocalOverrides] = useState<Record<string, boolean>>({});
@@ -52,6 +105,7 @@ export default function PermissionOverridesDialog({
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+
     try {
       const result = await getUserPermissions(tenantId, userId);
       setData(result);
@@ -64,42 +118,62 @@ export default function PermissionOverridesDialog({
   }, [tenantId, userId]);
 
   useEffect(() => {
-    if (open) load();
-  }, [open, load]);
+    if (open) {
+      void load();
+    }
+  }, [load, open]);
 
   const isOwner = data?.role === 'OWNER';
+  const overrideCount = Object.keys(localOverrides).length;
 
-  const getRoleDefault = (flag: PermissionFlag): boolean => {
-    return data?.defaults[flag] ?? false;
-  };
+  const summary = useMemo(() => {
+    if (!data) {
+      return { granted: 0, inherited: 0, overridden: 0 };
+    }
+
+    const flags = PERMISSION_GROUPS.flatMap((group) => group.flags);
+    return flags.reduce(
+      (accumulator, flag) => {
+        const effective = flag in localOverrides ? localOverrides[flag] : (data.defaults[flag] ?? false);
+        if (effective) {
+          accumulator.granted += 1;
+        }
+        if (flag in localOverrides) {
+          accumulator.overridden += 1;
+        } else {
+          accumulator.inherited += 1;
+        }
+        return accumulator;
+      },
+      { granted: 0, inherited: 0, overridden: 0 },
+    );
+  }, [data, localOverrides]);
+
+  const getRoleDefault = (flag: PermissionFlag) => data?.defaults[flag] ?? false;
+
+  const getEffectiveValue = (flag: PermissionFlag) =>
+    (flag in localOverrides ? localOverrides[flag] : getRoleDefault(flag));
+
+  const isOverridden = (flag: PermissionFlag) => flag in localOverrides;
 
   const handleToggle = (flag: PermissionFlag, checked: boolean) => {
-    setLocalOverrides((prev) => {
+    setLocalOverrides((current) => {
       const roleDefault = getRoleDefault(flag);
       if (roleDefault === checked) {
-        // Remove the override — value matches role default
-        const { [flag]: _, ...rest } = prev;
-        void _;
+        const { [flag]: _removed, ...rest } = current;
+        void _removed;
         return rest;
       }
-      return { ...prev, [flag]: checked };
+      return { ...current, [flag]: checked };
     });
-  };
-
-  const getEffectiveValue = (flag: PermissionFlag): boolean => {
-    if (flag in localOverrides) return localOverrides[flag];
-    return getRoleDefault(flag);
-  };
-
-  const isOverridden = (flag: PermissionFlag): boolean => {
-    return flag in localOverrides;
   };
 
   const handleSave = async () => {
     setSaving(true);
     setError('');
+
     try {
-      const overrides = Object.keys(localOverrides).length > 0 ? localOverrides : null;
+      const overrides = overrideCount > 0 ? localOverrides : null;
       const result = await updateUserPermissions(tenantId, userId, overrides);
       setData(result);
       setLocalOverrides(result.overrides ?? {});
@@ -114,6 +188,7 @@ export default function PermissionOverridesDialog({
   const handleReset = async () => {
     setSaving(true);
     setError('');
+
     try {
       const result = await updateUserPermissions(tenantId, userId, null);
       setData(result);
@@ -126,87 +201,118 @@ export default function PermissionOverridesDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
-        Permissions — {userName}
-        {data && (
-          <Chip
-            label={ROLE_LABELS[data.role as TenantRole] ?? data.role}
-            size="small"
-            variant="outlined"
-            sx={{ ml: 1, verticalAlign: 'middle' }}
-          />
+    <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle>Permission overrides for {userName}</DialogTitle>
+          <DialogDescription>
+            Start from the member&apos;s role defaults, then only override the few permissions that need an exception.
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
-      </DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
+          <SettingsLoadingState message="Loading effective permissions..." />
         ) : data ? (
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
+          <div className="space-y-5">
+            <SettingsSummaryGrid className="xl:grid-cols-4">
+              <SettingsSummaryItem
+                label="Role"
+                value={ROLE_LABELS[data.role as TenantRole] ?? data.role}
+              />
+              <SettingsSummaryItem label="Granted flags" value={summary.granted} />
+              <SettingsSummaryItem label="Inherited" value={summary.inherited} />
+              <SettingsSummaryItem label="Overrides" value={summary.overridden} />
+            </SettingsSummaryGrid>
+
             {isOwner && (
-              <Alert severity="info" sx={{ mb: 1 }}>
-                Owner permissions cannot be reduced.
+              <Alert>
+                <AlertDescription>
+                  Organization owners keep their role-level permissions. You can still review the effective policy, but owner defaults cannot be reduced here.
+                </AlertDescription>
               </Alert>
             )}
-            <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-              Overridden permissions are highlighted. Toggle to grant or revoke individual flags.
-            </Typography>
-            <Divider sx={{ mb: 1 }} />
-            {ALL_FLAGS.map((flag) => {
-              const effective = getEffectiveValue(flag);
-              const overridden = isOverridden(flag);
-              return (
-                <FormControlLabel
-                  key={flag}
-                  disabled={isOwner && getRoleDefault(flag)}
-                  control={
-                    <Switch
-                      size="small"
-                      checked={effective}
-                      onChange={(_, checked) => handleToggle(flag, checked)}
-                    />
-                  }
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography
-                        variant="body2"
-                        sx={{ fontWeight: overridden ? 600 : 400 }}
+
+            {PERMISSION_GROUPS.map((group) => (
+              <SettingsSectionBlock
+                key={group.title}
+                title={group.title}
+                description={group.description}
+              >
+                <div className="space-y-3">
+                  {group.flags.map((flag) => {
+                    const effective = getEffectiveValue(flag);
+                    const overridden = isOverridden(flag);
+                    const lockedByRole = Boolean(isOwner && getRoleDefault(flag));
+
+                    return (
+                      <label
+                        key={flag}
+                        className="flex flex-col gap-4 rounded-xl border border-border/70 bg-background/70 px-4 py-4 lg:flex-row lg:items-start lg:justify-between"
                       >
-                        {PERMISSION_LABELS[flag]}
-                      </Typography>
-                      {overridden && (
-                        <Chip label="overridden" size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: '0.65rem' }} />
-                      )}
-                    </Box>
-                  }
-                  sx={{
-                    mx: 0,
-                    py: 0.25,
-                    bgcolor: overridden ? 'action.hover' : 'transparent',
-                    borderRadius: 1,
-                    px: 1,
-                  }}
-                />
-              );
-            })}
-          </Box>
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-medium text-foreground">
+                              {PERMISSION_LABELS[flag]}
+                            </div>
+                            {overridden && (
+                              <SettingsStatusBadge tone="warning">Overridden</SettingsStatusBadge>
+                            )}
+                            <SettingsStatusBadge tone={getRoleDefault(flag) ? 'success' : 'neutral'}>
+                              Role default: {getRoleDefault(flag) ? 'Allowed' : 'Blocked'}
+                            </SettingsStatusBadge>
+                            {lockedByRole && (
+                              <SettingsStatusBadge tone="neutral">Owner locked</SettingsStatusBadge>
+                            )}
+                          </div>
+                          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                            {PERMISSION_DESCRIPTIONS[flag]}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-3 lg:shrink-0">
+                          <SettingsStatusBadge tone={effective ? 'success' : 'neutral'}>
+                            {effective ? 'Allowed' : 'Blocked'}
+                          </SettingsStatusBadge>
+                          <Switch
+                            checked={effective}
+                            disabled={lockedByRole || saving}
+                            aria-label={PERMISSION_LABELS[flag]}
+                            onCheckedChange={(checked) => handleToggle(flag, checked)}
+                          />
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </SettingsSectionBlock>
+            ))}
+          </div>
         ) : null}
+
+        <DialogFooter className="sm:justify-between">
+          <div>
+            {overrideCount > 0 && (
+              <Button type="button" variant="outline" onClick={handleReset} disabled={saving}>
+                Reset to role defaults
+              </Button>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={saving || loading || !data}>
+              {saving ? 'Saving...' : 'Save overrides'}
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        {data && Object.keys(localOverrides).length > 0 && (
-          <Button color="warning" onClick={handleReset} disabled={saving}>
-            Reset to Role Defaults
-          </Button>
-        )}
-        <Box sx={{ flex: 1 }} />
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleSave} disabled={saving || loading}>
-          {saving ? 'Saving...' : 'Save'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

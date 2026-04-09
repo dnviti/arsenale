@@ -75,11 +75,14 @@ type gatewayResponse struct {
 	LastScaleAction          *time.Time `json:"lastScaleAction"`
 	TemplateID               *string    `json:"templateId"`
 	TotalInstances           int        `json:"totalInstances"`
+	HealthyInstances         int        `json:"healthyInstances"`
 	RunningInstances         int        `json:"runningInstances"`
 	TunnelEnabled            bool       `json:"tunnelEnabled"`
 	TunnelConnected          bool       `json:"tunnelConnected"`
 	TunnelConnectedAt        *time.Time `json:"tunnelConnectedAt"`
 	TunnelClientCertExp      *time.Time `json:"tunnelClientCertExp"`
+	OperationalStatus        string     `json:"operationalStatus"`
+	OperationalReason        string     `json:"operationalReason"`
 	EncryptedTunnelToken     *string
 	TunnelTokenIV            *string
 	TunnelTokenTag           *string
@@ -142,6 +145,7 @@ type gatewayRecord struct {
 	TunnelClientKeyTag       *string
 	TunnelClientCertExp      *time.Time
 	TotalInstances           int
+	HealthyInstances         int
 	RunningInstances         int
 }
 

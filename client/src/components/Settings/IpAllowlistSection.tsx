@@ -1,105 +1,62 @@
-import { useState, useEffect, KeyboardEvent } from 'react';
-import {
-  Card, CardContent, Typography, Switch, FormControlLabel, Alert, CircularProgress,
-  Box, RadioGroup, Radio, TextField, Button, Chip, Stack, Divider,
-} from '@mui/material';
+import { useEffect, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useAuthStore } from '../../store/authStore';
-import { getIpAllowlist, updateIpAllowlist, IpAllowlistData } from '../../api/tenant.api';
-import { extractApiError } from '../../utils/apiError';
+import { getIpAllowlist, updateIpAllowlist, type IpAllowlistData } from '../../api/tenant.api';
 import { useNotificationStore } from '../../store/notificationStore';
-
-// Simple client-side CIDR / IP validation
-// eslint-disable-next-line security/detect-unsafe-regex
-const CIDR_RE = /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
-
-function expandIPv6(ip: string): string | null {
-  if (!ip.includes('::')) return ip;
-  const sides = ip.split('::');
-  if (sides.length !== 2) return null;
-  const left = sides[0] ? sides[0].split(':') : [];
-  const right = sides[1] ? sides[1].split(':') : [];
-  const missing = 8 - left.length - right.length;
-  if (missing < 0) return null;
-  return [...left, ...Array(missing).fill('0'), ...right].join(':');
-}
-
-function ipv6ToBigInt(ip: string): bigint | null {
-  try {
-    const expanded = expandIPv6(ip);
-    if (!expanded) return null;
-    const groups = expanded.split(':');
-    if (groups.length !== 8) return null;
-    let result = BigInt(0);
-    for (const g of groups) result = (result << BigInt(16)) | BigInt(parseInt(g, 16));
-    return result;
-  } catch { return null; }
-}
-
-/** Client-side CIDR check for the "Test IP" feature — supports IPv4 and IPv6. */
-function isIpInCidr(ip: string, cidr: string): boolean {
-  try {
-    const slash = cidr.lastIndexOf('/');
-    if (slash === -1) return ip === cidr;
-    const base = cidr.slice(0, slash);
-    const prefix = parseInt(cidr.slice(slash + 1), 10);
-
-    if (base.includes(':')) {
-      // IPv6
-      const ipBig = ipv6ToBigInt(ip);
-      const baseBig = ipv6ToBigInt(base);
-      if (ipBig === null || baseBig === null) return false;
-      const bits = BigInt(128);
-      const p = BigInt(prefix);
-      // mask = all-ones for the top `prefix` bits, zeroes for the rest
-      const allOnes = (BigInt(1) << bits) - BigInt(1);
-      const trailingZeros = prefix === 0 ? allOnes : (BigInt(1) << (bits - p)) - BigInt(1);
-      const mask = prefix === 0 ? BigInt(0) : allOnes ^ trailingZeros;
-      return (ipBig & mask) === (baseBig & mask);
-    }
-    // IPv4
-    const toInt = (a: string) => a.split('.').reduce((acc, o) => (acc << 8) | parseInt(o, 10), 0) >>> 0;
-    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
-    return (toInt(ip) & mask) === (toInt(base) & mask);
-  } catch { return false; }
-}
-
-function isValidEntry(entry: string): boolean {
-  return CIDR_RE.test(entry.trim());
-}
+import { extractApiError } from '../../utils/apiError';
+import NetworkEntryEditor from './NetworkEntryEditor';
+import {
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSectionBlock,
+  SettingsSwitchRow,
+} from './settings-ui';
+import { isIpInCidr } from './networkAccessUtils';
 
 export default function IpAllowlistSection() {
-  const user = useAuthStore((s) => s.user);
-  const notify = useNotificationStore((s) => s.notify);
-  const tenantId = user?.tenantId;
+  const tenantId = useAuthStore((state) => state.user?.tenantId);
+  const notify = useNotificationStore((state) => state.notify);
 
-  const [config, setConfig] = useState<IpAllowlistData>({ enabled: false, mode: 'flag', entries: [] });
+  const [config, setConfig] = useState<IpAllowlistData>({
+    enabled: false,
+    mode: 'flag',
+    entries: [],
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  // Input state for adding a new CIDR entry
-  const [newEntry, setNewEntry] = useState('');
-  const [entryError, setEntryError] = useState('');
-
-  // Test IP state
   const [testIp, setTestIp] = useState('');
   const [testResult, setTestResult] = useState<'allowed' | 'blocked' | null>(null);
 
   useEffect(() => {
-    if (!tenantId) { setLoading(false); return; }
+    if (!tenantId) {
+      setLoading(false);
+      return;
+    }
+
     getIpAllowlist(tenantId)
-      .then((data) => { setConfig(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then((nextConfig) => setConfig(nextConfig))
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, [tenantId]);
 
   const handleSave = async () => {
-    if (!tenantId) return;
+    if (!tenantId) {
+      return;
+    }
+
     setSaving(true);
     setError('');
+
     try {
-      const updated = await updateIpAllowlist(tenantId, config);
-      setConfig(updated);
-      notify('Settings saved successfully.', 'success');
+      const nextConfig = await updateIpAllowlist(tenantId, config);
+      setConfig(nextConfig);
+      notify('IP allowlist saved.', 'success');
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to save IP allowlist settings'));
     } finally {
@@ -107,190 +64,167 @@ export default function IpAllowlistSection() {
     }
   };
 
-  const handleAddEntry = () => {
-    const trimmed = newEntry.trim();
-    if (!trimmed) return;
-    if (!isValidEntry(trimmed)) { setEntryError('Invalid IP or CIDR format (e.g. 10.0.0.0/8)'); return; }
-    if (config.entries.includes(trimmed)) { setEntryError('Entry already exists'); return; }
-    setConfig((prev) => ({ ...prev, entries: [...prev.entries, trimmed] }));
-    setNewEntry('');
-    setEntryError('');
-    setTestResult(null);
-  };
-
-  const handleEntryKeyDown = (e: KeyboardEvent) => {
-    if (e.key === 'Enter') { e.preventDefault(); handleAddEntry(); }
-  };
-
-  const handleRemoveEntry = (entry: string) => {
-    setConfig((prev) => ({ ...prev, entries: prev.entries.filter((e) => e !== entry) }));
-    setTestResult(null);
-  };
-
   const handleTestIp = () => {
-    if (!testIp.trim()) return;
-    if (config.entries.length === 0) { setTestResult('allowed'); return; }
-    const matched = config.entries.some((cidr) => isIpInCidr(testIp.trim(), cidr));
-    setTestResult(matched ? 'allowed' : 'blocked');
+    if (!testIp.trim()) {
+      return;
+    }
+
+    if (config.entries.length === 0) {
+      setTestResult('allowed');
+      return;
+    }
+
+    const isAllowed = config.entries.some((entry) => isIpInCidr(testIp.trim(), entry));
+    setTestResult(isAllowed ? 'allowed' : 'blocked');
   };
 
   if (loading) {
     return (
-      <Card variant="outlined">
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="IP Allowlist"
+        description="Restrict tenant sign-ins to trusted IP addresses and CIDR ranges."
+      >
+        <SettingsLoadingState message="Loading IP allowlist..." />
+      </SettingsPanel>
     );
   }
 
-  if (!tenantId) return null;
+  if (!tenantId) {
+    return null;
+  }
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          IP Allowlist
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Restrict logins to trusted IP addresses and CIDR ranges. When disabled, all IPs are allowed.
-        </Typography>
+    <SettingsPanel
+      title="IP Allowlist"
+      description="Decide whether unlisted IPs are only flagged or blocked entirely."
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <SettingsSwitchRow
+        title="Enable IP allowlist"
+        description="When enabled, only listed addresses or CIDR ranges are trusted."
+        checked={config.enabled}
+        disabled={saving}
+        onCheckedChange={(checked) => {
+          setConfig((currentConfig) => ({ ...currentConfig, enabled: checked }));
+          setTestResult(null);
+        }}
+      />
 
-        {/* Enable toggle */}
-        <FormControlLabel
-          control={
-            <Switch
-              checked={config.enabled}
-              onChange={(e) => { setConfig((prev) => ({ ...prev, enabled: e.target.checked })); }}
-              disabled={saving}
-            />
-          }
-          label="Enable IP allowlist"
-        />
-
-        {config.enabled && (
-          <Stack spacing={2} sx={{ mt: 2 }}>
-            {/* Mode selector */}
-            <Box>
-              <Typography variant="body2" fontWeight="medium" gutterBottom>
-                Enforcement mode
-              </Typography>
-              <RadioGroup
-                value={config.mode}
-                onChange={(e) => { setConfig((prev) => ({ ...prev, mode: e.target.value as 'flag' | 'block' })); }}
+      {config.enabled && (
+        <>
+          <SettingsSectionBlock
+            title="Enforcement Mode"
+            description="Choose whether unlisted IPs are flagged in audits or rejected outright."
+          >
+            <SettingsFieldGroup>
+              <SettingsFieldCard
+                label="Mode"
+                description="Flag mode keeps access open but marks suspicious sign-ins. Block mode rejects them."
               >
-                <FormControlLabel
-                  value="flag"
-                  control={<Radio size="small" disabled={saving} />}
-                  label={
-                    <Box>
-                      <Typography variant="body2">Flag suspicious logins</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Logins from unlisted IPs are allowed but marked in the audit log
-                      </Typography>
-                    </Box>
-                  }
-                />
-                <FormControlLabel
-                  value="block"
-                  control={<Radio size="small" disabled={saving} />}
-                  label={
-                    <Box>
-                      <Typography variant="body2">Block unauthorized logins</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Logins from unlisted IPs are rejected with a 403 error
-                      </Typography>
-                    </Box>
-                  }
-                />
-              </RadioGroup>
-            </Box>
+                <ToggleGroup
+                  type="single"
+                  value={config.mode}
+                  onValueChange={(nextValue) => {
+                    if (!nextValue) {
+                      return;
+                    }
+                    setConfig((currentConfig) => ({
+                      ...currentConfig,
+                      mode: nextValue as IpAllowlistData['mode'],
+                    }));
+                    setTestResult(null);
+                  }}
+                  className="flex-wrap"
+                >
+                  <ToggleGroupItem value="flag" variant="outline">
+                    Flag suspicious logins
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="block" variant="outline">
+                    Block unauthorized logins
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </SettingsFieldCard>
 
-            {config.mode === 'block' && (
-              <Alert severity="warning">
-                Block mode will prevent all logins from IPs not in the allowlist. Ensure your own IP
-                is included before saving, or you may lock yourself out.
-              </Alert>
-            )}
-
-            <Divider />
-
-            {/* CIDR entry input */}
-            <Box>
-              <Typography variant="body2" fontWeight="medium" gutterBottom>
-                Trusted IPs / CIDR ranges
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                <TextField
-                  size="small"
-                  placeholder="e.g. 10.0.0.0/8 or 203.0.113.5"
-                  value={newEntry}
-                  onChange={(e) => { setNewEntry(e.target.value); setEntryError(''); }}
-                  onKeyDown={handleEntryKeyDown}
-                  error={!!entryError}
-                  helperText={entryError}
-                  disabled={saving}
-                  sx={{ flex: 1 }}
-                />
-                <Button variant="outlined" size="small" onClick={handleAddEntry} disabled={saving || !newEntry.trim()}>
-                  Add
-                </Button>
-              </Box>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, minHeight: 32 }}>
-                {config.entries.length === 0 && (
-                  <Typography variant="caption" color="text.secondary">
-                    No entries — all IPs are treated as {config.mode === 'block' ? 'blocked' : 'untrusted'}
-                  </Typography>
-                )}
-                {config.entries.map((entry) => (
-                  <Chip
-                    key={entry}
-                    label={entry}
-                    size="small"
-                    variant="outlined"
-                    onDelete={() => handleRemoveEntry(entry)}
-                    disabled={saving}
-                  />
-                ))}
-              </Box>
-            </Box>
-
-            <Divider />
-
-            {/* Test IP */}
-            <Box>
-              <Typography variant="body2" fontWeight="medium" gutterBottom>
-                Test an IP address
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-                <TextField
-                  size="small"
-                  placeholder="e.g. 10.1.2.3"
-                  value={testIp}
-                  onChange={(e) => { setTestIp(e.target.value); setTestResult(null); }}
-                  sx={{ flex: 1 }}
-                />
-                <Button variant="outlined" size="small" onClick={handleTestIp} disabled={!testIp.trim()}>
-                  Check
-                </Button>
-              </Box>
-              {testResult && (
-                <Alert severity={testResult === 'allowed' ? 'success' : 'error'} sx={{ mt: 1 }}>
-                  {testIp} would be <strong>{testResult}</strong> by the current allowlist.
+              {config.mode === 'block' && (
+                <Alert>
+                  <AlertDescription>
+                    Block mode rejects all sign-ins from unlisted IPs. Make sure your own address is in the allowlist before saving.
+                  </AlertDescription>
                 </Alert>
               )}
-            </Box>
-          </Stack>
-        )}
+            </SettingsFieldGroup>
+          </SettingsSectionBlock>
 
-        <Box sx={{ mt: 3 }}>
-          <Button variant="contained" size="small" onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </Box>
-      </CardContent>
-    </Card>
+          <SettingsSectionBlock
+            title="Allowed Networks"
+            description="Maintain the trusted IP and CIDR list used for login enforcement."
+          >
+            <NetworkEntryEditor
+              label="Trusted IPs and CIDR Ranges"
+              description="Use exact IPs for single hosts or CIDR ranges for office and VPN networks."
+              inputLabel="Allowlist Entry"
+              placeholder="e.g. 203.0.113.0/24 or 2001:db8::/32"
+              emptyState={
+                config.mode === 'block'
+                  ? 'No entries are configured. Every login would be blocked.'
+                  : 'No entries are configured. Unlisted logins would only be flagged.'
+              }
+              helperText="Add IPv4 or IPv6 addresses, with an optional CIDR prefix."
+              entries={config.entries}
+              disabled={saving}
+              onChange={(entries) => {
+                setConfig((currentConfig) => ({ ...currentConfig, entries }));
+                setTestResult(null);
+              }}
+            />
+          </SettingsSectionBlock>
+
+          <SettingsSectionBlock
+            title="Test an IP"
+            description="Preview how the current allowlist would treat a specific client address."
+          >
+            <SettingsFieldCard
+              label="Client Address"
+              description="This uses the current unsaved form state, so you can validate changes before saving."
+            >
+              <div className="space-y-3">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    aria-label="Test IP Address"
+                    value={testIp}
+                    placeholder="e.g. 203.0.113.5"
+                    onChange={(event) => {
+                      setTestIp(event.target.value);
+                      setTestResult(null);
+                    }}
+                  />
+                  <Button type="button" variant="outline" onClick={handleTestIp} disabled={!testIp.trim()}>
+                    Check
+                  </Button>
+                </div>
+
+                {testResult && (
+                  <Alert variant={testResult === 'allowed' ? 'default' : 'destructive'}>
+                    <AlertDescription>
+                      {testIp.trim()} would be <strong>{testResult}</strong> by the current allowlist.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            </SettingsFieldCard>
+          </SettingsSectionBlock>
+        </>
+      )}
+
+      <Button type="button" onClick={handleSave} disabled={saving}>
+        {saving ? 'Saving...' : 'Save'}
+      </Button>
+    </SettingsPanel>
   );
 }

@@ -1,83 +1,136 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import {
-  Box, Card, CardContent, CardActions, Button, Stack, Chip, Avatar,
-  Grid, Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
-  Alert, CircularProgress, Select, MenuItem, FormControl, InputLabel,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Divider, Typography, IconButton, TextField,
-} from '@mui/material';
-import {
-  Add as AddIcon, Delete as DeleteIcon, Groups as GroupsIcon,
-} from '@mui/icons-material';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { TeamData, TeamMember } from '../../api/team.api';
+import type { UserSearchResult } from '../../api/user.api';
 import { useAuthStore } from '../../store/authStore';
 import { useTeamStore } from '../../store/teamStore';
+import { extractApiError } from '../../utils/apiError';
 import TeamDialog from '../Dialogs/TeamDialog';
 import UserPicker from '../UserPicker';
-import type { UserSearchResult } from '../../api/user.api';
-import type { TeamData } from '../../api/team.api';
-import { extractApiError } from '../../utils/apiError';
-
-const TEAM_ROLES = ['TEAM_ADMIN', 'TEAM_EDITOR', 'TEAM_VIEWER'] as const;
-
-function roleLabel(role: string) {
-  return role.replace('TEAM_', '');
-}
+import {
+  SettingsFieldCard,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+  SettingsStatusBadge,
+} from './settings-ui';
+import {
+  TeamConfirmDialog,
+  TeamDetailPlaceholder,
+  TeamDirectory,
+  TeamEmptyState,
+  TeamMemberExpiryDialog,
+  TeamMembersList,
+  TeamTenantRequiredState,
+} from './teamSectionUi';
+import {
+  TEAM_ROLES,
+  type TeamRole,
+  formatTeamDate,
+  fromDateTimeLocalValue,
+  getTeamMemberName,
+  roleLabel,
+  toDateTimeLocalValue,
+} from './teamSectionUtils';
 
 interface TeamSectionProps {
   onNavigateToTab?: (tabId: string) => void;
 }
 
+interface DeleteTarget {
+  id: string;
+  name: string;
+}
+
+interface MemberActionTarget {
+  teamId: string;
+  userId: string;
+  name: string;
+}
+
+interface MemberExpiryTarget extends MemberActionTarget {
+  expiresAt: string | null;
+}
+
 export default function TeamSection({ onNavigateToTab }: TeamSectionProps) {
-  const user = useAuthStore((s) => s.user);
-  const teams = useTeamStore((s) => s.teams);
-  const loading = useTeamStore((s) => s.loading);
-  const selectedTeam = useTeamStore((s) => s.selectedTeam);
-  const members = useTeamStore((s) => s.members);
-  const membersLoading = useTeamStore((s) => s.membersLoading);
-  const fetchTeams = useTeamStore((s) => s.fetchTeams);
-  const selectTeam = useTeamStore((s) => s.selectTeam);
-  const clearSelectedTeam = useTeamStore((s) => s.clearSelectedTeam);
-  const deleteTeam = useTeamStore((s) => s.deleteTeam);
-  const addMember = useTeamStore((s) => s.addMember);
-  const updateMemberRole = useTeamStore((s) => s.updateMemberRole);
-  const removeMember = useTeamStore((s) => s.removeMember);
-  const updateMemberExpiry = useTeamStore((s) => s.updateMemberExpiry);
+  const user = useAuthStore((state) => state.user);
+  const teams = useTeamStore((state) => state.teams);
+  const loading = useTeamStore((state) => state.loading);
+  const selectedTeam = useTeamStore((state) => state.selectedTeam);
+  const members = useTeamStore((state) => state.members);
+  const membersLoading = useTeamStore((state) => state.membersLoading);
+  const fetchTeams = useTeamStore((state) => state.fetchTeams);
+  const selectTeam = useTeamStore((state) => state.selectTeam);
+  const clearSelectedTeam = useTeamStore((state) => state.clearSelectedTeam);
+  const deleteTeam = useTeamStore((state) => state.deleteTeam);
+  const addMember = useTeamStore((state) => state.addMember);
+  const updateMemberRole = useTeamStore((state) => state.updateMemberRole);
+  const removeMember = useTeamStore((state) => state.removeMember);
+  const updateMemberExpiry = useTeamStore((state) => state.updateMemberExpiry);
 
   const [teamDialogOpen, setTeamDialogOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<TeamData | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<TeamData | null>(null);
-  const [deleting, setDeleting] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<{ teamId: string; userId: string; name: string } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<MemberActionTarget | null>(null);
+  const [expiryTarget, setExpiryTarget] = useState<MemberExpiryTarget | null>(null);
+  const [expiryValue, setExpiryValue] = useState('');
+  const [expiryError, setExpiryError] = useState('');
   const [error, setError] = useState('');
-  const [addMemberRole, setAddMemberRole] = useState<'TEAM_ADMIN' | 'TEAM_EDITOR' | 'TEAM_VIEWER'>('TEAM_VIEWER');
+  const [addMemberRole, setAddMemberRole] = useState<TeamRole>('TEAM_VIEWER');
   const [addingMember, setAddingMember] = useState(false);
-
-  // Team member expiry dialog
-  const [teamExpiryOpen, setTeamExpiryOpen] = useState(false);
-  const [teamExpiryTarget, setTeamExpiryTarget] = useState<{ teamId: string; userId: string; name: string; expiresAt: string | null } | null>(null);
-  const [teamExpiryValue, setTeamExpiryValue] = useState('');
-  const [savingTeamExpiry, setSavingTeamExpiry] = useState(false);
+  const [deletingTeam, setDeletingTeam] = useState(false);
+  const [savingExpiry, setSavingExpiry] = useState(false);
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const [removingUserId, setRemovingUserId] = useState<string | null>(null);
 
   const hasTenant = Boolean(user?.tenantId);
+  const isTeamAdmin = selectedTeam?.myRole === 'TEAM_ADMIN';
+  const totalMembers = useMemo(
+    () => teams.reduce((count, team) => count + team.memberCount, 0),
+    [teams],
+  );
+  const currentRoleLabel = selectedTeam ? roleLabel(selectedTeam.myRole) : 'No team selected';
+  const existingMemberIds = useMemo(() => members.map((member) => member.userId), [members]);
 
   useEffect(() => {
-    if (hasTenant) {
-      fetchTeams();
+    if (!hasTenant) {
+      clearSelectedTeam();
+      return;
     }
-  }, [fetchTeams, hasTenant]);
 
-  const handleSelectTeam = (team: TeamData) => {
-    selectTeam(team.id);
-  };
+    void fetchTeams();
+  }, [clearSelectedTeam, fetchTeams, hasTenant]);
 
-  const handleEditTeam = (team: TeamData) => {
-    setEditingTeam(team);
-    setTeamDialogOpen(true);
+  useEffect(() => {
+    if (!hasTenant || loading || selectedTeam || teams.length === 0) {
+      return;
+    }
+
+    void selectTeam(teams[0].id);
+  }, [hasTenant, loading, selectTeam, selectedTeam, teams]);
+
+  const handleSelectTeam = async (team: TeamData) => {
+    setError('');
+    await selectTeam(team.id);
   };
 
   const handleDeleteTeam = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
+    if (!deleteTarget) {
+      return;
+    }
+
+    setDeletingTeam(true);
     setError('');
     try {
       await deleteTeam(deleteTarget.id);
@@ -87,13 +140,16 @@ export default function TeamSection({ onNavigateToTab }: TeamSectionProps) {
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to delete team'));
     } finally {
-      setDeleting(false);
+      setDeletingTeam(false);
       setDeleteTarget(null);
     }
   };
 
   const handleAddMember = async (selectedUser: UserSearchResult | null) => {
-    if (!selectedUser || !selectedTeam) return;
+    if (!selectedUser || !selectedTeam) {
+      return;
+    }
+
     setAddingMember(true);
     setError('');
     try {
@@ -105,377 +161,335 @@ export default function TeamSection({ onNavigateToTab }: TeamSectionProps) {
     }
   };
 
-  const handleRoleChange = async (teamId: string, userId: string, newRole: string) => {
+  const handleRoleChange = async (member: TeamMember, nextRole: TeamRole) => {
+    if (!selectedTeam) {
+      return;
+    }
+
+    setUpdatingUserId(member.userId);
     setError('');
     try {
-      await updateMemberRole(teamId, userId, newRole as 'TEAM_ADMIN' | 'TEAM_EDITOR' | 'TEAM_VIEWER');
+      await updateMemberRole(selectedTeam.id, member.userId, nextRole);
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to update role'));
+    } finally {
+      setUpdatingUserId(null);
     }
   };
 
   const handleRemoveMember = async () => {
-    if (!removeTarget) return;
+    if (!removeTarget) {
+      return;
+    }
+
+    setRemovingUserId(removeTarget.userId);
     setError('');
     try {
       await removeMember(removeTarget.teamId, removeTarget.userId);
+      setRemoveTarget(null);
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to remove member'));
+    } finally {
+      setRemovingUserId(null);
     }
-    setRemoveTarget(null);
+  };
+
+  const openExpiryDialog = (member: TeamMember) => {
+    if (!selectedTeam) {
+      return;
+    }
+
+    setExpiryTarget({
+      teamId: selectedTeam.id,
+      userId: member.userId,
+      name: getTeamMemberName(member),
+      expiresAt: member.expiresAt,
+    });
+    setExpiryValue(toDateTimeLocalValue(member.expiresAt));
+    setExpiryError('');
+  };
+
+  const closeExpiryDialog = () => {
+    setExpiryTarget(null);
+    setExpiryValue('');
+    setExpiryError('');
+  };
+
+  const handleSaveExpiry = async () => {
+    if (!expiryTarget) {
+      return;
+    }
+
+    const nextExpiry = fromDateTimeLocalValue(expiryValue);
+    if (!nextExpiry) {
+      setExpiryError('Choose a valid expiration date and time.');
+      return;
+    }
+
+    setSavingExpiry(true);
+    setError('');
+    setExpiryError('');
+    try {
+      await updateMemberExpiry(expiryTarget.teamId, expiryTarget.userId, nextExpiry);
+      closeExpiryDialog();
+    } catch (err: unknown) {
+      const message = extractApiError(err, 'Failed to update member expiration');
+      setError(message);
+      setExpiryError(message);
+    } finally {
+      setSavingExpiry(false);
+    }
+  };
+
+  const handleClearExpiry = async () => {
+    if (!expiryTarget) {
+      return;
+    }
+
+    setSavingExpiry(true);
+    setError('');
+    setExpiryError('');
+    try {
+      await updateMemberExpiry(expiryTarget.teamId, expiryTarget.userId, null);
+      closeExpiryDialog();
+    } catch (err: unknown) {
+      const message = extractApiError(err, 'Failed to remove member expiration');
+      setError(message);
+      setExpiryError(message);
+    } finally {
+      setSavingExpiry(false);
+    }
   };
 
   if (!hasTenant) {
     return (
-      <Box sx={{ textAlign: 'center', py: 6 }}>
-        <Typography variant="h6" gutterBottom>No Organization</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          You need to create or join an organization before managing teams.
-        </Typography>
-        <Button variant="contained" onClick={() => onNavigateToTab?.('organization')}>
-          Set Up Organization
-        </Button>
-      </Box>
+      <TeamTenantRequiredState
+        onNavigateToOrganization={() => onNavigateToTab?.('organization')}
+      />
     );
   }
 
-  const isTeamAdmin = selectedTeam?.myRole === 'TEAM_ADMIN';
-  const existingMemberIds = members.map((m) => m.userId);
-
   return (
     <>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6" sx={{ flexGrow: 1 }}>Teams</Typography>
-        <Button
-          variant="outlined"
-          startIcon={<AddIcon />}
-          onClick={() => { setEditingTeam(null); setTeamDialogOpen(true); }}
-        >
-          New Team
-        </Button>
-      </Box>
-
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          <CircularProgress />
-        </Box>
-      ) : teams.length === 0 ? (
-        <Box sx={{ textAlign: 'center', py: 6 }}>
-          <GroupsIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>No Teams Yet</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-            Create your first team to start collaborating.
-          </Typography>
+      <SettingsPanel
+        title="Team Collaboration"
+        description="Organize shared access by team instead of scattering roles and temporary membership changes across unrelated menus."
+        heading={(
           <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => { setEditingTeam(null); setTeamDialogOpen(true); }}
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setEditingTeam(null);
+              setTeamDialogOpen(true);
+            }}
           >
-            Create Team
+            <Plus />
+            New Team
           </Button>
-        </Box>
-      ) : (
-        <Box sx={{ display: 'flex', gap: 3, flexDirection: { xs: 'column', md: 'row' } }}>
-          {/* Team list */}
-          <Box sx={{ width: { xs: '100%', md: 320 }, flexShrink: 0 }}>
-            <Grid container spacing={2}>
-              {teams.map((team) => (
-                <Grid size={12} key={team.id}>
-                  <Card
-                    sx={{
-                      cursor: 'pointer',
-                      ...(selectedTeam?.id === team.id && {
-                        borderColor: 'primary.main',
-                        borderWidth: 2,
-                        borderStyle: 'solid',
-                      }),
-                    }}
-                    onClick={() => handleSelectTeam(team)}
-                  >
-                    <CardContent sx={{ pb: 1 }}>
-                      <Typography variant="subtitle1">{team.name}</Typography>
-                      {team.description && (
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {team.description}
-                        </Typography>
-                      )}
-                      <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                        <Chip label={`${team.memberCount} members`} size="small" />
-                        <Chip label={roleLabel(team.myRole)} size="small" variant="outlined" />
-                      </Stack>
-                    </CardContent>
-                    {team.myRole === 'TEAM_ADMIN' && (
-                      <CardActions sx={{ pt: 0, justifyContent: 'flex-end' }}>
-                        <Button size="small" onClick={(e) => { e.stopPropagation(); handleEditTeam(team); }}>
-                          Edit
-                        </Button>
-                        <Button
-                          size="small"
-                          color="error"
-                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(team); }}
-                        >
-                          Delete
-                        </Button>
-                      </CardActions>
-                    )}
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-          </Box>
+        )}
+        contentClassName="space-y-5"
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-          {/* Team detail */}
-          {selectedTeam && (
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Card>
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>{selectedTeam.name}</Typography>
-                  {selectedTeam.description && (
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      {selectedTeam.description}
-                    </Typography>
-                  )}
+        {loading ? (
+          <SettingsLoadingState message="Loading teams..." />
+        ) : teams.length === 0 ? (
+          <TeamEmptyState onCreate={() => setTeamDialogOpen(true)} />
+        ) : (
+          <>
+            <SettingsSummaryGrid>
+              <SettingsSummaryItem
+                label="Teams"
+                value={`${teams.length} configured`}
+              />
+              <SettingsSummaryItem
+                label="Members"
+                value={`${totalMembers} memberships`}
+              />
+              <SettingsSummaryItem
+                label="Selected Role"
+                value={currentRoleLabel}
+              />
+              <SettingsSummaryItem
+                label="Last Updated"
+                value={selectedTeam ? formatTeamDate(selectedTeam.updatedAt || selectedTeam.createdAt) : 'Select a team'}
+              />
+            </SettingsSummaryGrid>
 
-                  <Divider sx={{ my: 2 }} />
+            <div className="grid gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
+              <TeamDirectory
+                teams={teams}
+                selectedTeamId={selectedTeam?.id || null}
+                onSelect={(team) => {
+                  void handleSelectTeam(team);
+                }}
+                onEdit={(team) => {
+                  setEditingTeam(team);
+                  setTeamDialogOpen(true);
+                }}
+                onDelete={(team) => setDeleteTarget({ id: team.id, name: team.name })}
+              />
 
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                    <Typography variant="subtitle1" sx={{ flexGrow: 1 }}>Members</Typography>
-                  </Box>
+              {selectedTeam ? (
+                <div className="space-y-4 rounded-2xl border border-border/70 bg-background/40 p-4 md:p-5">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <h3 className="text-lg font-semibold text-foreground">{selectedTeam.name}</h3>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        {selectedTeam.description || 'Manage members, role assignments, and temporary access windows for this team.'}
+                      </p>
+                    </div>
 
-                  {/* Add member */}
+                    <div className="flex flex-wrap gap-2">
+                      <SettingsStatusBadge tone="neutral">
+                        {selectedTeam.memberCount} member{selectedTeam.memberCount === 1 ? '' : 's'}
+                      </SettingsStatusBadge>
+                      <SettingsStatusBadge tone={isTeamAdmin ? 'success' : 'neutral'}>
+                        {roleLabel(selectedTeam.myRole)}
+                      </SettingsStatusBadge>
+                    </div>
+                  </div>
+
                   {isTeamAdmin && (
-                    <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'flex-start' }}>
-                      <Box sx={{ flex: 1 }}>
+                    <SettingsFieldCard
+                      label="Add members"
+                      description="Search the organization once, choose the default team role, and add the member directly from here."
+                    >
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
                         <UserPicker
-                          onSelect={handleAddMember}
                           scope="tenant"
+                          placeholder="Add a member by name or email"
                           excludeUserIds={existingMemberIds}
-                          placeholder="Add member..."
+                          clearAfterSelect
+                          onSelect={(selectedUser) => {
+                            void handleAddMember(selectedUser);
+                          }}
                         />
-                      </Box>
-                      <FormControl size="small" sx={{ minWidth: 120 }}>
-                        <InputLabel>Role</InputLabel>
-                        <Select
-                          value={addMemberRole}
-                          label="Role"
-                          onChange={(e) => setAddMemberRole(e.target.value as typeof addMemberRole)}
-                        >
-                          {TEAM_ROLES.map((r) => (
-                            <MenuItem key={r} value={r}>{roleLabel(r)}</MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                      {addingMember && <CircularProgress size={24} sx={{ mt: 1 }} />}
-                    </Box>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="team-member-role">Member role</Label>
+                          <Select
+                            value={addMemberRole}
+                            onValueChange={(value) => setAddMemberRole(value as TeamRole)}
+                          >
+                            <SelectTrigger id="team-member-role" aria-label="Member role">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {TEAM_ROLES.map((role) => (
+                                <SelectItem key={role} value={role}>
+                                  {roleLabel(role)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {addingMember && (
+                        <SettingsLoadingState message="Adding member..." />
+                      )}
+                    </SettingsFieldCard>
                   )}
 
                   {membersLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-                      <CircularProgress size={24} />
-                    </Box>
+                    <SettingsLoadingState message="Loading members..." />
                   ) : (
-                    <TableContainer>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow>
-                            <TableCell>User</TableCell>
-                            <TableCell>Role</TableCell>
-                            <TableCell>Expires</TableCell>
-                            {isTeamAdmin && <TableCell align="right">Actions</TableCell>}
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {members.map((m) => (
-                            <TableRow key={m.userId}>
-                              <TableCell>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                  <Avatar src={m.avatarData || undefined} sx={{ width: 28, height: 28 }}>
-                                    {(m.username || m.email).charAt(0).toUpperCase()}
-                                  </Avatar>
-                                  <Box>
-                                    <Typography variant="body2">
-                                      {m.username || m.email}
-                                      {m.userId === user?.id && (
-                                        <Typography component="span" variant="caption" color="text.secondary"> (you)</Typography>
-                                      )}
-                                    </Typography>
-                                    {m.username && (
-                                      <Typography variant="caption" color="text.secondary">{m.email}</Typography>
-                                    )}
-                                  </Box>
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                {isTeamAdmin && m.userId !== user?.id ? (
-                                  <Select
-                                    value={m.role}
-                                    size="small"
-                                    onChange={(e) => handleRoleChange(selectedTeam.id, m.userId, e.target.value)}
-                                    sx={{ minWidth: 110 }}
-                                  >
-                                    {TEAM_ROLES.map((r) => (
-                                      <MenuItem key={r} value={r}>{roleLabel(r)}</MenuItem>
-                                    ))}
-                                  </Select>
-                                ) : (
-                                  <Chip label={roleLabel(m.role)} size="small" variant="outlined" />
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {m.expiresAt ? (
-                                  <Chip
-                                    label={m.expired ? 'Expired' : new Date(m.expiresAt).toLocaleDateString()}
-                                    color={m.expired ? 'error' : 'default'}
-                                    size="small"
-                                    variant="outlined"
-                                    {...(isTeamAdmin && m.userId !== user?.id ? {
-                                      onClick: () => {
-                                        setTeamExpiryTarget({ teamId: selectedTeam.id, userId: m.userId, name: m.username || m.email, expiresAt: m.expiresAt });
-                                        setTeamExpiryValue(m.expiresAt ? new Date(m.expiresAt).toISOString().slice(0, 16) : '');
-                                        setTeamExpiryOpen(true);
-                                      },
-                                      sx: { cursor: 'pointer' },
-                                    } : {})}
-                                  />
-                                ) : isTeamAdmin && m.userId !== user?.id ? (
-                                  <Chip
-                                    label="Set"
-                                    size="small"
-                                    variant="outlined"
-                                    sx={{ cursor: 'pointer' }}
-                                    onClick={() => {
-                                      setTeamExpiryTarget({ teamId: selectedTeam.id, userId: m.userId, name: m.username || m.email, expiresAt: null });
-                                      setTeamExpiryValue('');
-                                      setTeamExpiryOpen(true);
-                                    }}
-                                  />
-                                ) : (
-                                  <Typography variant="caption" color="text.secondary">—</Typography>
-                                )}
-                              </TableCell>
-                              {isTeamAdmin && (
-                                <TableCell align="right">
-                                  {m.userId !== user?.id && (
-                                    <IconButton
-                                      size="small"
-                                      color="error"
-                                      onClick={() => setRemoveTarget({
-                                        teamId: selectedTeam.id,
-                                        userId: m.userId,
-                                        name: m.username || m.email,
-                                      })}
-                                    >
-                                      <DeleteIcon fontSize="small" />
-                                    </IconButton>
-                                  )}
-                                </TableCell>
-                              )}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
+                    <TeamMembersList
+                      members={members}
+                      currentUserId={user?.id}
+                      canManageMembers={Boolean(isTeamAdmin)}
+                      updatingUserId={updatingUserId || removingUserId}
+                      onRoleChange={(member, role) => {
+                        void handleRoleChange(member, role);
+                      }}
+                      onEditExpiry={openExpiryDialog}
+                      onRemoveMember={(member) => setRemoveTarget({
+                        teamId: selectedTeam.id,
+                        userId: member.userId,
+                        name: getTeamMemberName(member),
+                      })}
+                    />
                   )}
-                </CardContent>
-              </Card>
-            </Box>
-          )}
-        </Box>
-      )}
+                </div>
+              ) : (
+                <TeamDetailPlaceholder />
+              )}
+            </div>
+          </>
+        )}
+      </SettingsPanel>
 
       <TeamDialog
         open={teamDialogOpen}
-        onClose={() => { setTeamDialogOpen(false); setEditingTeam(null); }}
+        onClose={() => {
+          setTeamDialogOpen(false);
+          setEditingTeam(null);
+        }}
         team={editingTeam}
       />
 
-      {/* Delete team confirmation */}
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete Team</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete <strong>{deleteTarget?.name}</strong>?
-            Team connections and folders will become unassigned.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button onClick={handleDeleteTeam} color="error" variant="contained" disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <TeamConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete team"
+        description={deleteTarget
+          ? `Delete ${deleteTarget.name}? Team-owned folders and connections will become unassigned.`
+          : ''}
+        confirmLabel="Delete team"
+        busy={deletingTeam}
+        onConfirm={() => {
+          void handleDeleteTeam();
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+          }
+        }}
+      />
 
-      {/* Remove member confirmation */}
-      <Dialog open={!!removeTarget} onClose={() => setRemoveTarget(null)}>
-        <DialogTitle>Remove Member</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to remove <strong>{removeTarget?.name}</strong> from this team?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRemoveTarget(null)}>Cancel</Button>
-          <Button onClick={handleRemoveMember} color="error" variant="contained">Remove</Button>
-        </DialogActions>
-      </Dialog>
+      <TeamConfirmDialog
+        open={Boolean(removeTarget)}
+        title="Remove member"
+        description={removeTarget
+          ? `Remove ${removeTarget.name} from this team? Their team-scoped access will be revoked immediately.`
+          : ''}
+        confirmLabel="Remove member"
+        busy={Boolean(removingUserId)}
+        onConfirm={() => {
+          void handleRemoveMember();
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRemoveTarget(null);
+          }
+        }}
+      />
 
-      {/* Team member expiry dialog */}
-      <Dialog open={teamExpiryOpen} onClose={() => setTeamExpiryOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Member Expiration — {teamExpiryTarget?.name}</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <TextField
-              label="Expires At"
-              type="datetime-local"
-              value={teamExpiryValue}
-              onChange={(e) => setTeamExpiryValue(e.target.value)}
-              fullWidth
-              size="small"
-              slotProps={{ inputLabel: { shrink: true } }}
-              helperText="Clear to remove expiration"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          {teamExpiryTarget?.expiresAt && (
-            <Button
-              color="warning"
-              disabled={savingTeamExpiry}
-              onClick={async () => {
-                if (!teamExpiryTarget) return;
-                setSavingTeamExpiry(true);
-                try {
-                  await updateMemberExpiry(teamExpiryTarget.teamId, teamExpiryTarget.userId, null);
-                  setTeamExpiryOpen(false);
-                } catch { /* ignore */ }
-                setSavingTeamExpiry(false);
-              }}
-            >
-              Remove Expiration
-            </Button>
-          )}
-          <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setTeamExpiryOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={savingTeamExpiry || !teamExpiryValue}
-            onClick={async () => {
-              if (!teamExpiryTarget || !teamExpiryValue) return;
-              setSavingTeamExpiry(true);
-              try {
-                await updateMemberExpiry(teamExpiryTarget.teamId, teamExpiryTarget.userId, new Date(teamExpiryValue).toISOString());
-                setTeamExpiryOpen(false);
-              } catch { /* ignore */ }
-              setSavingTeamExpiry(false);
-            }}
-          >
-            {savingTeamExpiry ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <TeamMemberExpiryDialog
+        open={Boolean(expiryTarget)}
+        memberName={expiryTarget?.name || 'this member'}
+        value={expiryValue}
+        error={expiryError}
+        saving={savingExpiry}
+        canClear={Boolean(expiryTarget?.expiresAt)}
+        onValueChange={setExpiryValue}
+        onSave={() => {
+          void handleSaveExpiry();
+        }}
+        onClear={() => {
+          void handleClearExpiry();
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeExpiryDialog();
+          }
+        }}
+      />
     </>
   );
 }

@@ -5,6 +5,7 @@
 #   make setup      — First-time setup: install Ansible collections, generate vault + certs
 #   make install    — Run the interactive installer
 #   make dev        — Start the installer-aware development stack
+#   make dev client — Refresh just the client container from the saved dev profile
 #   make deploy     — Run the installer in production mode
 #   make help       — Show all available targets
 # ============================================================================
@@ -36,8 +37,20 @@ DEV_ZERO_TRUST ?=
 DEV_CAPABILITIES_FLAG := $(if $(DEV_CAPABILITIES),-e installer_capabilities_csv=$(DEV_CAPABILITIES),)
 DEV_DIRECT_GATEWAY_FLAG := $(if $(DEV_DIRECT_GATEWAY),-e installer_direct_gateway=$(DEV_DIRECT_GATEWAY),)
 DEV_ZERO_TRUST_FLAG := $(if $(DEV_ZERO_TRUST),-e installer_zero_trust=$(DEV_ZERO_TRUST),)
+empty :=
+space := $(empty) $(empty)
+comma := ,
+DEV_REFRESH_SELECTORS := client gateways control-plane control-plane-api control-plane-controller authz-pdp model-gateway tool-gateway memory-service agent-orchestrator runtime-agent terminal-broker desktop-broker tunnel-broker query-runner map-assets ssh-gateway guacd guacenc dev-tunnel-ssh-gateway dev-tunnel-guacd dev-tunnel-db-proxy postgres redis migrate terminal-target dev-debian-ssh-target dev-demo-postgres dev-demo-mysql dev-demo-mongodb dev-demo-oracle dev-demo-mssql
+DEV_REFRESH_GOALS := $(filter $(DEV_REFRESH_SELECTORS),$(filter-out dev,$(MAKECMDGOALS)))
+DEV_REFRESH_TARGETS_CSV := $(subst $(space),$(comma),$(strip $(DEV_REFRESH_GOALS)))
 
 .DEFAULT_GOAL := help
+
+ifneq ($(filter dev,$(MAKECMDGOALS)),)
+.PHONY: $(DEV_REFRESH_SELECTORS)
+$(DEV_REFRESH_SELECTORS):
+	@:
+endif
 
 # ── Dependency check ────────────────────────────────────────────────────────
 
@@ -76,8 +89,12 @@ setup: _check-ansible  ## First-time setup: install collections, generate vault 
 # ── Development ─────────────────────────────────────────────────────────────
 
 .PHONY: dev
-dev: _check-ansible  ## Deploy installer-aware dev stack with local image builds
+dev: _check-ansible  ## Deploy dev stack, or refresh selected services via `make dev <selector>`
+ifneq ($(strip $(DEV_REFRESH_GOALS)),)
+	$(PLAYBOOK) playbooks/dev_refresh.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) -e dev_refresh_targets_csv=$(DEV_REFRESH_TARGETS_CSV)
+else
 	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) $(DEV_CAPABILITIES_FLAG) $(DEV_DIRECT_GATEWAY_FLAG) $(DEV_ZERO_TRUST_FLAG) -e installer_mode=development
+endif
 
 .PHONY: dev-down
 dev-down: _check-ansible  ## Stop dev stack
@@ -148,3 +165,8 @@ help:  ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 	@printf "\n"
+	@printf "Refresh selectors:\n"
+	@printf "  make dev client\n"
+	@printf "  make dev gateways\n"
+	@printf "  make dev control-plane\n"
+	@printf "  make dev control-plane-api query-runner\n\n"

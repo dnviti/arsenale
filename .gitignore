@@ -161,6 +161,9 @@ test_token*.mjs
 # Security scan artifacts
 trivy-*.sarif
 
+# Shared local Go build outputs
+build/go/
+
 # CodeQL local scan artifacts
 .codeql/
 

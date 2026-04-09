@@ -15,7 +15,8 @@ var gatewayColumns = []Column{
 	{Header: "ID", Field: "id"},
 	{Header: "NAME", Field: "name"},
 	{Header: "TYPE", Field: "type"},
-	{Header: "HEALTH", Field: "lastHealthStatus"},
+	{Header: "STATUS", Field: "operationalStatus"},
+	{Header: "HEALTHY", Field: "healthyInstances"},
 	{Header: "RUNNING", Field: "runningInstances"},
 	{Header: "DESIRED", Field: "desiredReplicas"},
 }
@@ -33,11 +34,12 @@ var gatewayStatusColumns = []Column{
 	{Header: "ID", Field: "id"},
 	{Header: "NAME", Field: "name"},
 	{Header: "TYPE", Field: "type"},
-	{Header: "HEALTH", Field: "lastHealthStatus"},
+	{Header: "STATUS", Field: "operationalStatus"},
+	{Header: "HEALTHY", Field: "healthyInstances"},
 	{Header: "RUNNING", Field: "runningInstances"},
 	{Header: "DESIRED", Field: "desiredReplicas"},
 	{Header: "TUNNEL", Field: "tunnelConnected"},
-	{Header: "LAST_ERROR", Field: "lastError"},
+	{Header: "DETAIL", Field: "operationalReason"},
 }
 
 var gatewayTemplateColumns = []Column{

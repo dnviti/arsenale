@@ -1,15 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import { Sparkles, Loader2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  Card, CardContent, Typography, Button, TextField, Alert, Box,
-  Stack, MenuItem, Switch, FormControlLabel, CircularProgress,
-} from '@mui/material';
-import {
-  AutoAwesome as AiIcon,
-} from '@mui/icons-material';
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsStatusBadge,
+  SettingsSwitchRow,
+} from './settings-ui';
 import { getAiConfig, updateAiConfig } from '../../api/aiQuery.api';
 import type { AiConfig } from '../../api/aiQuery.api';
-import { extractApiError } from '../../utils/apiError';
 import { useNotificationStore } from '../../store/notificationStore';
+import { extractApiError } from '../../utils/apiError';
 
 const PROVIDERS = [
   { value: 'none', label: 'None (Disabled)' },
@@ -20,13 +26,11 @@ const PROVIDERS = [
 ];
 
 export default function AiQueryConfigSection() {
-  const notify = useNotificationStore((s) => s.notify);
+  const notify = useNotificationStore((state) => state.notify);
   const [config, setConfig] = useState<AiConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
-  // Form fields
   const [provider, setProvider] = useState('none');
   const [apiKey, setApiKey] = useState('');
   const [modelId, setModelId] = useState('');
@@ -35,31 +39,28 @@ export default function AiQueryConfigSection() {
   const [dailyLimit, setDailyLimit] = useState(100);
   const [enabled, setEnabled] = useState(false);
 
-  const loadConfig = useCallback(async () => {
-    try {
-      const cfg = await getAiConfig();
-      setConfig(cfg);
-      setProvider(cfg.provider);
-      setModelId(cfg.modelId);
-      setBaseUrl(cfg.baseUrl ?? '');
-      setMaxTokens(cfg.maxTokensPerRequest);
-      setDailyLimit(cfg.dailyRequestLimit);
-      setEnabled(cfg.enabled);
-      setApiKey('');
-    } catch {
-      // Non-critical
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    getAiConfig()
+      .then((nextConfig) => {
+        setConfig(nextConfig);
+        setProvider(nextConfig.provider);
+        setModelId(nextConfig.modelId);
+        setBaseUrl(nextConfig.baseUrl ?? '');
+        setMaxTokens(nextConfig.maxTokensPerRequest);
+        setDailyLimit(nextConfig.dailyRequestLimit);
+        setEnabled(nextConfig.enabled);
+        setApiKey('');
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
-
-  useEffect(() => { loadConfig(); }, [loadConfig]);
 
   const handleSave = async () => {
     setError('');
     setSaving(true);
+
     try {
-      const update: Record<string, unknown> = {
+      const payload: Record<string, unknown> = {
         provider,
         modelId,
         baseUrl: baseUrl || null,
@@ -67,11 +68,13 @@ export default function AiQueryConfigSection() {
         dailyRequestLimit: dailyLimit,
         enabled,
       };
+
       if (apiKey) {
-        update.apiKey = apiKey;
+        payload.apiKey = apiKey;
       }
-      const cfg = await updateAiConfig(update);
-      setConfig(cfg);
+
+      const nextConfig = await updateAiConfig(payload);
+      setConfig(nextConfig);
       setApiKey('');
       notify('AI configuration saved', 'success');
     } catch (err: unknown) {
@@ -83,128 +86,154 @@ export default function AiQueryConfigSection() {
 
   if (loading) {
     return (
-      <Card variant="outlined">
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="AI Query"
+        description="Model-backed assistance for database users."
+      >
+        <SettingsLoadingState message="Loading AI configuration..." />
+      </SettingsPanel>
     );
   }
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-          <AiIcon color="primary" />
-          <Typography variant="h6">AI Query Generation</Typography>
-        </Stack>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Configure AI-powered natural language to SQL query generation. Users can ask questions in plain English and receive validated SELECT queries.
-        </Typography>
+    <SettingsPanel
+      title="AI Query"
+      description="Configure natural-language SQL generation and the provider behind it."
+      heading={(
+        <div className="flex flex-wrap items-center gap-2">
+          <SettingsStatusBadge tone={enabled ? 'success' : 'neutral'}>
+            <Sparkles className="mr-1 size-3.5" />
+            {enabled ? 'Enabled' : 'Disabled'}
+          </SettingsStatusBadge>
+          {provider !== 'none' && <SettingsStatusBadge tone="neutral">{provider}</SettingsStatusBadge>}
+        </div>
+      )}
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-            {error}
-          </Alert>
-        )}
+      <SettingsFieldGroup>
+        <SettingsSwitchRow
+          title="Enable AI Query Generation"
+          description="Allow users to ask questions in plain English and receive validated SELECT queries."
+          checked={enabled}
+          onCheckedChange={setEnabled}
+        />
 
-        <Stack spacing={2.5}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-              />
-            }
-            label="Enable AI Query Generation"
-          />
-
-          <TextField
-            select
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
             label="AI Provider"
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-            size="small"
-            fullWidth
+            description="Choose the backing provider or disable the feature entirely."
           >
-            {PROVIDERS.map((p) => (
-              <MenuItem key={p.value} value={p.value}>{p.label}</MenuItem>
-            ))}
-          </TextField>
+            <Select value={provider} onValueChange={setProvider}>
+              <SelectTrigger aria-label="AI Provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((providerOption) => (
+                  <SelectItem key={providerOption.value} value={providerOption.value}>
+                    {providerOption.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
           {provider !== 'none' && (
-            <>
-              <TextField
-                label="API Key"
+            <SettingsFieldCard
+              label="Model"
+              description="Leave empty to use the provider default."
+            >
+              <Input
+                value={modelId}
+                onChange={(event) => setModelId(event.target.value)}
+                placeholder={provider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o'}
+                aria-label="AI Model"
+              />
+            </SettingsFieldCard>
+          )}
+        </div>
+
+        {provider !== 'none' && (
+          <>
+            <SettingsFieldCard
+              label="API Key"
+              description={
+                config?.hasApiKey
+                  ? 'An API key is already configured. Leave this blank to keep it.'
+                  : 'Required. The key is encrypted at rest.'
+              }
+            >
+              <Input
                 type="password"
                 value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                size="small"
-                fullWidth
+                onChange={(event) => setApiKey(event.target.value)}
                 placeholder={config?.hasApiKey ? 'Leave empty to keep existing key' : 'Enter API key'}
-                helperText={config?.hasApiKey ? 'An API key is configured. Enter a new value to replace it.' : 'Required. Your API key is encrypted at rest.'}
+                aria-label="API Key"
               />
+            </SettingsFieldCard>
 
-              <TextField
-                label="Model"
-                value={modelId}
-                onChange={(e) => setModelId(e.target.value)}
-                size="small"
-                fullWidth
-                placeholder={provider === 'anthropic' ? 'claude-sonnet-4-20250514' : 'gpt-4o'}
-                helperText="Leave empty for provider default."
-              />
-
-              {(provider === 'openai' || provider === 'ollama' || provider === 'openai-compatible') && (
-                <TextField
-                  label="Base URL"
+            {(provider === 'openai' || provider === 'ollama' || provider === 'openai-compatible') && (
+              <SettingsFieldCard
+                label="Base URL"
+                description={
+                  provider === 'ollama'
+                    ? 'Required for Ollama.'
+                    : 'Leave empty for the provider default API endpoint.'
+                }
+              >
+                <Input
                   value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  size="small"
-                  fullWidth
+                  onChange={(event) => setBaseUrl(event.target.value)}
                   placeholder={provider === 'ollama' ? 'http://localhost:11434' : 'https://api.openai.com/v1'}
-                  helperText={provider === 'ollama' ? 'Required for Ollama.' : 'For OpenAI-compatible APIs. Leave empty for default.'}
+                  aria-label="Base URL"
                 />
-              )}
+              </SettingsFieldCard>
+            )}
 
-              <Stack direction="row" spacing={2}>
-                <TextField
-                  label="Max Tokens"
+            <div className="grid gap-4 xl:grid-cols-2">
+              <SettingsFieldCard
+                label="Max Tokens"
+                description="Upper bound for one generated response."
+              >
+                <Input
                   type="number"
+                  min={100}
+                  max={16000}
                   value={maxTokens}
-                  onChange={(e) => setMaxTokens(parseInt(e.target.value, 10) || 4000)}
-                  size="small"
-                  inputProps={{ min: 100, max: 16000 }}
-                  sx={{ flex: 1 }}
+                  onChange={(event) => setMaxTokens(Number.parseInt(event.target.value, 10) || 4000)}
+                  aria-label="Max Tokens"
                 />
-                <TextField
-                  label="Daily Request Limit"
-                  type="number"
-                  value={dailyLimit}
-                  onChange={(e) => setDailyLimit(parseInt(e.target.value, 10) || 100)}
-                  size="small"
-                  inputProps={{ min: 1, max: 10000 }}
-                  sx={{ flex: 1 }}
-                  helperText="Per tenant per day"
-                />
-              </Stack>
-            </>
-          )}
+              </SettingsFieldCard>
 
-          <Box>
-            <Button
-              variant="contained"
-              onClick={handleSave}
-              disabled={saving}
-              startIcon={saving ? <CircularProgress size={16} /> : undefined}
-            >
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-          </Box>
-        </Stack>
-      </CardContent>
-    </Card>
+              <SettingsFieldCard
+                label="Daily Request Limit"
+                description="Tenant-wide cap per day."
+              >
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={dailyLimit}
+                  onChange={(event) => setDailyLimit(Number.parseInt(event.target.value, 10) || 100)}
+                  aria-label="Daily Request Limit"
+                />
+              </SettingsFieldCard>
+            </div>
+          </>
+        )}
+
+        <div className="flex justify-start">
+          <Button type="button" onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="animate-spin" />}
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
+        </div>
+      </SettingsFieldGroup>
+    </SettingsPanel>
   );
 }

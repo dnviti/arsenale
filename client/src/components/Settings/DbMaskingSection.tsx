@@ -1,444 +1,365 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, Typography, Box, Button, Stack,
-  Table, TableHead, TableBody, TableRow, TableCell,
-  Chip, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, FormControl, InputLabel,
-  Select, MenuItem, Switch, FormControlLabel, Alert,
-  CircularProgress, Tooltip, OutlinedInput, SelectChangeEvent,
-  Divider, ListSubheader,
-} from '@mui/material';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  VisibilityOff as MaskIcon,
-} from '@mui/icons-material';
-import {
-  getMaskingPolicies, createMaskingPolicy, updateMaskingPolicy, deleteMaskingPolicy,
-  MaskingPolicy, MaskingPolicyInput, MaskingStrategy,
+  createMaskingPolicy,
+  deleteMaskingPolicy,
+  getMaskingPolicies,
+  updateMaskingPolicy,
+  type MaskingPolicy,
+  type MaskingPolicyInput,
+  type MaskingStrategy,
 } from '../../api/dbAudit.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
-
-const STRATEGY_LABELS: Record<MaskingStrategy, string> = {
-  REDACT: 'Full Redaction',
-  HASH: 'Hash (SHA-256)',
-  PARTIAL: 'Partial Mask',
-};
-
-const STRATEGY_COLORS: Record<MaskingStrategy, 'error' | 'warning' | 'info'> = {
-  REDACT: 'error',
-  HASH: 'warning',
-  PARTIAL: 'info',
-};
-
-const ROLE_OPTIONS = ['OWNER', 'ADMIN', 'OPERATOR', 'MEMBER', 'CONSULTANT', 'AUDITOR', 'GUEST'];
-
-// ---------------------------------------------------------------------------
-// Preset masking policy templates
-// ---------------------------------------------------------------------------
-
-interface MaskingTemplate {
-  name: string;
-  columnPattern: string;
-  strategy: MaskingStrategy;
-  description: string;
-  category: string;
-}
-
-const MASKING_TEMPLATES: MaskingTemplate[] = [
-  // --- PII / Identity ---
-  {
-    category: 'PII / Identity',
-    name: 'Mask SSN / National ID',
-    columnPattern: '(ssn|social_security|national_id|tax_id|identity_number)',
-    strategy: 'PARTIAL',
-    description: 'Partially masks social security numbers and national identifiers',
-  },
-  {
-    category: 'PII / Identity',
-    name: 'Redact Full Names',
-    columnPattern: '(full_name|first_name|last_name|surname|given_name)',
-    strategy: 'REDACT',
-    description: 'Fully redacts personal name columns',
-  },
-  {
-    category: 'PII / Identity',
-    name: 'Hash Personal Identifiers',
-    columnPattern: '(passport|driver_license|license_number)',
-    strategy: 'HASH',
-    description: 'Hashes government-issued ID numbers for pseudonymized analytics',
-  },
-  // --- Financial ---
-  {
-    category: 'Financial',
-    name: 'Mask Credit Cards',
-    columnPattern: '(credit_card|card_number|pan|cc_number)',
-    strategy: 'PARTIAL',
-    description: 'Shows only the last digits of payment card numbers',
-  },
-  {
-    category: 'Financial',
-    name: 'Redact Bank Accounts',
-    columnPattern: '(bank_account|iban|routing_number|sort_code|account_number)',
-    strategy: 'REDACT',
-    description: 'Fully redacts banking and financial account numbers',
-  },
-  {
-    category: 'Financial',
-    name: 'Redact Salary / Compensation',
-    columnPattern: '(salary|wage|compensation|income|bonus)',
-    strategy: 'REDACT',
-    description: 'Hides salary and compensation data from non-privileged users',
-  },
-  // --- Authentication ---
-  {
-    category: 'Authentication',
-    name: 'Redact Passwords',
-    columnPattern: '(password|passwd|pwd|secret|pin)',
-    strategy: 'REDACT',
-    description: 'Fully redacts password and secret columns',
-  },
-  {
-    category: 'Authentication',
-    name: 'Hash API Keys / Tokens',
-    columnPattern: '(api_key|access_key|secret_key|auth_token|refresh_token)',
-    strategy: 'HASH',
-    description: 'Hashes API keys and tokens for reference without exposing raw values',
-  },
-  // --- Contact Information ---
-  {
-    category: 'Contact Information',
-    name: 'Mask Email Addresses',
-    columnPattern: '(email|e_mail|email_address)',
-    strategy: 'PARTIAL',
-    description: 'Partially masks email addresses showing domain only',
-  },
-  {
-    category: 'Contact Information',
-    name: 'Mask Phone Numbers',
-    columnPattern: '(phone|telephone|mobile|cell|fax)',
-    strategy: 'PARTIAL',
-    description: 'Partially masks phone numbers showing last digits only',
-  },
-  {
-    category: 'Contact Information',
-    name: 'Redact Physical Addresses',
-    columnPattern: '(address|street|city|zip_code|postal_code)',
-    strategy: 'REDACT',
-    description: 'Fully redacts physical address components',
-  },
-  // --- Healthcare ---
-  {
-    category: 'Healthcare',
-    name: 'Redact Medical Records',
-    columnPattern: '(diagnosis|medical_record|patient_id|health_id)',
-    strategy: 'REDACT',
-    description: 'Fully redacts protected health information (PHI)',
-  },
-  {
-    category: 'Healthcare',
-    name: 'Hash Prescription Data',
-    columnPattern: '(prescription|medication|drug_name)',
-    strategy: 'HASH',
-    description: 'Hashes prescription data for pseudonymized research use',
-  },
-];
+import {
+  EMPTY_MASKING_POLICY_FORM,
+  MASKING_EXEMPT_ROLES,
+  MASKING_POLICY_TEMPLATES,
+  MASKING_STRATEGY_LABELS,
+  MASKING_STRATEGY_OPTIONS,
+  MASKING_STRATEGY_VARIANTS,
+  validateMaskingColumnPattern,
+} from './dbMaskingPolicyConfig';
+import {
+  PolicyDialogShell,
+  PolicyEmptyState,
+  PolicyFormSection,
+  PolicyMetadataBadge,
+  PolicyRecordCard,
+  PolicyRoleChecklist,
+  PolicyTemplatePicker,
+} from './databasePolicyUi';
+import {
+  SettingsFieldCard,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSwitchRow,
+} from './settings-ui';
 
 export default function DbMaskingSection() {
   const [policies, setPolicies] = useState<MaskingPolicy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editOpen, setEditOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPolicy, setEditingPolicy] = useState<MaskingPolicy | null>(null);
-  const [formData, setFormData] = useState<MaskingPolicyInput>({
-    name: '',
-    columnPattern: '',
-    strategy: 'REDACT',
-    exemptRoles: [],
-    scope: '',
-    description: '',
-    enabled: true,
-  });
+  const [patternError, setPatternError] = useState<string | null>(null);
+  const [formData, setFormData] = useState<MaskingPolicyInput>(EMPTY_MASKING_POLICY_FORM);
   const { loading: saving, error, run, clearError } = useAsyncAction();
 
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getMaskingPolicies();
-      setPolicies(data);
+      setPolicies(await getMaskingPolicies());
     } catch {
-      // silent
+      setPolicies([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPolicies();
+    void fetchPolicies();
   }, [fetchPolicies]);
 
-  const handleOpenCreate = () => {
-    setEditingPolicy(null);
-    setFormData({ name: '', columnPattern: '', strategy: 'REDACT', exemptRoles: [], scope: '', description: '', enabled: true });
+  const resetForm = () => {
+    setFormData(EMPTY_MASKING_POLICY_FORM);
+    setPatternError(null);
     clearError();
-    setEditOpen(true);
   };
 
-  const handleApplyTemplate = (templateValue: string) => {
-    const template = MASKING_TEMPLATES.find((t) => t.name === templateValue);
-    if (!template) return;
-    setFormData({
-      ...formData,
-      name: template.name,
-      columnPattern: template.columnPattern,
-      strategy: template.strategy,
-      description: template.description,
-    });
+  const closeDialog = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setEditingPolicy(null);
+      resetForm();
+    }
   };
 
-  const handleOpenEdit = (policy: MaskingPolicy) => {
+  const updateField = <K extends keyof MaskingPolicyInput>(key: K, value: MaskingPolicyInput[K]) => {
+    setFormData((current) => ({ ...current, [key]: value }));
+  };
+
+  const updatePattern = (value: string) => {
+    updateField('columnPattern', value);
+    setPatternError(value.trim() ? validateMaskingColumnPattern(value) : null);
+  };
+
+  const openCreate = () => {
+    setEditingPolicy(null);
+    resetForm();
+    setDialogOpen(true);
+  };
+
+  const openEdit = (policy: MaskingPolicy) => {
     setEditingPolicy(policy);
     setFormData({
       name: policy.name,
       columnPattern: policy.columnPattern,
       strategy: policy.strategy,
       exemptRoles: policy.exemptRoles,
-      scope: policy.scope || '',
-      description: policy.description || '',
+      scope: policy.scope ?? '',
+      description: policy.description ?? '',
       enabled: policy.enabled,
     });
+    setPatternError(null);
     clearError();
-    setEditOpen(true);
+    setDialogOpen(true);
+  };
+
+  const applyTemplate = (templateName: string) => {
+    const template = MASKING_POLICY_TEMPLATES.find((entry) => entry.name === templateName);
+    if (!template) {
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
+      name: template.name,
+      columnPattern: template.columnPattern,
+      strategy: template.strategy,
+      description: template.description,
+    }));
+    setPatternError(validateMaskingColumnPattern(template.columnPattern));
   };
 
   const handleSave = async () => {
-    const ok = await run(async () => {
+    const validationError = validateMaskingColumnPattern(formData.columnPattern);
+    if (validationError) {
+      setPatternError(validationError);
+      return;
+    }
+
+    const payload: MaskingPolicyInput = {
+      ...formData,
+      scope: formData.scope?.trim() || undefined,
+      description: formData.description?.trim() || undefined,
+    };
+
+    const isSuccessful = await run(async () => {
       if (editingPolicy) {
-        await updateMaskingPolicy(editingPolicy.id, formData);
+        await updateMaskingPolicy(editingPolicy.id, payload);
       } else {
-        await createMaskingPolicy(formData);
+        await createMaskingPolicy(payload);
       }
     }, 'Failed to save masking policy');
 
-    if (ok) {
-      setEditOpen(false);
-      fetchPolicies();
+    if (!isSuccessful) {
+      return;
     }
+
+    closeDialog(false);
+    await fetchPolicies();
   };
 
   const handleDelete = async (policyId: string) => {
-    await run(async () => {
+    const isSuccessful = await run(async () => {
       await deleteMaskingPolicy(policyId);
-      fetchPolicies();
     }, 'Failed to delete masking policy');
+
+    if (isSuccessful) {
+      await fetchPolicies();
+    }
   };
 
-  const handleRolesChange = (event: SelectChangeEvent<string[]>) => {
-    const value = event.target.value;
-    setFormData({ ...formData, exemptRoles: typeof value === 'string' ? value.split(',') : value });
-  };
+  const selectedStrategy = MASKING_STRATEGY_OPTIONS.find((entry) => entry.value === formData.strategy);
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <MaskIcon color="primary" />
-            <Typography variant="subtitle1" fontWeight="bold">Data Masking Policies</Typography>
-          </Box>
-          <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+    <>
+      <SettingsPanel
+        title="Data Masking Policies"
+        description="Redact, hash, or partially reveal sensitive columns before query results leave the proxy."
+        heading={(
+          <Button type="button" size="sm" variant="outline" onClick={openCreate}>
+            <Plus />
             Add Policy
           </Button>
-        </Box>
-
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Define column-level masking rules to redact sensitive data in database query results.
-          Columns matching the regex pattern will have their values masked based on the selected strategy.
-          Role-based exemptions allow specific tenant roles to see unmasked values.
-        </Typography>
+        )}
+        contentClassName="space-y-4"
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-            <CircularProgress size={24} />
-          </Box>
+          <SettingsLoadingState message="Loading masking policies..." />
         ) : policies.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-            No masking policies configured.
-          </Typography>
+          <PolicyEmptyState
+            title="No masking policies"
+            description="Query results currently return raw column values. Add policies when you need tenant-specific protection for PII, financial data, or credentials."
+          />
         ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Column Pattern</TableCell>
-                <TableCell>Strategy</TableCell>
-                <TableCell>Scope</TableCell>
-                <TableCell>Exempt Roles</TableCell>
-                <TableCell>Enabled</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {policies.map((policy) => (
-                <TableRow key={policy.id}>
-                  <TableCell>{policy.name}</TableCell>
-                  <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.8rem', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    <Tooltip title={policy.columnPattern}><span>{policy.columnPattern}</span></Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={STRATEGY_LABELS[policy.strategy]} color={STRATEGY_COLORS[policy.strategy]} size="small" />
-                  </TableCell>
-                  <TableCell>{policy.scope || 'Global'}</TableCell>
-                  <TableCell>
-                    {policy.exemptRoles.length > 0
-                      ? policy.exemptRoles.map((r) => <Chip key={r} label={r} size="small" variant="outlined" sx={{ mr: 0.5, mb: 0.5 }} />)
-                      : 'None'}
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={policy.enabled ? 'On' : 'Off'} size="small" color={policy.enabled ? 'success' : 'default'} variant="outlined" />
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpenEdit(policy)}><EditIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => handleDelete(policy.id)}><DeleteIcon fontSize="small" /></IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-3">
+            {policies.map((policy) => (
+              <PolicyRecordCard
+                key={policy.id}
+                title={policy.name}
+                description={policy.description}
+                code={policy.columnPattern}
+                badges={(
+                  <>
+                    <PolicyMetadataBadge variant={MASKING_STRATEGY_VARIANTS[policy.strategy]}>
+                      {MASKING_STRATEGY_LABELS[policy.strategy]}
+                    </PolicyMetadataBadge>
+                    <PolicyMetadataBadge variant={policy.enabled ? 'default' : 'outline'}>
+                      {policy.enabled ? 'Enabled' : 'Disabled'}
+                    </PolicyMetadataBadge>
+                    <PolicyMetadataBadge variant="outline">
+                      {policy.scope || 'Global scope'}
+                    </PolicyMetadataBadge>
+                  </>
+                )}
+                metadata={(
+                  <>
+                    <span>
+                      {policy.exemptRoles.length > 0
+                        ? `Exempt roles: ${policy.exemptRoles.join(', ')}`
+                        : 'No exempt roles'}
+                    </span>
+                    <span>Updated {new Date(policy.updatedAt).toLocaleString()}</span>
+                  </>
+                )}
+                onEdit={() => openEdit(policy)}
+                onDelete={() => void handleDelete(policy.id)}
+              />
+            ))}
+          </div>
         )}
-      </CardContent>
+      </SettingsPanel>
 
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingPolicy ? 'Edit Masking Policy' : 'Create Masking Policy'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Alert severity="error">{error}</Alert>}
+      <PolicyDialogShell
+        open={dialogOpen}
+        onOpenChange={closeDialog}
+        title={editingPolicy ? 'Edit Masking Policy' : 'Create Masking Policy'}
+        description="Choose how matching columns should be transformed and which tenant roles can bypass the mask."
+        footer={(
+          <>
+            <Button type="button" variant="outline" onClick={() => closeDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving || !formData.name || !formData.columnPattern || Boolean(patternError)}
+            >
+              {saving ? 'Saving...' : editingPolicy ? 'Update Policy' : 'Create Policy'}
+            </Button>
+          </>
+        )}
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-            {/* Template selector — only shown when creating */}
-            {!editingPolicy && (
-              <>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Start from template (optional)</InputLabel>
-                  <Select
-                    value=""
-                    label="Start from template (optional)"
-                    onChange={(e) => handleApplyTemplate(e.target.value)}
-                  >
-                    {(() => {
-                      const items: React.ReactNode[] = [];
-                      let lastCategory = '';
-                      for (const t of MASKING_TEMPLATES) {
-                        if (t.category !== lastCategory) {
-                          items.push(<ListSubheader key={`cat-${t.category}`}>{t.category}</ListSubheader>);
-                          lastCategory = t.category;
-                        }
-                        items.push(
-                          <MenuItem key={t.name} value={t.name}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                              <Chip label={STRATEGY_LABELS[t.strategy]} color={STRATEGY_COLORS[t.strategy]} size="small" sx={{ minWidth: 72 }} />
-                              <Typography variant="body2">{t.name}</Typography>
-                            </Box>
-                          </MenuItem>,
-                        );
-                      }
-                      return items;
-                    })()}
-                  </Select>
-                </FormControl>
-                <Divider />
-              </>
-            )}
+        {!editingPolicy && (
+          <PolicyTemplatePicker
+            title="Start from a template"
+            description="Use a proven pattern for common sensitive columns, then adapt the scope or exemptions for this tenant."
+            templates={MASKING_POLICY_TEMPLATES}
+            onApply={applyTemplate}
+          />
+        )}
 
-            <TextField
-              label="Name"
-              size="small"
-              fullWidth
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-            <TextField
-              label="Column Pattern (Regex)"
-              size="small"
-              fullWidth
-              required
-              value={formData.columnPattern}
-              onChange={(e) => setFormData({ ...formData, columnPattern: e.target.value })}
-              helperText="Regex to match column names, e.g. (password|ssn|credit_card|email)"
-              slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
-            />
-            <FormControl size="small" fullWidth>
-              <InputLabel>Masking Strategy</InputLabel>
+        <PolicyFormSection>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard label="Policy name" description="Use a readable name that makes incident review fast.">
+              <Input
+                aria-label="Policy name"
+                value={formData.name}
+                onChange={(event) => updateField('name', event.target.value)}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard label="Masking strategy" description="Choose how matched column values should be transformed.">
               <Select
                 value={formData.strategy}
-                label="Masking Strategy"
-                onChange={(e) => setFormData({ ...formData, strategy: e.target.value as MaskingStrategy })}
+                onValueChange={(value) => updateField('strategy', value as MaskingStrategy)}
               >
-                <MenuItem value="REDACT">Redact - Replace with ***REDACTED***</MenuItem>
-                <MenuItem value="HASH">Hash - SHA-256 truncated hash</MenuItem>
-                <MenuItem value="PARTIAL">Partial - Show first 25% of characters</MenuItem>
+                <SelectTrigger aria-label="Masking strategy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MASKING_STRATEGY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </FormControl>
-            <FormControl size="small" fullWidth>
-              <InputLabel>Exempt Roles</InputLabel>
-              <Select
-                multiple
-                value={formData.exemptRoles || []}
-                label="Exempt Roles"
-                onChange={handleRolesChange}
-                input={<OutlinedInput label="Exempt Roles" />}
-                renderValue={(selected) => (
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {selected.map((value) => (
-                      <Chip key={value} label={value} size="small" />
-                    ))}
-                  </Box>
-                )}
-              >
-                {ROLE_OPTIONS.map((role) => (
-                  <MenuItem key={role} value={role}>{role}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              label="Scope (optional)"
-              size="small"
-              fullWidth
-              value={formData.scope || ''}
-              onChange={(e) => setFormData({ ...formData, scope: e.target.value })}
-              helperText="Limit to a specific database or table name (leave empty for global)"
-            />
-            <TextField
-              label="Description"
-              size="small"
-              fullWidth
-              multiline
-              rows={2}
-              value={formData.description || ''}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={formData.enabled ?? true}
-                  onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                />
-              }
-              label="Enabled"
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving || !formData.name || !formData.columnPattern}
+              <p className="mt-2 text-xs text-muted-foreground">
+                {selectedStrategy?.description}
+              </p>
+            </SettingsFieldCard>
+          </div>
+
+          <SettingsFieldCard
+            label="Column pattern"
+            description="Use a regular expression that matches sensitive column names such as email, password, or credit_card."
           >
-            {saving ? <CircularProgress size={20} /> : editingPolicy ? 'Update' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Card>
+            <Input
+              aria-label="Column pattern"
+              value={formData.columnPattern}
+              onChange={(event) => updatePattern(event.target.value)}
+              className="font-mono text-xs"
+            />
+            <p className={`mt-2 text-xs ${patternError ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {patternError ?? 'The pattern is checked locally before save and validated again by the backend.'}
+            </p>
+          </SettingsFieldCard>
+
+          <PolicyRoleChecklist
+            label="Exempt roles"
+            description="Selected roles receive raw values and bypass the mask entirely."
+            options={MASKING_EXEMPT_ROLES}
+            selected={formData.exemptRoles ?? []}
+            onChange={(selected) => updateField('exemptRoles', selected)}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard
+              label="Scope"
+              description="Leave empty to apply the policy across every proxied database and table."
+            >
+              <Input
+                aria-label="Policy scope"
+                value={formData.scope ?? ''}
+                placeholder="database or table name"
+                onChange={(event) => updateField('scope', event.target.value)}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard
+              label="Description"
+              description="Optional context for reviewers explaining why this mask exists."
+            >
+              <Textarea
+                aria-label="Policy description"
+                value={formData.description ?? ''}
+                onChange={(event) => updateField('description', event.target.value)}
+              />
+            </SettingsFieldCard>
+          </div>
+
+          <SettingsSwitchRow
+            title="Enable this policy"
+            description="Disabled policies stay defined but no longer transform query results."
+            checked={formData.enabled ?? true}
+            onCheckedChange={(checked) => updateField('enabled', checked)}
+          />
+        </PolicyFormSection>
+      </PolicyDialogShell>
+    </>
   );
 }

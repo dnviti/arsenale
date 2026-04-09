@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-05T18:35:00Z
+generated-at: 2026-04-08T16:00:00Z
 source-files:
   - README.md
   - AGENT.md
@@ -19,6 +19,7 @@ source-files:
   - backend/cmd/control-plane-api/routes_operations.go
   - backend/cmd/control-plane-api/routes_secrets.go
   - deployment/ansible/playbooks/install.yml
+  - deployment/ansible/playbooks/dev_refresh.yml
   - deployment/ansible/playbooks/status.yml
   - deployment/ansible/install/capabilities.yml
   - client/vite.config.ts
@@ -138,7 +139,7 @@ Highest-value public prefixes:
 - `/api/vault` — personal vault lock/unlock, passkey-first re-unlock, recovery
 - `/api/connections` — connection CRUD, sharing, import/export, favorites
 - `/api/sessions` — SSH, RDP, VNC, database, DB tunnel, heartbeat, terminate
-- `/api/gateways` — gateway CRUD, templates, scaling, tunnel controls, instances
+- `/api/gateways` — gateway CRUD, derived operational status, templates, scaling, tunnel controls, instances
 - `/api/db-audit` — query audit logs, firewall rules, masking policies, rate limits
 - `/api/recordings` — recording list, stream, analyze, video export, audit trail
 - `/api/tenants` — tenant CRUD, users, invite, permissions, IP allowlist, MFA stats
@@ -206,14 +207,16 @@ Authoritative inputs:
 npm install
 make setup
 make dev
+make dev control-plane
 npm run dev
 make status
 make deploy
 make recover
 npm run verify
 npm run dev:api-acceptance
-go build -o /tmp/arsenale-cli ./tools/arsenale-cli
-/tmp/arsenale-cli --server https://localhost:3000 health
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
 ```
 
 ## 🧪 Development Bootstrap
@@ -230,6 +233,8 @@ It still seeds:
 
 With the default development capabilities, `make dev` includes the demo databases. Tunnel gateway fixtures still require `DEV_ZERO_TRUST=true`.
 If `multi_tenancy` is disabled, the seeded tenant remains the platform's only organization and the create/switch organization flows stay off.
+
+For code-only iteration, `make dev client`, `make dev gateways`, and `make dev control-plane` reuse the saved dev render artifacts and refresh only those services; installer/profile/cert/secret changes still require a full `make dev`.
 
 ## 📧 Email, SMS, And Security Config
 

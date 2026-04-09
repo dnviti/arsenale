@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { CircularProgress, Box } from '@mui/material';
+import { LoaderCircle } from 'lucide-react';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
 import PwaUpdateNotification from './components/common/PwaUpdateNotification';
 
@@ -18,9 +18,9 @@ const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
 
 function LazyFallback() {
   return (
-    <Box sx={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <CircularProgress />
-    </Box>
+    <div className="flex min-h-screen w-screen items-center justify-center bg-background">
+      <LoaderCircle className="size-8 animate-spin text-primary" aria-hidden="true" />
+    </div>
   );
 }
 import { useAuth } from './hooks/useAuth';

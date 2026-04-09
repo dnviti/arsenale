@@ -1,4 +1,6 @@
 import fs from 'fs';
+import path from 'path';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -16,6 +18,7 @@ const contentSecurityPolicy =
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(),
     VitePWA({
       registerType: 'prompt',
       includeAssets: [
@@ -118,6 +121,11 @@ export default defineConfig({
       },
     }),
   ],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, 'src'),
+    },
+  },
   build: {
     // Emit font files instead of inlining them as data: URLs so CSP can stay same-origin only.
     assetsInlineLimit: 0,
@@ -127,12 +135,6 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router')) {
             return 'vendor-react';
-          }
-          if (id.includes('node_modules/@mui/material') || id.includes('node_modules/@emotion/')) {
-            return 'vendor-mui';
-          }
-          if (id.includes('node_modules/@mui/icons-material')) {
-            return 'vendor-mui-icons';
           }
           if (id.includes('node_modules/@xterm/')) {
             return 'vendor-terminal';

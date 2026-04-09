@@ -61,6 +61,9 @@ interface UiPreferences {
   sqlEditorFontSize: number;
   sqlEditorFontFamily: string;
   sqlEditorMinimap: boolean;
+  workspaceActiveView: string;
+  workspaceSidebarOpen: boolean;
+  uiZoomLevel: number;
 }
 
 interface UiPreferencesState extends UiPreferences {
@@ -130,6 +133,9 @@ const defaults: UiPreferences = {
   sqlEditorFontSize: 14,
   sqlEditorFontFamily: 'Cascadia Code, Fira Code, JetBrains Mono, monospace',
   sqlEditorMinimap: false,
+  workspaceActiveView: 'remote',
+  workspaceSidebarOpen: true,
+  uiZoomLevel: 100,
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(

@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
+import { Badge } from '@/components/ui/badge';
 import {
-  Box, Typography, Slider, Button, Switch, FormControlLabel,
-  TextField, Stack, Chip, Dialog, DialogTitle, DialogContent,
-  DialogContentText, DialogActions, Paper, Alert,
-} from '@mui/material';
-import {
-  RocketLaunch as DeployIcon,
-  Delete as UndeployIcon,
-  Save as SaveIcon,
-} from '@mui/icons-material';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Rocket, Trash2, Save } from 'lucide-react';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { GatewayData } from '../../api/gateway.api';
 import { isGatewayGroup } from '../../utils/gatewayMode';
@@ -18,10 +23,10 @@ interface ScalingControlsProps {
   gateway: GatewayData;
 }
 
-const recommendationColor: Record<string, 'success' | 'info' | 'warning'> = {
-  stable: 'success',
-  'scale-up': 'info',
-  'scale-down': 'warning',
+const recommendationBadgeClass: Record<string, string> = {
+  stable: 'bg-green-500/15 text-green-400 border-green-500/30',
+  'scale-up': 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  'scale-down': 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
 };
 
 export default function ScalingControls({ gatewayId, gateway }: ScalingControlsProps) {
@@ -45,7 +50,6 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
   const [error, setError] = useState<string | null>(null);
   const isGroup = isGatewayGroup(gateway);
 
-  // Initial fetch on mount — real-time updates arrive via Socket.IO (scaling:updated)
   useEffect(() => {
     if (!isGroup) return undefined;
 
@@ -57,8 +61,6 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
     };
   }, [gatewayId, isGroup, fetchScalingStatus, watchScalingStatus, unwatchScalingStatus]);
 
-  // Sync local form state only when server-side config fields change
-  // (not on health probe updates which change lastHealthStatus, lastLatencyMs, etc.)
   useEffect(() => {
     setReplicas(gateway.desiredReplicas);
     setAutoScale(gateway.autoScale);
@@ -75,7 +77,6 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
     gateway.scaleDownCooldownSeconds,
   ]);
 
-  // Keep slider in sync with auto-scaler's target replicas
   useEffect(() => {
     if (scalingStatus && gateway.autoScale) {
       setReplicas(scalingStatus.targetReplicas);
@@ -138,193 +139,158 @@ export default function ScalingControls({ gatewayId, gateway }: ScalingControlsP
   };
 
   return (
-    <Box sx={{ mt: 1 }}>
+    <div className="mt-2">
       {error && (
-        <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
-          {error}
-        </Alert>
+        <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 text-xs">dismiss</button>
+        </div>
       )}
 
       {/* Deploy / Undeploy */}
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
+      <div className="flex items-center gap-3 mb-3">
         {!isGroup ? (
-          <Button
-            variant="contained"
-            startIcon={<DeployIcon />}
-            onClick={handleDeploy}
-            disabled={loading}
-            size="small"
-          >
+          <Button size="sm" onClick={handleDeploy} disabled={loading}>
+            <Rocket className="h-4 w-4 mr-1" />
             Deploy
           </Button>
         ) : (
-          <Button
-            variant="outlined"
-            color="error"
-            startIcon={<UndeployIcon />}
-            onClick={() => setUndeployOpen(true)}
-            disabled={loading}
-            size="small"
-          >
+          <Button variant="outline" size="sm" className="text-red-400 border-red-500/30 hover:bg-red-500/10" onClick={() => setUndeployOpen(true)} disabled={loading}>
+            <Trash2 className="h-4 w-4 mr-1" />
             Undeploy All
           </Button>
         )}
-      </Stack>
+      </div>
 
-      {/* Replicas slider (only when managed and auto-scale is off) */}
+      {/* Replicas slider */}
       {isGroup && !gateway.autoScale && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>Manual Scaling</Typography>
-          <Stack direction="row" spacing={2} alignItems="center">
-            <Typography variant="body2" sx={{ minWidth: 60 }}>
+        <div className="rounded-lg border p-4 mb-3">
+          <p className="text-sm font-medium mb-2">Manual Scaling</p>
+          <div className="flex items-center gap-3">
+            <span className="text-sm min-w-[60px]">
               Replicas: {replicas}
-            </Typography>
+            </span>
             <Slider
-              value={replicas}
-              onChange={(_, v) => setReplicas(v as number)}
+              value={[replicas]}
+              onValueChange={(v) => setReplicas(v[0])}
               min={0}
               max={10}
               step={1}
-              marks
-              valueLabelDisplay="auto"
-              sx={{ flex: 1, maxWidth: 300 }}
+              className="flex-1 max-w-[300px]"
             />
             <Button
-              variant="outlined"
-              size="small"
+              variant="outline"
+              size="sm"
               onClick={handleScale}
               disabled={loading || replicas === gateway.desiredReplicas}
             >
               Apply
             </Button>
-          </Stack>
-        </Paper>
+          </div>
+        </div>
       )}
 
-      {/* Auto-Scale config (only when managed) */}
+      {/* Auto-Scale config */}
       {isGroup && (
-        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-          <FormControlLabel
-            control={
-              <Switch checked={autoScale} onChange={(_, v) => setAutoScale(v)} size="small" />
-            }
-            label={<Typography variant="subtitle2">Auto-Scale</Typography>}
-          />
+        <div className="rounded-lg border p-4 mb-3">
+          <div className="flex items-center gap-3 mb-2">
+            <Switch checked={autoScale} onCheckedChange={setAutoScale} />
+            <span className="text-sm font-medium">Auto-Scale</span>
+          </div>
 
           {autoScale && (
-            <Stack spacing={2} sx={{ mt: 1 }}>
-              <Stack direction="row" spacing={2} flexWrap="wrap">
-                <TextField
-                  label="Min Replicas"
-                  type="number"
-                  size="small"
-                  value={minReplicas}
-                  onChange={(e) => setMinReplicas(e.target.value)}
-                  inputProps={{ min: 0, max: 20 }}
-                  sx={{ width: 130 }}
-                />
-                <TextField
-                  label="Max Replicas"
-                  type="number"
-                  size="small"
-                  value={maxReplicas}
-                  onChange={(e) => setMaxReplicas(e.target.value)}
-                  inputProps={{ min: 1, max: 20 }}
-                  sx={{ width: 130 }}
-                />
-                <TextField
-                  label="Sessions/Instance"
-                  type="number"
-                  size="small"
-                  value={sessionsPerInstance}
-                  onChange={(e) => setSessionsPerInstance(e.target.value)}
-                  inputProps={{ min: 1, max: 100 }}
-                  sx={{ width: 160 }}
-                />
-                <TextField
-                  label="Cooldown (s)"
-                  type="number"
-                  size="small"
-                  value={cooldown}
-                  onChange={(e) => setCooldown(e.target.value)}
-                  inputProps={{ min: 60, max: 3600 }}
-                  sx={{ width: 130 }}
-                />
-              </Stack>
+            <div className="space-y-3 mt-3">
+              <div className="flex flex-wrap gap-3">
+                <div className="w-[130px]">
+                  <Label className="text-xs">Min Replicas</Label>
+                  <Input type="number" value={minReplicas} onChange={(e) => setMinReplicas(e.target.value)} min={0} max={20} className="h-8" />
+                </div>
+                <div className="w-[130px]">
+                  <Label className="text-xs">Max Replicas</Label>
+                  <Input type="number" value={maxReplicas} onChange={(e) => setMaxReplicas(e.target.value)} min={1} max={20} className="h-8" />
+                </div>
+                <div className="w-[160px]">
+                  <Label className="text-xs">Sessions/Instance</Label>
+                  <Input type="number" value={sessionsPerInstance} onChange={(e) => setSessionsPerInstance(e.target.value)} min={1} max={100} className="h-8" />
+                </div>
+                <div className="w-[130px]">
+                  <Label className="text-xs">Cooldown (s)</Label>
+                  <Input type="number" value={cooldown} onChange={(e) => setCooldown(e.target.value)} min={60} max={3600} className="h-8" />
+                </div>
+              </div>
               <Button
-                variant="outlined"
-                startIcon={<SaveIcon />}
+                variant="outline"
+                size="sm"
                 onClick={handleSaveConfig}
                 disabled={loading}
-                size="small"
-                sx={{ alignSelf: 'flex-start' }}
               >
+                <Save className="h-4 w-4 mr-1" />
                 Save Scaling Config
               </Button>
-            </Stack>
+            </div>
           )}
-        </Paper>
+        </div>
       )}
 
       {/* Scaling status */}
       {scalingStatus && isGroup && (
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>Scaling Status</Typography>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <Chip
-              label={scalingStatus.recommendation === 'stable' ? 'Stable'
+        <div className="rounded-lg border p-4">
+          <p className="text-sm font-medium mb-2">Scaling Status</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge className={recommendationBadgeClass[scalingStatus.recommendation] ?? ''}>
+              {scalingStatus.recommendation === 'stable' ? 'Stable'
                 : scalingStatus.recommendation === 'scale-up' ? 'Scaling Up'
                 : 'Scaling Down'}
-              size="small"
-              color={recommendationColor[scalingStatus.recommendation] ?? 'default'}
-            />
-            <Typography variant="body2">
+            </Badge>
+            <span className="text-sm">
               {scalingStatus.activeSessions} sessions across {scalingStatus.currentReplicas} instances
               (target: {scalingStatus.targetReplicas})
-            </Typography>
+            </span>
             {scalingStatus.cooldownRemaining > 0 && (
-              <Typography variant="caption" color="text.secondary">
+              <span className="text-xs text-muted-foreground">
                 Cooldown: {scalingStatus.cooldownRemaining}s remaining
-              </Typography>
+              </span>
             )}
-          </Stack>
+          </div>
           {scalingStatus.instanceSessions && scalingStatus.instanceSessions.length > 0 && (
-            <Box sx={{ mt: 1 }}>
-              <Typography variant="caption" color="text.secondary">
+            <div className="mt-2">
+              <span className="text-xs text-muted-foreground">
                 Per-instance distribution:
-              </Typography>
-              <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mt: 0.5 }}>
+              </span>
+              <div className="flex flex-wrap gap-1 mt-1">
                 {scalingStatus.instanceSessions.map((is) => (
-                  <Chip
+                  <Badge
                     key={is.instanceId}
-                    label={`${is.containerName.split('-').pop()}: ${is.count}`}
-                    size="small"
-                    variant="outlined"
-                    color={is.count === 0 ? 'default' : 'primary'}
-                  />
+                    variant="outline"
+                    className={is.count === 0 ? '' : 'border-primary/50 text-primary'}
+                  >
+                    {is.containerName.split('-').pop()}: {is.count}
+                  </Badge>
                 ))}
-              </Stack>
-            </Box>
+              </div>
+            </div>
           )}
-        </Paper>
+        </div>
       )}
 
       {/* Undeploy confirmation */}
-      <Dialog open={undeployOpen} onClose={() => setUndeployOpen(false)}>
-        <DialogTitle>Undeploy Gateway</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This will remove all managed instances for <strong>{gateway.name}</strong>.
-            Active sessions through this gateway will be terminated.
-          </DialogContentText>
+      <Dialog open={undeployOpen} onOpenChange={(v) => { if (!v) setUndeployOpen(false); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Undeploy Gateway</DialogTitle>
+            <DialogDescription>
+              This will remove all managed instances for <strong>{gateway.name}</strong>.
+              Active sessions through this gateway will be terminated.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUndeployOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleUndeploy}>
+              Undeploy
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setUndeployOpen(false)}>Cancel</Button>
-          <Button onClick={handleUndeploy} color="error" variant="contained">
-            Undeploy
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }

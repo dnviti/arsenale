@@ -1,27 +1,28 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Box, Typography, Chip, IconButton, Accordion, AccordionSummary,
-  AccordionDetails, Divider, Tooltip, Alert, Button, CircularProgress,
-} from '@mui/material';
+  Pencil, Share2, Trash2, Star, Copy, Eye, EyeOff, ChevronDown,
+  KeyRound, Key, ShieldCheck, Webhook, StickyNote,
+  ExternalLink, Link, ShieldAlert, Shield, Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
 import {
-  Edit as EditIcon, Share as ShareIcon, Delete as DeleteIcon,
-  Star, StarBorder, ContentCopy as CopyIcon,
-  Visibility, VisibilityOff, ExpandMore as ExpandMoreIcon,
-  VpnKey, Key, VerifiedUser, Api, Notes,
-  OpenInNew as LinkIcon, Link as ExternalLinkIcon,
-  GppBad as BreachIcon, Security as SecurityIcon,
-} from '@mui/icons-material';
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from '@/components/ui/accordion';
+import { cn } from '@/lib/utils';
 import type { SecretDetail, SecretPayload, SecretType, SecretScope } from '../../api/secrets.api';
 import SecretVersionHistory from './SecretVersionHistory';
 import PasswordRotationPanel from './PasswordRotationPanel';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 
 const TYPE_ICONS: Record<SecretType, React.ReactNode> = {
-  LOGIN: <VpnKey />,
-  SSH_KEY: <Key />,
-  CERTIFICATE: <VerifiedUser />,
-  API_KEY: <Api />,
-  SECURE_NOTE: <Notes />,
+  LOGIN: <KeyRound className="h-5 w-5" />,
+  SSH_KEY: <Key className="h-5 w-5" />,
+  CERTIFICATE: <ShieldCheck className="h-5 w-5" />,
+  API_KEY: <Webhook className="h-5 w-5" />,
+  SECURE_NOTE: <StickyNote className="h-5 w-5" />,
 };
 
 const TYPE_LABELS: Record<SecretType, string> = {
@@ -72,32 +73,33 @@ function SensitiveField({ label, value }: { label: string; value: string }) {
   };
 
   return (
-    <Box sx={{ mb: 1.5 }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography
-          variant="body2"
-          sx={{
-            flex: 1,
-            fontFamily: revealed ? 'monospace' : undefined,
-            wordBreak: 'break-all',
-            whiteSpace: revealed ? 'pre-wrap' : undefined,
-          }}
+    <div className="mb-3">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1">
+        <p
+          className={cn(
+            'flex-1 text-sm break-all',
+            revealed && 'font-mono whitespace-pre-wrap',
+          )}
         >
-          {revealed ? value : '••••••••••••'}
-        </Typography>
-        <Tooltip title={revealed ? 'Hide' : 'Reveal'}>
-          <IconButton size="small" onClick={revealed ? handleHide : handleReveal}>
-            {revealed ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-          </IconButton>
-        </Tooltip>
-        <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-          <IconButton size="small" onClick={() => handleCopy(value)}>
-            <CopyIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
-    </Box>
+          {revealed ? value : '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022'}
+        </p>
+        <Button
+          variant="ghost" size="icon" className="h-7 w-7"
+          onClick={revealed ? handleHide : handleReveal}
+          title={revealed ? 'Hide' : 'Reveal'}
+        >
+          {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </Button>
+        <Button
+          variant="ghost" size="icon" className="h-7 w-7"
+          onClick={() => handleCopy(value)}
+          title={copied ? 'Copied!' : 'Copy'}
+        >
+          <Copy className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -105,28 +107,32 @@ function PlainField({ label, value, copyable, isLink }: { label: string; value: 
   const { copied, copy: handleCopy } = useCopyToClipboard();
 
   return (
-    <Box sx={{ mb: 1.5 }}>
-      <Typography variant="caption" color="text.secondary">{label}</Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography variant="body2" sx={{ flex: 1, wordBreak: 'break-all', whiteSpace: 'pre-wrap' }}>
+    <div className="mb-3">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-1">
+        <p className="flex-1 text-sm break-all whitespace-pre-wrap">
           {value}
-        </Typography>
+        </p>
         {isLink && value && (
-          <Tooltip title="Open in browser">
-            <IconButton size="small" onClick={() => window.open(value.startsWith('http') ? value : `https://${value}`, '_blank')}>
-              <LinkIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Button
+            variant="ghost" size="icon" className="h-7 w-7"
+            onClick={() => window.open(value.startsWith('http') ? value : `https://${value}`, '_blank')}
+            title="Open in browser"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </Button>
         )}
         {copyable && (
-          <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-            <IconButton size="small" onClick={() => handleCopy(value)}>
-              <CopyIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Button
+            variant="ghost" size="icon" className="h-7 w-7"
+            onClick={() => handleCopy(value)}
+            title={copied ? 'Copied!' : 'Copy'}
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
         )}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }
 
@@ -170,14 +176,14 @@ function renderSecretFields(data: SecretPayload) {
           <SensitiveField label="API Key" value={data.apiKey} />
           {data.endpoint && <PlainField label="Endpoint" value={data.endpoint} copyable isLink />}
           {data.headers && Object.entries(data.headers).length > 0 && (
-            <Box sx={{ mb: 1.5 }}>
-              <Typography variant="caption" color="text.secondary">Headers</Typography>
+            <div className="mb-3">
+              <span className="text-xs text-muted-foreground">Headers</span>
               {Object.entries(data.headers).map(([k, v]) => (
-                <Typography key={k} variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                <p key={k} className="font-mono text-xs">
                   {k}: {v}
-                </Typography>
+                </p>
               ))}
-            </Box>
+            </div>
           )}
           {data.notes && <PlainField label="Notes" value={data.notes} />}
         </>
@@ -226,64 +232,63 @@ export default function SecretDetailView({
   };
 
   return (
-    <Box sx={{ p: 2, overflow: 'auto', height: '100%' }}>
+    <div className="p-4 overflow-auto h-full">
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+      <div className="flex items-center gap-2 mb-4">
         {TYPE_ICONS[secret.type]}
-        <Typography variant="h6" sx={{ flex: 1 }}>{secret.name}</Typography>
-        <Chip label={TYPE_LABELS[secret.type]} size="small" variant="outlined" />
-        <Chip label={SCOPE_LABELS[secret.scope]} size="small" color={secret.scope === 'PERSONAL' ? 'default' : secret.scope === 'TEAM' ? 'primary' : 'secondary'} />
+        <h3 className="text-lg font-semibold flex-1">{secret.name}</h3>
+        <Badge variant="outline">{TYPE_LABELS[secret.type]}</Badge>
+        <Badge variant={secret.scope === 'PERSONAL' ? 'secondary' : 'default'}>
+          {SCOPE_LABELS[secret.scope]}
+        </Badge>
         {secret.shared && (
-          <Chip label={secret.permission === 'READ_ONLY' ? 'Read Only' : 'Full Access'} size="small" color="info" variant="outlined" />
+          <Badge variant="outline">
+            {secret.permission === 'READ_ONLY' ? 'Read Only' : 'Full Access'}
+          </Badge>
         )}
-      </Box>
+      </div>
 
       {/* Action buttons */}
-      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
-        <IconButton size="small" onClick={onToggleFavorite} title="Toggle favorite">
-          {secret.isFavorite ? <Star color="warning" /> : <StarBorder />}
-        </IconButton>
+      <div className="flex gap-1 mb-4">
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onToggleFavorite} title="Toggle favorite">
+          <Star className={cn('h-4 w-4', secret.isFavorite && 'fill-yellow-500 text-yellow-500')} />
+        </Button>
         {!isReadOnly && (
           <>
-            <IconButton size="small" onClick={onEdit} title="Edit">
-              <EditIcon />
-            </IconButton>
-            <IconButton size="small" onClick={onShare} title="Share">
-              <ShareIcon />
-            </IconButton>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onEdit} title="Edit">
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onShare} title="Share">
+              <Share2 className="h-4 w-4" />
+            </Button>
             {onExternalShare && (
-              <IconButton size="small" onClick={onExternalShare} title="External share link">
-                <ExternalLinkIcon />
-              </IconButton>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onExternalShare} title="External share link">
+                <Link className="h-4 w-4" />
+              </Button>
             )}
-            <IconButton size="small" onClick={onDelete} title="Delete" color="error">
-              <DeleteIcon />
-            </IconButton>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={onDelete} title="Delete">
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </>
         )}
-      </Box>
+      </div>
 
       {secret.pwnedCount > 0 && (
-        <Alert
-          severity="error"
-          icon={<BreachIcon />}
-          sx={{ mb: 2 }}
-          action={
-            !isReadOnly ? (
-              <Button color="error" size="small" onClick={onEdit}>
-                Rotate
-              </Button>
-            ) : undefined
-          }
-        >
-          Password found in {secret.pwnedCount.toLocaleString()} data breach(es). You should change this password immediately.
+        <Alert variant="destructive" className="mb-4 flex items-start gap-2">
+          <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            Password found in {secret.pwnedCount.toLocaleString()} data breach(es). You should change this password immediately.
+          </div>
+          {!isReadOnly && (
+            <Button variant="destructive" size="sm" onClick={onEdit}>Rotate</Button>
+          )}
         </Alert>
       )}
 
       {daysUntilExpiry !== null && daysUntilExpiry <= 30 && (
         <Alert
-          severity={daysUntilExpiry <= 0 ? 'error' : daysUntilExpiry <= 7 ? 'warning' : 'info'}
-          sx={{ mb: 2 }}
+          variant={daysUntilExpiry <= 0 ? 'destructive' : daysUntilExpiry <= 7 ? 'warning' : 'info'}
+          className="mb-4"
         >
           {daysUntilExpiry <= 0
             ? 'This secret has expired. Update the credentials or the expiry date.'
@@ -292,89 +297,95 @@ export default function SecretDetailView({
       )}
 
       {hasCheckablePassword && secret.pwnedCount === 0 && onCheckBreach && (
-        <Box sx={{ mb: 2 }}>
+        <div className="mb-4">
           <Button
-            variant="outlined"
-            size="small"
-            startIcon={breachChecking ? <CircularProgress size={16} /> : <SecurityIcon />}
+            variant="outline"
+            size="sm"
             onClick={handleCheckBreach}
             disabled={breachChecking}
           >
+            {breachChecking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Shield className="h-4 w-4 mr-2" />}
             {breachChecking ? 'Checking...' : 'Check for breaches'}
           </Button>
-        </Box>
+        </div>
       )}
 
       {secret.description && (
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        <p className="text-sm text-muted-foreground mb-4">
           {secret.description}
-        </Typography>
+        </p>
       )}
 
-      <Divider sx={{ mb: 2 }} />
+      <Separator className="mb-4" />
 
       {/* Type-specific fields */}
       {renderSecretFields(secret.data)}
 
-      <Divider sx={{ my: 2 }} />
+      <Separator className="my-4" />
 
       {/* Metadata */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+      <div className="flex flex-wrap gap-1 mb-2">
         {secret.tags.map((t) => (
-          <Chip key={t} label={t} size="small" variant="outlined" />
+          <Badge key={t} variant="outline">{t}</Badge>
         ))}
-      </Box>
+      </div>
 
-      <Typography variant="caption" color="text.secondary" display="block">
+      <span className="text-xs text-muted-foreground block">
         Created: {formatDate(secret.createdAt)}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" display="block">
+      </span>
+      <span className="text-xs text-muted-foreground block">
         Updated: {formatDate(secret.updatedAt)}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" display="block">
+      </span>
+      <span className="text-xs text-muted-foreground block">
         Version: {secret.currentVersion}
-      </Typography>
+      </span>
 
       {daysUntilExpiry !== null && (
-        <Chip
-          label={daysUntilExpiry <= 0 ? 'Expired' : `Expires in ${daysUntilExpiry} day(s)`}
-          size="small"
-          color={daysUntilExpiry <= 0 ? 'error' : daysUntilExpiry <= 7 ? 'error' : daysUntilExpiry <= 30 ? 'warning' : 'default'}
-          sx={{ mt: 1 }}
-        />
+        <Badge
+          variant={daysUntilExpiry <= 7 ? 'destructive' : daysUntilExpiry <= 30 ? 'secondary' : 'outline'}
+          className="mt-2"
+        >
+          {daysUntilExpiry <= 0 ? 'Expired' : `Expires in ${daysUntilExpiry} day(s)`}
+        </Badge>
       )}
 
       {/* Password Rotation (LOGIN secrets only) */}
       {secret.type === 'LOGIN' && (
-        <Accordion sx={{ mt: 2 }} disableGutters elevation={0} variant="outlined">
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography variant="subtitle2">Password Rotation</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <PasswordRotationPanel secretId={secret.id} isReadOnly={isReadOnly} />
-          </AccordionDetails>
+        <Accordion type="single" collapsible className="mt-4">
+          <AccordionItem value="rotation">
+            <AccordionTrigger>
+              <span className="text-sm font-medium">Password Rotation</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <PasswordRotationPanel secretId={secret.id} isReadOnly={isReadOnly} />
+            </AccordionContent>
+          </AccordionItem>
         </Accordion>
       )}
 
       {/* Version history */}
-      <Accordion sx={{ mt: 2 }} disableGutters elevation={0} variant="outlined">
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="subtitle2">
-            Version History
-            {secret.currentVersion > 1 && (
-              <Chip label={`${secret.currentVersion} versions`} size="small" sx={{ ml: 1, height: 18, fontSize: '0.65rem' }} />
-            )}
-          </Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <SecretVersionHistory
-            secretId={secret.id}
-            currentVersion={secret.currentVersion}
-            currentData={secret.data}
-            onRestore={onRestore}
-          />
-        </AccordionDetails>
+      <Accordion type="single" collapsible className="mt-4">
+        <AccordionItem value="history">
+          <AccordionTrigger>
+            <span className="text-sm font-medium">
+              Version History
+              {secret.currentVersion > 1 && (
+                <Badge variant="secondary" className="ml-2 text-[0.65rem] px-1.5 py-0">
+                  {secret.currentVersion} versions
+                </Badge>
+              )}
+            </span>
+          </AccordionTrigger>
+          <AccordionContent>
+            <SecretVersionHistory
+              secretId={secret.id}
+              currentVersion={secret.currentVersion}
+              currentData={secret.data}
+              onRestore={onRestore}
+            />
+          </AccordionContent>
+        </AccordionItem>
       </Accordion>
-    </Box>
+    </div>
   );
 }

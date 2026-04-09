@@ -1,18 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import {
-  Box, Typography, Button, Dialog, DialogContent, IconButton, Chip, Divider,
-  CircularProgress, Alert, Paper, Tooltip, AppBar, Toolbar,
-} from '@mui/material';
+  X, Copy, GitBranch, Clock, Table2, Ban, List, Check, Loader2, Info,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import {
-  Close as CloseIcon,
-  ContentCopy as CopyIcon,
-  AccountTree as PlanIcon,
-  Timer as TimerIcon,
-  TableChart as TableIcon,
-  Block as BlockIcon,
-  ViewList as RowsIcon,
-  Check as CheckIcon,
-} from '@mui/icons-material';
+  Dialog, DialogContent,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { getExecutionPlan, type ExecutionPlanResponse } from '../../api/database.api';
 import { extractApiError } from '../../utils/apiError';
 import ExecutionPlanTree from './ExecutionPlanTree';
@@ -112,213 +108,204 @@ export default function QueryVisualizer({
   }, [open]);
 
   const durationColor = executionTimeMs == null
-    ? 'default'
+    ? 'text-muted-foreground border-border'
     : executionTimeMs < 100
-      ? 'success'
+      ? 'text-green-400 border-green-500/30'
       : executionTimeMs < 1000
-        ? 'warning'
-        : 'error';
+        ? 'text-yellow-400 border-yellow-500/30'
+        : 'text-red-400 border-red-500/30';
+
+  const durationBarColor = executionTimeMs == null
+    ? 'bg-primary'
+    : executionTimeMs < 100
+      ? 'bg-green-500'
+      : executionTimeMs < 1000
+        ? 'bg-yellow-500'
+        : 'bg-red-500';
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      PaperProps={{ sx: { maxHeight: '90vh' } }}
-    >
-      <AppBar position="static" color="default" elevation={0}>
-        <Toolbar variant="dense">
-          <IconButton edge="start" onClick={onClose} sx={{ mr: 1 }}>
-            <CloseIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ flex: 1 }}>Query Visualizer</Typography>
-          <Chip
-            label={queryType}
-            size="small"
-            color={blocked ? 'error' : 'primary'}
-            variant="outlined"
-          />
-        </Toolbar>
-      </AppBar>
-
-      <DialogContent sx={{ p: 2 }}>
-        {/* Section 1: Syntax-highlighted SQL */}
-        <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          SQL Query
-          <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-            <IconButton size="small" onClick={handleCopy}>
-              {copied ? <CheckIcon fontSize="small" color="success" /> : <CopyIcon fontSize="small" />}
-            </IconButton>
-          </Tooltip>
-        </Typography>
-        <Paper
-          variant="outlined"
-          sx={{
-            p: 1.5, mb: 2.5, fontFamily: 'monospace', fontSize: '0.85rem',
-            whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 250,
-            overflow: 'auto', bgcolor: 'grey.900', color: 'grey.100',
-            borderRadius: 1,
-          }}
-        >
-          {queryText}
-        </Paper>
-
-        {/* Section 2: Execution metadata */}
-        <Typography variant="subtitle2" gutterBottom>Execution Metadata</Typography>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2.5 }}>
-          <Chip
-            icon={<TimerIcon />}
-            label={executionTimeMs != null ? `${executionTimeMs} ms` : 'N/A'}
-            size="small"
-            color={durationColor as 'default' | 'success' | 'warning' | 'error'}
-            variant="outlined"
-          />
-          <Chip
-            icon={<RowsIcon />}
-            label={rowsAffected != null ? `${rowsAffected.toLocaleString()} rows` : 'N/A'}
-            size="small"
-            variant="outlined"
-          />
-          {tablesAccessed.length > 0 && tablesAccessed.map((t) => (
-            <Chip key={t} icon={<TableIcon />} label={t} size="small" variant="outlined" />
-          ))}
-          {blocked && (
-            <Chip icon={<BlockIcon />} label="Blocked" size="small" color="error" />
-          )}
-          {blockReason && !blocked && (
-            <Chip label={`Alert: ${blockReason}`} size="small" color="warning" />
-          )}
-        </Box>
-
-        {/* Timeline bar */}
-        {executionTimeMs != null && (
-          <Box sx={{ mb: 2.5 }}>
-            <Typography variant="caption" color="text.secondary">Duration</Typography>
-            <Box sx={{ position: 'relative', height: 8, bgcolor: 'action.hover', borderRadius: 1, overflow: 'hidden', mt: 0.5 }}>
-              <Box
-                sx={{
-                  position: 'absolute', left: 0, top: 0, height: '100%',
-                  width: `${Math.min(100, (executionTimeMs / 5000) * 100)}%`,
-                  bgcolor: durationColor === 'success' ? 'success.main'
-                    : durationColor === 'warning' ? 'warning.main'
-                      : durationColor === 'error' ? 'error.main' : 'primary.main',
-                  borderRadius: 1,
-                  transition: 'width 0.5s ease',
-                }}
-              />
-            </Box>
-          </Box>
-        )}
-
-        <Divider sx={{ mb: 2 }} />
-
-        {/* Section 3: Execution Plan */}
-        <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <PlanIcon fontSize="small" />
-          Execution Plan
-        </Typography>
-
-        {/* Stored plan from audit log */}
-        {hasStoredPlan && (
-          <Box sx={{ mb: 2.5 }}>
-            {storedExecutionPlan.supported ? (
-              <ExecutionPlanTree
-                plan={storedExecutionPlan.plan}
-                format={(storedExecutionPlan.format as 'json' | 'xml' | 'text') ?? 'json'}
-                raw={storedExecutionPlan.raw as string | undefined}
-              />
-            ) : (
-              <Alert severity="info">
-                Execution plans are not supported for this database protocol.
-              </Alert>
-            )}
-          </Box>
-        )}
-
-        {/* Live session plan fetch */}
-        {!hasStoredPlan && !canExplain && (
-          <Alert severity="info" sx={{ mb: 2 }}>
-            {blocked
-              ? 'Execution plan is not available for blocked queries.'
-              : !sessionId
-                ? 'No persisted execution plan is stored for this audit entry. Enable execution plan persistence on the connection to retain plans after the session closes.'
-                : unsupportedProtocols.includes(dbProtocol ?? '')
-                  ? `Execution plans are not supported for ${dbProtocol}.`
-                  : 'Execution plan is not available.'}
-          </Alert>
-        )}
-
-        {!hasStoredPlan && canExplain && !planResult && !planLoading && !planError && (
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Waiting for query execution...
-          </Typography>
-        )}
-
-        {!hasStoredPlan && planLoading && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <CircularProgress size={20} />
-            <Typography variant="body2" color="text.secondary">Fetching execution plan...</Typography>
-          </Box>
-        )}
-
-        {!hasStoredPlan && planError && (
-          <Alert
-            severity="error"
-            sx={{ mb: 2 }}
-            action={
-              <Button size="small" color="inherit" onClick={handleGetPlan}>
-                Retry
-              </Button>
-            }
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] p-0 gap-0" showCloseButton={false}>
+        {/* Header bar */}
+        <div className="flex items-center px-4 py-2 border-b border-border bg-card">
+          <Button variant="ghost" size="icon" className="size-8 mr-2" onClick={onClose}>
+            <X className="size-4" />
+          </Button>
+          <span className="flex-1 text-base font-semibold">Query Visualizer</span>
+          <Badge
+            variant="outline"
+            className={cn(blocked ? 'text-red-400 border-red-500/30' : 'text-primary border-primary/30')}
           >
-            {planError}
-          </Alert>
-        )}
+            {queryType}
+          </Badge>
+        </div>
 
-        {!hasStoredPlan && planResult && (
-          <Box sx={{ mb: 2.5 }}>
-            {planResult.supported ? (
-              <ExecutionPlanTree
-                plan={planResult.plan}
-                format={planResult.format ?? 'json'}
-                raw={planResult.raw}
-              />
-            ) : (
-              <Alert severity="info">
-                Execution plans are not supported for this database protocol.
-              </Alert>
+        <div className="p-4 overflow-auto max-h-[calc(90vh-56px)]">
+          {/* Section 1: SQL */}
+          <div className="flex items-center gap-2 mb-2">
+            <h4 className="text-sm font-semibold">SQL Query</h4>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              title={copied ? 'Copied!' : 'Copy to clipboard'}
+              onClick={handleCopy}
+            >
+              {copied ? <Check className="size-4 text-green-400" /> : <Copy className="size-4" />}
+            </Button>
+          </div>
+          <div className="p-3 mb-5 font-mono text-[0.85rem] whitespace-pre-wrap break-all max-h-[250px] overflow-auto bg-[#111] text-gray-100 rounded border border-border">
+            {queryText}
+          </div>
+
+          {/* Section 2: Execution metadata */}
+          <h4 className="text-sm font-semibold mb-2">Execution Metadata</h4>
+          <div className="flex flex-wrap gap-2 mb-5">
+            <Badge variant="outline" className={cn('gap-1', durationColor)}>
+              <Clock className="size-3" />
+              {executionTimeMs != null ? `${executionTimeMs} ms` : 'N/A'}
+            </Badge>
+            <Badge variant="outline" className="gap-1">
+              <List className="size-3" />
+              {rowsAffected != null ? `${rowsAffected.toLocaleString()} rows` : 'N/A'}
+            </Badge>
+            {tablesAccessed.length > 0 && tablesAccessed.map((t) => (
+              <Badge key={t} variant="outline" className="gap-1">
+                <Table2 className="size-3" />
+                {t}
+              </Badge>
+            ))}
+            {blocked && (
+              <Badge variant="destructive" className="gap-1">
+                <Ban className="size-3" />
+                Blocked
+              </Badge>
             )}
-          </Box>
-        )}
-
-        {/* Section 4: AI Optimization */}
-        {canExplain && (
-          <>
-            <Divider sx={{ mb: 2 }} />
-            <Typography variant="subtitle2" gutterBottom>AI Query Optimization</Typography>
-
-            {!showAiOptimizer ? (
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setShowAiOptimizer(true)}
-                sx={{ mb: 2 }}
-              >
-                Optimize with AI
-              </Button>
-            ) : (
-              <AiQueryOptimizer
-                sql={queryText}
-                executionPlan={planResult?.plan ?? null}
-                sessionId={sessionId ?? ''}
-                dbProtocol={dbProtocol ?? ''}
-                onApply={onApplySql}
-                onDismiss={() => setShowAiOptimizer(false)}
-              />
+            {blockReason && !blocked && (
+              <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/30">
+                Alert: {blockReason}
+              </Badge>
             )}
-          </>
-        )}
+          </div>
+
+          {/* Timeline bar */}
+          {executionTimeMs != null && (
+            <div className="mb-5">
+              <span className="text-xs text-muted-foreground">Duration</span>
+              <div className="relative h-2 bg-accent/50 rounded overflow-hidden mt-1">
+                <div
+                  className={cn('absolute left-0 top-0 h-full rounded transition-[width] duration-500', durationBarColor)}
+                  style={{ width: `${Math.min(100, (executionTimeMs / 5000) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          <Separator className="mb-4" />
+
+          {/* Section 3: Execution Plan */}
+          <div className="flex items-center gap-2 mb-2">
+            <GitBranch className="size-4" />
+            <h4 className="text-sm font-semibold">Execution Plan</h4>
+          </div>
+
+          {/* Stored plan from audit log */}
+          {hasStoredPlan && (
+            <div className="mb-5">
+              {storedExecutionPlan.supported ? (
+                <ExecutionPlanTree
+                  plan={storedExecutionPlan.plan}
+                  format={(storedExecutionPlan.format as 'json' | 'xml' | 'text') ?? 'json'}
+                  raw={storedExecutionPlan.raw as string | undefined}
+                />
+              ) : (
+                <div className="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400 flex items-center gap-2">
+                  <Info className="size-4 shrink-0" />
+                  Execution plans are not supported for this database protocol.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Live session plan fetch */}
+          {!hasStoredPlan && !canExplain && (
+            <div className="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400 mb-4 flex items-center gap-2">
+              <Info className="size-4 shrink-0" />
+              {blocked
+                ? 'Execution plan is not available for blocked queries.'
+                : !sessionId
+                  ? 'No persisted execution plan is stored for this audit entry. Enable execution plan persistence on the connection to retain plans after the session closes.'
+                  : unsupportedProtocols.includes(dbProtocol ?? '')
+                    ? `Execution plans are not supported for ${dbProtocol}.`
+                    : 'Execution plan is not available.'}
+            </div>
+          )}
+
+          {!hasStoredPlan && canExplain && !planResult && !planLoading && !planError && (
+            <p className="text-sm text-muted-foreground mb-4">
+              Waiting for query execution...
+            </p>
+          )}
+
+          {!hasStoredPlan && planLoading && (
+            <div className="flex items-center gap-2 mb-4">
+              <Loader2 className="size-5 animate-spin" />
+              <span className="text-sm text-muted-foreground">Fetching execution plan...</span>
+            </div>
+          )}
+
+          {!hasStoredPlan && planError && (
+            <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 mb-4 flex items-center justify-between">
+              <span>{planError}</span>
+              <Button variant="ghost" size="sm" onClick={handleGetPlan}>Retry</Button>
+            </div>
+          )}
+
+          {!hasStoredPlan && planResult && (
+            <div className="mb-5">
+              {planResult.supported ? (
+                <ExecutionPlanTree
+                  plan={planResult.plan}
+                  format={planResult.format ?? 'json'}
+                  raw={planResult.raw}
+                />
+              ) : (
+                <div className="rounded border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400 flex items-center gap-2">
+                  <Info className="size-4 shrink-0" />
+                  Execution plans are not supported for this database protocol.
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Section 4: AI Optimization */}
+          {canExplain && (
+            <>
+              <Separator className="mb-4" />
+              <h4 className="text-sm font-semibold mb-2">AI Query Optimization</h4>
+
+              {!showAiOptimizer ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAiOptimizer(true)}
+                  className="mb-4"
+                >
+                  Optimize with AI
+                </Button>
+              ) : (
+                <AiQueryOptimizer
+                  sql={queryText}
+                  executionPlan={planResult?.plan ?? null}
+                  sessionId={sessionId ?? ''}
+                  dbProtocol={dbProtocol ?? ''}
+                  onApply={onApplySql}
+                  onDismiss={() => setShowAiOptimizer(false)}
+                />
+              )}
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

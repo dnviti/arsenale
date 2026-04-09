@@ -1,16 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Button, CircularProgress, Chip, Collapse,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
-  IconButton, Tooltip,
-} from '@mui/material';
+  Eye, EyeOff, RotateCcw, Circle, ChevronDown, Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
-  Visibility as ViewIcon,
-  VisibilityOff as HideIcon,
-  RestorePage as RestoreIcon,
-  Circle as DotIcon,
-  ExpandMore as ExpandMoreIcon,
-} from '@mui/icons-material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { listVersions, restoreVersion, getSecretVersionData } from '../../api/secrets.api';
 import type { SecretVersion, SecretPayload } from '../../api/secrets.api';
 
@@ -58,7 +55,7 @@ function DiffView({ versionData, currentData }: { versionData: SecretPayload; cu
   };
 
   return (
-    <Box sx={{ mt: 1 }}>
+    <div className="mt-2 space-y-1">
       {[...allKeys].map((key) => {
         const vVal = versionFields[key];
         const cVal = currentFields?.[key];
@@ -67,47 +64,37 @@ function DiffView({ versionData, currentData }: { versionData: SecretPayload; cu
         const isRevealed = revealedKeys.has(key);
 
         return (
-          <Box
+          <div
             key={key}
-            sx={{
-              mb: 0.5,
-              p: 0.75,
-              borderRadius: 1,
-              bgcolor: changed ? 'warning.50' : 'action.hover',
-              border: '1px solid',
-              borderColor: changed ? 'warning.light' : 'divider',
-            }}
+            className={cn(
+              'p-2 rounded-md border text-sm',
+              changed ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-accent/50 border-border',
+            )}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground font-semibold">
                 {key}
                 {changed && (
-                  <Chip label="changed" size="small" color="warning" sx={{ ml: 0.5, height: 16, fontSize: '0.6rem' }} />
+                  <Badge variant="secondary" className="ml-1 text-[0.6rem] px-1 py-0">changed</Badge>
                 )}
-              </Typography>
+              </span>
               {isSensitive && vVal && (
-                <Tooltip title={isRevealed ? 'Hide' : 'Reveal'}>
-                  <IconButton size="small" onClick={() => toggleReveal(key)} sx={{ p: 0.25 }}>
-                    {isRevealed ? <HideIcon sx={{ fontSize: 14 }} /> : <ViewIcon sx={{ fontSize: 14 }} />}
-                  </IconButton>
-                </Tooltip>
+                <Button
+                  variant="ghost" size="icon" className="h-5 w-5"
+                  onClick={() => toggleReveal(key)}
+                  title={isRevealed ? 'Hide' : 'Reveal'}
+                >
+                  {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                </Button>
               )}
-            </Box>
-            <Typography
-              variant="body2"
-              sx={{
-                fontFamily: 'monospace',
-                fontSize: '0.8rem',
-                wordBreak: 'break-all',
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {isSensitive && vVal && !isRevealed ? '••••••••' : (vVal ?? '(empty)')}
-            </Typography>
-          </Box>
+            </div>
+            <p className="font-mono text-xs break-all whitespace-pre-wrap">
+              {isSensitive && vVal && !isRevealed ? '\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022' : (vVal ?? '(empty)')}
+            </p>
+          </div>
         );
       })}
-    </Box>
+    </div>
   );
 }
 
@@ -175,7 +162,7 @@ export default function SecretVersionHistory({
         const data = await getSecretVersionData(secretId, version);
         setVersionData((prev) => ({ ...prev, [version]: data }));
       } catch {
-        // silently fail — shared secrets can't view version data
+        // silently fail -- shared secrets can't view version data
         setExpandedVersion(null);
       } finally {
         setLoadingVersion(null);
@@ -193,22 +180,22 @@ export default function SecretVersionHistory({
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-        <CircularProgress size={20} />
-      </Box>
+      <div className="flex justify-center py-4">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
     );
   }
 
   if (versions.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ py: 1 }}>
+      <p className="text-sm text-muted-foreground py-2">
         No version history available.
-      </Typography>
+      </p>
     );
   }
 
   return (
-    <Box>
+    <div>
       {versions.map((v, idx) => {
         const isCurrent = v.version === currentVersion;
         const isLast = idx === versions.length - 1;
@@ -216,100 +203,98 @@ export default function SecretVersionHistory({
         const isLoadingData = loadingVersion === v.version;
 
         return (
-          <Box key={v.id} sx={{ display: 'flex', gap: 1.5 }}>
+          <div key={v.id} className="flex gap-3">
             {/* Timeline line + dot (clickable) */}
-            <Box
-              sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 20, flexShrink: 0, cursor: 'pointer' }}
+            <div
+              className="flex flex-col items-center w-5 shrink-0 cursor-pointer"
               onClick={() => handleToggleView(v.version)}
             >
-              <DotIcon
-                sx={{
-                  fontSize: 12,
-                  color: isCurrent ? 'primary.main' : 'grey.400',
-                  mt: 0.5,
-                }}
+              <Circle
+                className={cn(
+                  'h-3 w-3 mt-1',
+                  isCurrent ? 'text-primary fill-primary' : 'text-muted-foreground',
+                )}
               />
               {!isLast && (
-                <Box sx={{ flex: 1, width: 2, bgcolor: 'divider', minHeight: 24 }} />
+                <div className="flex-1 w-0.5 bg-border min-h-[24px]" />
               )}
-            </Box>
+            </div>
 
             {/* Content */}
-            <Box sx={{ flex: 1, pb: 1.5, minWidth: 0 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                <Box
+            <div className="flex-1 pb-3 min-w-0">
+              <div className="flex items-center gap-1 flex-wrap">
+                <div
                   onClick={() => handleToggleView(v.version)}
-                  sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+                  className="flex items-center gap-1 cursor-pointer hover:opacity-80"
                 >
-                  <ExpandMoreIcon
-                    sx={{
-                      fontSize: 16,
-                      color: 'text.secondary',
-                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                      transition: 'transform 0.2s',
-                    }}
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 text-muted-foreground transition-transform duration-200',
+                      isExpanded && 'rotate-180',
+                    )}
                   />
-                  <Typography variant="body2" sx={{ fontWeight: isCurrent ? 600 : 400 }}>
+                  <span className={cn('text-sm', isCurrent && 'font-semibold')}>
                     Version {v.version}
-                  </Typography>
-                  {isLoadingData && <CircularProgress size={12} sx={{ ml: 0.5 }} />}
-                </Box>
+                  </span>
+                  {isLoadingData && <Loader2 className="h-3 w-3 animate-spin ml-1" />}
+                </div>
                 {isCurrent && (
-                  <Chip label="current" size="small" color="primary" sx={{ height: 18, fontSize: '0.65rem' }} />
+                  <Badge className="text-[0.65rem] px-1.5 py-0">current</Badge>
                 )}
 
                 {!isCurrent && (
-                  <Box sx={{ ml: 'auto' }}>
-                    <Tooltip title="Restore this version">
-                      <IconButton size="small" onClick={() => setRestoreTarget(v.version)}>
-                        <RestoreIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </Box>
+                  <div className="ml-auto">
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => setRestoreTarget(v.version)}
+                      title="Restore this version"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  </div>
                 )}
-              </Box>
+              </div>
 
-              <Typography variant="caption" color="text.secondary" sx={{ ml: 2.5 }}>
-                {v.changer?.username || v.changer?.email || 'Unknown'} — {formatDate(v.createdAt)}
-              </Typography>
+              <span className="text-xs text-muted-foreground ml-5">
+                {v.changer?.username || v.changer?.email || 'Unknown'} &mdash; {formatDate(v.createdAt)}
+              </span>
               {v.changeNote && (
-                <Typography variant="caption" display="block" color="text.secondary" sx={{ fontStyle: 'italic', ml: 2.5 }}>
+                <span className="text-xs text-muted-foreground italic block ml-5">
                   {v.changeNote}
-                </Typography>
+                </span>
               )}
 
               {/* Expanded version data with diff */}
-              <Collapse in={isExpanded && !!versionData[v.version]}>
-                {versionData[v.version] && (
-                  <DiffView
-                    versionData={versionData[v.version]}
-                    currentData={isCurrent ? undefined : currentData}
-                  />
-                )}
-              </Collapse>
-            </Box>
-          </Box>
+              {isExpanded && versionData[v.version] && (
+                <DiffView
+                  versionData={versionData[v.version]}
+                  currentData={isCurrent ? undefined : currentData}
+                />
+              )}
+            </div>
+          </div>
         );
       })}
 
-      <Dialog open={restoreTarget !== null} onClose={() => setRestoreTarget(null)}>
-        <DialogTitle>Restore Version</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Restore to version {restoreTarget}? This will create a new version with the restored data.
-          </DialogContentText>
+      <Dialog open={restoreTarget !== null} onOpenChange={(v) => { if (!v) setRestoreTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Restore Version</DialogTitle>
+            <DialogDescription>
+              Restore to version {restoreTarget}? This will create a new version with the restored data.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRestoreTarget(null)}>Cancel</Button>
+            <Button
+              onClick={() => { if (restoreTarget !== null) handleRestore(restoreTarget); }}
+              disabled={restoring}
+            >
+              {restoring ? 'Restoring...' : 'Restore'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRestoreTarget(null)}>Cancel</Button>
-          <Button
-            onClick={() => { if (restoreTarget !== null) handleRestore(restoreTarget); }}
-            variant="contained"
-            disabled={restoring}
-          >
-            {restoring ? 'Restoring...' : 'Restore'}
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }

@@ -1,15 +1,19 @@
 import { useState, useEffect } from 'react';
+import { Trash2, Copy, Link } from 'lucide-react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  Box, Alert, List, ListItem, ListItemText, IconButton, Typography, Chip,
-  FormControl, InputLabel, Select, MenuItem, Switch, FormControlLabel,
-  InputAdornment, Tooltip, Divider,
-} from '@mui/material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import {
-  Delete as DeleteIcon,
-  ContentCopy as CopyIcon,
-  Link as LinkIcon,
-} from '@mui/icons-material';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import {
   createExternalShare, listExternalShares, revokeExternalShare,
 } from '../../api/secrets.api';
@@ -124,164 +128,158 @@ export default function ExternalShareDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>External Share: {secretName}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>External Share: {secretName}</DialogTitle>
+          <DialogDescription className="sr-only">Create an external share link for this secret</DialogDescription>
+        </DialogHeader>
 
-        {result ? (
-          <Box sx={{ mt: 1 }}>
-            <TextField
-              fullWidth
-              value={result.shareUrl}
-              size="small"
-              slotProps={{
-                input: {
-                  readOnly: true,
-                  endAdornment: (
-                    <InputAdornment position="end">
-                      <Tooltip title={copied ? 'Copied!' : 'Copy link'}>
-                        <IconButton size="small" onClick={handleCopy}>
-                          <CopyIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </InputAdornment>
-                  ),
-                },
-              }}
-              sx={{ mb: 1 }}
-            />
-            {result.hasPin && (
-              <Typography variant="caption" color="text.secondary">
-                The recipient will need the PIN to access this secret.
-              </Typography>
-            )}
-            <Button
-              variant="outlined"
-              fullWidth
-              sx={{ mt: 2 }}
-              onClick={() => setResult(null)}
-            >
-              Create Another Link
-            </Button>
-          </Box>
-        ) : (
-          <Box sx={{ mt: 1 }}>
-            <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-              <InputLabel>Expires in</InputLabel>
-              <Select
-                value={expiresInMinutes}
-                label="Expires in"
-                onChange={(e) => setExpiresInMinutes(e.target.value as number)}
+        <div className="flex flex-col gap-4">
+          {error && <Alert variant="destructive">{error}</Alert>}
+
+          {result ? (
+            <div>
+              <div className="relative">
+                <Input
+                  readOnly
+                  value={result.shareUrl}
+                  className="pr-10"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  onClick={handleCopy}
+                  title={copied ? 'Copied!' : 'Copy link'}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+              {result.hasPin && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  The recipient will need the PIN to access this secret.
+                </p>
+              )}
+              <Button
+                variant="outline"
+                className="w-full mt-4"
+                onClick={() => setResult(null)}
               >
-                {EXPIRY_OPTIONS.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                Create Another Link
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Expires in</Label>
+                <Select value={String(expiresInMinutes)} onValueChange={(v) => setExpiresInMinutes(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {EXPIRY_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={String(opt.value)}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            <TextField
-              label="Max access count (optional)"
-              value={maxAccessCount}
-              onChange={(e) => setMaxAccessCount(e.target.value)}
-              size="small"
-              fullWidth
-              type="number"
-              placeholder="Unlimited"
-              sx={{ mb: 2 }}
-            />
+              <div className="space-y-1.5">
+                <Label>Max access count (optional)</Label>
+                <Input
+                  value={maxAccessCount}
+                  onChange={(e) => setMaxAccessCount(e.target.value)}
+                  type="number"
+                  placeholder="Unlimited"
+                />
+              </div>
 
-            <FormControlLabel
-              control={
+              <div className="flex items-center gap-2">
                 <Switch
                   checked={usePin}
-                  onChange={(e) => {
-                    setUsePin(e.target.checked);
-                    if (!e.target.checked) setPin('');
+                  onCheckedChange={(checked) => {
+                    setUsePin(checked);
+                    if (!checked) setPin('');
                   }}
                 />
-              }
-              label="Require PIN"
-              sx={{ mb: 1 }}
-            />
+                <Label>Require PIN</Label>
+              </div>
 
-            {usePin && (
-              <TextField
-                label="PIN (4-8 digits)"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                size="small"
-                fullWidth
-                placeholder="e.g. 1234"
-                sx={{ mb: 2 }}
-              />
-            )}
+              {usePin && (
+                <div className="space-y-1.5">
+                  <Label>PIN (4-8 digits)</Label>
+                  <Input
+                    value={pin}
+                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                    placeholder="e.g. 1234"
+                  />
+                </div>
+              )}
 
-            <Button
-              variant="contained"
-              fullWidth
-              onClick={handleCreate}
-              disabled={loading}
-              startIcon={<LinkIcon />}
-            >
-              {loading ? 'Creating...' : 'Create Share Link'}
-            </Button>
-          </Box>
-        )}
+              <Button
+                className="w-full"
+                onClick={handleCreate}
+                disabled={loading}
+              >
+                <Link className="h-4 w-4 mr-2" />
+                {loading ? 'Creating...' : 'Create Share Link'}
+              </Button>
+            </div>
+          )}
 
-        {shares.length > 0 && (
-          <>
-            <Divider sx={{ my: 2 }} />
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>
-              Existing Links
-            </Typography>
-            <List dense>
-              {shares.map((share) => {
-                const isActive = !share.isRevoked &&
-                  new Date(share.expiresAt) > new Date() &&
-                  (share.maxAccessCount === null || share.accessCount < share.maxAccessCount);
-                return (
-                  <ListItem key={share.id}>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Typography variant="body2">
+          {shares.length > 0 && (
+            <>
+              <Separator />
+              <h4 className="text-sm font-medium">Existing Links</h4>
+              <div className="space-y-1">
+                {shares.map((share) => {
+                  const isActive = !share.isRevoked &&
+                    new Date(share.expiresAt) > new Date() &&
+                    (share.maxAccessCount === null || share.accessCount < share.maxAccessCount);
+                  return (
+                    <div key={share.id} className="flex items-center justify-between py-2 px-1">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm">
                             {share.accessCount} access{share.accessCount !== 1 ? 'es' : ''}
                             {share.maxAccessCount !== null && ` / ${share.maxAccessCount}`}
-                          </Typography>
-                          {share.hasPin && <Chip label="PIN" size="small" variant="outlined" />}
-                          <Chip
-                            label={share.isRevoked ? 'Revoked' : isActive ? formatExpiry(share.expiresAt) : 'Expired'}
-                            size="small"
-                            color={share.isRevoked ? 'error' : isActive ? 'success' : 'default'}
-                          />
-                        </Box>
-                      }
-                      secondary={`Created ${new Date(share.createdAt).toLocaleDateString()}`}
-                    />
-                    {isActive && (
-                      <Tooltip title="Revoke">
-                        <IconButton
-                          edge="end"
-                          size="small"
+                          </span>
+                          {share.hasPin && <Badge variant="outline" className="text-[0.65rem] px-1.5 py-0">PIN</Badge>}
+                          <Badge
+                            variant={share.isRevoked ? 'destructive' : isActive ? 'default' : 'secondary'}
+                            className="text-[0.65rem] px-1.5 py-0"
+                          >
+                            {share.isRevoked ? 'Revoked' : isActive ? formatExpiry(share.expiresAt) : 'Expired'}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Created {new Date(share.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      {isActive && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
                           onClick={() => handleRevoke(share.id)}
+                          title="Revoke"
                         >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </ListItem>
-                );
-              })}
-            </List>
-          </>
-        )}
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
     </Dialog>
   );
 }

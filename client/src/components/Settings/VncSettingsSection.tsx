@@ -1,35 +1,13 @@
-import {
-  Box,
-  FormControl,
-  FormControlLabel,
-  Checkbox,
-  InputLabel,
-  MenuItem,
-  Select,
-  Switch,
-  Typography,
-  Tooltip,
-} from '@mui/material';
-import { Lock as LockIcon } from '@mui/icons-material';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import type { VncSettings } from '../../constants/vncDefaults';
-import { VNC_DEFAULTS, CLIPBOARD_ENCODINGS } from '../../constants/vncDefaults';
-
-function OverrideCheckbox({ label, mode, isOverridden, onToggle, enforced }: {
-  label: string;
-  mode: 'global' | 'connection';
-  isOverridden: boolean;
-  onToggle: () => void;
-  enforced?: boolean;
-}) {
-  if (mode !== 'connection') return null;
-  return (
-    <FormControlLabel
-      control={<Checkbox size="small" checked={isOverridden} onChange={onToggle} disabled={enforced} />}
-      label={<Typography variant="caption">Override {label}{enforced && <Tooltip title="Enforced by organization policy" arrow><LockIcon sx={{ fontSize: 14, ml: 0.5, color: 'warning.main', verticalAlign: 'middle' }} /></Tooltip>}</Typography>}
-      sx={{ mb: 0.5 }}
-    />
-  );
-}
+import { CLIPBOARD_ENCODINGS, VNC_DEFAULTS } from '../../constants/vncDefaults';
+import {
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsSectionBlock,
+} from './settings-ui';
+import { SettingsOverrideToggle, useOverrideableSettings } from './settings-overrides';
 
 interface VncSettingsSectionProps {
   value: Partial<VncSettings>;
@@ -39,88 +17,174 @@ interface VncSettingsSectionProps {
   enforcedFields?: Partial<VncSettings>;
 }
 
-export default function VncSettingsSection({ value, onChange, mode, resolvedDefaults, enforcedFields }: VncSettingsSectionProps) {
-  const effective = { ...resolvedDefaults, ...value };
+const AUTO_VALUE = '__auto__';
 
-  const set = (key: keyof VncSettings, val: unknown) => {
-    onChange({ ...value, [key]: val });
-  };
+export default function VncSettingsSection({
+  value,
+  onChange,
+  mode,
+  resolvedDefaults,
+  enforcedFields,
+}: VncSettingsSectionProps) {
+  const defaults = { ...VNC_DEFAULTS, ...resolvedDefaults } as VncSettings;
+  const {
+    getValue,
+    isOverridden,
+    isEnforced,
+    isDisabled,
+    setField,
+    toggleOverride,
+  } = useOverrideableSettings<VncSettings>({
+    value,
+    onChange,
+    defaults,
+    mode,
+    enforcedFields,
+  });
 
-  const clearKey = (key: keyof VncSettings) => {
-    const { [key]: _, ...rest } = value;
-    onChange(rest);
-  };
-
-  const isConn = mode === 'connection';
-  const isEnforced = (key: keyof VncSettings) => enforcedFields !== undefined && enforcedFields[key] !== undefined;
-  const fieldDisabled = (key: keyof VncSettings) => isEnforced(key) || (isConn && !(key in value));
+  const overrideControl = (key: keyof VncSettings) =>
+    mode === 'connection' ? (
+      <SettingsOverrideToggle
+        checked={isOverridden(key)}
+        enforced={isEnforced(key)}
+        onCheckedChange={() => toggleOverride(key)}
+      />
+    ) : undefined;
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-      {/* Color Depth */}
-      <Box>
-        <OverrideCheckbox label="Color depth" mode={mode} isOverridden={'colorDepth' in value} onToggle={() => 'colorDepth' in value ? clearKey('colorDepth') : set('colorDepth', 24)} enforced={isEnforced('colorDepth')} />
-        <FormControl fullWidth size="small" disabled={fieldDisabled('colorDepth')}>
-          <InputLabel>Color Depth</InputLabel>
-          <Select value={effective.colorDepth ?? ''} label="Color Depth" onChange={(e) => set('colorDepth', e.target.value || undefined)}>
-            <MenuItem value="">Auto</MenuItem>
-            <MenuItem value={8}>8-bit (256 colors)</MenuItem>
-            <MenuItem value={16}>16-bit (High Color)</MenuItem>
-            <MenuItem value={24}>24-bit (True Color)</MenuItem>
-            <MenuItem value={32}>32-bit (True Color + Alpha)</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
+    <SettingsFieldGroup className="space-y-5">
+      <SettingsSectionBlock
+        title="Display & Clipboard"
+        description="Pick the wire format for pixels, cursor rendering, and copied text."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
+            label="Color Depth"
+            description="Auto lets the server choose the optimal format."
+            aside={overrideControl('colorDepth')}
+          >
+            <Select
+              value={String(getValue('colorDepth') ?? AUTO_VALUE)}
+              onValueChange={(nextValue) =>
+                setField(
+                  'colorDepth',
+                  (nextValue === AUTO_VALUE ? undefined : Number(nextValue)) as VncSettings['colorDepth'],
+                )}
+              disabled={isDisabled('colorDepth')}
+            >
+              <SelectTrigger aria-label="Color Depth">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_VALUE}>Auto</SelectItem>
+                <SelectItem value="8">8-bit (256 colors)</SelectItem>
+                <SelectItem value="16">16-bit (High Color)</SelectItem>
+                <SelectItem value="24">24-bit (True Color)</SelectItem>
+                <SelectItem value="32">32-bit (True Color + Alpha)</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
-      {/* Cursor Mode */}
-      <Box>
-        <OverrideCheckbox label="Cursor mode" mode={mode} isOverridden={'cursor' in value} onToggle={() => 'cursor' in value ? clearKey('cursor') : set('cursor', VNC_DEFAULTS.cursor)} enforced={isEnforced('cursor')} />
-        <FormControl fullWidth size="small" disabled={fieldDisabled('cursor')}>
-          <InputLabel>Cursor Mode</InputLabel>
-          <Select value={effective.cursor ?? 'local'} label="Cursor Mode" onChange={(e) => set('cursor', e.target.value)}>
-            <MenuItem value="local">Local (rendered by browser)</MenuItem>
-            <MenuItem value="remote">Remote (rendered by server)</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
+          <SettingsFieldCard
+            label="Cursor Mode"
+            description="Local rendering is usually smoother in the browser."
+            aside={overrideControl('cursor')}
+          >
+            <Select
+              value={getValue('cursor') ?? 'local'}
+              onValueChange={(nextValue) => setField('cursor', nextValue as VncSettings['cursor'])}
+              disabled={isDisabled('cursor')}
+            >
+              <SelectTrigger aria-label="Cursor Mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="local">Local (browser rendered)</SelectItem>
+                <SelectItem value="remote">Remote (server rendered)</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
-      {/* Clipboard Encoding */}
-      <Box>
-        <OverrideCheckbox label="Clipboard encoding" mode={mode} isOverridden={'clipboardEncoding' in value} onToggle={() => 'clipboardEncoding' in value ? clearKey('clipboardEncoding') : set('clipboardEncoding', VNC_DEFAULTS.clipboardEncoding)} enforced={isEnforced('clipboardEncoding')} />
-        <FormControl fullWidth size="small" disabled={fieldDisabled('clipboardEncoding')}>
-          <InputLabel>Clipboard Encoding</InputLabel>
-          <Select value={effective.clipboardEncoding ?? 'UTF-8'} label="Clipboard Encoding" onChange={(e) => set('clipboardEncoding', e.target.value)}>
-            {CLIPBOARD_ENCODINGS.map((enc) => (
-              <MenuItem key={enc.value} value={enc.value}>{enc.label}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
+          <SettingsFieldCard
+            label="Clipboard Encoding"
+            description="Match the remote system’s expected text encoding."
+            aside={overrideControl('clipboardEncoding')}
+          >
+            <Select
+              value={getValue('clipboardEncoding') ?? 'UTF-8'}
+              onValueChange={(nextValue) => setField('clipboardEncoding', nextValue as VncSettings['clipboardEncoding'])}
+              disabled={isDisabled('clipboardEncoding')}
+            >
+              <SelectTrigger aria-label="Clipboard Encoding">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLIPBOARD_ENCODINGS.map((encoding) => (
+                  <SelectItem key={encoding.value} value={encoding.value}>
+                    {encoding.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
+        </div>
+      </SettingsSectionBlock>
 
-      {/* Toggles */}
-      <Box>
-        <OverrideCheckbox label="Read-only" mode={mode} isOverridden={'readOnly' in value} onToggle={() => 'readOnly' in value ? clearKey('readOnly') : set('readOnly', VNC_DEFAULTS.readOnly)} enforced={isEnforced('readOnly')} />
-        <FormControlLabel
-          control={<Switch checked={effective.readOnly ?? false} onChange={(e) => set('readOnly', e.target.checked)} disabled={fieldDisabled('readOnly')} />}
-          label="Read-only (view only, no input)"
-        />
-      </Box>
+      <SettingsSectionBlock
+        title="Behavior"
+        description="Limit input, correct color channels, or mute audio."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
+            label="Read-only Mode"
+            description="Prevent keyboard and mouse input from reaching the remote desktop."
+            aside={overrideControl('readOnly')}
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">View only, without sending input</span>
+              <Switch
+                checked={Boolean(getValue('readOnly'))}
+                disabled={isDisabled('readOnly')}
+                onCheckedChange={(nextValue) => setField('readOnly', nextValue)}
+                aria-label="Read-only mode"
+              />
+            </label>
+          </SettingsFieldCard>
 
-      <Box>
-        <OverrideCheckbox label="Swap red/blue" mode={mode} isOverridden={'swapRedBlue' in value} onToggle={() => 'swapRedBlue' in value ? clearKey('swapRedBlue') : set('swapRedBlue', VNC_DEFAULTS.swapRedBlue)} enforced={isEnforced('swapRedBlue')} />
-        <FormControlLabel
-          control={<Switch checked={effective.swapRedBlue ?? false} onChange={(e) => set('swapRedBlue', e.target.checked)} disabled={fieldDisabled('swapRedBlue')} />}
-          label="Swap red/blue channels"
-        />
-      </Box>
+          <SettingsFieldCard
+            label="Swap Red / Blue Channels"
+            description="Correct color order when the remote server reports BGR pixels."
+            aside={overrideControl('swapRedBlue')}
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">Swap the red and blue channels</span>
+              <Switch
+                checked={Boolean(getValue('swapRedBlue'))}
+                disabled={isDisabled('swapRedBlue')}
+                onCheckedChange={(nextValue) => setField('swapRedBlue', nextValue)}
+                aria-label="Swap red and blue channels"
+              />
+            </label>
+          </SettingsFieldCard>
 
-      <Box>
-        <OverrideCheckbox label="Disable audio" mode={mode} isOverridden={'disableAudio' in value} onToggle={() => 'disableAudio' in value ? clearKey('disableAudio') : set('disableAudio', VNC_DEFAULTS.disableAudio)} enforced={isEnforced('disableAudio')} />
-        <FormControlLabel
-          control={<Switch checked={effective.disableAudio ?? true} onChange={(e) => set('disableAudio', e.target.checked)} disabled={fieldDisabled('disableAudio')} />}
-          label="Disable audio"
-        />
-      </Box>
-    </Box>
+          <SettingsFieldCard
+            label="Disable Audio"
+            description="Mute any audio stream that the VNC session exposes."
+            aside={overrideControl('disableAudio')}
+            className="xl:col-span-2"
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">Disable session audio</span>
+              <Switch
+                checked={Boolean(getValue('disableAudio') ?? true)}
+                disabled={isDisabled('disableAudio')}
+                onCheckedChange={(nextValue) => setField('disableAudio', nextValue)}
+                aria-label="Disable audio"
+              />
+            </label>
+          </SettingsFieldCard>
+        </div>
+      </SettingsSectionBlock>
+    </SettingsFieldGroup>
   );
 }

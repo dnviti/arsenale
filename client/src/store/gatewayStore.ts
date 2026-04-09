@@ -192,6 +192,10 @@ export const useGatewayStore = create<GatewayState>((set) => ({
               lastLatencyMs: event.latencyMs,
               lastError: event.error,
               lastCheckedAt: event.checkedAt,
+              operationalStatus: event.status === 'REACHABLE' ? 'HEALTHY' : event.status === 'UNREACHABLE' ? 'UNHEALTHY' : 'UNKNOWN',
+              operationalReason: event.status === 'REACHABLE'
+                ? (event.latencyMs != null ? `Gateway responded in ${event.latencyMs} ms.` : 'Gateway responded to the latest health check.')
+                : event.error || 'The latest health check failed.',
             }
           : g,
       ),

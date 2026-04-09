@@ -1,16 +1,5 @@
 import { useMemo } from 'react';
-import {
-  Box,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Typography,
-  Paper,
-  useTheme,
-} from '@mui/material';
+import { cn } from '@/lib/utils';
 
 interface DbResultsTableProps {
   columns: string[];
@@ -28,144 +17,86 @@ export default function DbResultsTable({
   truncated,
 }: DbResultsTableProps) {
   const displayRows = useMemo(() => rows.slice(0, 1000), [rows]);
-  const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
-
-  const headerBg = isDark
-    ? theme.palette.primary.dark
-    : theme.palette.primary.main;
-  const headerColor = theme.palette.primary.contrastText;
-  // Solid opaque backgrounds — critical for sticky column to not show through
-  const paperBg = theme.palette.background.paper;
-  const stripeBg = isDark ? '#1e1e1e' : '#f8f8f8';
-  const rowNumEvenBg = isDark ? '#252525' : '#f0f0f0';
-  const rowNumOddBg = isDark ? '#2a2a2a' : '#eaeaea';
-  const nullColor = theme.palette.text.disabled;
 
   if (columns.length === 0 && rows.length === 0) {
     return (
-      <Box sx={{ p: 2, textAlign: 'center' }}>
-        <Typography variant="body2" color="text.secondary">
+      <div className="p-4 text-center">
+        <p className="text-sm text-muted-foreground">
           Query executed successfully. {rowCount} row(s) affected in {durationMs}ms.
-        </Typography>
-      </Box>
+        </p>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden', p: 1.5 }}>
-      <Box sx={{ px: 0.5, py: 0.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Typography variant="caption" color="text.secondary">
+    <div className="flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden p-1.5">
+      <div className="px-1 py-1 flex justify-between items-center">
+        <span className="text-xs text-muted-foreground">
           {rowCount} row(s) returned in {durationMs}ms
           {truncated && ' (results truncated by server limit)'}
           {rows.length > 1000 && ' (showing first 1000)'}
-        </Typography>
-      </Box>
-      <TableContainer
-        component={Paper}
-        variant="outlined"
-        sx={{ flex: 1, overflow: 'auto', minHeight: 0, borderRadius: 1 }}
-      >
-        <Table size="small" stickyHeader>
-          <TableHead>
-            <TableRow>
-              <TableCell
-                sx={{
-                  bgcolor: headerBg,
-                  color: headerColor,
-                  fontWeight: 700,
-                  fontSize: '0.75rem',
-                  letterSpacing: '0.02em',
-                  borderRight: 1,
-                  borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)',
-                  borderBottom: 'none',
-                  width: 48,
-                  minWidth: 48,
-                  position: 'sticky',
-                  left: 0,
-                  zIndex: 3,
-                  py: 0.75,
-                }}
+        </span>
+      </div>
+      <div className="flex-1 overflow-auto min-h-0 rounded border border-border">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr>
+              <th
+                className="sticky top-0 left-0 z-[3] bg-primary text-primary-foreground font-bold text-xs tracking-wide border-r border-white/10 py-1.5 px-2 w-12 min-w-[48px]"
               >
                 #
-              </TableCell>
+              </th>
               {columns.map((col) => (
-                <TableCell
+                <th
                   key={col}
-                  sx={{
-                    bgcolor: headerBg,
-                    color: headerColor,
-                    fontWeight: 700,
-                    fontSize: '0.75rem',
-                    letterSpacing: '0.02em',
-                    whiteSpace: 'nowrap',
-                    borderBottom: 'none',
-                    py: 0.75,
-                  }}
+                  className="sticky top-0 z-[2] bg-primary text-primary-foreground font-bold text-xs tracking-wide whitespace-nowrap py-1.5 px-2"
                 >
                   {col}
-                </TableCell>
+                </th>
               ))}
-            </TableRow>
-          </TableHead>
-          <TableBody>
+            </tr>
+          </thead>
+          <tbody>
             {displayRows.map((row, idx) => {
               const isOdd = idx % 2 === 1;
               return (
-                <TableRow
+                <tr
                   key={idx}
-                  hover
-                  sx={{
-                    bgcolor: isOdd ? stripeBg : paperBg,
-                    '&:last-of-type td': { borderBottom: 0 },
-                  }}
+                  className={cn(
+                    'hover:bg-accent/50 transition-colors',
+                    isOdd ? 'bg-[#1e1e1e]' : 'bg-card',
+                  )}
                 >
-                  <TableCell
-                    sx={{
-                      borderRight: 1,
-                      borderColor: 'divider',
-                      color: 'text.secondary',
-                      fontWeight: 600,
-                      fontSize: '0.75rem',
-                      position: 'sticky',
-                      left: 0,
-                      bgcolor: isOdd ? rowNumOddBg : rowNumEvenBg,
-                      zIndex: 1,
-                      py: 0.5,
-                    }}
+                  <td
+                    className={cn(
+                      'sticky left-0 z-[1] border-r border-border text-muted-foreground font-semibold text-xs py-1 px-2',
+                      isOdd ? 'bg-[#2a2a2a]' : 'bg-[#252525]',
+                    )}
                   >
                     {idx + 1}
-                  </TableCell>
+                  </td>
                   {columns.map((col) => {
                     const val = row[col];
                     const isNull = val === null || val === undefined;
                     return (
-                      <TableCell
+                      <td
                         key={col}
-                        sx={{
-                          whiteSpace: 'nowrap',
-                          maxWidth: 300,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          fontSize: '0.8rem',
-                          py: 0.5,
-                          ...(isNull && {
-                            color: nullColor,
-                            fontStyle: 'italic',
-                          }),
-                        }}
+                        className={cn(
+                          'whitespace-nowrap max-w-[300px] overflow-hidden text-ellipsis text-[0.8rem] py-1 px-2',
+                          isNull && 'text-muted-foreground italic',
+                        )}
                       >
                         {formatCellValue(val)}
-                      </TableCell>
+                      </td>
                     );
                   })}
-                </TableRow>
+                </tr>
               );
             })}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </Box>
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 

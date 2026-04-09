@@ -134,7 +134,7 @@ admin@example.com / ArsenaleTemp91Qx
 
 | Layer | Technologies |
 |-------|-------------|
-| Frontend | React 19, Vite 8, Material UI 7, Zustand, Monaco, XTerm.js |
+| Frontend | React 19, Vite 8, Tailwind CSS 4, shadcn/ui, Material UI 7, Zustand, Monaco, XTerm.js |
 | Control plane | Go 1.25, 18 split services in `backend/cmd/*` |
 | Runtime brokers | `terminal-broker`, `desktop-broker`, `tunnel-broker`, `query-runner`, `map-assets` |
 | Gateways | `ssh-gateway`, `guacd`, `guacenc`, `db-proxy`, bundled `tunnel-agent` |

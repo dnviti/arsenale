@@ -1,6 +1,7 @@
 package gateways
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -85,6 +86,44 @@ func (s Service) disconnectTunnel(ctx context.Context, gatewayID string) error {
 		return decodeBrokerError(resp)
 	}
 	return nil
+}
+
+type tunnelTCPProxy struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
+}
+
+func (s Service) createTunnelTCPProxy(ctx context.Context, gatewayID, targetHost string, targetPort int) (tunnelTCPProxy, error) {
+	body, err := json.Marshal(map[string]any{
+		"gatewayId":  gatewayID,
+		"targetHost": targetHost,
+		"targetPort": targetPort,
+	})
+	if err != nil {
+		return tunnelTCPProxy{}, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(s.tunnelBrokerURL(), "/")+"/v1/tcp-proxies", bytes.NewReader(body))
+	if err != nil {
+		return tunnelTCPProxy{}, err
+	}
+	req.Header.Set("content-type", "application/json")
+
+	resp, err := s.client().Do(req)
+	if err != nil {
+		return tunnelTCPProxy{}, fmt.Errorf("create tunnel proxy: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return tunnelTCPProxy{}, fmt.Errorf("create tunnel proxy: %w", decodeBrokerError(resp))
+	}
+
+	var proxy tunnelTCPProxy
+	if err := json.NewDecoder(resp.Body).Decode(&proxy); err != nil {
+		return tunnelTCPProxy{}, fmt.Errorf("decode tunnel proxy response: %w", err)
+	}
+	return proxy, nil
 }
 
 func (s Service) client() *http.Client {

@@ -17,6 +17,35 @@ import yaml
 
 SCHEMA_VERSION = "1.0.0"
 
+DEV_REFRESH_TARGET_GROUPS = {
+    "client": ["client"],
+    "gateways": [
+        "guacd",
+        "guacenc",
+        "ssh-gateway",
+        "dev-tunnel-ssh-gateway",
+        "dev-tunnel-guacd",
+        "dev-tunnel-db-proxy",
+    ],
+    "control-plane": [
+        "control-plane-api",
+        "control-plane-controller",
+        "authz-pdp",
+        "model-gateway",
+        "tool-gateway",
+        "memory-service",
+        "agent-orchestrator",
+        "runtime-agent",
+        "terminal-broker",
+        "desktop-broker",
+        "tunnel-broker",
+        "query-runner",
+        "map-assets",
+    ],
+}
+
+DEV_REFRESH_BACKEND_SERVICES = set(DEV_REFRESH_TARGET_GROUPS["control-plane"])
+
 
 def load_data(path: str | Path) -> Any:
     raw = Path(path).read_text(encoding="utf-8")
@@ -61,11 +90,59 @@ def now_utc() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def unique_in_order(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
 def load_catalog(path: str | Path) -> dict[str, Any]:
     catalog = load_data(path)
     if not isinstance(catalog, dict) or "capabilities" not in catalog:
         raise ValueError("capability catalog is invalid")
     return catalog
+
+
+def resolve_dev_refresh_targets(requested_targets: list[str], active_services: list[str]) -> dict[str, Any]:
+    normalized_targets = unique_in_order([target.strip() for target in requested_targets if target.strip()])
+    if not normalized_targets:
+        raise ValueError("at least one dev refresh target is required")
+
+    active = unique_in_order([service.strip() for service in active_services if service.strip()])
+    active_set = set(active)
+    valid_targets = active_set | set(DEV_REFRESH_TARGET_GROUPS.keys())
+    invalid_targets = [target for target in normalized_targets if target not in valid_targets]
+    if invalid_targets:
+        raise ValueError(f"unknown dev refresh target(s): {', '.join(invalid_targets)}")
+
+    expanded_services: list[str] = []
+    run_migrations = False
+
+    for target in normalized_targets:
+        group_services = DEV_REFRESH_TARGET_GROUPS.get(target)
+        if group_services is None:
+            expanded_services.append(target)
+            if target == "migrate" or target in DEV_REFRESH_BACKEND_SERVICES:
+                run_migrations = True
+            continue
+
+        expanded_services.extend(service for service in group_services if service in active_set)
+        if any(service in DEV_REFRESH_BACKEND_SERVICES for service in group_services):
+            run_migrations = True
+
+    restart_services = unique_in_order(
+        [service for service in expanded_services if service in active_set and service != "migrate"]
+    )
+    build_services = unique_in_order(restart_services + (["migrate"] if run_migrations and "migrate" in active_set else []))
+
+    if not restart_services and not run_migrations:
+        raise ValueError("selected dev refresh targets are not active in the current installer profile")
+
+    return {
+        "requestedTargets": normalized_targets,
+        "activeServices": active,
+        "buildServices": build_services,
+        "restartServices": restart_services,
+        "runMigrations": run_migrations,
+    }
 
 
 def normalize_capabilities(profile: dict[str, Any], catalog: dict[str, Any]) -> dict[str, bool]:
@@ -364,6 +441,22 @@ def command_prune_compose(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_resolve_dev_refresh(args: argparse.Namespace) -> int:
+    requested_targets = [name.strip() for name in args.targets.split(",") if name.strip()]
+    active_services = [name.strip() for name in args.active_services.split(",") if name.strip()]
+    try:
+        resolved = resolve_dev_refresh_targets(requested_targets, active_services)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    output = json.dumps(resolved, indent=2) + "\n"
+    if args.output:
+        Path(args.output).write_text(output, encoding="utf-8")
+    else:
+        print(output, end="")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Installer model helpers.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -393,6 +486,12 @@ def build_parser() -> argparse.ArgumentParser:
     prune_compose_parser.add_argument("--services", default="")
     prune_compose_parser.add_argument("--output")
     prune_compose_parser.set_defaults(func=command_prune_compose)
+
+    dev_refresh_parser = subparsers.add_parser("resolve-dev-refresh")
+    dev_refresh_parser.add_argument("--targets", required=True)
+    dev_refresh_parser.add_argument("--active-services", required=True)
+    dev_refresh_parser.add_argument("--output")
+    dev_refresh_parser.set_defaults(func=command_resolve_dev_refresh)
     return parser
 
 

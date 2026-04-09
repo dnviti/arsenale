@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
-import { Snackbar, Button, IconButton, Typography, Box } from '@mui/material';
-import { Close as CloseIcon, SystemUpdateAlt as UpdateIcon } from '@mui/icons-material';
+import { RefreshCcw, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { useRegisterSW } from 'virtual:pwa-register/react';
 
 /**
@@ -34,48 +35,38 @@ export default function PwaUpdateNotification() {
     setNeedRefresh(false);
   }, [setNeedRefresh]);
 
+  if (!needRefresh) return null;
+
   return (
-    <Snackbar
-      open={needRefresh}
-      anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      message={
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <UpdateIcon fontSize="small" sx={{ color: 'primary.main' }} />
-          <Typography variant="body2">
-            A new version of Arsenale is available.
-          </Typography>
-        </Box>
-      }
-      action={
-        <>
-          <Button
-            size="small"
-            variant="contained"
-            onClick={handleUpdate}
-            sx={{ mr: 1 }}
-          >
+    <div className="pointer-events-none fixed inset-x-0 bottom-4 z-[1400] flex justify-center px-4">
+      <Card className="pointer-events-auto w-full max-w-xl border-border/80 bg-popover/95 shadow-[0_18px_60px_rgba(0,0,0,0.28)] backdrop-blur">
+        <CardContent className="flex items-center gap-3 p-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/12 text-primary">
+            <RefreshCcw className="size-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">
+              A new version of Arsenale is available.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Reload to switch to the latest client bundle.
+            </p>
+          </div>
+          <Button size="sm" onClick={handleUpdate}>
             Reload
           </Button>
-          <IconButton
-            size="small"
-            color="inherit"
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
             onClick={handleDismiss}
-            aria-label="dismiss update notification"
+            aria-label="Dismiss update notification"
+            className="size-8"
           >
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </>
-      }
-      sx={{
-        '& .MuiSnackbarContent-root': {
-          bgcolor: 'background.paper',
-          color: 'text.primary',
-          border: 1,
-          borderColor: 'divider',
-          borderRadius: 2,
-          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-        },
-      }}
-    />
+            <X className="size-4" />
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

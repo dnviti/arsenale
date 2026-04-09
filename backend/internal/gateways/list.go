@@ -64,6 +64,7 @@ SELECT
 	g."tunnelClientKeyTag",
 	g."tunnelClientCertExp",
 	COALESCE(total_instances.count, 0) AS "totalInstances",
+	COALESCE(healthy_instances.count, 0) AS "healthyInstances",
 	COALESCE(running_instances.count, 0) AS "runningInstances",
 	CASE WHEN g."tunnelEnabled" THEN g."tunnelConnectedAt" IS NOT NULL ELSE false END AS "tunnelConnected"
 FROM "Gateway" g
@@ -72,6 +73,13 @@ LEFT JOIN LATERAL (
 	FROM "ManagedGatewayInstance" m
 	WHERE m."gatewayId" = g.id
 ) total_instances ON true
+LEFT JOIN LATERAL (
+	SELECT COUNT(*)::int AS count
+	FROM "ManagedGatewayInstance" m
+	WHERE m."gatewayId" = g.id
+	  AND m.status = 'RUNNING'
+	  AND COALESCE(m."healthStatus", '') IN ('healthy', 'starting', 'restarting')
+) healthy_instances ON true
 LEFT JOIN LATERAL (
 	SELECT COUNT(*)::int AS count
 	FROM "ManagedGatewayInstance" m
@@ -90,16 +98,38 @@ ORDER BY g.type ASC, g.name ASC
 	}
 	defer rows.Close()
 
-	result := make([]gatewayResponse, 0)
+	records := make([]gatewayRecord, 0)
 	for rows.Next() {
 		record, err := scanGateway(rows)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, gatewayRecordToResponse(record))
+		records = append(records, record)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate gateways: %w", err)
+	}
+
+	now := time.Now()
+	for i := range records {
+		if refreshed, ok := s.refreshGatewayHealthIfNeeded(ctx, records[i], now); ok {
+			records[i] = refreshed
+		}
+	}
+
+	tunnelStatuses := map[string]tunnelStatusSnapshot{}
+	tunnelBrokerAvailable := false
+	for _, record := range records {
+		if record.TunnelEnabled {
+			tunnelStatuses, tunnelBrokerAvailable = s.loadTunnelStatusSnapshots(ctx)
+			break
+		}
+	}
+
+	result := make([]gatewayResponse, 0, len(records))
+	for _, record := range records {
+		snapshot, ok := tunnelStatuses[record.ID]
+		result = append(result, gatewayRecordToResponseWithStatus(record, snapshot, ok, tunnelBrokerAvailable))
 	}
 	return result, nil
 }
@@ -189,6 +219,7 @@ func scanGateway(row rowScanner) (gatewayRecord, error) {
 		&tunnelClientKeyTag,
 		&tunnelClientCertExp,
 		&item.TotalInstances,
+		&item.HealthyInstances,
 		&item.RunningInstances,
 		&item.TunnelConnected,
 	); err != nil {
@@ -234,6 +265,15 @@ func scanGateway(row rowScanner) (gatewayRecord, error) {
 }
 
 func gatewayRecordToResponse(item gatewayRecord) gatewayResponse {
+	return gatewayRecordToResponseWithStatus(item, tunnelStatusSnapshot{}, false, false)
+}
+
+func gatewayRecordToResponseWithStatus(
+	item gatewayRecord,
+	tunnelStatus tunnelStatusSnapshot,
+	hasTunnelStatus bool,
+	tunnelBrokerAvailable bool,
+) gatewayResponse {
 	deploymentMode := item.DeploymentMode
 	if strings.TrimSpace(deploymentMode) == "" {
 		if item.IsManaged {
@@ -242,6 +282,27 @@ func gatewayRecordToResponse(item gatewayRecord) gatewayResponse {
 			deploymentMode = "SINGLE_INSTANCE"
 		}
 	}
+	operationalStatus, operationalReason, tunnelConnected, tunnelConnectedAt := deriveGatewayOperationalState(
+		item,
+		tunnelStatus,
+		hasTunnelStatus,
+		tunnelBrokerAvailable,
+	)
+	reportedHealth := deriveGatewayReportedHealth(
+		item,
+		tunnelStatus,
+		hasTunnelStatus,
+		tunnelBrokerAvailable,
+		operationalStatus,
+		operationalReason,
+		tunnelConnectedAt,
+	)
+	totalInstances, healthyInstances, runningInstances := deriveGatewayReportedInstanceCounts(
+		item,
+		tunnelStatus,
+		hasTunnelStatus,
+		tunnelBrokerAvailable,
+	)
 	return gatewayResponse{
 		ID:                       item.ID,
 		Name:                     item.Name,
@@ -260,10 +321,10 @@ func gatewayRecordToResponse(item gatewayRecord) gatewayResponse {
 		UpdatedAt:                item.UpdatedAt,
 		MonitoringEnabled:        item.MonitoringEnabled,
 		MonitorIntervalMS:        item.MonitorIntervalMS,
-		LastHealthStatus:         item.LastHealthStatus,
-		LastCheckedAt:            item.LastCheckedAt,
-		LastLatencyMS:            item.LastLatencyMS,
-		LastError:                item.LastError,
+		LastHealthStatus:         reportedHealth.Status,
+		LastCheckedAt:            reportedHealth.CheckedAt,
+		LastLatencyMS:            reportedHealth.LatencyMS,
+		LastError:                reportedHealth.Error,
 		IsManaged:                deploymentModeIsGroup(deploymentMode),
 		PublishPorts:             item.PublishPorts,
 		LBStrategy:               item.LBStrategy,
@@ -275,12 +336,15 @@ func gatewayRecordToResponse(item gatewayRecord) gatewayResponse {
 		ScaleDownCooldownSeconds: item.ScaleDownCooldownSeconds,
 		LastScaleAction:          item.LastScaleAction,
 		TemplateID:               item.TemplateID,
-		TotalInstances:           item.TotalInstances,
-		RunningInstances:         item.RunningInstances,
+		TotalInstances:           totalInstances,
+		HealthyInstances:         healthyInstances,
+		RunningInstances:         runningInstances,
 		TunnelEnabled:            item.TunnelEnabled,
-		TunnelConnected:          item.TunnelConnected,
-		TunnelConnectedAt:        item.TunnelConnectedAt,
+		TunnelConnected:          tunnelConnected,
+		TunnelConnectedAt:        tunnelConnectedAt,
 		TunnelClientCertExp:      item.TunnelClientCertExp,
+		OperationalStatus:        operationalStatus,
+		OperationalReason:        operationalReason,
 	}
 }
 

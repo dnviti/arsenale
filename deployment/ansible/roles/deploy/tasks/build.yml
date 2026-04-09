@@ -74,6 +74,14 @@
       }}
   when: _state == 'present' and _build | bool
 
+- name: Restrict image builds to selected services
+  set_fact:
+    compose_services_for_build: "{{ compose_services_for_build | intersect(compose_build_target_services | default([])) }}"
+  when:
+    - _state == 'present'
+    - _build | bool
+    - (compose_build_target_services | default([]) | length) > 0
+
 - name: Derive parallel build capacity
   set_fact:
     _build_parallelism: "{{ arsenale_build_parallelism | default([compose_services_for_build | length, 4] | min) | int }}"

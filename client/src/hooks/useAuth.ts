@@ -1,11 +1,9 @@
 import axios from 'axios';
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { restoreSessionApi } from '../api/auth.api';
 
 export function useAuth() {
-  const navigate = useNavigate();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const accessToken = useAuthStore((s) => s.accessToken);
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -33,7 +31,6 @@ export function useAuth() {
           const status = error.response?.status;
           if (status === 401 || status === 403) {
             logout();
-            navigate('/login');
             setLoading(false);
             return;
           }
@@ -49,7 +46,7 @@ export function useAuth() {
         window.clearTimeout(retryTimer);
       }
     };
-  }, [accessToken, attempt, logout, navigate, setAuth]);
+  }, [accessToken, attempt, logout, setAuth]);
 
   return { isAuthenticated: isAuthenticated || Boolean(accessToken), loading };
 }

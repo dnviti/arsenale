@@ -353,6 +353,7 @@ Operational domains under `routes_operations.go` include:
 
 Notable gateway subpaths:
 
+- `GET /api/gateways` now returns derived `operationalStatus`, `operationalReason`, and `healthyInstances` fields alongside the legacy probe fields so clients can render managed and tunnel-backed gateway health consistently.
 - `/api/gateways/{id}/deploy`
 - `/api/gateways/{id}/scale`
 - `/api/gateways/{id}/scaling`

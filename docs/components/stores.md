@@ -77,7 +77,7 @@ Key preferences: `rdpFileBrowserOpen`, `sshSftpBrowserOpen`, `sshSftpTransferQue
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `gateways` | Gateway[] | Tenant gateways |
+| `gateways` | Gateway[] | Tenant gateways, including derived `operationalStatus`, `operationalReason`, and `healthyInstances` |
 | `sshKeyPair` | KeyPair \| null | Tenant SSH key pair |
 | `activeSessions` | Session[] | Active sessions |
 | `sessionCount` | number | Total session count |

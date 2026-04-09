@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { Box, CircularProgress, Typography, Alert } from '@mui/material';
 import {
-  Fullscreen as FullscreenIcon,
-  FullscreenExit as FullscreenExitIcon,
-} from '@mui/icons-material';
+  Maximize,
+  Minimize,
+  Loader2,
+} from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { useTabsStore } from '../../store/tabsStore';
@@ -203,7 +203,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
     const actions: ToolbarAction[] = [];
     actions.push({
       id: 'fullscreen',
-      icon: isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />,
+      icon: isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />,
       tooltip: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
       onClick: toggleFullscreen,
       active: isFullscreen,
@@ -496,30 +496,21 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
   }, [connectionId, connectSession, cleanupTransport, cancelReconnect, isTransportConnected, sendInitialResize, sendTerminalMessage]);
 
   return (
-    <Box ref={containerRef} data-viewer-type="ssh" sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div ref={containerRef} data-viewer-type="ssh" className="flex flex-1 flex-row relative overflow-hidden">
+      {status === 'connected' && reconnectState === 'idle' && (
+        <DockedToolbar actions={toolbarActions} />
+      )}
+      <div className="flex flex-1 flex-col min-w-0 relative">
       {status === 'connecting' && reconnectState === 'idle' && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1,
-            bgcolor: 'rgba(0,0,0,0.7)',
-          }}
-        >
-          <CircularProgress size={24} sx={{ mr: 1 }} />
-          <Typography>Connecting...</Typography>
-        </Box>
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/70">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          <span>Connecting...</span>
+        </div>
       )}
       {status === 'error' && reconnectState === 'idle' && (
-        <Alert severity="error" sx={{ m: 1 }}>
+        <div className="m-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
-        </Alert>
+        </div>
       )}
       {reconnectState === 'reconnecting' && (
         <ReconnectOverlay state="reconnecting" attempt={attempt} maxRetries={maxRetries} protocol="SSH" />
@@ -537,9 +528,6 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
           }}
         />
       )}
-      {status === 'connected' && reconnectState === 'idle' && (
-        <DockedToolbar actions={toolbarActions} containerRef={containerRef} />
-      )}
       <SessionContextMenu
         anchorPosition={contextMenu}
         onClose={() => setContextMenu(null)}
@@ -554,13 +542,14 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
         sftpOpen={false}
         container={isFullscreen ? containerRef.current : null}
       />
-      <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        <Box
+      <div className="flex flex-1 overflow-hidden">
+        <div
           ref={termRef}
           tabIndex={-1}
-          sx={{ flex: 1, overflow: 'hidden', '& .xterm': { height: '100%', padding: '4px' } }}
+          className="flex-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:p-1"
         />
-      </Box>
-    </Box>
+      </div>
+      </div>{/* end inner content column */}
+    </div>
   );
 }

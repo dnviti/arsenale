@@ -1,60 +1,21 @@
-import {
-  Box,
-  FormControl,
-  FormControlLabel,
-  Checkbox,
-  InputLabel,
-  MenuItem,
-  Select,
-  Slider,
-  Switch,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-  Collapse,
-  Tooltip,
-} from '@mui/material';
-import { Lock as LockIcon } from '@mui/icons-material';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Input } from '@/components/ui/input';
 import type { RdpSettings } from '../../constants/rdpDefaults';
 import {
-  RDP_DEFAULTS,
-  QUALITY_PRESETS,
-  KEYBOARD_LAYOUTS,
   COMMON_TIMEZONES,
+  KEYBOARD_LAYOUTS,
+  QUALITY_PRESETS,
+  RDP_DEFAULTS,
 } from '../../constants/rdpDefaults';
-
-function EnforcedBadge() {
-  return (
-    <Tooltip title="Enforced by organization policy" arrow>
-      <LockIcon sx={{ fontSize: 14, ml: 0.5, color: 'warning.main', verticalAlign: 'middle' }} />
-    </Tooltip>
-  );
-}
-
-function OverrideCheckbox({ label, mode, isOverridden, onToggle, enforced }: {
-  label: string;
-  mode: 'global' | 'connection';
-  isOverridden: boolean;
-  onToggle: () => void;
-  enforced?: boolean;
-}) {
-  if (mode !== 'connection') return null;
-  return (
-    <FormControlLabel
-      control={
-        <Checkbox
-          size="small"
-          checked={isOverridden}
-          onChange={onToggle}
-          disabled={enforced}
-        />
-      }
-      label={<Typography variant="caption">Override {label}{enforced && <EnforcedBadge />}</Typography>}
-      sx={{ mb: 0.5 }}
-    />
-  );
-}
+import {
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsSectionBlock,
+} from './settings-ui';
+import { SettingsOverrideToggle, useOverrideableSettings } from './settings-overrides';
 
 interface RdpSettingsSectionProps {
   value: Partial<RdpSettings>;
@@ -64,288 +25,374 @@ interface RdpSettingsSectionProps {
   enforcedFields?: Partial<RdpSettings>;
 }
 
-export default function RdpSettingsSection({ value, onChange, mode, resolvedDefaults, enforcedFields }: RdpSettingsSectionProps) {
+const AUTO_VALUE = '__auto__';
+const NOT_SET_VALUE = '__not_set__';
+
+const customEffectFields: Array<[keyof RdpSettings, string]> = [
+  ['enableWallpaper', 'Desktop wallpaper'],
+  ['enableTheming', 'Windows theming'],
+  ['enableFontSmoothing', 'Font smoothing (ClearType)'],
+  ['enableFullWindowDrag', 'Full window drag'],
+  ['enableDesktopComposition', 'Desktop composition (Aero)'],
+  ['enableMenuAnimations', 'Menu animations'],
+  ['forceLossless', 'Force lossless compression'],
+];
+
+export default function RdpSettingsSection({
+  value,
+  onChange,
+  mode,
+  resolvedDefaults,
+  enforcedFields,
+}: RdpSettingsSectionProps) {
   const defaults = resolvedDefaults ?? RDP_DEFAULTS;
+  const {
+    getValue,
+    isOverridden,
+    isEnforced,
+    isDisabled,
+    setField,
+    toggleOverride,
+  } = useOverrideableSettings<RdpSettings>({
+    value,
+    onChange,
+    defaults,
+    mode,
+    enforcedFields,
+  });
 
-  function get<K extends keyof RdpSettings>(key: K): RdpSettings[K] {
-    return value[key] !== undefined ? value[key] : (defaults as RdpSettings)[key];
-  }
+  const qualityPreset = getValue('qualityPreset') ?? 'balanced';
+  const isCustomPreset = qualityPreset === 'custom';
+  const overrideControl = (key: keyof RdpSettings) =>
+    mode === 'connection' ? (
+      <SettingsOverrideToggle
+        checked={isOverridden(key)}
+        enforced={isEnforced(key)}
+        onCheckedChange={() => toggleOverride(key)}
+      />
+    ) : undefined;
 
-  function set<K extends keyof RdpSettings>(key: K, val: RdpSettings[K]) {
-    onChange({ ...value, [key]: val });
-  }
-
-  // In connection mode, track which fields are overridden
-  const isOverridden = (key: keyof RdpSettings) => mode === 'connection' && value[key] !== undefined;
-
-  const toggleOverride = (key: keyof RdpSettings, currentVal: unknown) => {
-    if (isOverridden(key)) {
-      const { [key]: _, ...rest } = value;
-      onChange(rest);
-    } else {
-      onChange({ ...value, [key]: currentVal });
+  const handlePresetChange = (nextValue: string) => {
+    const nextPreset = nextValue as NonNullable<RdpSettings['qualityPreset']>;
+    const nextState: Partial<RdpSettings> = { ...value, qualityPreset: nextPreset };
+    if (nextPreset !== 'custom' && QUALITY_PRESETS[nextPreset]) {
+      Object.assign(nextState, QUALITY_PRESETS[nextPreset]);
     }
-  };
-
-  const isEnforced = (key: keyof RdpSettings) => enforcedFields !== undefined && enforcedFields[key] !== undefined;
-
-  const fieldDisabled = (key: keyof RdpSettings) => isEnforced(key) || (mode === 'connection' && !isOverridden(key));
-
-  const qualityPreset = get('qualityPreset') ?? 'balanced';
-  const isCustom = qualityPreset === 'custom';
-
-  const handlePresetChange = (_: unknown, val: string | null) => {
-    if (!val) return;
-    const next: Partial<RdpSettings> = { ...value, qualityPreset: val as RdpSettings['qualityPreset'] };
-    if (val !== 'custom' && QUALITY_PRESETS[val]) {
-      Object.assign(next, QUALITY_PRESETS[val]);
-    }
-    onChange(next);
+    onChange(nextState);
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-      {/* ── Quality Preset ─────────────────────────────────────── */}
-      <Box>
-        <Typography variant="subtitle2" gutterBottom>Quality Preset</Typography>
-        <OverrideCheckbox label="quality preset" mode={mode} isOverridden={isOverridden('qualityPreset')} onToggle={() => toggleOverride('qualityPreset', get('qualityPreset'))} enforced={isEnforced('qualityPreset')} />
-        <ToggleButtonGroup
-          value={qualityPreset}
-          exclusive
-          onChange={handlePresetChange}
-          size="small"
-          fullWidth
-          disabled={fieldDisabled('qualityPreset')}
+    <SettingsFieldGroup className="space-y-5">
+      <SettingsSectionBlock
+        title="Quality"
+        description="Pick a visual profile or fine-tune each effect."
+      >
+        <SettingsFieldCard
+          label="Quality Preset"
+          description={
+            qualityPreset === 'performance'
+              ? 'Minimal bandwidth with visual effects disabled.'
+              : qualityPreset === 'balanced'
+                ? 'Balanced visuals with theming and font smoothing.'
+                : qualityPreset === 'quality'
+                  ? 'Highest fidelity, with the most visual effects enabled.'
+                  : 'Custom mode lets you tune each effect individually.'
+          }
+          aside={overrideControl('qualityPreset')}
         >
-          <ToggleButton value="performance">Performance</ToggleButton>
-          <ToggleButton value="balanced">Balanced</ToggleButton>
-          <ToggleButton value="quality">Quality</ToggleButton>
-          <ToggleButton value="custom">Custom</ToggleButton>
-        </ToggleButtonGroup>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-          {qualityPreset === 'performance' && 'Minimal bandwidth — no visual effects'}
-          {qualityPreset === 'balanced' && 'Theming and font smoothing enabled'}
-          {qualityPreset === 'quality' && 'All visual effects enabled'}
-          {qualityPreset === 'custom' && 'Fine-tune individual visual effects below'}
-        </Typography>
-      </Box>
-
-      {/* ── Custom visual effects (only when Custom preset) ──── */}
-      <Collapse in={isCustom}>
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, pl: 1, borderLeft: '2px solid', borderColor: 'divider' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5 }}>Visual Effects</Typography>
-          {([
-            ['enableWallpaper', 'Desktop wallpaper'],
-            ['enableTheming', 'Windows theming'],
-            ['enableFontSmoothing', 'Font smoothing (ClearType)'],
-            ['enableFullWindowDrag', 'Full window drag'],
-            ['enableDesktopComposition', 'Desktop composition (Aero)'],
-            ['enableMenuAnimations', 'Menu animations'],
-            ['forceLossless', 'Force lossless compression'],
-          ] as [keyof RdpSettings, string][]).map(([key, label]) => (
-            <FormControlLabel
-              key={key}
-              control={
-                <Switch
-                  size="small"
-                  checked={!!get(key)}
-                  onChange={(e) => set(key, e.target.checked as never)}
-                  disabled={fieldDisabled(key)}
-                />
+          <ToggleGroup
+            type="single"
+            value={qualityPreset}
+            onValueChange={(nextValue) => {
+              if (nextValue) {
+                handlePresetChange(nextValue);
               }
-              label={<Typography variant="body2">{label}</Typography>}
-            />
-          ))}
-        </Box>
-      </Collapse>
+            }}
+            disabled={isDisabled('qualityPreset')}
+            className="flex-wrap"
+          >
+            <ToggleGroupItem value="performance" variant="outline">Performance</ToggleGroupItem>
+            <ToggleGroupItem value="balanced" variant="outline">Balanced</ToggleGroupItem>
+            <ToggleGroupItem value="quality" variant="outline">Quality</ToggleGroupItem>
+            <ToggleGroupItem value="custom" variant="outline">Custom</ToggleGroupItem>
+          </ToggleGroup>
+        </SettingsFieldCard>
 
-      {/* ── Display & Resolution ───────────────────────────────── */}
-      <Box>
-        <Typography variant="subtitle2" gutterBottom>Display & Resolution</Typography>
+        {isCustomPreset && (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {customEffectFields.map(([key, label]) => (
+              <label
+                key={key}
+                className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3"
+              >
+                <span className="text-sm text-muted-foreground">{label}</span>
+                <Switch
+                  checked={Boolean(getValue(key))}
+                  disabled={isDisabled(key)}
+                  onCheckedChange={(nextValue) => setField(key, nextValue as RdpSettings[typeof key])}
+                  aria-label={label}
+                />
+              </label>
+            ))}
+          </div>
+        )}
+      </SettingsSectionBlock>
 
-        <OverrideCheckbox label="color depth" mode={mode} isOverridden={isOverridden('colorDepth')} onToggle={() => toggleOverride('colorDepth', get('colorDepth'))} enforced={isEnforced('colorDepth')} />
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }} disabled={fieldDisabled('colorDepth')}>
-          <InputLabel>Color Depth</InputLabel>
-          <Select
-            value={get('colorDepth') ?? ''}
+      <SettingsSectionBlock
+        title="Display & Resolution"
+        description="Control the remote desktop’s size, DPI, and resize behavior."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
             label="Color Depth"
-            onChange={(e) => set('colorDepth', (String(e.target.value) === '' ? undefined : Number(e.target.value)) as RdpSettings['colorDepth'])}
+            description="Auto uses the negotiated session value."
+            aside={overrideControl('colorDepth')}
           >
-            <MenuItem value="">Auto (negotiated)</MenuItem>
-            <MenuItem value={8}>8-bit (256 colors)</MenuItem>
-            <MenuItem value={16}>16-bit (High Color)</MenuItem>
-            <MenuItem value={24}>24-bit (True Color)</MenuItem>
-          </Select>
-        </FormControl>
+            <Select
+              value={String(getValue('colorDepth') ?? AUTO_VALUE)}
+              onValueChange={(nextValue) =>
+                setField(
+                  'colorDepth',
+                  (nextValue === AUTO_VALUE ? undefined : Number(nextValue)) as RdpSettings['colorDepth'],
+                )}
+              disabled={isDisabled('colorDepth')}
+            >
+              <SelectTrigger aria-label="Color Depth">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_VALUE}>Auto (negotiated)</SelectItem>
+                <SelectItem value="8">8-bit (256 colors)</SelectItem>
+                <SelectItem value="16">16-bit (High Color)</SelectItem>
+                <SelectItem value="24">24-bit (True Color)</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="DPI" mode={mode} isOverridden={isOverridden('dpi')} onToggle={() => toggleOverride('dpi', get('dpi'))} enforced={isEnforced('dpi')} />
-        <Box sx={{ mb: 1.5 }}>
-          <Typography variant="body2" gutterBottom>DPI: {get('dpi') ?? 96}</Typography>
-          <Slider
-            value={get('dpi') ?? 96}
-            onChange={(_, v) => set('dpi', v as number)}
-            min={48}
-            max={384}
-            step={12}
-            marks={[
-              { value: 96, label: '96' },
-              { value: 192, label: '192' },
-              { value: 384, label: '384' },
-            ]}
-            disabled={fieldDisabled('dpi')}
-          />
-        </Box>
+          <SettingsFieldCard
+            label="DPI"
+            description={`Current DPI: ${getValue('dpi') ?? 96}.`}
+            aside={overrideControl('dpi')}
+          >
+            <Slider
+              value={[getValue('dpi') ?? 96]}
+              min={48}
+              max={384}
+              step={12}
+              disabled={isDisabled('dpi')}
+              onValueChange={([nextValue]) => setField('dpi', nextValue)}
+              aria-label="DPI"
+            />
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="resolution" mode={mode} isOverridden={isOverridden('width')} onToggle={() => toggleOverride('width', get('width'))} enforced={isEnforced('width')} />
-        <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
-          <TextField
-            label="Width"
-            type="number"
-            size="small"
-            value={get('width') ?? ''}
-            onChange={(e) => set('width', e.target.value ? Number(e.target.value) : undefined)}
-            placeholder="Auto"
-            disabled={fieldDisabled('width')}
-            slotProps={{ htmlInput: { min: 640, max: 7680 } }}
-          />
-          <TextField
-            label="Height"
-            type="number"
-            size="small"
-            value={get('height') ?? ''}
-            onChange={(e) => set('height', e.target.value ? Number(e.target.value) : undefined)}
-            placeholder="Auto"
-            disabled={fieldDisabled('height')}
-            slotProps={{ htmlInput: { min: 480, max: 4320 } }}
-          />
-        </Box>
+          <SettingsFieldCard
+            label="Resolution"
+            description="Leave width or height empty to let the server negotiate it."
+            aside={overrideControl('width')}
+            contentClassName="grid gap-3 sm:grid-cols-2"
+          >
+            <Input
+              type="number"
+              value={getValue('width') ?? ''}
+              min={640}
+              max={7680}
+              placeholder="Width"
+              disabled={isDisabled('width')}
+              onChange={(event) => setField('width', event.target.value ? Number(event.target.value) : undefined)}
+            />
+            <Input
+              type="number"
+              value={getValue('height') ?? ''}
+              min={480}
+              max={4320}
+              placeholder="Height"
+              disabled={isDisabled('width')}
+              onChange={(event) => setField('height', event.target.value ? Number(event.target.value) : undefined)}
+            />
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="resize method" mode={mode} isOverridden={isOverridden('resizeMethod')} onToggle={() => toggleOverride('resizeMethod', get('resizeMethod'))} enforced={isEnforced('resizeMethod')} />
-        <FormControl fullWidth size="small" disabled={fieldDisabled('resizeMethod')}>
-          <InputLabel>Resize Method</InputLabel>
-          <Select
-            value={get('resizeMethod') ?? 'display-update'}
+          <SettingsFieldCard
             label="Resize Method"
-            onChange={(e) => set('resizeMethod', e.target.value as RdpSettings['resizeMethod'])}
+            description="Display update is smoother; reconnect is more compatible."
+            aside={overrideControl('resizeMethod')}
           >
-            <MenuItem value="display-update">Display Update (recommended)</MenuItem>
-            <MenuItem value="reconnect">Reconnect</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
+            <Select
+              value={getValue('resizeMethod') ?? 'display-update'}
+              onValueChange={(nextValue) => setField('resizeMethod', nextValue as RdpSettings['resizeMethod'])}
+              disabled={isDisabled('resizeMethod')}
+            >
+              <SelectTrigger aria-label="Resize Method">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="display-update">Display Update</SelectItem>
+                <SelectItem value="reconnect">Reconnect</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
+        </div>
+      </SettingsSectionBlock>
 
-      {/* ── Audio ──────────────────────────────────────────────── */}
-      <Box>
-        <Typography variant="subtitle2" gutterBottom>Audio</Typography>
+      <SettingsSectionBlock
+        title="Audio"
+        description="Choose whether the session can play or capture audio."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
+            label="Remote Audio Playback"
+            description="Play remote sound through the browser."
+            aside={overrideControl('disableAudio')}
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">Enable remote audio playback</span>
+              <Switch
+                checked={!Boolean(getValue('disableAudio'))}
+                disabled={isDisabled('disableAudio')}
+                onCheckedChange={(nextValue) => setField('disableAudio', !nextValue)}
+                aria-label="Enable remote audio playback"
+              />
+            </label>
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="audio" mode={mode} isOverridden={isOverridden('disableAudio')} onToggle={() => toggleOverride('disableAudio', get('disableAudio'))} enforced={isEnforced('disableAudio')} />
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={!get('disableAudio')}
-              onChange={(e) => set('disableAudio', !e.target.checked)}
-              disabled={fieldDisabled('disableAudio')}
-            />
-          }
-          label={<Typography variant="body2">Enable remote audio playback</Typography>}
-        />
+          <SettingsFieldCard
+            label="Microphone Input"
+            description="Allow the remote session to receive microphone input."
+            aside={overrideControl('enableAudioInput')}
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">Enable microphone input</span>
+              <Switch
+                checked={Boolean(getValue('enableAudioInput'))}
+                disabled={isDisabled('enableAudioInput')}
+                onCheckedChange={(nextValue) => setField('enableAudioInput', nextValue)}
+                aria-label="Enable microphone input"
+              />
+            </label>
+          </SettingsFieldCard>
+        </div>
+      </SettingsSectionBlock>
 
-        <OverrideCheckbox label="microphone" mode={mode} isOverridden={isOverridden('enableAudioInput')} onToggle={() => toggleOverride('enableAudioInput', get('enableAudioInput'))} enforced={isEnforced('enableAudioInput')} />
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={!!get('enableAudioInput')}
-              onChange={(e) => set('enableAudioInput', e.target.checked)}
-              disabled={fieldDisabled('enableAudioInput')}
-            />
-          }
-          label={<Typography variant="body2">Enable microphone input</Typography>}
-        />
-      </Box>
-
-      {/* ── Security ───────────────────────────────────────────── */}
-      <Box>
-        <Typography variant="subtitle2" gutterBottom>Security</Typography>
-
-        <OverrideCheckbox label="security type" mode={mode} isOverridden={isOverridden('security')} onToggle={() => toggleOverride('security', get('security'))} enforced={isEnforced('security')} />
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }} disabled={fieldDisabled('security')}>
-          <InputLabel>Security Type</InputLabel>
-          <Select
-            value={get('security') ?? 'any'}
+      <SettingsSectionBlock
+        title="Security"
+        description="Control protocol security and certificate validation."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
             label="Security Type"
-            onChange={(e) => set('security', e.target.value as RdpSettings['security'])}
+            description="Choose the negotiated protocol for authentication and transport."
+            aside={overrideControl('security')}
           >
-            <MenuItem value="any">Any (auto-negotiate)</MenuItem>
-            <MenuItem value="nla">NLA (Network Level Auth)</MenuItem>
-            <MenuItem value="nla-ext">NLA Extended</MenuItem>
-            <MenuItem value="tls">TLS</MenuItem>
-            <MenuItem value="rdp">RDP (legacy)</MenuItem>
-          </Select>
-        </FormControl>
+            <Select
+              value={getValue('security') ?? 'any'}
+              onValueChange={(nextValue) => setField('security', nextValue as RdpSettings['security'])}
+              disabled={isDisabled('security')}
+            >
+              <SelectTrigger aria-label="Security Type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any (auto-negotiate)</SelectItem>
+                <SelectItem value="nla">NLA</SelectItem>
+                <SelectItem value="nla-ext">NLA Extended</SelectItem>
+                <SelectItem value="tls">TLS</SelectItem>
+                <SelectItem value="rdp">RDP (legacy)</SelectItem>
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="certificate" mode={mode} isOverridden={isOverridden('ignoreCert')} onToggle={() => toggleOverride('ignoreCert', get('ignoreCert'))} enforced={isEnforced('ignoreCert')} />
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={get('ignoreCert') ?? false}
-              onChange={(e) => set('ignoreCert', e.target.checked)}
-              disabled={fieldDisabled('ignoreCert')}
-            />
-          }
-          label={<Typography variant="body2">Ignore server certificate errors</Typography>}
-        />
-      </Box>
+          <SettingsFieldCard
+            label="Certificate Handling"
+            description="Allow sessions to continue when the server certificate is invalid."
+            aside={overrideControl('ignoreCert')}
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">Ignore server certificate errors</span>
+              <Switch
+                checked={Boolean(getValue('ignoreCert'))}
+                disabled={isDisabled('ignoreCert')}
+                onCheckedChange={(nextValue) => setField('ignoreCert', nextValue)}
+                aria-label="Ignore server certificate errors"
+              />
+            </label>
+          </SettingsFieldCard>
+        </div>
+      </SettingsSectionBlock>
 
-      {/* ── Session ────────────────────────────────────────────── */}
-      <Box>
-        <Typography variant="subtitle2" gutterBottom>Session</Typography>
-
-        <OverrideCheckbox label="keyboard layout" mode={mode} isOverridden={isOverridden('serverLayout')} onToggle={() => toggleOverride('serverLayout', get('serverLayout'))} enforced={isEnforced('serverLayout')} />
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }} disabled={fieldDisabled('serverLayout')}>
-          <InputLabel>Keyboard Layout</InputLabel>
-          <Select
-            value={get('serverLayout') ?? ''}
+      <SettingsSectionBlock
+        title="Session"
+        description="Set keyboard layout, timezone, and console-session behavior."
+      >
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
             label="Keyboard Layout"
-            onChange={(e) => set('serverLayout', e.target.value || undefined)}
+            description="Use the server default if you do not need a custom mapping."
+            aside={overrideControl('serverLayout')}
           >
-            <MenuItem value="">Default (en-us-qwerty)</MenuItem>
-            {KEYBOARD_LAYOUTS.map((kl) => (
-              <MenuItem key={kl.value} value={kl.value}>{kl.label}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            <Select
+              value={getValue('serverLayout') ?? NOT_SET_VALUE}
+              onValueChange={(nextValue) =>
+                setField('serverLayout', (nextValue === NOT_SET_VALUE ? undefined : nextValue) as RdpSettings['serverLayout'])
+              }
+              disabled={isDisabled('serverLayout')}
+            >
+              <SelectTrigger aria-label="Keyboard Layout">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NOT_SET_VALUE}>Default (en-us-qwerty)</SelectItem>
+                {KEYBOARD_LAYOUTS.map((layout) => (
+                  <SelectItem key={layout.value} value={layout.value}>
+                    {layout.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="timezone" mode={mode} isOverridden={isOverridden('timezone')} onToggle={() => toggleOverride('timezone', get('timezone'))} enforced={isEnforced('timezone')} />
-        <FormControl fullWidth size="small" sx={{ mb: 1.5 }} disabled={fieldDisabled('timezone')}>
-          <InputLabel>Timezone</InputLabel>
-          <Select
-            value={get('timezone') ?? ''}
+          <SettingsFieldCard
             label="Timezone"
-            onChange={(e) => set('timezone', e.target.value || undefined)}
+            description="Useful for applications that depend on local time."
+            aside={overrideControl('timezone')}
           >
-            <MenuItem value="">Not set (server default)</MenuItem>
-            {COMMON_TIMEZONES.map((tz) => (
-              <MenuItem key={tz} value={tz}>{tz}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+            <Select
+              value={getValue('timezone') ?? NOT_SET_VALUE}
+              onValueChange={(nextValue) =>
+                setField('timezone', (nextValue === NOT_SET_VALUE ? undefined : nextValue) as RdpSettings['timezone'])
+              }
+              disabled={isDisabled('timezone')}
+            >
+              <SelectTrigger aria-label="Timezone">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={NOT_SET_VALUE}>Not set (server default)</SelectItem>
+                {COMMON_TIMEZONES.map((timezone) => (
+                  <SelectItem key={timezone} value={timezone}>
+                    {timezone}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsFieldCard>
 
-        <OverrideCheckbox label="console session" mode={mode} isOverridden={isOverridden('console')} onToggle={() => toggleOverride('console', get('console'))} enforced={isEnforced('console')} />
-        <FormControlLabel
-          control={
-            <Switch
-              size="small"
-              checked={!!get('console')}
-              onChange={(e) => set('console', e.target.checked)}
-              disabled={fieldDisabled('console')}
-            />
-          }
-          label={<Typography variant="body2">Console / admin session</Typography>}
-        />
-      </Box>
-    </Box>
+          <SettingsFieldCard
+            label="Console Session"
+            description="Use the existing admin console session instead of starting a regular desktop."
+            aside={overrideControl('console')}
+            className="xl:col-span-2"
+          >
+            <label className="flex items-center justify-between gap-4 rounded-xl border border-border/70 bg-background px-4 py-3">
+              <span className="text-sm text-muted-foreground">Connect to the console / admin session</span>
+              <Switch
+                checked={Boolean(getValue('console'))}
+                disabled={isDisabled('console')}
+                onCheckedChange={(nextValue) => setField('console', nextValue)}
+                aria-label="Console / admin session"
+              />
+            </label>
+          </SettingsFieldCard>
+        </div>
+      </SettingsSectionBlock>
+    </SettingsFieldGroup>
   );
 }

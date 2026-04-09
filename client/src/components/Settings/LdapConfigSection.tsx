@@ -1,16 +1,23 @@
 import { useState, useEffect } from 'react';
 import {
-  Card, CardContent, Typography, Button, Alert, Box, Chip, Stack, Divider,
-} from '@mui/material';
-import {
-  CheckCircle as CheckIcon,
-  Error as ErrorIcon,
-  Sync as SyncIcon,
-  NetworkCheck as TestIcon,
-} from '@mui/icons-material';
+  CheckCircle2,
+  Loader2,
+  RefreshCw,
+  TestTubeDiagonal,
+} from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { getLdapStatus, testLdapConnection, triggerLdapSync } from '../../api/ldap.api';
 import type { LdapStatus, LdapTestResult, LdapSyncResult } from '../../api/ldap.api';
 import { extractApiError } from '../../utils/apiError';
+import {
+  SettingsButtonRow,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsStatusBadge,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+} from './settings-ui';
 
 export default function LdapConfigSection() {
   const [status, setStatus] = useState<LdapStatus | null>(null);
@@ -56,110 +63,117 @@ export default function LdapConfigSection() {
     }
   };
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <SettingsPanel
+        title="LDAP"
+        description="Directory-backed authentication and scheduled identity sync."
+      >
+        <SettingsLoadingState message="Loading LDAP status..." />
+      </SettingsPanel>
+    );
+  }
+
   if (!status?.enabled) return null;
 
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          LDAP Authentication
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          LDAP configuration is managed via environment variables.
-        </Typography>
+    <SettingsPanel
+      title="LDAP"
+      description="Directory-backed authentication and scheduled identity sync."
+      heading={(
+        <div className="flex flex-wrap items-center gap-2">
+          <SettingsStatusBadge tone="success">
+            <CheckCircle2 className="mr-1 size-3.5" />
+            {status.providerName}
+          </SettingsStatusBadge>
+          {status.syncEnabled && <SettingsStatusBadge tone="neutral">Auto-Sync</SettingsStatusBadge>}
+        </div>
+      )}
+      contentClassName="space-y-4"
+    >
+      <SettingsSummaryGrid className="xl:grid-cols-2">
+        <SettingsSummaryItem label="Server" value={<code className="text-xs">{status.serverUrl}</code>} />
+        <SettingsSummaryItem label="Base DN" value={<code className="text-xs">{status.baseDn}</code>} />
+        <SettingsSummaryItem label="Auto-Provision" value={status.autoProvision ? 'Enabled' : 'Disabled'} />
+        <SettingsSummaryItem
+          label="Sync Schedule"
+          value={status.syncEnabled ? <code className="text-xs">{status.syncCron}</code> : 'Manual only'}
+        />
+        {testResult?.ok && testResult.userCount !== undefined && (
+          <SettingsSummaryItem
+            label="Directory Entries"
+            className="xl:col-span-2"
+            value={`${testResult.userCount} users${testResult.groupCount !== undefined ? `, ${testResult.groupCount} groups` : ''}`}
+          />
+        )}
+      </SettingsSummaryGrid>
 
-        <Stack spacing={2}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Chip
-              icon={<CheckIcon />}
-              label={status.providerName}
-              color="success"
-              variant="outlined"
-            />
-            {status.syncEnabled && (
-              <Chip
-                icon={<SyncIcon />}
-                label="Auto-Sync"
-                color="info"
-                variant="outlined"
-                size="small"
-              />
-            )}
-          </Stack>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-          <Box>
-            <Typography variant="body2">
-              Server: <code>{status.serverUrl}</code>
-            </Typography>
-            <Typography variant="body2">
-              Base DN: <code>{status.baseDn}</code>
-            </Typography>
-            <Typography variant="body2">
-              Auto-provision: {status.autoProvision ? 'Enabled' : 'Disabled'}
-            </Typography>
-            {status.syncEnabled && (
-              <Typography variant="body2">
-                Sync schedule: <code>{status.syncCron}</code>
-              </Typography>
-            )}
-            {testResult && testResult.ok && testResult.userCount !== undefined && (
-              <Typography variant="body2">
-                Directory entries: {testResult.userCount} users{testResult.groupCount !== undefined ? `, ${testResult.groupCount} groups` : ''}
-              </Typography>
-            )}
-          </Box>
+      <SettingsButtonRow>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleTest}
+          disabled={testing}
+        >
+          {testing ? <Loader2 className="animate-spin" /> : <TestTubeDiagonal />}
+          {testing ? 'Testing...' : 'Test Connection'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleSync}
+          disabled={syncing}
+        >
+          {syncing ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+          {syncing ? 'Syncing...' : 'Sync Now'}
+        </Button>
+      </SettingsButtonRow>
 
-          {error && <Alert severity="error">{error}</Alert>}
+      {testResult && (
+        <Alert variant={testResult.ok ? 'success' : 'destructive'}>
+          <AlertDescription>{testResult.message}</AlertDescription>
+        </Alert>
+      )}
 
-          <Divider />
-
-          <Stack direction="row" spacing={1}>
-            <Button
-              variant="outlined"
-              startIcon={<TestIcon />}
-              onClick={handleTest}
-              disabled={testing}
-            >
-              {testing ? 'Testing...' : 'Test Connection'}
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<SyncIcon />}
-              onClick={handleSync}
-              disabled={syncing}
-            >
-              {syncing ? 'Syncing...' : 'Sync Now'}
-            </Button>
-          </Stack>
-
-          {testResult && (
-            <Alert
-              severity={testResult.ok ? 'success' : 'error'}
-              icon={testResult.ok ? <CheckIcon /> : <ErrorIcon />}
-            >
-              {testResult.message}
-            </Alert>
-          )}
-
-          {syncResult && (
-            <Alert severity={syncResult.errors.length > 0 ? 'warning' : 'success'}>
-              Sync complete: {syncResult.created} created, {syncResult.updated} updated,
-              {' '}{syncResult.disabled} disabled
+      {syncResult && (
+        <Alert variant={syncResult.errors.length > 0 ? 'warning' : 'success'}>
+          <AlertDescription>
+            <div className="space-y-2">
+              <div>
+                Sync complete:
+                {' '}
+                {syncResult.created}
+                {' '}
+                created,
+                {' '}
+                {syncResult.updated}
+                {' '}
+                updated,
+                {' '}
+                {syncResult.disabled}
+                {' '}
+                disabled.
+              </div>
               {syncResult.errors.length > 0 && (
-                <Box component="ul" sx={{ mt: 1, mb: 0, pl: 2 }}>
-                  {syncResult.errors.slice(0, 5).map((e, i) => (
-                    <li key={i}>{e}</li>
+                <ul className="list-disc space-y-1 pl-5">
+                  {syncResult.errors.slice(0, 5).map((entry) => (
+                    <li key={entry}>{entry}</li>
                   ))}
                   {syncResult.errors.length > 5 && (
                     <li>...and {syncResult.errors.length - 5} more</li>
                   )}
-                </Box>
+                </ul>
               )}
-            </Alert>
-          )}
-        </Stack>
-      </CardContent>
-    </Card>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+    </SettingsPanel>
   );
 }

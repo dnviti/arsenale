@@ -1,93 +1,42 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Dialog, AppBar, Toolbar, Typography, Box, IconButton, Tabs, Tab,
-  Stack, useMediaQuery, Card, CardContent, Button,
-} from '@mui/material';
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
-  Close as CloseIcon,
-  Person as PersonIcon,
-  Palette as PaletteIcon,
-  Terminal as TerminalIcon,
-  Shield as ShieldIcon,
-  Business as BusinessIcon,
-  Groups as GroupsIcon,
-  Router as RouterIcon,
-  Sync as SyncIcon,
-  AdminPanelSettings as AdminPanelSettingsIcon,
-  VpnLock as TunnelIcon,
-  CloudUpload as CloudUploadIcon,
-  CloudDownload as CloudDownloadIcon,
-  Notifications as NotificationsIcon,
-} from '@mui/icons-material';
+  ChevronRight,
+  Command,
+  Search,
+  Settings2,
+  X,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 import { useAuthStore } from '../../store/authStore';
 import { getProfile } from '../../api/user.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
-import ProfileSection from '../Settings/ProfileSection';
-import ChangePasswordSection from '../Settings/ChangePasswordSection';
-import ConnectionDefaultsSection from '../Settings/ConnectionDefaultsSection';
-import TwoFactorSection from '../Settings/TwoFactorSection';
-import SmsMfaSection from '../Settings/SmsMfaSection';
-import WebAuthnSection from '../Settings/WebAuthnSection';
-import LinkedAccountsSection from '../Settings/LinkedAccountsSection';
-import VaultAutoLockSection from '../Settings/VaultAutoLockSection';
-import DomainProfileSection from '../Settings/DomainProfileSection';
-import TenantSection from '../Settings/TenantSection';
-import TeamSection from '../Settings/TeamSection';
-import GatewaySection from '../Settings/GatewaySection';
-import EmailProviderSection from '../Settings/EmailProviderSection';
-import SelfSignupSection from '../Settings/SelfSignupSection';
-import SystemSettingsSection from '../Settings/SystemSettingsSection';
-import IpAllowlistSection from '../Settings/IpAllowlistSection';
-import TenantAuditLogSection from '../Settings/TenantAuditLogSection';
-import LdapConfigSection from '../Settings/LdapConfigSection';
-import SyncProfileSection from '../Settings/SyncProfileSection';
-import TenantConnectionPolicySection from '../Settings/TenantConnectionPolicySection';
-import TunnelConfigSection from '../Settings/TunnelConfigSection';
-import SamlConfigSection from '../Settings/SamlConfigSection';
-import OAuthProvidersAdminSection from '../Settings/OAuthProvidersAdminSection';
-import AccessPolicySection from '../Settings/AccessPolicySection';
-import NativeSshSection from '../Settings/NativeSshSection';
-import RdGatewayConfigSection from '../Settings/RdGatewayConfigSection';
-import DbFirewallSection from '../Settings/DbFirewallSection';
-import DbMaskingSection from '../Settings/DbMaskingSection';
-import AiQueryConfigSection from '../Settings/AiQueryConfigSection';
-import DbRateLimitSection from '../Settings/DbRateLimitSection';
-import AppearanceSection from '../Settings/AppearanceSection';
-import SqlEditorSection from '../Settings/SqlEditorSection';
-import NotificationPreferencesSection from '../Settings/NotificationPreferencesSection';
-import NotificationsSection from '../Settings/NotificationsSection';
-import { SlideUp } from '../common/SlideUp';
 import { isAdminOrAbove } from '../../utils/roles';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
-
-interface TabDef {
-  id: string;
-  label: string;
-  icon: React.ReactElement;
-}
-
-const BASE_TABS: TabDef[] = [
-  { id: 'profile', label: 'Profile', icon: <PersonIcon /> },
-  { id: 'appearance', label: 'Appearance', icon: <PaletteIcon /> },
-  { id: 'notifications', label: 'Notifications', icon: <NotificationsIcon /> },
-  { id: 'connections', label: 'Connections', icon: <TerminalIcon /> },
-  { id: 'security', label: 'Security', icon: <ShieldIcon /> },
-  { id: 'organization', label: 'Organization', icon: <BusinessIcon /> },
-];
-
-const TENANT_TABS: TabDef[] = [
-  { id: 'teams', label: 'Teams', icon: <GroupsIcon /> },
-  { id: 'gateways', label: 'Gateways', icon: <RouterIcon /> },
-  { id: 'integrations', label: 'Integrations', icon: <SyncIcon /> },
-];
-
-const TUNNEL_TAB: TabDef = {
-  id: 'tunnel', label: 'Zero-Trust Tunnel', icon: <TunnelIcon />,
-};
-
-const ADMIN_TAB: TabDef = {
-  id: 'administration', label: 'Administration', icon: <AdminPanelSettingsIcon />,
-};
+import {
+  buildSettingsConcerns,
+  type SettingsConcern,
+  type SettingsSection,
+} from './settingsConcerns';
 
 interface SettingsDialogProps {
   open: boolean;
@@ -100,258 +49,632 @@ interface SettingsDialogProps {
   onExport?: () => void;
 }
 
-export default function SettingsDialog({ open, onClose, initialTab, linkedProvider, onViewUserProfile, onGeoIpClick, onImport, onExport }: SettingsDialogProps) {
+const LEGACY_TAB_TO_CONCERN: Record<string, string> = {
+  profile: 'personal',
+  appearance: 'personal',
+  notifications: 'personal',
+  connections: 'personal',
+  security: 'security',
+  organization: 'organization',
+  teams: 'organization',
+  gateways: 'infrastructure',
+  tunnel: 'infrastructure',
+  integrations: 'integrations',
+  administration: 'governance',
+};
+
+function resolveConcernTarget(target: string) {
+  return LEGACY_TAB_TO_CONCERN[target] ?? target;
+}
+
+function sectionMatches(section: SettingsSection, query: string) {
+  if (!query) return true;
+  const haystack = [section.label, section.description, ...section.keywords]
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
+function concernMatches(concern: SettingsConcern, query: string) {
+  if (!query) return true;
+  const haystack = [concern.label, concern.description, ...concern.keywords]
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(query);
+}
+
+export default function SettingsDialog({
+  open,
+  onClose,
+  initialTab,
+  linkedProvider,
+  onViewUserProfile,
+  onGeoIpClick,
+  onImport,
+  onExport,
+}: SettingsDialogProps) {
   const user = useAuthStore((s) => s.user);
-  const permissionsLoaded = useAuthStore((s) => s.permissionsLoaded);
-  const canManageGateways = useAuthStore((s) => s.permissions.canManageGateways);
-  const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
-  const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
+  const connectionsEnabled = useFeatureFlagsStore(
+    (s) => s.connectionsEnabled,
+  );
+  const databaseProxyEnabled = useFeatureFlagsStore(
+    (s) => s.databaseProxyEnabled,
+  );
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
   const zeroTrustEnabled = useFeatureFlagsStore((s) => s.zeroTrustEnabled);
   const agenticAIEnabled = useFeatureFlagsStore((s) => s.agenticAIEnabled);
-  const enterpriseAuthEnabled = useFeatureFlagsStore((s) => s.enterpriseAuthEnabled);
+  const enterpriseAuthEnabled = useFeatureFlagsStore(
+    (s) => s.enterpriseAuthEnabled,
+  );
+  const storedConcern = useUiPreferencesStore((s) => s.settingsActiveTab);
+  const setPreference = useUiPreferencesStore((s) => s.set);
+
   const [hasPassword, setHasPassword] = useState(true);
-  const [deleteOrgTrigger, setDeleteOrgTrigger] = useState<(() => void) | null>(null);
+  const [deleteOrgTrigger, setDeleteOrgTriggerState] = useState<
+    (() => void) | null
+  >(null);
+  const [search, setSearch] = useState('');
+  const deferredSearch = useDeferredValue(search);
+  const [selectedConcern, setSelectedConcern] = useState<string | null>(null);
+  const [expandedConcerns, setExpandedConcerns] = useState<Set<string>>(
+    new Set(),
+  );
+  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const programmaticScroll = useRef(false);
+
+  const registerDeleteOrgTrigger = useCallback(
+    (trigger: (() => void) | null) => {
+      setDeleteOrgTriggerState(() => trigger);
+    },
+    [],
+  );
 
   const hasTenant = Boolean(user?.tenantId);
   const isAdmin = isAdminOrAbove(user?.tenantRole);
   const isOwner = user?.tenantRole === 'OWNER';
   const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
-  const integrationsEnabled = enterpriseAuthEnabled || agenticAIEnabled || databaseProxyEnabled;
 
-  const tabs = useMemo(() => {
-    const t = BASE_TABS.filter((tab) => tab.id !== 'connections' || anyConnectionFeature);
-    if (hasTenant) {
-      t.push(...TENANT_TABS.filter((tab) => {
-        if (tab.id === 'gateways') return anyConnectionFeature && permissionsLoaded && canManageGateways;
-        if (tab.id === 'integrations') return integrationsEnabled;
-        return true;
-      }));
-    }
-    if (isAdmin) {
-      if (zeroTrustEnabled) t.push(TUNNEL_TAB);
-      t.push(ADMIN_TAB);
-    }
-    return t;
-  }, [anyConnectionFeature, canManageGateways, hasTenant, integrationsEnabled, isAdmin, permissionsLoaded, zeroTrustEnabled]);
+  const concerns = useMemo(
+    () =>
+      buildSettingsConcerns({
+        hasPassword,
+        hasTenant,
+        isAdmin,
+        isOwner,
+        anyConnectionFeature,
+        connectionsEnabled,
+        databaseProxyEnabled,
+        keychainEnabled,
+        zeroTrustEnabled,
+        agenticAIEnabled,
+        enterpriseAuthEnabled,
+        linkedProvider,
+        tenantId: user?.tenantId ?? null,
+        onHasPasswordResolved: setHasPassword,
+        onViewUserProfile,
+        onGeoIpClick,
+        onImport,
+        onExport,
+        deleteOrgTrigger,
+        setDeleteOrgTrigger: registerDeleteOrgTrigger,
+        navigateToConcern: (target) =>
+          setSelectedConcern(resolveConcernTarget(target)),
+      }),
+    [
+      agenticAIEnabled,
+      anyConnectionFeature,
+      connectionsEnabled,
+      databaseProxyEnabled,
+      deleteOrgTrigger,
+      enterpriseAuthEnabled,
+      hasPassword,
+      hasTenant,
+      isAdmin,
+      isOwner,
+      keychainEnabled,
+      linkedProvider,
+      onExport,
+      onGeoIpClick,
+      onImport,
+      onViewUserProfile,
+      registerDeleteOrgTrigger,
+      user?.tenantId,
+      zeroTrustEnabled,
+    ],
+  );
 
-  const validTabIds = useMemo(() => new Set(tabs.map((t) => t.id)), [tabs]);
+  const concernIds = useMemo(
+    () => new Set(concerns.map((concern) => concern.id)),
+    [concerns],
+  );
 
-  const storedTab = useUiPreferencesStore((s) => s.settingsActiveTab);
-  const setStoredTab = useUiPreferencesStore((s) => s.set);
+  const filteredConcerns = useMemo(() => {
+    const query = deferredSearch.trim().toLowerCase();
+    return concerns
+      .map((concern) => {
+        const matchingSections = concern.sections.filter((section) =>
+          sectionMatches(section, query),
+        );
+        return concernMatches(concern, query) || matchingSections.length > 0
+          ? {
+              ...concern,
+              sections:
+                matchingSections.length > 0 || !query
+                  ? matchingSections
+                  : concern.sections,
+            }
+          : null;
+      })
+      .filter(
+        (concern): concern is SettingsConcern => concern !== null,
+      );
+  }, [concerns, deferredSearch]);
 
-  // --- Active tab state (React 19 render-time adjustment, no useEffect) ---
-  const [activeTab, setActiveTabRaw] = useState('profile');
-  const [prevOpen, setPrevOpen] = useState(false);
-  const [prevInitialTab, setPrevInitialTab] = useState(initialTab);
+  const availableConcernIds = useMemo(
+    () => new Set(filteredConcerns.map((concern) => concern.id)),
+    [filteredConcerns],
+  );
 
-  // Reset tab when dialog opens or initialTab changes while open
-  if (open && (!prevOpen || initialTab !== prevInitialTab)) {
-    const target = initialTab || storedTab || 'profile';
-    setActiveTabRaw(validTabIds.has(target) ? target : 'profile');
-  }
-  if (open !== prevOpen) setPrevOpen(open);
-  if (initialTab !== prevInitialTab) setPrevInitialTab(initialTab);
+  const defaultConcern = useMemo(
+    () =>
+      (initialTab ? resolveConcernTarget(initialTab) : null) ??
+      (storedConcern ? resolveConcernTarget(storedConcern) : null) ??
+      concerns[0]?.id ??
+      'personal',
+    [concerns, initialTab, storedConcern],
+  );
 
-  // Ensure active tab is always valid (handles tenant removal, role changes)
-  const resolvedTab = validTabIds.has(activeTab) ? activeTab : 'profile';
+  const persistedConcern =
+    selectedConcern && concernIds.has(selectedConcern)
+      ? selectedConcern
+      : concernIds.has(defaultConcern)
+        ? defaultConcern
+        : concerns[0]?.id ?? 'personal';
 
-  const setActiveTab = useCallback((tab: string) => {
-    setActiveTabRaw(tab);
-    setStoredTab('settingsActiveTab', tab);
-  }, [setStoredTab]);
+  const resolvedConcern = availableConcernIds.has(persistedConcern)
+    ? persistedConcern
+    : filteredConcerns[0]?.id ?? persistedConcern;
 
-  // Fetch hasPassword on open
+  const currentConcern =
+    filteredConcerns.find((concern) => concern.id === resolvedConcern) ??
+    filteredConcerns[0];
+
+  // Auto-expand the active concern in the sidebar
   useEffect(() => {
-    if (open) {
-      getProfile().then((p) => setHasPassword(p.hasPassword)).catch(() => {});
+    if (resolvedConcern) {
+      setExpandedConcerns((prev) => {
+        if (prev.has(resolvedConcern)) return prev;
+        const next = new Set(prev);
+        next.add(resolvedConcern);
+        return next;
+      });
     }
+  }, [resolvedConcern]);
+
+  // When search is active, expand all matching concerns
+  useEffect(() => {
+    if (deferredSearch.trim()) {
+      setExpandedConcerns(
+        new Set(filteredConcerns.map((c) => c.id)),
+      );
+    }
+  }, [deferredSearch, filteredConcerns]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    getProfile()
+      .then((profile) => setHasPassword(profile.hasPassword))
+      .catch(() => {});
   }, [open]);
 
-  const isMobile = useMediaQuery('(max-width:767px)');
+  useEffect(() => {
+    if (!open || !persistedConcern) return;
+    setPreference('settingsActiveTab', persistedConcern);
+  }, [open, persistedConcern, setPreference]);
+
+  // IntersectionObserver to track the active section while scrolling
+  useEffect(() => {
+    if (!currentConcern) return;
+
+    const sectionIds = currentConcern.sections.map((s) => s.id);
+    const elements = sectionIds
+      .map((id) => sectionRefs.current[id])
+      .filter(Boolean) as HTMLElement[];
+
+    if (elements.length === 0) return;
+
+    // Find the scroll container (the viewport inside ScrollArea)
+    const scrollContainer = scrollAreaRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (!scrollContainer) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (programmaticScroll.current) return;
+
+        // Find the topmost visible section
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort(
+            (a, b) =>
+              a.boundingClientRect.top - b.boundingClientRect.top,
+          );
+
+        if (visible.length > 0) {
+          setActiveSectionId(visible[0].target.id);
+        }
+      },
+      {
+        root: scrollContainer,
+        rootMargin: '-10% 0px -60% 0px',
+        threshold: 0,
+      },
+    );
+
+    for (const el of elements) {
+      observer.observe(el);
+    }
+
+    // Set initial active section
+    if (!activeSectionId || !sectionIds.includes(activeSectionId)) {
+      setActiveSectionId(sectionIds[0]);
+    }
+
+    return () => observer.disconnect();
+  }, [currentConcern, activeSectionId]);
+
+  // Keyboard shortcut: "/" to focus search
+  useEffect(() => {
+    if (!open) return;
+
+    const handler = (e: KeyboardEvent) => {
+      if (
+        e.key === '/' &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        document.activeElement?.tagName !== 'INPUT' &&
+        document.activeElement?.tagName !== 'TEXTAREA'
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === 'Escape' && document.activeElement === searchInputRef.current) {
+        e.preventDefault();
+        setSearch('');
+        searchInputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open]);
+
+  const toggleConcernExpanded = (concernId: string) => {
+    setExpandedConcerns((prev) => {
+      const next = new Set(prev);
+      if (next.has(concernId)) {
+        next.delete(concernId);
+      } else {
+        next.add(concernId);
+      }
+      return next;
+    });
+  };
+
+  const handleConcernClick = (concernId: string) => {
+    setSelectedConcern(concernId);
+    setExpandedConcerns((prev) => {
+      const next = new Set(prev);
+      next.add(concernId);
+      return next;
+    });
+    // Scroll content to top
+    const viewport = scrollAreaRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (viewport) {
+      viewport.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const jumpToSection = (sectionId: string) => {
+    const target = sectionRefs.current[sectionId];
+    if (target) {
+      programmaticScroll.current = true;
+      setActiveSectionId(sectionId);
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => {
+        programmaticScroll.current = false;
+      }, 600);
+    }
+  };
+
+  const handleDialogOpenChange = (next: boolean) => {
+    if (next) return;
+    setSearch('');
+    setSelectedConcern(null);
+    setDeleteOrgTriggerState(null);
+    onClose();
+  };
+
+  // Build the breadcrumb from active section
+  const activeSectionLabel = currentConcern?.sections.find(
+    (s) => s.id === activeSectionId,
+  )?.label;
 
   return (
-    <Dialog
-      fullScreen
-      open={open}
-      onClose={onClose}
-      TransitionComponent={SlideUp}
-    >
-      <AppBar position="static" sx={{ position: 'relative' }}>
-        <Toolbar variant="dense">
-          <IconButton edge="start" color="inherit" onClick={onClose} sx={{ mr: 1 }}>
-            <CloseIcon />
-          </IconButton>
-          <Typography variant="h6">Settings</Typography>
-        </Toolbar>
-      </AppBar>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+      <DialogContent
+        showCloseButton={false}
+        className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+      >
+        <div className="flex h-full min-h-0 flex-col bg-background sm:flex-row">
+          {/* ── Sidebar ── */}
+          <aside className="settings-sidebar flex w-full shrink-0 flex-col border-b bg-card/30 sm:w-[272px] sm:border-b-0 sm:border-r">
+            <DialogHeader className="gap-3 px-4 pb-3 pt-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Settings2 className="size-3.5" />
+                  </div>
+                  <div>
+                    <DialogTitle className="text-sm font-semibold tracking-tight">
+                      Settings
+                    </DialogTitle>
+                    <DialogDescription className="sr-only">
+                      Workspace configuration organized by concern.
+                    </DialogDescription>
+                  </div>
+                </div>
+                <DialogClose asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 text-muted-foreground hover:text-foreground"
+                    aria-label="Close settings"
+                  >
+                    <X className="size-3.5" />
+                  </Button>
+                </DialogClose>
+              </div>
 
-      <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: isMobile ? 'column' : 'row' }}>
-        <Tabs
-          orientation={isMobile ? 'horizontal' : 'vertical'}
-          variant="scrollable"
-          scrollButtons="auto"
-          value={resolvedTab}
-          onChange={(_, v) => setActiveTab(v as string)}
-          sx={isMobile ? {
-            borderBottom: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-          } : {
-            borderRight: 1,
-            borderColor: 'divider',
-            width: 220,
-            minWidth: 220,
-            bgcolor: 'background.paper',
-            pt: 1,
-          }}
-        >
-          {tabs.map((tab) => (
-            <Tab
-              key={tab.id}
-              value={tab.id}
-              label={tab.label}
-              icon={tab.icon}
-              iconPosition="start"
-              sx={{
-                justifyContent: 'flex-start',
-                textTransform: 'none',
-                minHeight: 48,
-                px: 2,
-              }}
-            />
-          ))}
-        </Tabs>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  ref={searchInputRef}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search settings..."
+                  className="h-8 pl-8 pr-12 text-xs"
+                />
+                <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 select-none rounded border border-border bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  /
+                </kbd>
+              </div>
+            </DialogHeader>
 
-        <Box sx={{ flex: 1, overflow: 'auto', p: 3 }}>
-          {resolvedTab === 'profile' && (
-            <Stack spacing={3}>
-              <ProfileSection onHasPasswordResolved={setHasPassword} linkedProvider={linkedProvider} />
-              <ChangePasswordSection hasPassword={hasPassword} />
-            </Stack>
-          )}
-          {resolvedTab === 'appearance' && (
-            <Stack spacing={3}>
-              <AppearanceSection />
-              {databaseProxyEnabled && <SqlEditorSection />}
-            </Stack>
-          )}
-          {resolvedTab === 'notifications' && (
-            <Stack spacing={3}>
-              <NotificationsSection />
-              <NotificationPreferencesSection />
-            </Stack>
-          )}
-          {resolvedTab === 'connections' && (
-            <Stack spacing={3}>
-              {/* Import & Export */}
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                    Import & Export
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" gutterBottom>
-                    Import connections from a file or export your current connections.
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<CloudUploadIcon />}
-                      onClick={onImport}
+            <Separator />
+
+            <ScrollArea className="min-h-0 flex-1">
+              <nav className="p-2" aria-label="Settings navigation">
+                {filteredConcerns.map((concern) => {
+                  const isActive = concern.id === resolvedConcern;
+                  const isExpanded = expandedConcerns.has(concern.id);
+
+                  return (
+                    <div key={concern.id} className="mb-0.5">
+                      {/* Concern header */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleConcernClick(concern.id);
+                          toggleConcernExpanded(concern.id);
+                        }}
+                        className={cn(
+                          'group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors',
+                          isActive
+                            ? 'bg-primary/8 text-foreground'
+                            : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                        )}
+                      >
+                        <ChevronRight
+                          className={cn(
+                            'size-3 shrink-0 text-muted-foreground transition-transform duration-200',
+                            isExpanded && 'rotate-90',
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            'inline-flex size-6 items-center justify-center rounded-md transition-colors',
+                            isActive
+                              ? 'bg-primary/15 text-primary'
+                              : 'bg-muted/60 text-muted-foreground group-hover:text-foreground',
+                          )}
+                        >
+                          {concern.icon}
+                        </span>
+                        <span className="flex-1 truncate text-xs font-medium">
+                          {concern.label}
+                        </span>
+                        <span
+                          className={cn(
+                            'font-mono text-[10px] tabular-nums',
+                            isActive
+                              ? 'text-primary/70'
+                              : 'text-muted-foreground/50',
+                          )}
+                        >
+                          {concern.sections.length}
+                        </span>
+                      </button>
+
+                      {/* Section tree items */}
+                      {isExpanded && (
+                        <div className="ml-[18px] border-l border-border/50 py-0.5 pl-0">
+                          {concern.sections.map((section) => {
+                            const isSectionActive =
+                              isActive &&
+                              activeSectionId === section.id;
+
+                            return (
+                              <button
+                                key={section.id}
+                                type="button"
+                                onClick={() => {
+                                  if (concern.id !== resolvedConcern) {
+                                    setSelectedConcern(concern.id);
+                                    // Wait for content to render before scrolling
+                                    requestAnimationFrame(() => {
+                                      requestAnimationFrame(() => {
+                                        jumpToSection(section.id);
+                                      });
+                                    });
+                                  } else {
+                                    jumpToSection(section.id);
+                                  }
+                                }}
+                                className={cn(
+                                  'relative flex w-full items-center gap-2 py-1.5 pl-4 pr-2 text-left text-xs transition-colors',
+                                  isSectionActive
+                                    ? 'text-primary font-medium'
+                                    : 'text-muted-foreground hover:text-foreground',
+                                )}
+                              >
+                                {/* Active indicator bar */}
+                                {isSectionActive && (
+                                  <span className="absolute -left-px top-1 bottom-1 w-px bg-primary" />
+                                )}
+                                <span className="truncate">
+                                  {section.label}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </nav>
+            </ScrollArea>
+
+            {/* Sidebar footer with shortcut hints */}
+            <Separator />
+            <div className="flex items-center gap-3 px-4 py-2.5">
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                <kbd className="rounded border border-border/60 bg-muted/40 px-1 py-0.5 font-mono text-[9px]">
+                  <Command className="inline size-2.5" />
+                </kbd>
+                <kbd className="rounded border border-border/60 bg-muted/40 px-1 py-0.5 font-mono text-[9px]">
+                  K
+                </kbd>
+                <span>search</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+                <kbd className="rounded border border-border/60 bg-muted/40 px-1 py-0.5 font-mono text-[9px]">
+                  Esc
+                </kbd>
+                <span>close</span>
+              </div>
+            </div>
+          </aside>
+
+          {/* ── Main content ── */}
+          <main className="flex min-h-0 flex-1 flex-col">
+            {/* Compact header with breadcrumb */}
+            <div className="flex items-center justify-between border-b px-5 py-3">
+              {currentConcern ? (
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="inline-flex size-6 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    {currentConcern.icon}
+                  </span>
+                  <div className="flex items-center gap-1.5 min-w-0 text-sm">
+                    <span className="font-semibold text-foreground truncate">
+                      {currentConcern.label}
+                    </span>
+                    {activeSectionLabel && (
+                      <>
+                        <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />
+                        <span className="truncate text-muted-foreground">
+                          {activeSectionLabel}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  {deferredSearch && (
+                    <Badge
+                      variant="outline"
+                      className="ml-2 shrink-0 text-[10px] font-mono"
                     >
-                      Import
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<CloudDownloadIcon />}
-                      onClick={onExport}
-                    >
-                      Export
-                    </Button>
-                  </Box>
-                </CardContent>
-              </Card>
-              <ConnectionDefaultsSection />
-            </Stack>
-          )}
-          {resolvedTab === 'security' && (
-            <Stack spacing={3}>
-              <TwoFactorSection />
-              <SmsMfaSection />
-              <WebAuthnSection />
-              {keychainEnabled && <VaultAutoLockSection />}
-              <DomainProfileSection />
-              {enterpriseAuthEnabled && <LinkedAccountsSection hasPassword={hasPassword} />}
-            </Stack>
-          )}
-          {resolvedTab === 'organization' && (
-            <Stack spacing={3}>
-              <TenantSection
-                onViewUserProfile={onViewUserProfile}
-                onDeleteRequest={(trigger) => setDeleteOrgTrigger(() => trigger)}
-              />
-              {isAdmin && anyConnectionFeature && <TenantConnectionPolicySection />}
-              {isOwner && deleteOrgTrigger && (
-                <Card
-                  variant="outlined"
-                  sx={{
-                    borderColor: 'rgba(239,68,68,0.3)',
-                    bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(239,68,68,0.04)' : 'rgba(239,68,68,0.02)',
-                  }}
-                >
-                  <CardContent>
-                    <Typography variant="h6" sx={{ color: 'error.main', mb: 1 }}>Danger Zone</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Permanently delete this organization, all teams, and remove all members. This action cannot be undone.
-                    </Typography>
-                    <Button
-                      color="error"
-                      variant="outlined"
-                      size="small"
-                      onClick={deleteOrgTrigger}
-                    >
-                      Delete Organization
-                    </Button>
-                  </CardContent>
-                </Card>
+                      filter: {deferredSearch}
+                    </Badge>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">
+                  No settings matched your search.
+                </div>
               )}
-            </Stack>
-          )}
-          {resolvedTab === 'teams' && (
-            <TeamSection onNavigateToTab={setActiveTab} />
-          )}
-          {resolvedTab === 'gateways' && (
-            <GatewaySection onNavigateToTab={setActiveTab} />
-          )}
-          {resolvedTab === 'integrations' && (
-            <Stack spacing={3}>
-              <SyncProfileSection />
-              {isOwner && databaseProxyEnabled && agenticAIEnabled && <AiQueryConfigSection />}
-            </Stack>
-          )}
-          {resolvedTab === 'tunnel' && <TunnelConfigSection />}
-          {resolvedTab === 'administration' && (
-            <Stack spacing={3}>
-              <SelfSignupSection />
-              <SystemSettingsSection />
-              {connectionsEnabled && <NativeSshSection />}
-              <IpAllowlistSection />
-              {connectionsEnabled && <AccessPolicySection />}
-              {connectionsEnabled && <RdGatewayConfigSection />}
-              {enterpriseAuthEnabled && <OAuthProvidersAdminSection />}
-              <EmailProviderSection />
-              {enterpriseAuthEnabled && <LdapConfigSection />}
-              {enterpriseAuthEnabled && <SamlConfigSection />}
-              {databaseProxyEnabled && <DbFirewallSection />}
-              {databaseProxyEnabled && <DbMaskingSection />}
-              {databaseProxyEnabled && <DbRateLimitSection />}
-              <TenantAuditLogSection onViewUserProfile={onViewUserProfile} onGeoIpClick={onGeoIpClick} />
-            </Stack>
-          )}
-        </Box>
-      </Box>
+
+              {/* Section quick-jump pills */}
+              {currentConcern && currentConcern.sections.length > 1 && (
+                <div className="hidden items-center gap-1 lg:flex">
+                  {currentConcern.sections.map((section) => (
+                    <button
+                      key={section.id}
+                      type="button"
+                      onClick={() => jumpToSection(section.id)}
+                      className={cn(
+                        'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
+                        activeSectionId === section.id
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                      )}
+                    >
+                      {section.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Scrollable content */}
+            <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
+              <div className="settings-content px-5 py-5">
+                {currentConcern?.sections.map((section, index) => (
+                  <section
+                    key={section.id}
+                    id={section.id}
+                    ref={(node) => {
+                      sectionRefs.current[section.id] = node;
+                    }}
+                    className={cn(
+                      'settings-section',
+                      index > 0 && 'mt-8 border-t border-border/40 pt-8',
+                    )}
+                  >
+                    <div className="mb-4">
+                      <h3 className="text-sm font-semibold text-foreground">
+                        {section.label}
+                      </h3>
+                      <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                        {section.description}
+                      </p>
+                    </div>
+                    {section.content}
+                  </section>
+                ))}
+              </div>
+            </ScrollArea>
+          </main>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 }

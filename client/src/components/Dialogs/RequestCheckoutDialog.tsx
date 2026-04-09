@@ -1,8 +1,14 @@
 import { useState } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions,
-  Button, TextField, Typography, Alert, MenuItem,
-} from '@mui/material';
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { requestCheckout } from '../../api/checkout.api';
 
@@ -62,52 +68,57 @@ export default function RequestCheckoutDialog({
   const resourceType = secretId ? 'secret' : 'connection';
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Request Temporary Access</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Request temporary access to {resourceType} <strong>{resourceName}</strong>.
-          The owner or an administrator will be notified to approve your request.
-        </Typography>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) handleClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Request Temporary Access</DialogTitle>
+          <DialogDescription>
+            Request temporary access to {resourceType} <strong>{resourceName}</strong>.
+            The owner or an administrator will be notified to approve your request.
+          </DialogDescription>
+        </DialogHeader>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
+          <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
-          </Alert>
+          </div>
         )}
 
-        <TextField
-          select
-          label="Duration"
-          value={durationMinutes}
-          onChange={(e) => setDurationMinutes(Number(e.target.value))}
-          fullWidth
-          sx={{ mb: 2 }}
-        >
-          {DURATION_OPTIONS.map((opt) => (
-            <MenuItem key={opt.value} value={opt.value}>
-              {opt.label}
-            </MenuItem>
-          ))}
-        </TextField>
+        <div className="space-y-2">
+          <Label>Duration</Label>
+          <Select value={String(durationMinutes)} onValueChange={(v) => setDurationMinutes(Number(v))}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DURATION_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={String(opt.value)}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-        <TextField
-          label="Reason (optional)"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          fullWidth
-          multiline
-          rows={2}
-          inputProps={{ maxLength: 500 }}
-          helperText={`${reason.length}/500`}
-        />
+        <div className="space-y-2">
+          <Label htmlFor="checkout-reason">Reason (optional)</Label>
+          <Textarea
+            id="checkout-reason"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            maxLength={500}
+          />
+          <p className="text-xs text-muted-foreground">{reason.length}/500</p>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? 'Submitting...' : 'Request Access'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
-          {loading ? 'Submitting...' : 'Request Access'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

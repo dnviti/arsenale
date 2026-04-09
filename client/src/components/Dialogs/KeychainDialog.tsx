@@ -1,15 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Dialog, AppBar, Toolbar, Typography, IconButton, Box,
-  Alert, Button, TextField, Divider,
-  DialogTitle, DialogContent, DialogContentText, DialogActions,
-} from '@mui/material';
-import {
-  Close as CloseIcon,
-  ChevronLeft as ChevronLeftIcon,
-  ChevronRight as ChevronRightIcon,
-} from '@mui/icons-material';
-import {
   DndContext,
   DragOverlay,
   pointerWithin,
@@ -18,6 +8,27 @@ import {
   PointerSensor,
 } from '@dnd-kit/core';
 import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Info,
+  KeyRound,
+  X,
+} from 'lucide-react';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
+import { cn } from '@/lib/utils';
 import SecretTree from '../Keychain/SecretTree';
 import SecretListPanel from '../Keychain/SecretListPanel';
 import SecretDetailView from '../Keychain/SecretDetailView';
@@ -31,7 +42,6 @@ import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import type { SecretListItem, SecretDetail } from '../../api/secrets.api';
 import type { VaultFolderData, VaultFolderScope } from '../../api/vault-folders.api';
 import { getSecret } from '../../api/secrets.api';
-import { SlideUp } from '../common/SlideUp';
 import RecoveryKeyConfirmDialog from '../common/RecoveryKeyConfirmDialog';
 import { isAdminOrAbove } from '../../utils/roles';
 import { getVaultRecoveryStatus, recoverVaultWithKey, explicitVaultReset } from '../../api/vault.api';
@@ -41,9 +51,6 @@ interface KeychainDialogProps {
   open: boolean;
   onClose: () => void;
 }
-
-const TREE_PANEL_WIDTH = 200;
-const LIST_PANEL_WIDTH = 320;
 
 export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
   const selectedSecret = useSecretStore((s) => s.selectedSecret);
@@ -124,7 +131,7 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
   }, [open, hasTenant, fetchTenantVaultStatus]);
 
   const handleRecoverVault = async () => {
-    const success = await recoverAction.run(async () => {
+    await recoverAction.run(async () => {
       const result = await recoverVaultWithKey(recoveryKeyInput, recoveryPasswordInput);
       setNewRecoveryKey(result.newRecoveryKey);
       setShowRecoveryKeyDialog(true);
@@ -132,11 +139,10 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
       setRecoveryKeyInput('');
       setRecoveryPasswordInput('');
     }, 'Vault recovery failed');
-    if (!success) return;
   };
 
   const handleExplicitReset = async () => {
-    const success = await resetAction.run(async () => {
+    await resetAction.run(async () => {
       const result = await explicitVaultReset(resetPasswordInput);
       setNewRecoveryKey(result.newRecoveryKey);
       setShowRecoveryKeyDialog(true);
@@ -145,7 +151,6 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
       setResetConfirmText('');
       setResetPasswordInput('');
     }, 'Vault reset failed');
-    if (!success) return;
   };
 
   const handleInitTenantVault = async () => {
@@ -232,319 +237,325 @@ export default function KeychainDialog({ open, onClose }: KeychainDialogProps) {
     setFolderDialogOpen(true);
   };
 
+  const closeResetDialog = () => {
+    setResetConfirmOpen(false);
+    setResetConfirmText('');
+    setResetPasswordInput('');
+    resetAction.clearError();
+  };
+
   return (
-    <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
-      <AppBar position="static" sx={{ position: 'relative' }}>
-        <Toolbar variant="dense">
-          <IconButton edge="start" color="inherit" onClick={onClose} sx={{ mr: 1 }}>
-            <CloseIcon />
-          </IconButton>
-          <Typography variant="h6">
-            Keychain
-          </Typography>
-        </Toolbar>
-      </AppBar>
-
-      {/* Vault recovery banner */}
-      {vaultNeedsRecovery && (
-        <Box sx={{ p: 2, bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>
-              Vault Recovery Required
-            </Typography>
-            <Typography variant="body2">
-              Your vault is locked after a password reset. Enter your recovery key to restore access to your credentials.
-            </Typography>
-          </Alert>
-
-          {recoverAction.error && (
-            <Alert severity="error" sx={{ mb: 2 }}>{recoverAction.error}</Alert>
-          )}
-          {resetAction.error && (
-            <Alert severity="error" sx={{ mb: 2 }}>{resetAction.error}</Alert>
-          )}
-
-          {vaultHasRecoveryKey && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 2 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Recovery Key"
-                value={recoveryKeyInput}
-                onChange={(e) => setRecoveryKeyInput(e.target.value.trim())}
-                placeholder="Enter your vault recovery key"
-              />
-              <TextField
-                fullWidth
-                size="small"
-                label="Current Password"
-                type="password"
-                value={recoveryPasswordInput}
-                onChange={(e) => setRecoveryPasswordInput(e.target.value)}
-                placeholder="Enter your current password"
-              />
-              <Button
-                variant="contained"
-                onClick={handleRecoverVault}
-                disabled={recoverAction.loading || !recoveryKeyInput || !recoveryPasswordInput}
-              >
-                {recoverAction.loading ? 'Recovering...' : 'Recover Vault'}
-              </Button>
-            </Box>
-          )}
-
-          <Divider sx={{ my: 2 }}>or</Divider>
-
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={() => setResetConfirmOpen(true)}
-          >
-            Reset Vault (lose all data)
-          </Button>
-        </Box>
-      )}
-
-      {/* Tenant vault banner */}
-      {hasTenant && tenantVaultStatus && !tenantVaultStatus.initialized && isAdmin && (
-        <Alert
-          severity="info"
-          action={
-            <Button
-              color="inherit"
-              size="small"
-              onClick={handleInitTenantVault}
-              disabled={initializingVault}
-            >
-              {initializingVault ? 'Initializing...' : 'Initialize Now'}
-            </Button>
-          }
-          sx={{ borderRadius: 0 }}
-        >
-          Organization vault is not initialized. Initialize it to create and share organization-scoped secrets.
-        </Alert>
-      )}
-      {hasTenant && tenantVaultStatus && tenantVaultStatus.initialized && !tenantVaultStatus.hasAccess && (
-        <Alert severity="warning" sx={{ borderRadius: 0 }}>
-          You don&apos;t have access to the organization vault yet. Ask an admin to distribute the key to you.
-        </Alert>
-      )}
-
-      {/* Main content — 3-column layout with DnD */}
-      <DndContext
-        sensors={sensors}
-        collisionDetection={pointerWithin}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
       >
-      <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Folder tree panel */}
-        {treeOpen && (
-          <Box
-            sx={{
-              width: TREE_PANEL_WIDTH,
-              minWidth: TREE_PANEL_WIDTH,
-              borderRight: 1,
-              borderColor: 'divider',
-              bgcolor: 'background.paper',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <SecretTree
-              onCreateFolder={handleCreateFolder}
-              onEditFolder={handleEditFolder}
-            />
-          </Box>
-        )}
+        <div className="flex h-full min-h-0 flex-col bg-background">
+          {/* ── Header ── */}
+          <div className="flex items-center justify-between border-b px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="flex size-7 items-center justify-center rounded-md bg-primary/10 text-primary">
+                <KeyRound className="size-3.5" />
+              </div>
+              <DialogHeader className="gap-0 space-y-0 p-0">
+                <DialogTitle className="text-sm font-semibold tracking-tight">
+                  Keychain
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  Manage secrets, credentials, and vault folders.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground hover:text-foreground"
+                aria-label="Close keychain"
+              >
+                <X className="size-3.5" />
+              </Button>
+            </DialogClose>
+          </div>
 
-        {/* Tree toggle */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            borderRight: 1,
-            borderColor: 'divider',
-          }}
-        >
-          <IconButton
-            size="small"
-            onClick={() => togglePref('keychainTreeOpen')}
-            title={treeOpen ? 'Hide folders' : 'Show folders'}
-            sx={{ borderRadius: 0, width: 20, height: '100%' }}
-          >
-            {treeOpen ? <ChevronLeftIcon sx={{ fontSize: 16 }} /> : <ChevronRightIcon sx={{ fontSize: 16 }} />}
-          </IconButton>
-        </Box>
+          {/* ── Vault recovery banner ── */}
+          {vaultNeedsRecovery && (
+            <div className="border-b bg-card/40 px-4 py-3">
+              <div className="mb-3 flex items-start gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/5 px-3 py-2.5">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-yellow-500" />
+                <div>
+                  <p className="text-xs font-semibold text-foreground">
+                    Vault Recovery Required
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Your vault is locked after a password reset. Enter your recovery key to restore access.
+                  </p>
+                </div>
+              </div>
 
-        {/* Secret list panel */}
-        <Box
-          sx={{
-            width: LIST_PANEL_WIDTH,
-            minWidth: LIST_PANEL_WIDTH,
-            borderRight: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-          }}
-        >
-          <SecretListPanel
-            onCreateSecret={handleCreateSecret}
-            onEditSecret={handleEditSecret}
-            onShareSecret={handleShareSecret}
-            onDeleteSecret={handleDeleteSecret}
-          />
-        </Box>
+              {recoverAction.error && (
+                <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {recoverAction.error}
+                </div>
+              )}
+              {resetAction.error && (
+                <div className="mb-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {resetAction.error}
+                </div>
+              )}
 
-        {/* Detail panel */}
-        <Box sx={{ flex: 1, overflow: 'auto', bgcolor: 'background.default' }}>
-          {selectedSecret ? (
-            <SecretDetailView
-              secret={selectedSecret}
-              onEdit={() => {
-                setEditingSecret(selectedSecret);
-                setSecretDialogOpen(true);
-              }}
-              onShare={() => setShareTarget({ id: selectedSecret.id, name: selectedSecret.name, teamId: selectedSecret.teamId })}
-              onExternalShare={() => setExternalShareTarget({ id: selectedSecret.id, name: selectedSecret.name })}
-              onDelete={() => setDeleteTarget(selectedSecret)}
-              onToggleFavorite={() => toggleFavorite(selectedSecret.id)}
-              onRestore={handleRestore}
-              onCheckBreach={checkSecretBreach}
-            />
-          ) : (
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Typography variant="body1" color="text.secondary">
-                Select a secret to view its details
-              </Typography>
-            </Box>
+              {vaultHasRecoveryKey && (
+                <div className="mb-3 flex flex-col gap-2">
+                  <Input
+                    value={recoveryKeyInput}
+                    onChange={(e) => setRecoveryKeyInput(e.target.value.trim())}
+                    placeholder="Enter your vault recovery key"
+                    className="h-8 text-xs"
+                  />
+                  <Input
+                    type="password"
+                    value={recoveryPasswordInput}
+                    onChange={(e) => setRecoveryPasswordInput(e.target.value)}
+                    placeholder="Enter your current password"
+                    className="h-8 text-xs"
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleRecoverVault}
+                    disabled={recoverAction.loading || !recoveryKeyInput || !recoveryPasswordInput}
+                  >
+                    {recoverAction.loading ? 'Recovering...' : 'Recover Vault'}
+                  </Button>
+                </div>
+              )}
+
+              <Separator className="my-3" />
+
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => setResetConfirmOpen(true)}
+              >
+                Reset Vault (lose all data)
+              </Button>
+            </div>
           )}
-        </Box>
-      </Box>
 
-      {/* Drag overlay */}
-      <DragOverlay dropAnimation={null}>
-        {activeSecretDrag && (
-          <Box sx={{
-            bgcolor: 'background.paper',
-            boxShadow: 3,
-            borderRadius: 1,
-            px: 2,
-            py: 0.5,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            opacity: 0.9,
-            pointerEvents: 'none',
-            maxWidth: 220,
-          }}>
-            <Typography variant="body2" noWrap>{activeSecretDrag.name}</Typography>
-          </Box>
-        )}
-      </DragOverlay>
-      </DndContext>
-
-      {/* Dialogs */}
-      <SecretDialog
-        open={secretDialogOpen}
-        onClose={() => { setSecretDialogOpen(false); setEditingSecret(null); }}
-        secret={editingSecret}
-      />
-
-      <ShareSecretDialog
-        open={!!shareTarget}
-        onClose={() => setShareTarget(null)}
-        secretId={shareTarget?.id ?? ''}
-        secretName={shareTarget?.name ?? ''}
-        teamId={shareTarget?.teamId}
-      />
-
-      <ExternalShareDialog
-        open={!!externalShareTarget}
-        onClose={() => setExternalShareTarget(null)}
-        secretId={externalShareTarget?.id ?? ''}
-        secretName={externalShareTarget?.name ?? ''}
-      />
-
-      <VaultFolderDialog
-        open={folderDialogOpen}
-        onClose={() => { setFolderDialogOpen(false); setEditingFolder(null); }}
-        folder={editingFolder}
-        parentId={folderDialogParentId}
-        scope={folderDialogScope}
-        teamId={folderDialogTeamId}
-      />
-
-      {/* Delete confirmation */}
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete Secret</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button onClick={confirmDelete} color="error" variant="contained" disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Vault explicit reset confirmation */}
-      <Dialog open={resetConfirmOpen} onClose={() => { setResetConfirmOpen(false); setResetConfirmText(''); setResetPasswordInput(''); resetAction.clearError(); }}>
-        <DialogTitle>Reset Vault</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            This will permanently delete all your saved credentials, secrets, and encrypted data. This action cannot be undone.
-          </DialogContentText>
-          {resetAction.error && (
-            <Alert severity="error" sx={{ mb: 2 }}>{resetAction.error}</Alert>
+          {/* ── Tenant vault banners ── */}
+          {hasTenant && tenantVaultStatus && !tenantVaultStatus.initialized && isAdmin && (
+            <div className="flex items-center gap-2 border-b bg-card/40 px-4 py-2.5">
+              <Info className="size-4 shrink-0 text-primary" />
+              <p className="flex-1 text-xs text-muted-foreground">
+                Organization vault is not initialized. Initialize it to create and share organization-scoped secrets.
+              </p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleInitTenantVault}
+                disabled={initializingVault}
+              >
+                {initializingVault ? 'Initializing...' : 'Initialize Now'}
+              </Button>
+            </div>
           )}
-          <TextField
-            fullWidth
-            size="small"
-            label="Current Password"
-            type="password"
-            value={resetPasswordInput}
-            onChange={(e) => setResetPasswordInput(e.target.value)}
-            sx={{ mb: 2 }}
-          />
-          <DialogContentText variant="body2" sx={{ mb: 1 }}>
-            Type <strong>RESET</strong> to confirm:
-          </DialogContentText>
-          <TextField
-            fullWidth
-            size="small"
-            value={resetConfirmText}
-            onChange={(e) => setResetConfirmText(e.target.value)}
-            placeholder="RESET"
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setResetConfirmOpen(false); setResetConfirmText(''); setResetPasswordInput(''); resetAction.clearError(); }}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleExplicitReset}
-            color="error"
-            variant="contained"
-            disabled={resetConfirmText !== 'RESET' || !resetPasswordInput || resetAction.loading}
-          >
-            {resetAction.loading ? 'Resetting...' : 'Reset Vault'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+          {hasTenant && tenantVaultStatus && tenantVaultStatus.initialized && !tenantVaultStatus.hasAccess && (
+            <div className="flex items-center gap-2 border-b bg-yellow-500/5 px-4 py-2.5">
+              <AlertTriangle className="size-4 shrink-0 text-yellow-500" />
+              <p className="flex-1 text-xs text-muted-foreground">
+                You don&apos;t have access to the organization vault yet. Ask an admin to distribute the key to you.
+              </p>
+            </div>
+          )}
 
-      {/* Recovery key display after successful recovery/reset */}
-      <RecoveryKeyConfirmDialog
-        open={showRecoveryKeyDialog}
-        recoveryKey={newRecoveryKey}
-        onConfirmed={() => { setShowRecoveryKeyDialog(false); setNewRecoveryKey(''); }}
-      />
+          {/* ── Main content — 3-column layout with DnD ── */}
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+              {/* Folder tree panel */}
+              {treeOpen && (
+                <div className="flex w-[200px] min-w-[200px] flex-col overflow-hidden border-r bg-card/30">
+                  <SecretTree
+                    onCreateFolder={handleCreateFolder}
+                    onEditFolder={handleEditFolder}
+                  />
+                </div>
+              )}
+
+              {/* Tree toggle */}
+              <button
+                type="button"
+                onClick={() => togglePref('keychainTreeOpen')}
+                title={treeOpen ? 'Hide folders' : 'Show folders'}
+                className="flex w-5 items-center justify-center border-r text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+              >
+                {treeOpen ? (
+                  <ChevronLeft className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
+              </button>
+
+              {/* Secret list panel */}
+              <div className="flex w-[320px] min-w-[320px] flex-col overflow-hidden border-r bg-card/30">
+                <SecretListPanel
+                  onCreateSecret={handleCreateSecret}
+                  onEditSecret={handleEditSecret}
+                  onShareSecret={handleShareSecret}
+                  onDeleteSecret={handleDeleteSecret}
+                />
+              </div>
+
+              {/* Detail panel */}
+              <div className="flex flex-1 flex-col overflow-auto bg-background">
+                {selectedSecret ? (
+                  <SecretDetailView
+                    secret={selectedSecret}
+                    onEdit={() => {
+                      setEditingSecret(selectedSecret);
+                      setSecretDialogOpen(true);
+                    }}
+                    onShare={() => setShareTarget({ id: selectedSecret.id, name: selectedSecret.name, teamId: selectedSecret.teamId })}
+                    onExternalShare={() => setExternalShareTarget({ id: selectedSecret.id, name: selectedSecret.name })}
+                    onDelete={() => setDeleteTarget(selectedSecret)}
+                    onToggleFavorite={() => toggleFavorite(selectedSecret.id)}
+                    onRestore={handleRestore}
+                    onCheckBreach={checkSecretBreach}
+                  />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center">
+                    <p className="text-sm text-muted-foreground">
+                      Select a secret to view its details
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Drag overlay */}
+            <DragOverlay dropAnimation={null}>
+              {activeSecretDrag && (
+                <div className="pointer-events-none flex max-w-[220px] items-center gap-2 rounded-lg border bg-card px-3 py-1.5 opacity-90 shadow-lg">
+                  <span className="truncate text-xs">{activeSecretDrag.name}</span>
+                </div>
+              )}
+            </DragOverlay>
+          </DndContext>
+        </div>
+
+        {/* ── Sub-dialogs ── */}
+        <SecretDialog
+          open={secretDialogOpen}
+          onClose={() => { setSecretDialogOpen(false); setEditingSecret(null); }}
+          secret={editingSecret}
+        />
+
+        <ShareSecretDialog
+          open={!!shareTarget}
+          onClose={() => setShareTarget(null)}
+          secretId={shareTarget?.id ?? ''}
+          secretName={shareTarget?.name ?? ''}
+          teamId={shareTarget?.teamId}
+        />
+
+        <ExternalShareDialog
+          open={!!externalShareTarget}
+          onClose={() => setExternalShareTarget(null)}
+          secretId={externalShareTarget?.id ?? ''}
+          secretName={externalShareTarget?.name ?? ''}
+        />
+
+        <VaultFolderDialog
+          open={folderDialogOpen}
+          onClose={() => { setFolderDialogOpen(false); setEditingFolder(null); }}
+          folder={editingFolder}
+          parentId={folderDialogParentId}
+          scope={folderDialogScope}
+          teamId={folderDialogTeamId}
+        />
+
+        {/* Delete confirmation — shadcn */}
+        <Dialog open={!!deleteTarget} onOpenChange={(next) => { if (!next) setDeleteTarget(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Delete Secret</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+                Cancel
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Vault explicit reset confirmation — shadcn */}
+        <Dialog open={resetConfirmOpen} onOpenChange={(next) => { if (!next) closeResetDialog(); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Reset Vault</DialogTitle>
+              <DialogDescription>
+                This will permanently delete all your saved credentials, secrets, and encrypted data. This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              {resetAction.error && (
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {resetAction.error}
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">Current Password</label>
+                <Input
+                  type="password"
+                  value={resetPasswordInput}
+                  onChange={(e) => setResetPasswordInput(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-foreground">
+                  Type <strong className="text-destructive">RESET</strong> to confirm
+                </label>
+                <Input
+                  value={resetConfirmText}
+                  onChange={(e) => setResetConfirmText(e.target.value)}
+                  placeholder="RESET"
+                  className="h-8 text-xs"
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" onClick={closeResetDialog}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleExplicitReset}
+                disabled={resetConfirmText !== 'RESET' || !resetPasswordInput || resetAction.loading}
+              >
+                {resetAction.loading ? 'Resetting...' : 'Reset Vault'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Recovery key display after successful recovery/reset */}
+        <RecoveryKeyConfirmDialog
+          open={showRecoveryKeyDialog}
+          recoveryKey={newRecoveryKey}
+          onConfirmed={() => { setShowRecoveryKeyDialog(false); setNewRecoveryKey(''); }}
+        />
+      </DialogContent>
     </Dialog>
   );
 }

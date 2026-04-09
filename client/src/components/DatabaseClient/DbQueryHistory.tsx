@@ -1,32 +1,16 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Box,
-  Typography,
-  List,
-  ListItemButton,
-  Chip,
-  IconButton,
-  Tooltip,
-  Divider,
-  TextField,
-  InputAdornment,
-  CircularProgress,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-} from '@mui/material';
+  History, RefreshCw, Search, ChevronLeft, Clock, Ban, Bookmark, Trash2,
+} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
 import {
-  History as HistoryIcon,
-  Refresh as RefreshIcon,
-  Search as SearchIcon,
-  ChevronLeft as CollapseIcon,
-  Timer as TimerIcon,
-  Block as BlockIcon,
-  Bookmark as BookmarkIcon,
-  Delete as DeleteIcon,
-} from '@mui/icons-material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import { getQueryHistory, type QueryHistoryEntry } from '../../api/database.api';
 import {
   deleteSavedQuery,
@@ -61,13 +45,13 @@ function formatRelativeTime(dateStr: string): string {
   return `${days}d ago`;
 }
 
-const TYPE_COLORS: Record<string, 'primary' | 'success' | 'warning' | 'error' | 'info' | 'default'> = {
-  SELECT: 'info',
-  INSERT: 'success',
-  UPDATE: 'warning',
-  DELETE: 'error',
-  DDL: 'primary',
-  OTHER: 'default',
+const TYPE_COLORS: Record<string, string> = {
+  SELECT: 'text-blue-400 border-blue-500/30',
+  INSERT: 'text-green-400 border-green-500/30',
+  UPDATE: 'text-yellow-400 border-yellow-500/30',
+  DELETE: 'text-red-400 border-red-500/30',
+  DDL: 'text-primary border-primary/30',
+  OTHER: 'text-muted-foreground border-border',
 };
 
 // ---------------------------------------------------------------------------
@@ -138,253 +122,174 @@ export default function DbQueryHistory({
   if (!open) return null;
 
   return (
-    <Box
-      sx={{
-        width: 320,
-        borderLeft: 1,
-        borderColor: 'divider',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        bgcolor: 'background.paper',
-      }}
-    >
+    <div className="w-80 border-l border-border flex flex-col overflow-hidden bg-card">
       {/* Header */}
-      <Box
-        sx={{
-          px: 1.5,
-          py: 1,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <HistoryIcon fontSize="small" color="primary" />
-        <Typography variant="subtitle2" sx={{ flex: 1 }}>Query History</Typography>
-        <Tooltip title="Refresh">
-          <IconButton size="small" onClick={() => fetchHistory(searchDebounced)} disabled={loading}>
-            {loading ? <CircularProgress size={16} /> : <RefreshIcon fontSize="small" />}
-          </IconButton>
-        </Tooltip>
-        <Tooltip title="Close">
-          <IconButton size="small" onClick={onClose}>
-            <CollapseIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      </Box>
+      <div className="px-3 py-2 flex items-center gap-2 border-b border-border">
+        <History className="size-4 text-primary" />
+        <span className="text-sm font-semibold flex-1">Query History</span>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          title="Refresh"
+          onClick={() => fetchHistory(searchDebounced)}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7"
+          title="Close"
+          onClick={onClose}
+        >
+          <ChevronLeft className="size-4" />
+        </Button>
+      </div>
 
       {/* Search */}
-      <Box sx={{ px: 1.5, py: 1 }}>
-        <TextField
-          size="small"
-          fullWidth
-          placeholder="Search queries..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            },
-          }}
-          sx={{ '& .MuiInputBase-root': { height: 32, fontSize: '0.8rem' } }}
-        />
-      </Box>
+      <div className="px-3 py-2">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+          <Input
+            className="h-8 text-xs pl-7"
+            placeholder="Search queries..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+      </div>
 
-      <Divider />
+      <Separator />
 
       {/* Saved queries section */}
       {filteredSaved.length > 0 && (
         <>
-          <Box sx={{ px: 1.5, py: 0.5 }}>
-            <Typography variant="caption" fontWeight={700} color="primary.main">
+          <div className="px-3 py-1">
+            <span className="text-xs font-bold text-primary">
               Saved
-            </Typography>
-          </Box>
-          <List dense disablePadding>
+            </span>
+          </div>
+          <div>
             {filteredSaved.map((sq) => (
-              <ListItemButton
+              <button
                 key={sq.id}
                 onClick={() => onSelectQuery(sq.sql)}
-                sx={{
-                  py: 0.75,
-                  px: 1.5,
-                  borderBottom: 1,
-                  borderColor: 'divider',
-                  gap: 1,
-                }}
+                className="w-full text-left py-2 px-3 border-b border-border flex items-center gap-2 hover:bg-accent/50 transition-colors"
               >
-                <BookmarkIcon sx={{ fontSize: 16, color: 'primary.main', flexShrink: 0 }} />
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography
-                    variant="body2"
-                    fontWeight={600}
-                    sx={{ fontSize: '0.8rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  >
+                <Bookmark className="size-4 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-[0.8rem] overflow-hidden text-ellipsis whitespace-nowrap">
                     {sq.name}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{
-                      fontFamily: 'monospace',
-                      fontSize: '0.7rem',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      display: 'block',
-                    }}
-                  >
+                  </p>
+                  <p className="text-xs text-muted-foreground font-mono text-[0.7rem] overflow-hidden text-ellipsis whitespace-nowrap">
                     {sq.sql.replace(/\s+/g, ' ').trim()}
-                  </Typography>
-                </Box>
-                <Tooltip title="Remove">
-                  <IconButton
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); setDeleteConfirm(sq.id); }}
-                    sx={{ p: 0.25, opacity: 0.5, '&:hover': { opacity: 1 } }}
-                  >
-                    <DeleteIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
-                </Tooltip>
-              </ListItemButton>
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-5 opacity-50 hover:opacity-100"
+                  title="Remove"
+                  onClick={(e) => { e.stopPropagation(); setDeleteConfirm(sq.id); }}
+                >
+                  <Trash2 className="size-3.5" />
+                </Button>
+              </button>
             ))}
-          </List>
-          <Divider />
+          </div>
+          <Separator />
         </>
       )}
 
       {/* Recent queries section */}
       {(entries.length > 0 || filteredSaved.length > 0) && (
-        <Box sx={{ px: 1.5, py: 0.5 }}>
-          <Typography variant="caption" fontWeight={700} color="text.secondary">
+        <div className="px-3 py-1">
+          <span className="text-xs font-bold text-muted-foreground">
             Recent
-          </Typography>
-        </Box>
+          </span>
+        </div>
       )}
 
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
+      <div className="flex-1 overflow-auto">
         {entries.length === 0 && filteredSaved.length === 0 && !loading && (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Typography variant="body2" color="text.secondary">
+          <div className="p-6 text-center">
+            <p className="text-sm text-muted-foreground">
               {search ? 'No matching queries' : 'No query history yet'}
-            </Typography>
-            <Typography variant="caption" color="text.disabled" sx={{ mt: 0.5, display: 'block' }}>
+            </p>
+            <p className="text-xs text-muted-foreground/60 mt-1">
               Press Ctrl+S to save a query
-            </Typography>
-          </Box>
+            </p>
+          </div>
         )}
 
-        <List dense disablePadding>
-          {entries.map((entry) => {
-            const label = deriveQueryLabel(entry.queryText);
-            return (
-              <ListItemButton
-                key={entry.id}
-                onClick={() => onSelectQuery(entry.queryText)}
-                sx={{
-                  py: 0.75,
-                  px: 1.5,
-                  borderBottom: 1,
-                  borderColor: 'divider',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: 0.25,
-                  minHeight: 52,
-                  maxHeight: 72,
-                }}
-              >
-                {/* Row 1: type chip + label + timestamp */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, width: '100%' }}>
-                  <Chip
-                    label={entry.queryType}
-                    size="small"
-                    color={TYPE_COLORS[entry.queryType] ?? 'default'}
-                    sx={{ height: 18, fontSize: '0.65rem', fontWeight: 700 }}
-                  />
-                  {entry.blocked && (
-                    <BlockIcon sx={{ fontSize: 14, color: 'error.main' }} />
-                  )}
-                  <Typography
-                    variant="body2"
-                    fontWeight={600}
-                    sx={{
-                      flex: 1,
-                      fontSize: '0.78rem',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {label}
-                  </Typography>
-                  <Typography
-                    variant="caption"
-                    color="text.secondary"
-                    sx={{ flexShrink: 0, fontSize: '0.65rem' }}
-                  >
-                    {formatRelativeTime(entry.createdAt)}
-                  </Typography>
-                </Box>
-
-                {/* Row 2: single-line SQL preview */}
-                <Typography
-                  variant="caption"
-                  sx={{
-                    fontFamily: 'monospace',
-                    fontSize: '0.7rem',
-                    color: 'text.secondary',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    width: '100%',
-                  }}
+        {entries.map((entry) => {
+          const label = deriveQueryLabel(entry.queryText);
+          return (
+            <button
+              key={entry.id}
+              onClick={() => onSelectQuery(entry.queryText)}
+              className="w-full text-left py-2 px-3 border-b border-border flex flex-col items-start gap-0.5 min-h-[52px] max-h-[72px] hover:bg-accent/50 transition-colors"
+            >
+              {/* Row 1: type chip + label + timestamp */}
+              <div className="flex items-center gap-1 w-full">
+                <Badge
+                  variant="outline"
+                  className={cn('h-[18px] text-[0.65rem] font-bold px-1.5 py-0', TYPE_COLORS[entry.queryType] ?? TYPE_COLORS.OTHER)}
                 >
-                  {entry.queryText.replace(/\s+/g, ' ').trim()}
-                </Typography>
+                  {entry.queryType}
+                </Badge>
+                {entry.blocked && (
+                  <Ban className="size-3.5 text-red-400" />
+                )}
+                <span className="flex-1 text-[0.78rem] font-semibold overflow-hidden text-ellipsis whitespace-nowrap">
+                  {label}
+                </span>
+                <span className="text-[0.65rem] text-muted-foreground shrink-0">
+                  {formatRelativeTime(entry.createdAt)}
+                </span>
+              </div>
 
-                {/* Row 3: metrics */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {entry.executionTimeMs != null && (
-                    <Typography
-                      variant="caption"
-                      color="text.disabled"
-                      sx={{ display: 'flex', alignItems: 'center', gap: 0.3, fontSize: '0.65rem' }}
-                    >
-                      <TimerIcon sx={{ fontSize: 11 }} />
-                      {entry.executionTimeMs}ms
-                    </Typography>
-                  )}
-                  {entry.rowsAffected != null && (
-                    <Typography variant="caption" color="text.disabled" sx={{ fontSize: '0.65rem' }}>
-                      {entry.rowsAffected} rows
-                    </Typography>
-                  )}
-                </Box>
-              </ListItemButton>
-            );
-          })}
-        </List>
-      </Box>
+              {/* Row 2: single-line SQL preview */}
+              <span className="font-mono text-[0.7rem] text-muted-foreground overflow-hidden text-ellipsis whitespace-nowrap w-full">
+                {entry.queryText.replace(/\s+/g, ' ').trim()}
+              </span>
+
+              {/* Row 3: metrics */}
+              <div className="flex items-center gap-2">
+                {entry.executionTimeMs != null && (
+                  <span className="text-[0.65rem] text-muted-foreground/60 flex items-center gap-0.5">
+                    <Clock className="size-[11px]" />
+                    {entry.executionTimeMs}ms
+                  </span>
+                )}
+                {entry.rowsAffected != null && (
+                  <span className="text-[0.65rem] text-muted-foreground/60">
+                    {entry.rowsAffected} rows
+                  </span>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
       {/* Delete confirmation */}
-      <Dialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} maxWidth="xs">
-        <DialogTitle>Remove saved query?</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2">This will remove the query from your saved list.</Typography>
+      <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Remove saved query?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm">This will remove the query from your saved list.</p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteConfirm && handleDeleteSaved(deleteConfirm)}>
+              Remove
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirm(null)}>Cancel</Button>
-          <Button color="error" onClick={() => deleteConfirm && handleDeleteSaved(deleteConfirm)}>
-            Remove
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }

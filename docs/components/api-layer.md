@@ -21,7 +21,7 @@
 | `externalVault.api.ts` | External vault provider CRUD (HashiCorp Vault), test connectivity |
 | `files.api.ts` | RDP drive file management |
 | `folders.api.ts` | Folder CRUD |
-| `gateway.api.ts` | Gateway CRUD, SSH keys, orchestration, templates, sessions, tunnel controls |
+| `gateway.api.ts` | Gateway CRUD, derived operational status, SSH keys, orchestration, templates, sessions, tunnel controls |
 | `importExport.api.ts` | Connection import/export (CSV, JSON, mRemoteNG, RDP) |
 | `ldap.api.ts` | LDAP status, connection test, and sync trigger |
 | `live.api.ts` | SSE subscription helpers for gateways, sessions, audit, and vault streams |

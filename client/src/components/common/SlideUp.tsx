@@ -1,10 +1,7 @@
-import { forwardRef } from 'react';
-import { Slide } from '@mui/material';
-import type { TransitionProps } from '@mui/material/transitions';
-
-export const SlideUp = forwardRef(function SlideUp(
-  props: TransitionProps & { children: React.ReactElement },
-  ref: React.Ref<unknown>,
-) {
-  return <Slide direction="up" ref={ref} {...props} />;
-});
+/**
+ * SlideUp was a MUI Slide transition wrapper.
+ * shadcn Dialog has built-in animations, so this is no longer needed.
+ * Kept as a no-op export for backwards compatibility.
+ */
+// eslint-disable-next-line @typescript-eslint/no-empty-function
+export const SlideUp = () => null;

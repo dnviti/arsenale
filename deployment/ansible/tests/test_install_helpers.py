@@ -353,6 +353,57 @@ class InstallModelTest(unittest.TestCase):
                 "map-assets.arsenale-k8s.svc.cluster.local",
             )
 
+    def test_resolve_dev_refresh_targets_expands_aliases_and_migrations(self) -> None:
+        resolved = install_model.resolve_dev_refresh_targets(
+            ["control-plane", "client"],
+            [
+                "client",
+                "control-plane-api",
+                "query-runner",
+                "map-assets",
+                "migrate",
+                "postgres",
+            ],
+        )
+
+        self.assertEqual(
+            resolved["buildServices"],
+            ["control-plane-api", "query-runner", "map-assets", "client", "migrate"],
+        )
+        self.assertEqual(
+            resolved["restartServices"],
+            ["control-plane-api", "query-runner", "map-assets", "client"],
+        )
+        self.assertTrue(resolved["runMigrations"])
+
+    def test_resolve_dev_refresh_targets_rejects_unknown_target(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown dev refresh target"):
+            install_model.resolve_dev_refresh_targets(["not-a-service"], ["client", "migrate"])
+
+    def test_resolve_dev_refresh_targets_rejects_empty_alias_resolution(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not active in the current installer profile"):
+            install_model.resolve_dev_refresh_targets(["gateways"], ["client", "migrate"])
+
+    def test_cli_resolve_dev_refresh_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "dev-refresh.json"
+            rc = install_model.main(
+                [
+                    "resolve-dev-refresh",
+                    "--targets",
+                    "client,control-plane",
+                    "--active-services",
+                    "client,control-plane-api,query-runner,migrate",
+                    "--output",
+                    str(output_path),
+                ]
+            )
+            self.assertEqual(rc, 0)
+            resolved = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(resolved["restartServices"], ["client", "control-plane-api", "query-runner"])
+            self.assertEqual(resolved["buildServices"], ["client", "control-plane-api", "query-runner", "migrate"])
+            self.assertTrue(resolved["runMigrations"])
+
     def test_ip_geolocation_capability_adds_map_assets_service(self) -> None:
         profile = {
             "schemaVersion": "1.0.0",

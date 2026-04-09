@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography, Alert } from '@mui/material';
+import { Loader2 } from 'lucide-react';
 import axios from 'axios';
 import { useAuthStore } from '../store/authStore';
 import { useVaultStore } from '../store/vaultStore';
@@ -96,23 +96,23 @@ export default function OAuthCallbackPage() {
 
   if (error) {
     return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Alert severity="error" sx={{ maxWidth: 400 }}>
-          {error}
-          <Box sx={{ mt: 2 }}>
-            <a href="/login">Return to login</a>
-          </Box>
-        </Alert>
-      </Box>
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="max-w-[400px] rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+          <p className="text-sm text-destructive">{error}</p>
+          <div className="mt-2">
+            <a href="/login" className="text-sm text-primary underline">Return to login</a>
+          </div>
+        </div>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 2 }}>
-      <CircularProgress />
-      <Typography variant="body2" color="text.secondary">
+    <div className="flex min-h-screen flex-col items-center justify-center gap-2">
+      <Loader2 className="size-8 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground">
         Completing sign in...
-      </Typography>
-    </Box>
+      </p>
+    </div>
   );
 }

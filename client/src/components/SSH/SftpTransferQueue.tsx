@@ -1,16 +1,14 @@
 import {
-  Box, Typography, IconButton, LinearProgress, Collapse, List, ListItem,
-  ListItemIcon, ListItemText, Button,
-} from '@mui/material';
-import {
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
-  Upload as UploadIcon,
-  Download as DownloadIcon,
-  Cancel as CancelIcon,
-  CheckCircle as CheckIcon,
-  Error as ErrorIcon,
-} from '@mui/icons-material';
+  Upload,
+  Download,
+  XCircle,
+  CheckCircle,
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import type { TransferItem } from '../../hooks/useSftpTransfers';
 
@@ -35,81 +33,76 @@ export default function SftpTransferQueue({ transfers, onCancel, onClearComplete
   if (transfers.length === 0) return null;
 
   return (
-    <Box sx={{ borderTop: 1, borderColor: 'divider' }}>
-      <Box
-        sx={{ display: 'flex', alignItems: 'center', px: 1.5, py: 0.5, cursor: 'pointer' }}
+    <div className="border-t border-border">
+      <div
+        className="flex items-center px-3 py-1 cursor-pointer"
         onClick={() => toggle('sshSftpTransferQueueOpen')}
       >
-        <Typography variant="caption" fontWeight={600} sx={{ flex: 1 }}>
+        <span className="text-xs font-semibold flex-1">
           Transfers ({transfers.length})
-        </Typography>
+        </span>
         {hasCompleted && (
           <Button
-            size="small"
-            sx={{ fontSize: '0.7rem', minWidth: 0, px: 0.5 }}
+            variant="ghost"
+            size="sm"
+            className="text-xs h-6 px-1"
             onClick={(e) => { e.stopPropagation(); onClearCompleted(); }}
           >
             Clear
           </Button>
         )}
-        <IconButton size="small">
-          {open ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-        </IconButton>
-      </Box>
+        <Button variant="ghost" size="icon" className="h-6 w-6">
+          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </Button>
+      </div>
 
-      <Collapse in={open}>
-        <List dense sx={{ maxHeight: 200, overflow: 'auto', py: 0 }}>
+      {open && (
+        <div className="max-h-[200px] overflow-auto">
           {transfers.map((t) => {
             const progress = t.totalBytes > 0 ? (t.bytesTransferred / t.totalBytes) * 100 : 0;
 
             return (
-              <ListItem key={t.transferId} sx={{ py: 0.25 }}>
-                <ListItemIcon sx={{ minWidth: 28 }}>
+              <div key={t.transferId} className="flex items-center gap-2 px-3 py-1">
+                <div className="w-5 shrink-0">
                   {t.status === 'complete' ? (
-                    <CheckIcon fontSize="small" color="success" />
+                    <CheckCircle className="h-4 w-4 text-green-500" />
                   ) : t.status === 'error' ? (
-                    <ErrorIcon fontSize="small" color="error" />
+                    <AlertCircle className="h-4 w-4 text-red-500" />
                   ) : t.status === 'cancelled' ? (
-                    <CancelIcon fontSize="small" color="disabled" />
+                    <XCircle className="h-4 w-4 text-muted-foreground" />
                   ) : t.direction === 'upload' ? (
-                    <UploadIcon fontSize="small" color="primary" />
+                    <Upload className="h-4 w-4 text-primary" />
                   ) : (
-                    <DownloadIcon fontSize="small" color="primary" />
+                    <Download className="h-4 w-4 text-primary" />
                   )}
-                </ListItemIcon>
-                <ListItemText
-                  primary={t.filename}
-                  secondary={
-                    t.status === 'error'
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs truncate">{t.filename}</p>
+                  <p className={`text-[0.7rem] truncate ${t.status === 'error' ? 'text-red-400' : 'text-muted-foreground'}`}>
+                    {t.status === 'error'
                       ? t.errorMessage
                       : t.status === 'active'
                         ? `${formatSize(t.bytesTransferred)} / ${formatSize(t.totalBytes)}`
                         : t.status === 'complete'
                           ? formatSize(t.totalBytes)
-                          : t.status
-                  }
-                  primaryTypographyProps={{ noWrap: true, fontSize: '0.8rem' }}
-                  secondaryTypographyProps={{
-                    noWrap: true,
-                    fontSize: '0.7rem',
-                    color: t.status === 'error' ? 'error' : undefined,
-                  }}
-                />
+                          : t.status}
+                  </p>
+                </div>
                 {t.status === 'active' && (
                   <>
-                    <Box sx={{ width: 60, mx: 1 }}>
-                      <LinearProgress variant="determinate" value={progress} />
-                    </Box>
-                    <IconButton size="small" onClick={() => onCancel(t.transferId)}>
-                      <CancelIcon fontSize="small" />
-                    </IconButton>
+                    <div className="w-14">
+                      <Progress value={progress} className="h-1.5" />
+                    </div>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onCancel(t.transferId)}>
+                      <XCircle className="h-3.5 w-3.5" />
+                    </Button>
                   </>
                 )}
-              </ListItem>
+              </div>
             );
           })}
-        </List>
-      </Collapse>
-    </Box>
+        </div>
+      )}
+    </div>
   );
 }

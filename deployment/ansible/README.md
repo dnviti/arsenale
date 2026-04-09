@@ -139,6 +139,9 @@ make setup            # Install Ansible collections and prepare the local vault
 
 # Development
 make dev              # Start the installer-aware development stack
+make dev client       # Refresh only the client container
+make dev gateways     # Refresh gateway containers from the saved dev profile
+make dev control-plane # Refresh backend/control-plane services from the saved dev profile
 npm run dev:client    # Optional: start Vite on https://localhost:3005
 
 # Production
@@ -188,6 +191,17 @@ What it does:
 6. Runs database migrations.
 7. Executes `dev-bootstrap` to seed the admin user and tenant.
 8. Runs health checks against all containers.
+
+For code-only iteration after the full stack already exists, you can reuse the saved development installer profile and refresh only selected services:
+
+```bash
+make dev client
+make dev gateways
+make dev control-plane
+make dev control-plane-api query-runner
+```
+
+Supported selectors include the group aliases above plus direct service names from the rendered dev stack. The scoped refresh path rebuilds only the requested images, reruns migrations when a backend service is selected, and force-recreates only the targeted containers. Use full `make dev` when you change installer inputs, capability flags, certificates, secrets, or compose/deployment wiring.
 
 Development-specific behaviors:
 

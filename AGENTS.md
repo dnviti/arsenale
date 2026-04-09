@@ -19,23 +19,24 @@ Build from the repo root before relying on the CLI:
 
 ```bash
 go test ./tools/arsenale-cli/...
-go build -o /tmp/arsenale-cli ./tools/arsenale-cli
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ```
 
 Use the local dev stack at `https://localhost:3000`:
 
 ```bash
-/tmp/arsenale-cli --server https://localhost:3000 health
-/tmp/arsenale-cli --server https://localhost:3000 login
-/tmp/arsenale-cli --server https://localhost:3000 whoami
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 login
+./build/go/arsenale-cli --server https://localhost:3000 whoami
 ```
 
 The CLI stores config and auth in `~/.arsenale/config.yaml`:
 
 ```bash
-/tmp/arsenale-cli config
-/tmp/arsenale-cli config get server_url
-/tmp/arsenale-cli config set server_url https://localhost:3000
+./build/go/arsenale-cli config
+./build/go/arsenale-cli config get server_url
+./build/go/arsenale-cli config set server_url https://localhost:3000
 ```
 
 Common entry points: `health`, `login`, `whoami`, `config`, `connection`, `gateway`, `session`, `rdgw`, `vault`, `connect`.
@@ -55,10 +56,10 @@ Use `arsenale [command] --help` before assuming flags or subcommands. Prefer `-o
 Useful debugging commands:
 
 ```bash
-/tmp/arsenale-cli --server https://localhost:3000 gateway tunnel-overview
-/tmp/arsenale-cli --server https://localhost:3000 gateway instances <gateway-id>
-/tmp/arsenale-cli --server https://localhost:3000 session count
-/tmp/arsenale-cli --server https://localhost:3000 rdgw status
+./build/go/arsenale-cli --server https://localhost:3000 gateway tunnel-overview
+./build/go/arsenale-cli --server https://localhost:3000 gateway instances <gateway-id>
+./build/go/arsenale-cli --server https://localhost:3000 session count
+./build/go/arsenale-cli --server https://localhost:3000 rdgw status
 ```
 
 ### Red/Green On Real Infrastructure
@@ -67,7 +68,7 @@ For changes that need more than isolated unit coverage, run the loop against `ht
 
 1. Write or narrow the regression test and make it fail locally.
 2. Build the CLI, confirm the stack is up, and refresh auth if needed.
-3. Reproduce the bug with `/tmp/arsenale-cli ... -o json` or a narrow API call.
+3. Reproduce the bug with `./build/go/arsenale-cli ... -o json` or a narrow API call.
 4. If the change touches the frontend, reproduce it in a real browser with Selenium/WebDriver.
 5. Implement the fix.
 6. Rerun focused tests until green.
@@ -79,10 +80,11 @@ Baseline sequence:
 
 ```bash
 go test ./tools/arsenale-cli/...
-go build -o /tmp/arsenale-cli ./tools/arsenale-cli
-/tmp/arsenale-cli --server https://localhost:3000 health
-/tmp/arsenale-cli --server https://localhost:3000 login
-/tmp/arsenale-cli --server https://localhost:3000 whoami
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 login
+./build/go/arsenale-cli --server https://localhost:3000 whoami
 npm run verify
 ```
 
@@ -102,9 +104,9 @@ npm run test -w client -- dbFirewallPattern.test.ts
 go test ./backend/internal/dbauditapi -run TestValidateSafeRegex -count=1
 
 # Real-stack reproduction and green verification
-/tmp/arsenale-cli --server https://localhost:3000 health
-/tmp/arsenale-cli --server https://localhost:3000 whoami
-/tmp/arsenale-cli --server https://localhost:3000 db-audit firewall-rule list -o json
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 whoami
+./build/go/arsenale-cli --server https://localhost:3000 db-audit firewall-rule list -o json
 ```
 
 ## Deployment Workflow
@@ -125,6 +127,9 @@ Primary repo-root targets:
 ```bash
 make setup
 make dev
+make dev client
+make dev gateways
+make dev control-plane
 make dev-down
 make install
 make deploy
@@ -148,6 +153,20 @@ make dev
 - Builds images from the local checkout
 - Keeps installer-managed state under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev` by default; override with `ARSENALE_DEV_HOME=/absolute/path`
 - Brings up the full stack, demo databases, bootstrap data, and acceptance checks
+
+For code-only iteration after the full stack exists, use service-scoped refreshes instead of rerunning the full installer:
+
+```bash
+make dev client
+make dev gateways
+make dev control-plane
+make dev control-plane-api query-runner
+```
+
+- These selectors reuse the saved development installer profile and rendered compose/env artifacts.
+- `client`, `gateways`, and `control-plane` are built-in selector groups; direct rendered service names also work.
+- Backend-targeted refreshes rerun `migrate` before force-recreating the requested services.
+- Use full `make dev` again when you change installer inputs, capability flags, certificates, secrets, or compose/deployment wiring.
 
 Stop development with:
 
@@ -184,6 +203,12 @@ ansible-playbook playbooks/install.yml \
   -e arsenale_dev_home=/absolute/path/to/arsenale-dev \
   -e installer_mode=development
 
+ansible-playbook playbooks/dev_refresh.yml \
+  --vault-password-file .vault-pass \
+  -e install_password_file=/absolute/path/to/arsenale-dev/install/password.txt \
+  -e arsenale_dev_home=/absolute/path/to/arsenale-dev \
+  -e dev_refresh_targets_csv=client,control-plane-api
+
 ansible-playbook playbooks/deploy.yml \
   --vault-password-file .vault-pass \
   -e arsenale_dev_home=/absolute/path/to/arsenale-dev \
@@ -198,6 +223,7 @@ Important deployment files:
 - `deployment/ansible/inventory/group_vars/all/vars.yml`
 - `deployment/ansible/inventory/group_vars/all/vault.yml`
 - `deployment/ansible/playbooks/install.yml`
+- `deployment/ansible/playbooks/dev_refresh.yml`
 - `deployment/ansible/playbooks/deploy.yml`
 - `$ARSENALE_DEV_HOME/install/password.txt` for local development reruns
 

@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { Box, LinearProgress, Typography } from '@mui/material';
+import { useEffect, useRef, useState } from 'react';
 import { zxcvbnAsync, zxcvbnOptions } from '@zxcvbn-ts/core';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 let optionsLoaded = false;
 let optionsPromise: Promise<void> | null = null;
@@ -39,19 +40,25 @@ interface PasswordStrengthMeterProps {
 }
 
 const SCORE_CONFIG = [
-  { label: 'Very Weak', color: 'error' as const, value: 5 },
-  { label: 'Weak', color: 'error' as const, value: 25 },
-  { label: 'Fair', color: 'warning' as const, value: 50 },
-  { label: 'Strong', color: 'info' as const, value: 75 },
-  { label: 'Very Strong', color: 'success' as const, value: 100 },
-];
+  { label: 'Very Weak', value: 5, indicatorClassName: 'bg-destructive', textClassName: 'text-destructive' },
+  { label: 'Weak', value: 25, indicatorClassName: 'bg-destructive', textClassName: 'text-destructive' },
+  { label: 'Fair', value: 50, indicatorClassName: 'bg-chart-5', textClassName: 'text-foreground' },
+  { label: 'Strong', value: 75, indicatorClassName: 'bg-primary', textClassName: 'text-primary' },
+  { label: 'Very Strong', value: 100, indicatorClassName: 'bg-primary', textClassName: 'text-primary' },
+] as const;
 
-export default function PasswordStrengthMeter({ password, onScoreChange }: PasswordStrengthMeterProps) {
+export default function PasswordStrengthMeter({
+  password,
+  onScoreChange,
+}: PasswordStrengthMeterProps) {
   const [score, setScore] = useState(0);
   const [feedback, setFeedback] = useState('');
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const onScoreChangeRef = useRef(onScoreChange);
-  useEffect(() => { onScoreChangeRef.current = onScoreChange; });
+
+  useEffect(() => {
+    onScoreChangeRef.current = onScoreChange;
+  });
 
   useEffect(() => {
     clearTimeout(timerRef.current);
@@ -68,8 +75,7 @@ export default function PasswordStrengthMeter({ password, onScoreChange }: Passw
         await ensureOptionsLoaded();
         const result = await zxcvbnAsync(password);
         setScore(result.score);
-        const msg = result.feedback.warning || result.feedback.suggestions[0] || '';
-        setFeedback(msg);
+        setFeedback(result.feedback.warning || result.feedback.suggestions[0] || '');
         onScoreChangeRef.current?.(result.score);
       } catch {
         setScore(0);
@@ -86,23 +92,18 @@ export default function PasswordStrengthMeter({ password, onScoreChange }: Passw
   const config = SCORE_CONFIG[score];
 
   return (
-    <Box sx={{ mt: 0.5, mb: 0.5 }}>
-      <LinearProgress
-        variant="determinate"
-        value={config.value}
-        color={config.color}
-        sx={{ height: 6, borderRadius: 3 }}
-      />
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.25 }}>
-        <Typography variant="caption" color={`${config.color}.main`}>
+    <div className="space-y-2">
+      <Progress value={config.value} indicatorClassName={config.indicatorClassName} />
+      <div className="flex flex-wrap items-start justify-between gap-2 text-xs">
+        <span className={cn('font-medium', config.textClassName)}>
           {config.label}
-        </Typography>
+        </span>
         {feedback && (
-          <Typography variant="caption" color="text.secondary" sx={{ textAlign: 'right', maxWidth: '70%' }}>
+          <span className="max-w-[70%] text-right leading-5 text-muted-foreground">
             {feedback}
-          </Typography>
+          </span>
         )}
-      </Box>
-    </Box>
+      </div>
+    </div>
   );
 }

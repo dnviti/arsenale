@@ -1,13 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
+import { Eye, EyeOff, Dices, Upload, Plus, Trash2, X } from 'lucide-react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  FormControl, InputLabel, Select, MenuItem, Box, Alert, Typography,
-  IconButton, InputAdornment, Chip,
-} from '@mui/material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
 import {
-  Visibility, VisibilityOff, Casino as GenerateIcon,
-  UploadFile as UploadIcon, Add as AddIcon, Delete as DeleteIcon,
-} from '@mui/icons-material';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
 import { useSecretStore } from '../../store/secretStore';
 import { useAuthStore } from '../../store/authStore';
 import { useTeamStore } from '../../store/teamStore';
@@ -271,268 +276,313 @@ export default function SecretDialog({ open, onClose, secret }: SecretDialogProp
   const tenantVaultReady = tenantVaultStatus?.initialized && tenantVaultStatus?.hasAccess;
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{isEditMode ? 'Edit Secret' : 'New Secret'}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEditMode ? 'Edit Secret' : 'New Secret'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEditMode ? 'Edit an existing secret' : 'Create a new secret'}
+          </DialogDescription>
+        </DialogHeader>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          {/* Type selector — only on create */}
+        <div className="flex flex-col gap-4">
+          {error && <Alert variant="destructive">{error}</Alert>}
+
+          {/* Type selector -- only on create */}
           {!isEditMode && (
-            <FormControl fullWidth size="small">
-              <InputLabel>Type</InputLabel>
-              <Select value={type} label="Type" onChange={(e) => setType(e.target.value as SecretType)}>
-                <MenuItem value="LOGIN">Login</MenuItem>
-                <MenuItem value="SSH_KEY">SSH Key</MenuItem>
-                <MenuItem value="CERTIFICATE">Certificate</MenuItem>
-                <MenuItem value="API_KEY">API Key</MenuItem>
-                <MenuItem value="SECURE_NOTE">Secure Note</MenuItem>
+            <div className="space-y-1.5">
+              <Label>Type</Label>
+              <Select value={type} onValueChange={(v) => setType(v as SecretType)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="LOGIN">Login</SelectItem>
+                  <SelectItem value="SSH_KEY">SSH Key</SelectItem>
+                  <SelectItem value="CERTIFICATE">Certificate</SelectItem>
+                  <SelectItem value="API_KEY">API Key</SelectItem>
+                  <SelectItem value="SECURE_NOTE">Secure Note</SelectItem>
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           )}
 
-          <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth required size="small" />
-          <TextField label="Description" value={description} onChange={(e) => setDescription(e.target.value)} fullWidth size="small" />
+          <div className="space-y-1.5">
+            <Label>Name *</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
 
-          {/* Scope selector — only on create */}
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+
+          {/* Scope selector -- only on create */}
           {!isEditMode && (
-            <FormControl fullWidth size="small">
-              <InputLabel>Scope</InputLabel>
-              <Select value={scope} label="Scope" onChange={(e) => setScope(e.target.value as SecretScope)}>
-                <MenuItem value="PERSONAL">Personal</MenuItem>
-                {canSelectTeam && <MenuItem value="TEAM">Team</MenuItem>}
-                {canSelectTenant && (
-                  <MenuItem value="TENANT" disabled={!tenantVaultReady}>
-                    Organization{!tenantVaultReady ? ' (vault not initialized)' : ''}
-                  </MenuItem>
-                )}
+            <div className="space-y-1.5">
+              <Label>Scope</Label>
+              <Select value={scope} onValueChange={(v) => setScope(v as SecretScope)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PERSONAL">Personal</SelectItem>
+                  {canSelectTeam && <SelectItem value="TEAM">Team</SelectItem>}
+                  {canSelectTenant && (
+                    <SelectItem value="TENANT" disabled={!tenantVaultReady}>
+                      Organization{!tenantVaultReady ? ' (vault not initialized)' : ''}
+                    </SelectItem>
+                  )}
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           )}
 
           {!isEditMode && scope === 'TEAM' && (
-            <FormControl fullWidth size="small">
-              <InputLabel>Team</InputLabel>
-              <Select value={teamId} label="Team" onChange={(e) => setTeamId(e.target.value)}>
-                {teams.map((t) => (
-                  <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
-                ))}
+            <div className="space-y-1.5">
+              <Label>Team</Label>
+              <Select value={teamId} onValueChange={setTeamId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           )}
 
           {/* Dynamic data section */}
           {type === 'LOGIN' && (
             <>
-              <TextField label="Username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} fullWidth required size="small" />
-              <TextField
-                label="Password"
-                type={showPassword ? 'text' : 'password'}
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                fullWidth required size="small"
-                slotProps={{
-                  input: {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => setShowPassword(!showPassword)}>
-                          {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                        </IconButton>
-                        <IconButton size="small" onClick={() => { setLoginPassword(generatePassword()); setShowPassword(true); }} title="Generate password">
-                          <GenerateIcon fontSize="small" />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <TextField label="Domain (optional)" value={loginDomain} onChange={(e) => setLoginDomain(e.target.value)} fullWidth size="small" placeholder="e.g. CONTOSO" />
-              <TextField label="URL" value={loginUrl} onChange={(e) => setLoginUrl(e.target.value)} fullWidth size="small" />
+              <div className="space-y-1.5">
+                <Label>Username *</Label>
+                <Input value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Password *</Label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    className="pr-20"
+                  />
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex gap-0.5">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowPassword(!showPassword)}>
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" title="Generate password" onClick={() => { setLoginPassword(generatePassword()); setShowPassword(true); }}>
+                      <Dices className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Domain (optional)</Label>
+                <Input value={loginDomain} onChange={(e) => setLoginDomain(e.target.value)} placeholder="e.g. CONTOSO" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>URL</Label>
+                <Input value={loginUrl} onChange={(e) => setLoginUrl(e.target.value)} />
+              </div>
             </>
           )}
 
           {type === 'SSH_KEY' && (
             <>
-              <TextField label="Username" value={sshUsername} onChange={(e) => setSshUsername(e.target.value)} fullWidth size="small" />
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">Private Key *</Typography>
-                  <IconButton size="small" onClick={() => handleFileUpload('sshPrivateKey')} title="Upload file">
-                    <UploadIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-                <TextField
+              <div className="space-y-1.5">
+                <Label>Username</Label>
+                <Input value={sshUsername} onChange={(e) => setSshUsername(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Private Key *</Label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleFileUpload('sshPrivateKey')} title="Upload file">
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Textarea
                   value={sshPrivateKey}
                   onChange={(e) => setSshPrivateKey(e.target.value)}
-                  fullWidth required multiline rows={4} size="small"
+                  rows={4}
                   placeholder="Paste PEM private key or upload file..."
                 />
-              </Box>
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">Public Key</Typography>
-                  <IconButton size="small" onClick={() => handleFileUpload('sshPublicKey')} title="Upload file">
-                    <UploadIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-                <TextField value={sshPublicKey} onChange={(e) => setSshPublicKey(e.target.value)} fullWidth multiline rows={2} size="small" />
-              </Box>
-              <TextField label="Passphrase" value={sshPassphrase} onChange={(e) => setSshPassphrase(e.target.value)} fullWidth size="small" type="password" />
-              <FormControl fullWidth size="small">
-                <InputLabel>Algorithm</InputLabel>
-                <Select value={sshAlgorithm} label="Algorithm" onChange={(e) => setSshAlgorithm(e.target.value)}>
-                  <MenuItem value="">Not specified</MenuItem>
-                  <MenuItem value="RSA">RSA</MenuItem>
-                  <MenuItem value="ED25519">ED25519</MenuItem>
-                  <MenuItem value="ECDSA">ECDSA</MenuItem>
-                  <MenuItem value="DSA">DSA</MenuItem>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Public Key</Label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleFileUpload('sshPublicKey')} title="Upload file">
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Textarea value={sshPublicKey} onChange={(e) => setSshPublicKey(e.target.value)} rows={2} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Passphrase</Label>
+                <Input value={sshPassphrase} onChange={(e) => setSshPassphrase(e.target.value)} type="password" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Algorithm</Label>
+                <Select value={sshAlgorithm || '__unspecified__'} onValueChange={(v) => setSshAlgorithm(v === '__unspecified__' ? '' : v)}>
+                  <SelectTrigger><SelectValue placeholder="Not specified" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unspecified__">Not specified</SelectItem>
+                    <SelectItem value="RSA">RSA</SelectItem>
+                    <SelectItem value="ED25519">ED25519</SelectItem>
+                    <SelectItem value="ECDSA">ECDSA</SelectItem>
+                    <SelectItem value="DSA">DSA</SelectItem>
+                  </SelectContent>
                 </Select>
-              </FormControl>
+              </div>
             </>
           )}
 
           {type === 'CERTIFICATE' && (
             <>
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">Certificate *</Typography>
-                  <IconButton size="small" onClick={() => handleFileUpload('certCertificate')} title="Upload file">
-                    <UploadIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-                <TextField value={certCertificate} onChange={(e) => setCertCertificate(e.target.value)} fullWidth required multiline rows={4} size="small" placeholder="Paste PEM certificate or upload .crt/.pem..." />
-              </Box>
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">Private Key *</Typography>
-                  <IconButton size="small" onClick={() => handleFileUpload('certPrivateKey')} title="Upload file">
-                    <UploadIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-                <TextField value={certPrivateKey} onChange={(e) => setCertPrivateKey(e.target.value)} fullWidth required multiline rows={4} size="small" placeholder="Paste PEM private key or upload .key..." />
-              </Box>
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Typography variant="caption" color="text.secondary">CA Chain</Typography>
-                  <IconButton size="small" onClick={() => handleFileUpload('certChain')} title="Upload file">
-                    <UploadIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-                <TextField value={certChain} onChange={(e) => setCertChain(e.target.value)} fullWidth multiline rows={2} size="small" />
-              </Box>
-              <TextField label="Passphrase" value={certPassphrase} onChange={(e) => setCertPassphrase(e.target.value)} fullWidth size="small" type="password" />
-              <TextField
-                label="Certificate Expires At"
-                type="datetime-local"
-                value={certExpiresAt}
-                onChange={(e) => setCertExpiresAt(e.target.value)}
-                fullWidth size="small"
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Certificate *</Label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleFileUpload('certCertificate')} title="Upload file">
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Textarea value={certCertificate} onChange={(e) => setCertCertificate(e.target.value)} rows={4} placeholder="Paste PEM certificate or upload .crt/.pem..." />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">Private Key *</Label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleFileUpload('certPrivateKey')} title="Upload file">
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Textarea value={certPrivateKey} onChange={(e) => setCertPrivateKey(e.target.value)} rows={4} placeholder="Paste PEM private key or upload .key..." />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs text-muted-foreground">CA Chain</Label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleFileUpload('certChain')} title="Upload file">
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <Textarea value={certChain} onChange={(e) => setCertChain(e.target.value)} rows={2} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Passphrase</Label>
+                <Input value={certPassphrase} onChange={(e) => setCertPassphrase(e.target.value)} type="password" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Certificate Expires At</Label>
+                <Input type="datetime-local" value={certExpiresAt} onChange={(e) => setCertExpiresAt(e.target.value)} />
+              </div>
             </>
           )}
 
           {type === 'API_KEY' && (
             <>
-              <TextField label="API Key" value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)} fullWidth required size="small" type="password" />
-              <TextField label="Endpoint URL" value={apiKeyEndpoint} onChange={(e) => setApiKeyEndpoint(e.target.value)} fullWidth size="small" />
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary">Headers</Typography>
-                  <IconButton size="small" onClick={() => setApiKeyHeaders([...apiKeyHeaders, { key: '', value: '' }])}>
-                    <AddIcon fontSize="small" />
-                  </IconButton>
-                </Box>
+              <div className="space-y-1.5">
+                <Label>API Key *</Label>
+                <Input value={apiKeyValue} onChange={(e) => setApiKeyValue(e.target.value)} type="password" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Endpoint URL</Label>
+                <Input value={apiKeyEndpoint} onChange={(e) => setApiKeyEndpoint(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Label className="text-xs text-muted-foreground">Headers</Label>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setApiKeyHeaders([...apiKeyHeaders, { key: '', value: '' }])}>
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
                 {apiKeyHeaders.map((h, i) => (
-                  <Box key={i} sx={{ display: 'flex', gap: 1, mb: 1 }}>
-                    <TextField
-                      label="Key"
+                  <div key={i} className="flex gap-2 mb-2">
+                    <Input
+                      placeholder="Key"
                       value={h.key}
                       onChange={(e) => {
                         const updated = [...apiKeyHeaders];
                         updated[i] = { ...updated[i], key: e.target.value };
                         setApiKeyHeaders(updated);
                       }}
-                      size="small" sx={{ flex: 1 }}
+                      className="flex-1"
                     />
-                    <TextField
-                      label="Value"
+                    <Input
+                      placeholder="Value"
                       value={h.value}
                       onChange={(e) => {
                         const updated = [...apiKeyHeaders];
                         updated[i] = { ...updated[i], value: e.target.value };
                         setApiKeyHeaders(updated);
                       }}
-                      size="small" sx={{ flex: 1 }}
+                      className="flex-1"
                     />
-                    <IconButton size="small" onClick={() => setApiKeyHeaders(apiKeyHeaders.filter((_, j) => j !== i))}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
+                    <Button variant="ghost" size="icon" className="h-10 w-10 shrink-0" onClick={() => setApiKeyHeaders(apiKeyHeaders.filter((_, j) => j !== i))}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 ))}
-              </Box>
+              </div>
             </>
           )}
 
           {type === 'SECURE_NOTE' && (
-            <TextField
-              label="Content"
-              value={noteContent}
-              onChange={(e) => setNoteContent(e.target.value)}
-              fullWidth required multiline rows={6} size="small"
-            />
+            <div className="space-y-1.5">
+              <Label>Content *</Label>
+              <Textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} rows={6} />
+            </div>
           )}
 
           {type !== 'SECURE_NOTE' && (
-            <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} fullWidth multiline rows={2} size="small" />
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+            </div>
           )}
 
           {/* Tags */}
-          <Box>
-            <Box sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
-              <TextField
-                label="Tags"
+          <div className="space-y-1.5">
+            <div className="flex gap-2">
+              <Input
+                placeholder="Press Enter to add tag"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
-                size="small" fullWidth
-                placeholder="Press Enter to add"
+                className="flex-1"
               />
-              <Button size="small" onClick={handleAddTag}>Add</Button>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+              <Button variant="outline" size="sm" onClick={handleAddTag}>Add</Button>
+            </div>
+            <div className="flex gap-1 flex-wrap">
               {tags.map((t) => (
-                <Chip key={t} label={t} size="small" onDelete={() => setTags(tags.filter((x) => x !== t))} />
+                <Badge key={t} variant="secondary" className="gap-1">
+                  {t}
+                  <button onClick={() => setTags(tags.filter((x) => x !== t))} className="ml-0.5 hover:text-destructive">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
               ))}
-            </Box>
-          </Box>
+            </div>
+          </div>
 
           {/* Expiry */}
-          <TextField
-            label="Expires At"
-            type="datetime-local"
-            value={expiresAt}
-            onChange={(e) => setExpiresAt(e.target.value)}
-            fullWidth size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-        </Box>
+          <div className="space-y-1.5">
+            <Label>Expires At</Label>
+            <Input type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+          </div>
+        </div>
 
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
           accept=".pem,.key,.crt,.pub,.txt"
-          style={{ display: 'none' }}
+          className="hidden"
           onChange={handleFileRead}
         />
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save' : 'Create')}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
-          {loading ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save' : 'Create')}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

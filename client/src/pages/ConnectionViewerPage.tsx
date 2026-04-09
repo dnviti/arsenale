@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Loader2 } from 'lucide-react';
 import { getConnection, ConnectionData } from '../api/connections.api';
 import { restoreSessionApi } from '../api/auth.api';
 import { useAuthStore } from '../store/authStore';
@@ -59,27 +59,27 @@ export default function ConnectionViewerPage() {
 
   if (loading || !authReady) {
     return (
-      <Box sx={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#1a1a2e' }}>
-        <CircularProgress />
-      </Box>
+      <div className="flex h-screen w-screen items-center justify-center bg-[#1a1a2e]">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
     );
   }
 
   if (error || !connection) {
     return (
-      <Box sx={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#1a1a2e' }}>
-        <Typography color="error">{error || 'Connection not found'}</Typography>
-      </Box>
+      <div className="flex h-screen w-screen items-center justify-center bg-[#1a1a2e]">
+        <p className="text-sm text-destructive">{error || 'Connection not found'}</p>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ width: '100vw', height: '100vh', display: 'flex', overflow: 'hidden', bgcolor: '#1a1a2e' }}>
+    <div className="flex h-screen w-screen overflow-hidden bg-[#1a1a2e]">
       {connection.type === 'SSH' ? (
         <SshTerminal connectionId={connection.id} tabId={`popup-${connection.id}`} />
       ) : (
         <RdpViewer connectionId={connection.id} tabId={`popup-${connection.id}`} />
       )}
-    </Box>
+    </div>
   );
 }

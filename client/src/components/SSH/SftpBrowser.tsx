@@ -1,23 +1,30 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  Drawer, Box, Typography, IconButton, List, ListItem, ListItemIcon,
-  ListItemText, ListItemSecondaryAction, Button, CircularProgress,
-  Alert, Divider, Breadcrumbs, Link, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, DialogContentText,
-} from '@mui/material';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
-  Close as CloseIcon,
-  Download as DownloadIcon,
-  Delete as DeleteIcon,
-  UploadFile as UploadIcon,
-  Folder as FolderIcon,
-  InsertDriveFile as FileIcon,
+  X,
+  Download,
+  Trash2,
+  Upload,
+  Folder,
+  FileText,
   Link as LinkIcon,
-  CreateNewFolder as NewFolderIcon,
-  Refresh as RefreshIcon,
-  NavigateNext as NavNextIcon,
-  Home as HomeIcon,
-} from '@mui/icons-material';
+  FolderPlus,
+  RefreshCw,
+  ChevronRight,
+  Home,
+  Loader2,
+} from 'lucide-react';
 import { useSftpTransfers, type SftpSocket } from '../../hooks/useSftpTransfers';
 import SftpTransferQueue from './SftpTransferQueue';
 
@@ -79,7 +86,6 @@ export default function SftpBrowser({ open, onClose, socket, disableDownload, di
         setError(res.error);
         return;
       }
-      // Sort: directories first, then files, alphabetically
       const sorted = (res.entries || []).sort((a, b) => {
         if (a.type === 'directory' && b.type !== 'directory') return -1;
         if (a.type !== 'directory' && b.type === 'directory') return 1;
@@ -183,7 +189,6 @@ export default function SftpBrowser({ open, onClose, socket, disableDownload, di
     for (const t of transfers) {
       if (t.status === 'complete' && t.direction === 'upload' && !refreshedTransfers.current.has(t.transferId)) {
         refreshedTransfers.current.add(t.transferId);
-        // Check if the uploaded file is in the current directory
         const dir = t.remotePath.substring(0, t.remotePath.lastIndexOf('/')) || '/';
         if (dir === currentPath) {
           shouldRefresh = true;
@@ -214,252 +219,250 @@ export default function SftpBrowser({ open, onClose, socket, disableDownload, di
 
   const entryIcon = (type: SftpEntry['type']) => {
     switch (type) {
-      case 'directory': return <FolderIcon fontSize="small" color="primary" />;
-      case 'symlink': return <LinkIcon fontSize="small" color="secondary" />;
-      default: return <FileIcon fontSize="small" />;
+      case 'directory': return <Folder className="h-4 w-4 text-primary" />;
+      case 'symlink': return <LinkIcon className="h-4 w-4 text-muted-foreground" />;
+      default: return <FileText className="h-4 w-4" />;
     }
   };
 
+  if (!open) return null;
+
   return (
     <>
-      <Drawer
-        anchor="right"
-        open={open}
-        onClose={onClose}
-        variant="persistent"
-        sx={{ '& .MuiDrawer-paper': { width: 360, position: 'absolute' } }}
+      <div
+        className="absolute right-0 top-0 bottom-0 w-[360px] border-l bg-background flex flex-col z-10"
+        onDragOver={disableUpload ? undefined : handleDragOver}
+        onDragLeave={disableUpload ? undefined : handleDragLeave}
+        onDrop={disableUpload ? undefined : handleDrop}
       >
-        <Box
-          sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-          onDragOver={disableUpload ? undefined : handleDragOver}
-          onDragLeave={disableUpload ? undefined : handleDragLeave}
-          onDrop={disableUpload ? undefined : handleDrop}
-        >
-          {/* Header */}
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, pl: 2 }}>
-            <Typography variant="subtitle1" fontWeight={600}>SFTP</Typography>
-            <IconButton size="small" onClick={onClose}><CloseIcon /></IconButton>
-          </Box>
+        {/* Header */}
+        <div className="flex items-center justify-between p-3 pl-4">
+          <span className="text-sm font-semibold">SFTP</span>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
 
-          <Divider />
+        <Separator />
 
-          {/* Breadcrumb */}
-          <Box sx={{ px: 1.5, py: 1, overflow: 'auto' }}>
-            <Breadcrumbs separator={<NavNextIcon fontSize="small" />} sx={{ fontSize: '0.8rem' }}>
-              <Link
-                component="button"
-                underline="hover"
-                onClick={() => navigateTo('/')}
-                sx={{ display: 'flex', alignItems: 'center', fontSize: '0.8rem' }}
-              >
-                <HomeIcon sx={{ fontSize: 16, mr: 0.25 }} />
-              </Link>
-              {pathSegments.map((segment, idx) => {
-                const segPath = '/' + pathSegments.slice(0, idx + 1).join('/');
-                const isLast = idx === pathSegments.length - 1;
-                return isLast ? (
-                  <Typography key={segPath} color="text.primary" sx={{ fontSize: '0.8rem' }}>
-                    {segment}
-                  </Typography>
-                ) : (
-                  <Link
-                    key={segPath}
-                    component="button"
-                    underline="hover"
-                    onClick={() => navigateTo(segPath)}
-                    sx={{ fontSize: '0.8rem' }}
-                  >
-                    {segment}
-                  </Link>
-                );
-              })}
-            </Breadcrumbs>
-          </Box>
-
-          <Divider />
-
-          {/* Action bar */}
-          <Box sx={{ display: 'flex', gap: 0.5, p: 1, px: 1.5 }}>
-            {!disableUpload && (
-              <>
-                <input
-                  type="file"
-                  multiple
-                  ref={fileInputRef}
-                  onChange={handleFileSelect}
-                  style={{ display: 'none' }}
-                />
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<UploadIcon />}
-                  onClick={() => fileInputRef.current?.click()}
-                  sx={{ flex: 1, fontSize: '0.75rem' }}
-                >
-                  Upload
-                </Button>
-              </>
-            )}
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<NewFolderIcon />}
-              onClick={() => setMkdirOpen(true)}
-              sx={{ flex: 1, fontSize: '0.75rem' }}
+        {/* Breadcrumb */}
+        <div className="px-3 py-2 overflow-auto">
+          <nav className="flex items-center gap-0.5 text-xs">
+            <button
+              className="flex items-center hover:underline text-muted-foreground"
+              onClick={() => navigateTo('/')}
             >
-              New Folder
-            </Button>
-            <IconButton size="small" onClick={() => fetchEntries(currentPath)} disabled={loading}>
-              <RefreshIcon fontSize="small" />
-            </IconButton>
-          </Box>
+              <Home className="h-3.5 w-3.5" />
+            </button>
+            {pathSegments.map((segment, idx) => {
+              const segPath = '/' + pathSegments.slice(0, idx + 1).join('/');
+              const isLast = idx === pathSegments.length - 1;
+              return (
+                <span key={segPath} className="flex items-center gap-0.5">
+                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                  {isLast ? (
+                    <span className="text-foreground">{segment}</span>
+                  ) : (
+                    <button
+                      className="hover:underline text-muted-foreground"
+                      onClick={() => navigateTo(segPath)}
+                    >
+                      {segment}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </nav>
+        </div>
 
-          {/* Drag overlay */}
-          {dragOver && !disableUpload && (
-            <Box sx={{
-              mx: 1.5, p: 2, border: '2px dashed', borderColor: 'primary.main',
-              borderRadius: 1, textAlign: 'center', bgcolor: 'action.hover',
-            }}>
-              <Typography variant="body2" color="primary">Drop files here to upload</Typography>
-            </Box>
+        <Separator />
+
+        {/* Action bar */}
+        <div className="flex gap-1 p-2 px-3">
+          {!disableUpload && (
+            <>
+              <input
+                type="file"
+                multiple
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Upload className="h-3.5 w-3.5 mr-1" />
+                Upload
+              </Button>
+            </>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1 text-xs"
+            onClick={() => setMkdirOpen(true)}
+          >
+            <FolderPlus className="h-3.5 w-3.5 mr-1" />
+            New Folder
+          </Button>
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => fetchEntries(currentPath)} disabled={loading}>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
 
-          {/* Error */}
-          {error && (
-            <Alert severity="error" sx={{ mx: 1.5, mb: 1 }} onClose={() => setError('')}>
-              {error}
-            </Alert>
+        {/* Drag overlay */}
+        {dragOver && !disableUpload && (
+          <div className="mx-3 p-3 border-2 border-dashed border-primary rounded text-center bg-muted/50">
+            <p className="text-sm text-primary">Drop files here to upload</p>
+          </div>
+        )}
+
+        {/* Error */}
+        {error && (
+          <div className="mx-3 mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError('')} className="text-red-400 hover:text-red-300">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* File list */}
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="flex justify-center p-6">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : entries.length === 0 ? (
+            <p className="text-sm text-muted-foreground p-4 text-center">
+              This directory is empty
+            </p>
+          ) : (
+            <div>
+              {entries.map((entry) => (
+                <div
+                  key={entry.name}
+                  onDoubleClick={() => handleEntryDoubleClick(entry)}
+                  className={`flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 ${entry.type === 'directory' || entry.type === 'symlink' ? 'cursor-pointer' : ''}`}
+                >
+                  <div className="w-5 shrink-0">{entryIcon(entry.type)}</div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[0.85rem] truncate">{entry.name}</p>
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      {entry.type === 'directory'
+                        ? formatDate(entry.modifiedAt)
+                        : `${formatFileSize(entry.size)} - ${formatDate(entry.modifiedAt)}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {entry.type === 'file' && !disableDownload && (
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDownload(entry)} title="Download">
+                        <Download className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-xs"
+                      onClick={() => {
+                        setRenameTarget(entry);
+                        setRenameName(entry.name);
+                      }}
+                      title="Rename"
+                    >
+                      <span className="text-[0.7rem]">Aa</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => setDeleteTarget(entry)}
+                      title="Delete"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
+        </div>
 
-          {/* File list */}
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
-            {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-                <CircularProgress size={24} />
-              </Box>
-            ) : entries.length === 0 ? (
-              <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                This directory is empty
-              </Typography>
-            ) : (
-              <List dense>
-                {entries.map((entry) => (
-                  <ListItem
-                    key={entry.name}
-                    onDoubleClick={() => handleEntryDoubleClick(entry)}
-                    sx={{
-                      cursor: entry.type === 'directory' || entry.type === 'symlink' ? 'pointer' : 'default',
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                  >
-                    <ListItemIcon sx={{ minWidth: 32 }}>
-                      {entryIcon(entry.type)}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={entry.name}
-                      secondary={
-                        entry.type === 'directory'
-                          ? formatDate(entry.modifiedAt)
-                          : `${formatFileSize(entry.size)} - ${formatDate(entry.modifiedAt)}`
-                      }
-                      primaryTypographyProps={{ noWrap: true, fontSize: '0.85rem' }}
-                      secondaryTypographyProps={{ fontSize: '0.7rem' }}
-                    />
-                    <ListItemSecondaryAction>
-                      {entry.type === 'file' && !disableDownload && (
-                        <IconButton size="small" onClick={() => handleDownload(entry)} title="Download">
-                          <DownloadIcon fontSize="small" />
-                        </IconButton>
-                      )}
-                      <IconButton
-                        size="small"
-                        onClick={() => {
-                          setRenameTarget(entry);
-                          setRenameName(entry.name);
-                        }}
-                        title="Rename"
-                        sx={{ fontSize: '0.7rem', px: 0.5 }}
-                      >
-                        <Typography variant="caption">Aa</Typography>
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        onClick={() => setDeleteTarget(entry)}
-                        title="Delete"
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-              </List>
-            )}
-          </Box>
-
-          {/* Transfer Queue */}
-          <SftpTransferQueue
-            transfers={transfers}
-            onCancel={cancelTransfer}
-            onClearCompleted={clearCompleted}
-          />
-        </Box>
-      </Drawer>
+        {/* Transfer Queue */}
+        <SftpTransferQueue
+          transfers={transfers}
+          onCancel={cancelTransfer}
+          onClearCompleted={clearCompleted}
+        />
+      </div>
 
       {/* New Folder Dialog */}
-      <Dialog open={mkdirOpen} onClose={() => setMkdirOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>New Folder</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            label="Folder name"
-            value={mkdirName}
-            onChange={(e) => setMkdirName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleMkdir(); }}
-            sx={{ mt: 1 }}
-          />
+      <Dialog open={mkdirOpen} onOpenChange={(v) => { if (!v) setMkdirOpen(false); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>New Folder</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="folder-name">Folder name</Label>
+            <Input
+              id="folder-name"
+              autoFocus
+              value={mkdirName}
+              onChange={(e) => setMkdirName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleMkdir(); }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMkdirOpen(false)}>Cancel</Button>
+            <Button onClick={handleMkdir} disabled={!mkdirName.trim()}>Create</Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMkdirOpen(false)}>Cancel</Button>
-          <Button onClick={handleMkdir} variant="contained" disabled={!mkdirName.trim()}>Create</Button>
-        </DialogActions>
       </Dialog>
 
       {/* Delete Confirmation */}
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} maxWidth="xs">
-        <DialogTitle>Delete {deleteTarget?.type === 'directory' ? 'Folder' : 'File'}</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete "{deleteTarget?.name}"?
-            {deleteTarget?.type === 'directory' && ' The directory must be empty.'}
-          </DialogContentText>
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete {deleteTarget?.type === 'directory' ? 'Folder' : 'File'}</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{deleteTarget?.name}&quot;?
+              {deleteTarget?.type === 'directory' && ' The directory must be empty.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
-        </DialogActions>
       </Dialog>
 
       {/* Rename Dialog */}
-      <Dialog open={!!renameTarget} onClose={() => setRenameTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Rename</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            label="New name"
-            value={renameName}
-            onChange={(e) => setRenameName(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); }}
-            sx={{ mt: 1 }}
-          />
+      <Dialog open={!!renameTarget} onOpenChange={(v) => { if (!v) setRenameTarget(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="rename-input">New name</Label>
+            <Input
+              id="rename-input"
+              autoFocus
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleRename(); }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button onClick={handleRename} disabled={!renameName.trim() || renameName === renameTarget?.name}>
+              Rename
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRenameTarget(null)}>Cancel</Button>
-          <Button onClick={handleRename} variant="contained" disabled={!renameName.trim() || renameName === renameTarget?.name}>
-            Rename
-          </Button>
-        </DialogActions>
       </Dialog>
     </>
   );

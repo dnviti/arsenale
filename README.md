@@ -36,7 +36,7 @@ A web-based application for managing and accessing remote SSH and RDP connection
 | Layer | Technologies |
 |-------|-------------|
 | **Backend** | Go split services under `backend/` (control plane, brokers, orchestration, AI, runtime) |
-| **Client** | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
+| **Client** | React 19, Vite, Tailwind CSS 4, shadcn/ui, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
 | **Database** | PostgreSQL 16 |
 | **Infrastructure** | Podman / Kubernetes, Nginx, guacd, ssh-gateway |
 
@@ -79,6 +79,17 @@ npm run dev
 ```
 
 `make dev` runs the installer-aware development flow. With the default development capabilities it deploys the local fixture targets, demo databases, and bootstrap data; add `DEV_ZERO_TRUST=true` when you also want the tunnel fixtures and zero-trust acceptance path. `npm run dev` is optional when you want the Vite client on `https://localhost:3005` against that stack.
+
+For faster local iteration after that first full deploy, you can refresh only the changed images with the same saved dev profile:
+
+```bash
+make dev client
+make dev gateways
+make dev control-plane
+make dev control-plane-api query-runner
+```
+
+Those scoped refreshes rebuild and restart only the requested services, reusing the last rendered dev compose/env artifacts. Use full `make dev` again when you change installer inputs, capabilities, certs, secrets, or compose wiring.
 
 For headless local reruns, place the technician password in `install/password.txt`.
 The repo `Makefile` auto-detects that file and passes it to the installer as

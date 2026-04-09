@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
-import {
-  Card, CardContent, Typography, Switch, FormControlLabel, Alert, CircularProgress, Box,
-} from '@mui/material';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { getAppConfig, setSelfSignup } from '../../api/admin.api';
 import { extractApiError } from '../../utils/apiError';
+import {
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSwitchRow,
+} from './settings-ui';
 
 export default function SelfSignupSection() {
   const [enabled, setEnabled] = useState(true);
@@ -18,13 +21,13 @@ export default function SelfSignupSection() {
       .catch(() => setLoading(false));
   }, []);
 
-  const handleToggle = async () => {
-    const newValue = !enabled;
+  const handleToggle = async (nextEnabled: boolean) => {
     setSaving(true);
     setError('');
     try {
-      await setSelfSignup(newValue);
-      setEnabled(newValue);
+      const updated = await setSelfSignup(nextEnabled);
+      setEnabled(updated.selfSignupEnabled);
+      setEnvLocked(updated.selfSignupEnvLocked);
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to update setting'));
     } finally {
@@ -34,45 +37,46 @@ export default function SelfSignupSection() {
 
   if (loading) {
     return (
-      <Card variant="outlined">
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="Self Signup"
+        description="Public registration policy and onboarding control."
+      >
+        <SettingsLoadingState message="Loading self-signup policy..." />
+      </SettingsPanel>
     );
   }
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          Self-Registration
-        </Typography>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={enabled}
-                  onChange={handleToggle}
-                  disabled={saving || envLocked}
-                />
-              }
-              label="Allow new users to register themselves"
-            />
-            <Typography variant="body2" color="text.secondary" sx={{ ml: 4.5 }}>
-              When disabled, only organization admins can create user accounts
-            </Typography>
-          </Box>
-        </Box>
-        {envLocked && (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Self-registration has been disabled by the administrator at the environment level.
-            To change this setting, update the <code>SELF_SIGNUP_ENABLED</code> environment variable and restart the server.
-          </Alert>
-        )}
-      </CardContent>
-    </Card>
+    <SettingsPanel
+      title="Self Signup"
+      description="Public registration policy and onboarding control."
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <SettingsSwitchRow
+        title="Allow new users to register themselves"
+        description="When disabled, only organization admins can create user accounts."
+        checked={enabled}
+        disabled={saving || envLocked}
+        onCheckedChange={handleToggle}
+      />
+
+      {envLocked && (
+        <Alert variant="info">
+          <AlertDescription>
+            Self-registration is locked at the environment level. Update
+            {' '}
+            <code className="rounded bg-background/80 px-1.5 py-0.5 text-xs text-foreground">SELF_SIGNUP_ENABLED</code>
+            {' '}
+            and restart the server to change it.
+          </AlertDescription>
+        </Alert>
+      )}
+    </SettingsPanel>
   );
 }

@@ -1,16 +1,24 @@
 import { useState } from 'react';
-import { Menu, MenuItem, Divider, ListItemIcon, ListItemText, Typography } from '@mui/material';
 import {
-  ContentCopy as CopyIcon,
-  ContentPaste as PasteIcon,
-  CameraAlt as ScreenshotIcon,
-  Fullscreen as FullscreenIcon,
-  FullscreenExit as FullscreenExitIcon,
-  FolderOpen as FolderOpenIcon,
-  PowerSettingsNew as DisconnectIcon,
-  Keyboard as KeyboardIcon,
-  ChevronRight as ChevronRightIcon,
-} from '@mui/icons-material';
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu';
+import {
+  Copy,
+  ClipboardPaste,
+  Camera,
+  Maximize,
+  Minimize,
+  FolderOpen,
+  Power,
+  Keyboard,
+} from 'lucide-react';
 import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import { KEYSYMS } from '../../constants/keysyms';
 
@@ -53,15 +61,19 @@ export default function SessionContextMenu({
   onToggleSftp,
   sftpAvailable = false,
   sftpOpen = false,
-  container,
 }: SessionContextMenuProps) {
-  const [sendKeysAnchor, setSendKeysAnchor] = useState<HTMLElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const isGuac = protocol === 'RDP' || protocol === 'VNC';
-  const open = anchorPosition !== null;
+  const isVisible = anchorPosition !== null;
+
+  // Sync external open state
+  if (isVisible && !menuOpen) {
+    // Will be set open by the trigger
+  }
 
   const handleClose = () => {
-    setSendKeysAnchor(null);
+    setMenuOpen(false);
     onClose();
   };
 
@@ -76,135 +88,117 @@ export default function SessionContextMenu({
   };
 
   return (
-    <>
-      <Menu
-        open={open}
-        onClose={handleClose}
-        anchorReference="anchorPosition"
-        anchorPosition={anchorPosition ?? undefined}
-        slotProps={{
-          paper: {
-            sx: { minWidth: 200 },
-          },
-        }}
-        {...(container ? { container, disablePortal: true } : {})}
-      >
+    <DropdownMenu
+      open={isVisible}
+      onOpenChange={(v) => { if (!v) handleClose(); }}
+    >
+      <DropdownMenuTrigger asChild>
+        <div
+          className="fixed w-0 h-0"
+          style={anchorPosition ? { top: anchorPosition.top, left: anchorPosition.left } : { top: -9999, left: -9999 }}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="min-w-[200px]" side="bottom" align="start">
         {/* Clipboard operations */}
         {onCopy !== undefined && (
-          <MenuItem
+          <DropdownMenuItem
             onClick={() => handleAction(onCopy)}
             disabled={!!dlpPolicy?.disableCopy || !navigator.clipboard?.writeText}
           >
-            <ListItemIcon><CopyIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Copy</ListItemText>
+            <Copy className="h-4 w-4 mr-2" />
+            Copy
             {protocol === 'SSH' && (
-              <Typography variant="body2" sx={{ color: 'text.secondary', ml: 2 }}>
-                Ctrl+Shift+C
-              </Typography>
+              <span className="ml-auto text-xs text-muted-foreground">Ctrl+Shift+C</span>
             )}
-          </MenuItem>
+          </DropdownMenuItem>
         )}
         {onPaste !== undefined && (
-          <MenuItem
+          <DropdownMenuItem
             onClick={() => handleAction(onPaste)}
             disabled={!!dlpPolicy?.disablePaste || !navigator.clipboard?.readText}
           >
-            <ListItemIcon><PasteIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Paste</ListItemText>
+            <ClipboardPaste className="h-4 w-4 mr-2" />
+            Paste
             {protocol === 'SSH' && (
-              <Typography variant="body2" sx={{ color: 'text.secondary', ml: 2 }}>
-                Ctrl+Shift+V
-              </Typography>
+              <span className="ml-auto text-xs text-muted-foreground">Ctrl+Shift+V</span>
             )}
-          </MenuItem>
+          </DropdownMenuItem>
         )}
-        {(onCopy !== undefined || onPaste !== undefined) && <Divider />}
+        {(onCopy !== undefined || onPaste !== undefined) && <DropdownMenuSeparator />}
 
         {/* Special keys — RDP/VNC only */}
         {isGuac && onSendKeys && (
           <>
-            <MenuItem onClick={() => handleSendKeys(KEYSYMS.CTRL_ALT_DEL)}>
-              <ListItemIcon><KeyboardIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>Ctrl+Alt+Del</ListItemText>
-            </MenuItem>
-            <MenuItem
-              onClick={(e) => setSendKeysAnchor(e.currentTarget)}
-            >
-              <ListItemIcon><KeyboardIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>Send Keys</ListItemText>
-              <ChevronRightIcon fontSize="small" sx={{ color: 'text.secondary' }} />
-            </MenuItem>
-            <Divider />
+            <DropdownMenuItem onClick={() => handleSendKeys(KEYSYMS.CTRL_ALT_DEL)}>
+              <Keyboard className="h-4 w-4 mr-2" />
+              Ctrl+Alt+Del
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Keyboard className="h-4 w-4 mr-2" />
+                Send Keys
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                <DropdownMenuItem onClick={() => handleSendKeys(KEYSYMS.ALT_TAB)}>
+                  Alt+Tab
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleSendKeys(KEYSYMS.ALT_F4)}>
+                  Alt+F4
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleSendKeys(KEYSYMS.WINDOWS)}>
+                  Windows Key
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleSendKeys(KEYSYMS.PRINT_SCREEN)}>
+                  PrintScreen
+                </DropdownMenuItem>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
           </>
         )}
 
         {/* Screenshot — RDP/VNC only */}
         {isGuac && onScreenshot && (
-          <MenuItem onClick={() => handleAction(onScreenshot)}>
-            <ListItemIcon><ScreenshotIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>Screenshot</ListItemText>
-          </MenuItem>
+          <DropdownMenuItem onClick={() => handleAction(onScreenshot)}>
+            <Camera className="h-4 w-4 mr-2" />
+            Screenshot
+          </DropdownMenuItem>
         )}
 
         {/* SFTP — SSH only */}
         {protocol === 'SSH' && sftpAvailable && onToggleSftp && (
-          <MenuItem onClick={() => handleAction(onToggleSftp)}>
-            <ListItemIcon><FolderOpenIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>{sftpOpen ? 'Close SFTP Browser' : 'SFTP File Browser'}</ListItemText>
-          </MenuItem>
+          <DropdownMenuItem onClick={() => handleAction(onToggleSftp)}>
+            <FolderOpen className="h-4 w-4 mr-2" />
+            {sftpOpen ? 'Close SFTP Browser' : 'SFTP File Browser'}
+          </DropdownMenuItem>
         )}
 
         {/* Fullscreen */}
         {onFullscreenToggle && (
-          <MenuItem onClick={() => handleAction(onFullscreenToggle)}>
-            <ListItemIcon>
-              {isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />}
-            </ListItemIcon>
-            <ListItemText>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</ListItemText>
-          </MenuItem>
+          <DropdownMenuItem onClick={() => handleAction(onFullscreenToggle)}>
+            {isFullscreen ? <Minimize className="h-4 w-4 mr-2" /> : <Maximize className="h-4 w-4 mr-2" />}
+            {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          </DropdownMenuItem>
         )}
 
         {/* Shared Drive — RDP only */}
         {protocol === 'RDP' && driveAvailable && onToggleDrive && (
-          <MenuItem onClick={() => handleAction(onToggleDrive)}>
-            <ListItemIcon><FolderOpenIcon fontSize="small" /></ListItemIcon>
-            <ListItemText>{driveOpen ? 'Close Shared Drive' : 'Shared Drive'}</ListItemText>
-          </MenuItem>
+          <DropdownMenuItem onClick={() => handleAction(onToggleDrive)}>
+            <FolderOpen className="h-4 w-4 mr-2" />
+            {driveOpen ? 'Close Shared Drive' : 'Shared Drive'}
+          </DropdownMenuItem>
         )}
 
-        <Divider />
+        <DropdownMenuSeparator />
 
         {/* Disconnect */}
         {onDisconnect && (
-          <MenuItem onClick={() => handleAction(onDisconnect)}>
-            <ListItemIcon><DisconnectIcon fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
-            <ListItemText sx={{ color: 'error.main' }}>Disconnect</ListItemText>
-          </MenuItem>
+          <DropdownMenuItem onClick={() => handleAction(onDisconnect)} className="text-red-400 focus:text-red-400">
+            <Power className="h-4 w-4 mr-2" />
+            Disconnect
+          </DropdownMenuItem>
         )}
-      </Menu>
-
-      {/* Send Keys submenu */}
-      <Menu
-        open={!!sendKeysAnchor}
-        anchorEl={sendKeysAnchor}
-        onClose={() => setSendKeysAnchor(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        {...(container ? { container, disablePortal: true } : {})}
-      >
-        <MenuItem onClick={() => handleSendKeys(KEYSYMS.ALT_TAB)}>
-          <ListItemText>Alt+Tab</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => handleSendKeys(KEYSYMS.ALT_F4)}>
-          <ListItemText>Alt+F4</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => handleSendKeys(KEYSYMS.WINDOWS)}>
-          <ListItemText>Windows Key</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => handleSendKeys(KEYSYMS.PRINT_SCREEN)}>
-          <ListItemText>PrintScreen</ListItemText>
-        </MenuItem>
-      </Menu>
-    </>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

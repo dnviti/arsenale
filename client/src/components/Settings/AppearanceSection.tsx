@@ -1,11 +1,7 @@
-import {
-  Card, CardContent, Typography, Box, ToggleButtonGroup, ToggleButton, useTheme,
-} from '@mui/material';
-import {
-  DarkMode as DarkModeIcon,
-  LightMode as LightModeIcon,
-  Check as CheckIcon,
-} from '@mui/icons-material';
+import { Check, MoonStar, SunMedium } from 'lucide-react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
 import { useThemeStore } from '../../store/themeStore';
 import { themeRegistry, type ThemeName, type ThemeMode } from '../../theme/index';
 
@@ -14,124 +10,81 @@ export default function AppearanceSection() {
   const mode = useThemeStore((s) => s.mode);
   const setTheme = useThemeStore((s) => s.setTheme);
   const setMode = useThemeStore((s) => s.setMode);
-  const muiTheme = useTheme();
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          Appearance
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Appearance</CardTitle>
+        <CardDescription>
           Select a theme and color mode for the interface.
-        </Typography>
-
-        {/* Theme grid */}
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' },
-            gap: 2,
-            mt: 2,
-            mb: 3,
-          }}
-        >
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {themeRegistry.map((t) => {
             const isSelected = t.name === themeName;
             const swatchColor = mode === 'dark' ? t.accent : t.accentLight;
 
             return (
-              <Box
+              <button
                 key={t.name}
+                type="button"
                 onClick={() => setTheme(t.name as ThemeName)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setTheme(t.name as ThemeName);
-                  }
-                }}
-                sx={{
-                  cursor: 'pointer',
-                  border: 2,
-                  borderColor: isSelected ? 'primary.main' : 'divider',
-                  borderRadius: 2,
-                  p: 2,
-                  position: 'relative',
-                  transition: 'border-color 0.2s, box-shadow 0.2s',
-                  '&:hover': {
-                    borderColor: isSelected
-                      ? 'primary.main'
-                      : muiTheme.palette.mode === 'dark'
-                        ? 'rgba(255,255,255,0.2)'
-                        : 'rgba(0,0,0,0.2)',
-                  },
-                  ...(isSelected && {
-                    boxShadow: `0 0 0 1px ${muiTheme.palette.primary.main}`,
-                  }),
-                }}
+                className={cn(
+                  'group relative rounded-xl border bg-card px-4 py-4 text-left shadow-sm transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50',
+                  isSelected && 'border-primary/70 shadow-[0_0_0_1px_var(--primary)]',
+                )}
               >
                 {isSelected && (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: 8,
-                      right: 8,
-                      width: 22,
-                      height: 22,
-                      borderRadius: '50%',
-                      bgcolor: 'primary.main',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <CheckIcon sx={{ fontSize: 14, color: muiTheme.palette.getContrastText(muiTheme.palette.primary.main) }} />
-                  </Box>
+                  <span className="absolute right-3 top-3 inline-flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                    <Check className="size-3.5" />
+                  </span>
                 )}
 
-                {/* Accent color swatch */}
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    bgcolor: swatchColor,
-                    mb: 1.5,
-                    boxShadow: `0 0 8px ${swatchColor}40`,
+                <span
+                  className="mb-3 inline-flex size-9 rounded-full ring-4 ring-background"
+                  style={{
+                    backgroundColor: swatchColor,
+                    boxShadow: `0 0 16px ${swatchColor}40`,
                   }}
+                  aria-hidden="true"
                 />
 
-                <Typography variant="body2" fontWeight={600} noWrap>
-                  {t.label}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" noWrap>
-                  {t.description}
-                </Typography>
-              </Box>
+                <div className="space-y-1">
+                  <div className="truncate text-sm font-semibold text-foreground">
+                    {t.label}
+                  </div>
+                  <div className="truncate text-xs text-muted-foreground">
+                    {t.description}
+                  </div>
+                </div>
+              </button>
             );
           })}
-        </Box>
+        </div>
 
-        {/* Mode toggle */}
-        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+        <div className="space-y-2">
+          <div className="text-sm font-medium">
           Color mode
-        </Typography>
-        <ToggleButtonGroup
-          value={mode}
-          exclusive
-          onChange={(_, val) => { if (val) setMode(val as ThemeMode); }}
-          size="small"
-          sx={{ mt: 0.5 }}
-        >
-          <ToggleButton value="dark" sx={{ px: 2, gap: 0.5, textTransform: 'none' }}>
-            <DarkModeIcon fontSize="small" /> Dark
-          </ToggleButton>
-          <ToggleButton value="light" sx={{ px: 2, gap: 0.5, textTransform: 'none' }}>
-            <LightModeIcon fontSize="small" /> Light
-          </ToggleButton>
-        </ToggleButtonGroup>
+          </div>
+          <ToggleGroup
+            type="single"
+            value={mode}
+            onValueChange={(value) => {
+              if (value) setMode(value as ThemeMode);
+            }}
+            aria-label="Choose a color mode"
+          >
+            <ToggleGroupItem value="dark" aria-label="Dark mode">
+              <MoonStar className="size-4" />
+              Dark
+            </ToggleGroupItem>
+            <ToggleGroupItem value="light" aria-label="Light mode">
+              <SunMedium className="size-4" />
+              Light
+            </ToggleGroupItem>
+          </ToggleGroup>
+        </div>
       </CardContent>
     </Card>
   );

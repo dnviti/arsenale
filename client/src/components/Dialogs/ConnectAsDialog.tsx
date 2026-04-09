@@ -1,9 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  RadioGroup, Radio, FormControlLabel, Alert, Box, Typography, Chip,
-} from '@mui/material';
-import { VpnKey, Key, Domain } from '@mui/icons-material';
+  Dialog, DialogContent, DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Key, KeyRound, Globe, X } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useTabsStore } from '../../store/tabsStore';
 import { ConnectionData } from '../../api/connections.api';
@@ -73,109 +78,150 @@ export default function ConnectAsDialog({ open, onClose, connection }: ConnectAs
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Connect As &mdash; {connection?.name}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+      >
+        <DialogTitle className="sr-only">Connect As &mdash; {connection?.name}</DialogTitle>
+        <DialogDescription className="sr-only">Choose credentials to connect</DialogDescription>
 
-        <RadioGroup
-          value={mode}
-          onChange={(e) => setMode(e.target.value as ConnectMode)}
-        >
-          <FormControlLabel
-            value="saved"
-            control={<Radio />}
-            label={
-              connection?.credentialSecretId ? (
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="body2">Use saved credentials</Typography>
-                  <Chip
-                    icon={connection.credentialSecretType === 'SSH_KEY'
-                      ? <Key fontSize="small" />
-                      : <VpnKey fontSize="small" />}
-                    label={connection.credentialSecretName ?? 'Keychain secret'}
-                    size="small"
-                    variant="outlined"
-                  />
-                </Box>
-              ) : (
-                'Use saved credentials'
-              )
-            }
-          />
-          <FormControlLabel
-            value="profile"
-            control={<Radio />}
-            label="Use profile username"
-          />
-          <FormControlLabel
-            value="manual"
-            control={<Radio />}
-            label="Enter credentials manually"
-          />
-          <FormControlLabel
-            value="domain"
-            control={<Radio />}
-            disabled={!domainConfigured}
-            label={
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="body2">Use domain credentials</Typography>
-                  {domainConfigured && (
-                    <Chip
-                      icon={<Domain fontSize="small" />}
-                      label={user?.domainName ? `${user.domainName}\\${user.domainUsername}` : user?.domainUsername}
-                      size="small"
-                      variant="outlined"
-                    />
-                  )}
-                </Box>
-                {!domainConfigured && (
-                  <Typography variant="caption" color="text.secondary">
-                    Not configured — set up in Settings &gt; Domain Profile
-                  </Typography>
-                )}
-              </Box>
-            }
-          />
-        </RadioGroup>
+        {/* Compact header */}
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+          <span className="text-xs font-medium">Connect As &mdash; {connection?.name}</span>
+          <div className="ml-auto">
+            <Button variant="ghost" size="icon-xs" onClick={onClose}>
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
 
-        {(mode === 'profile' || mode === 'manual') && (
-          <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <TextField
-              label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              size="small"
-              fullWidth
-              slotProps={{ input: { readOnly: mode === 'profile' } }}
-            />
-            <TextField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              size="small"
-              fullWidth
-              autoFocus={mode === 'profile'}
-            />
-            {connection?.type === 'RDP' && (
-              <TextField
-                label="Domain (optional)"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                size="small"
-                fullWidth
-                placeholder="e.g. CONTOSO"
-              />
+        <ScrollArea className="flex-1">
+          <div className="mx-auto max-w-md px-6 py-4">
+            {error && (
+              <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
             )}
-          </Box>
-        )}
+
+            <div className="flex flex-col gap-1">
+              <label className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors">
+                <input
+                  type="radio"
+                  name="connect-mode"
+                  value="saved"
+                  checked={mode === 'saved'}
+                  onChange={() => setMode('saved')}
+                  className="accent-primary"
+                />
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">Use saved credentials</span>
+                  {connection?.credentialSecretId && (
+                    <Badge variant="outline" className="gap-1">
+                      {connection.credentialSecretType === 'SSH_KEY'
+                        ? <Key className="size-3" />
+                        : <KeyRound className="size-3" />}
+                      {connection.credentialSecretName ?? 'Keychain secret'}
+                    </Badge>
+                  )}
+                </div>
+              </label>
+
+              <label className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors">
+                <input
+                  type="radio"
+                  name="connect-mode"
+                  value="profile"
+                  checked={mode === 'profile'}
+                  onChange={() => setMode('profile')}
+                  className="accent-primary"
+                />
+                <span className="text-sm">Use profile username</span>
+              </label>
+
+              <label className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors">
+                <input
+                  type="radio"
+                  name="connect-mode"
+                  value="manual"
+                  checked={mode === 'manual'}
+                  onChange={() => setMode('manual')}
+                  className="accent-primary"
+                />
+                <span className="text-sm">Enter credentials manually</span>
+              </label>
+
+              <label className={`flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors ${!domainConfigured ? 'opacity-50 pointer-events-none' : ''}`}>
+                <input
+                  type="radio"
+                  name="connect-mode"
+                  value="domain"
+                  checked={mode === 'domain'}
+                  onChange={() => setMode('domain')}
+                  disabled={!domainConfigured}
+                  className="accent-primary mt-0.5"
+                />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">Use domain credentials</span>
+                    {domainConfigured && (
+                      <Badge variant="outline" className="gap-1">
+                        <Globe className="size-3" />
+                        {user?.domainName ? `${user.domainName}\\${user.domainUsername}` : user?.domainUsername}
+                      </Badge>
+                    )}
+                  </div>
+                  {!domainConfigured && (
+                    <span className="text-xs text-muted-foreground">
+                      Not configured — set up in Settings &gt; Domain Profile
+                    </span>
+                  )}
+                </div>
+              </label>
+            </div>
+
+            {(mode === 'profile' || mode === 'manual') && (
+              <div className="flex flex-col gap-4 mt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="connect-username">Username</Label>
+                  <Input
+                    id="connect-username"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    readOnly={mode === 'profile'}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="connect-password">Password</Label>
+                  <Input
+                    id="connect-password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    autoFocus={mode === 'profile'}
+                  />
+                </div>
+                {connection?.type === 'RDP' && (
+                  <div className="space-y-2">
+                    <Label htmlFor="connect-domain">Domain (optional)</Label>
+                    <Input
+                      id="connect-domain"
+                      value={domain}
+                      onChange={(e) => setDomain(e.target.value)}
+                      placeholder="e.g. CONTOSO"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleConnect}>Connect</Button>
+        </div>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button variant="contained" onClick={handleConnect}>Connect</Button>
-      </DialogActions>
     </Dialog>
   );
 }

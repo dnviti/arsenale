@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_TEMPLATE = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "templates" / "compose.yml.j2"
 INSTALL_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "install.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
+DEV_REFRESH_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "dev_refresh.yml"
 DOCKER_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "docker-build.yml"
 GATEWAYS_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "gateways-build.yml"
 MAKEFILE = ROOT / "Makefile"
@@ -277,6 +278,21 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
             "arsenale_source_root: \"{{ _repo_root if _is_dev | bool else (arsenale_home | default('/opt/arsenale')) + '/arsenale' }}\"",
             deploy_text,
         )
+
+    def test_makefile_supports_service_scoped_dev_refresh(self) -> None:
+        makefile_text = MAKEFILE.read_text(encoding="utf-8")
+
+        self.assertIn("DEV_REFRESH_SELECTORS := client gateways control-plane", makefile_text)
+        self.assertIn("playbooks/dev_refresh.yml", makefile_text)
+        self.assertIn("make dev control-plane-api query-runner", makefile_text)
+
+    def test_dev_refresh_playbook_reuses_saved_installer_artifacts(self) -> None:
+        playbook_text = DEV_REFRESH_PLAYBOOK.read_text(encoding="utf-8")
+
+        self.assertIn("name: install_artifacts", playbook_text)
+        self.assertIn("resolve-dev-refresh", playbook_text)
+        self.assertIn("compose_build_target_services", playbook_text)
+        self.assertIn("compose_target_services", playbook_text)
 
     def test_ci_publishes_required_installer_images(self) -> None:
         docker_build = yaml.safe_load(DOCKER_BUILD_WORKFLOW.read_text(encoding="utf-8"))

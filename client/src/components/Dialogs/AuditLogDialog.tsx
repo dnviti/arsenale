@@ -1,47 +1,36 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import {
   Dialog,
-  AppBar,
-  Toolbar,
-  Typography,
-  Box,
-  IconButton,
-  Card,
-  CardContent,
-  Table,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
-  TablePagination,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  TextField,
-  Stack,
-  CircularProgress,
-  Chip,
-  Alert,
-  Collapse,
-  TableSortLabel,
-  InputAdornment,
-  Tooltip,
-  Tabs,
-  Tab,
-} from "@mui/material";
+  DialogContent,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Close as CloseIcon,
-  Search as SearchIcon,
-  KeyboardArrowDown as ExpandIcon,
-  KeyboardArrowUp as CollapseIcon,
-  Pause as PauseIcon,
-  PlayArrow as PlayArrowIcon,
-  Warning as WarningIcon,
-  Storage as StorageIcon,
-  List as ListIcon,
-  Visibility as VisualizeIcon,
-} from "@mui/icons-material";
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
+import {
+  X,
+  Search,
+  ChevronDown,
+  ChevronUp,
+  Pause,
+  Play,
+  AlertTriangle,
+  Database,
+  List,
+  Eye,
+  Loader2,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   getAuditLogs,
   getAuditGateways,
@@ -77,7 +66,6 @@ import {
   TARGET_TYPES,
 } from "../Audit/auditConstants";
 import IpGeoCell from "../Audit/IpGeoCell";
-import { SlideUp } from "../common/SlideUp";
 import QueryVisualizer from "../DatabaseClient/QueryVisualizer";
 import RecordingPlayerDialog from "../Recording/RecordingPlayerDialog";
 import { getRecording } from "../../api/recordings.api";
@@ -99,16 +87,23 @@ const QUERY_TYPE_LABELS: Record<DbQueryType, string> = {
   OTHER: "Other",
 };
 
-const QUERY_TYPE_COLORS: Record<
-  DbQueryType,
-  "default" | "primary" | "secondary" | "error" | "warning" | "success" | "info"
-> = {
-  SELECT: "info",
-  INSERT: "success",
-  UPDATE: "primary",
-  DELETE: "error",
-  DDL: "warning",
-  OTHER: "default",
+const QUERY_TYPE_COLORS: Record<DbQueryType, string> = {
+  SELECT: "bg-blue-600/15 text-blue-400 border-blue-600/30",
+  INSERT: "bg-emerald-600/15 text-emerald-400 border-emerald-600/30",
+  UPDATE: "bg-primary/15 text-primary border-primary/30",
+  DELETE: "bg-destructive/15 text-destructive border-destructive/30",
+  DDL: "bg-yellow-600/15 text-yellow-500 border-yellow-600/30",
+  OTHER: "",
+};
+
+const ACTION_COLOR_MAP: Record<string, string> = {
+  default: "",
+  primary: "bg-primary/15 text-primary border-primary/30",
+  secondary: "bg-muted text-muted-foreground",
+  error: "bg-destructive/15 text-destructive border-destructive/30",
+  warning: "bg-yellow-600/15 text-yellow-500 border-yellow-600/30",
+  success: "bg-emerald-600/15 text-emerald-400 border-emerald-600/30",
+  info: "bg-blue-600/15 text-blue-400 border-blue-600/30",
 };
 
 const ALL_QUERY_TYPES: DbQueryType[] = [
@@ -430,15 +425,6 @@ export default function AuditLogDialog({
     dbEndDate,
   ]);
 
-  const handleChangePage = (_: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(e.target.value, 10));
-    setPage(0);
-  };
-
   const handleSort = (field: "createdAt" | "action") => {
     if (auditLogSortBy === field) {
       setUiPref(
@@ -471,6 +457,9 @@ export default function AuditLogDialog({
     dbStartDate ||
     dbEndDate;
 
+  const totalPages = Math.ceil(total / rowsPerPage);
+  const dbTotalPages = Math.ceil(dbTotal / dbRowsPerPage);
+
   const handleViewRecording = async (log: AuditLogEntry) => {
     const sessionId = (log.details as Record<string, unknown>)?.sessionId as
       | string
@@ -499,900 +488,558 @@ export default function AuditLogDialog({
   };
 
   return (
-    <Dialog
-      fullScreen
-      open={open}
-      onClose={onClose}
-      TransitionComponent={SlideUp}
-    >
-      <AppBar position="static" sx={{ position: "relative" }}>
-        <Toolbar variant="dense">
-          <IconButton
-            edge="start"
-            color="inherit"
-            onClick={onClose}
-            sx={{ mr: 1 }}
-          >
-            <CloseIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ flex: 1 }}>
-            Activity Log
-          </Typography>
-          <Tooltip
-            title={
-              autoRefreshPaused ? "Resume live updates" : "Pause live updates"
-            }
-          >
-            <IconButton
-              color="inherit"
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+        showCloseButton={false}
+      >
+        <DialogTitle className="sr-only">Activity Log</DialogTitle>
+        <DialogDescription className="sr-only">System audit log</DialogDescription>
+
+        {/* Header */}
+        <div className="border-b bg-card">
+          <div className="flex items-center gap-3 px-4 py-2.5">
+            <Button variant="ghost" size="icon" onClick={onClose} className="size-8">
+              <X className="size-4" />
+            </Button>
+            <h2 className="flex-1 text-lg font-semibold">Activity Log</h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
               onClick={() =>
                 setUiPref("auditLogAutoRefreshPaused", !autoRefreshPaused)
               }
-              sx={{ mr: 0.5 }}
+              title={autoRefreshPaused ? "Resume live updates" : "Pause live updates"}
             >
-              {autoRefreshPaused ? <PlayArrowIcon /> : <PauseIcon />}
-            </IconButton>
-          </Tooltip>
-          <Chip
-            label={autoRefreshPaused ? "Paused" : "Live"}
-            size="small"
-            color={autoRefreshPaused ? "default" : "success"}
-            variant={autoRefreshPaused ? "outlined" : "filled"}
-            sx={{
-              color: autoRefreshPaused ? "inherit" : undefined,
-              fontWeight: 600,
-              ...(!autoRefreshPaused && {
-                "& .MuiChip-label::before": {
-                  content: '""',
-                  display: "inline-block",
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  backgroundColor: "currentColor",
-                  mr: 0.75,
-                  animation: "auditLivePulse 1.5s ease-in-out infinite",
-                },
-                "@keyframes auditLivePulse": {
-                  "0%, 100%": { opacity: 1 },
-                  "50%": { opacity: 0.3 },
-                },
-              }),
-            }}
-          />
-        </Toolbar>
-        {hasTenant && (
-          <Tabs
-            value={activeTab}
-            onChange={(_, v) => setUiPref("auditLogDialogTab", v as string)}
-            sx={{ bgcolor: "background.paper", minHeight: 36 }}
-            textColor="primary"
-            indicatorColor="primary"
-          >
-            <Tab
-              value="general"
-              label="General"
-              icon={<ListIcon />}
-              iconPosition="start"
-              sx={{ minHeight: 36, textTransform: "none" }}
-            />
-            {sqlAuditVisible && (
-              <Tab
-                value="sql"
-                label="SQL Audit"
-                icon={<StorageIcon />}
-                iconPosition="start"
-                sx={{ minHeight: 36, textTransform: "none" }}
-              />
-            )}
-          </Tabs>
-        )}
-      </AppBar>
+              {autoRefreshPaused ? <Play className="size-4" /> : <Pause className="size-4" />}
+            </Button>
+            <Badge
+              variant={autoRefreshPaused ? "outline" : "default"}
+              className={cn(
+                "font-semibold",
+                autoRefreshPaused
+                  ? ""
+                  : "bg-emerald-600/15 text-emerald-400 border-emerald-600/30",
+              )}
+            >
+              {autoRefreshPaused ? (
+                "Paused"
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="size-1.5 rounded-full bg-current animate-pulse" />
+                  Live
+                </span>
+              )}
+            </Badge>
+          </div>
+          {hasTenant && (
+            <Tabs
+              value={activeTab}
+              onValueChange={(v) => setUiPref("auditLogDialogTab", v)}
+              className="px-4"
+            >
+              <TabsList className="h-9">
+                <TabsTrigger value="general" className="gap-1.5 text-xs">
+                  <List className="size-3.5" />
+                  General
+                </TabsTrigger>
+                {sqlAuditVisible && (
+                  <TabsTrigger value="sql" className="gap-1.5 text-xs">
+                    <Database className="size-3.5" />
+                    SQL Audit
+                  </TabsTrigger>
+                )}
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
 
-      <Box sx={{ flex: 1, overflow: "auto", p: 2 }}>
-        {activeTab === "general" && (
-          <>
-            <Card sx={{ mb: 2 }}>
-              <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
-                <TextField
-                  size="small"
-                  fullWidth
-                  placeholder="Search across target, IP address, and details..."
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                  sx={{ mb: 1.5 }}
-                />
-                <Stack
-                  direction="row"
-                  spacing={2}
-                  alignItems="center"
-                  flexWrap="wrap"
-                  useFlexGap
-                >
-                  <FormControl size="small" sx={{ minWidth: 200 }}>
-                    <InputLabel>Action</InputLabel>
-                    <Select
-                      value={auditLogAction}
-                      label="Action"
-                      onChange={(e) => {
-                        setUiPref("auditLogAction", e.target.value);
-                        setPage(0);
-                      }}
-                    >
-                      <MenuItem value="">All Actions</MenuItem>
-                      {ALL_ACTIONS.map((action) => (
-                        <MenuItem key={action} value={action}>
-                          {ACTION_LABELS[action]}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl size="small" sx={{ minWidth: 160 }}>
-                    <InputLabel>Target Type</InputLabel>
-                    <Select
-                      value={auditLogTargetType}
-                      label="Target Type"
-                      onChange={(e) => {
-                        setUiPref("auditLogTargetType", e.target.value);
-                        setPage(0);
-                      }}
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      {TARGET_TYPES.map((type) => (
-                        <MenuItem key={type} value={type}>
-                          {type}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  {gateways.length > 0 && (
-                    <FormControl size="small" sx={{ minWidth: 160 }}>
-                      <InputLabel>Gateway</InputLabel>
-                      <Select
-                        value={auditLogGatewayId}
-                        label="Gateway"
-                        onChange={(e) => {
-                          setUiPref("auditLogGatewayId", e.target.value);
-                          setPage(0);
-                        }}
-                      >
-                        <MenuItem value="">All Gateways</MenuItem>
-                        {gateways.map((gw) => (
-                          <MenuItem key={gw.id} value={gw.id}>
-                            {gw.name}
-                          </MenuItem>
+        {/* Body */}
+        <div className="flex-1 overflow-auto p-4">
+          {activeTab === "general" && (
+            <>
+              {/* General Filters */}
+              <div className="rounded-lg border bg-card p-3 mb-4">
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Search across target, IP address, and details..."
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-[200px] space-y-1">
+                    <Label className="text-xs">Action</Label>
+                    <Select value={auditLogAction || "__all__"} onValueChange={(v) => { setUiPref("auditLogAction", v === "__all__" ? "" : v); setPage(0); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All Actions</SelectItem>
+                        {ALL_ACTIONS.map((action) => (
+                          <SelectItem key={action} value={action}>{ACTION_LABELS[action]}</SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="min-w-[160px] space-y-1">
+                    <Label className="text-xs">Target Type</Label>
+                    <Select value={auditLogTargetType || "__all__"} onValueChange={(v) => { setUiPref("auditLogTargetType", v === "__all__" ? "" : v); setPage(0); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All Types</SelectItem>
+                        {TARGET_TYPES.map((t) => (
+                          <SelectItem key={t} value={t}>{t}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {gateways.length > 0 && (
+                    <div className="min-w-[160px] space-y-1">
+                      <Label className="text-xs">Gateway</Label>
+                      <Select value={auditLogGatewayId || "__all__"} onValueChange={(v) => { setUiPref("auditLogGatewayId", v === "__all__" ? "" : v); setPage(0); }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All Gateways</SelectItem>
+                          {gateways.map((gw) => (
+                            <SelectItem key={gw.id} value={gw.id}>{gw.name}</SelectItem>
+                          ))}
+                        </SelectContent>
                       </Select>
-                    </FormControl>
+                    </div>
                   )}
                   {countries.length > 0 && (
-                    <FormControl size="small" sx={{ minWidth: 160 }}>
-                      <InputLabel>Country</InputLabel>
-                      <Select
-                        value={geoCountry}
-                        label="Country"
-                        onChange={(e) => {
-                          setGeoCountry(e.target.value);
-                          setPage(0);
-                        }}
-                      >
-                        <MenuItem value="">All Countries</MenuItem>
-                        {countries.map((c) => (
-                          <MenuItem key={c} value={c}>
-                            {c}
-                          </MenuItem>
-                        ))}
+                    <div className="min-w-[160px] space-y-1">
+                      <Label className="text-xs">Country</Label>
+                      <Select value={geoCountry || "__all__"} onValueChange={(v) => { setGeoCountry(v === "__all__" ? "" : v); setPage(0); }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All Countries</SelectItem>
+                          {countries.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
                       </Select>
-                    </FormControl>
+                    </div>
                   )}
-                  <TextField
-                    size="small"
-                    label="IP Address"
-                    value={ipAddress}
-                    onChange={(e) => {
-                      setIpAddress(e.target.value);
-                      setPage(0);
-                    }}
-                    sx={{ width: 160 }}
-                  />
-                  <TextField
-                    size="small"
-                    type="date"
-                    label="From"
-                    value={startDate}
-                    onChange={(e) => {
-                      setStartDate(e.target.value);
-                      setPage(0);
-                    }}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                  />
-                  <TextField
-                    size="small"
-                    type="date"
-                    label="To"
-                    value={endDate}
-                    onChange={(e) => {
-                      setEndDate(e.target.value);
-                      setPage(0);
-                    }}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                  />
-                  <Tooltip title="Show only flagged entries (e.g. impossible travel)">
-                    <Chip
-                      icon={<WarningIcon fontSize="small" />}
-                      label="Flagged"
-                      size="small"
-                      color={flaggedOnly ? "warning" : "default"}
-                      variant={flaggedOnly ? "filled" : "outlined"}
-                      onClick={() => {
-                        setFlaggedOnly(!flaggedOnly);
-                        setPage(0);
-                      }}
-                      sx={{ cursor: "pointer" }}
-                    />
-                  </Tooltip>
-                </Stack>
-              </CardContent>
-            </Card>
+                  <div className="w-[160px] space-y-1">
+                    <Label className="text-xs">IP Address</Label>
+                    <Input value={ipAddress} onChange={(e) => { setIpAddress(e.target.value); setPage(0); }} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">From</Label>
+                    <Input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(0); }} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">To</Label>
+                    <Input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(0); }} />
+                  </div>
+                  <Badge
+                    variant={flaggedOnly ? "default" : "outline"}
+                    className={cn(
+                      "cursor-pointer gap-1 mt-5",
+                      flaggedOnly ? "bg-yellow-600/15 text-yellow-500 border-yellow-600/30" : "",
+                    )}
+                    onClick={() => { setFlaggedOnly(!flaggedOnly); setPage(0); }}
+                    title="Show only flagged entries (e.g. impossible travel)"
+                  >
+                    <AlertTriangle className="size-3" />
+                    Flagged
+                  </Badge>
+                </div>
+              </div>
 
-            {error && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {error}
-              </Alert>
-            )}
+              {error && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4">
+                  {error}
+                </div>
+              )}
 
-            <Card>
-              {loading ? (
-                <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-                  <CircularProgress />
-                </Box>
-              ) : logs.length === 0 ? (
-                <Box sx={{ textAlign: "center", py: 6 }}>
-                  <Typography color="text.secondary">
-                    {hasActiveFilters
-                      ? "No logs match your filters"
-                      : "No activity recorded yet"}
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell padding="checkbox" />
-                        <TableCell>
-                          <TableSortLabel
-                            active={auditLogSortBy === "createdAt"}
-                            direction={
-                              auditLogSortBy === "createdAt"
-                                ? (auditLogSortOrder as "asc" | "desc")
-                                : "asc"
-                            }
-                            onClick={() => handleSort("createdAt")}
-                          >
-                            Date/Time
-                          </TableSortLabel>
-                        </TableCell>
-                        <TableCell>
-                          <TableSortLabel
-                            active={auditLogSortBy === "action"}
-                            direction={
-                              auditLogSortBy === "action"
-                                ? (auditLogSortOrder as "asc" | "desc")
-                                : "asc"
-                            }
-                            onClick={() => handleSort("action")}
-                          >
-                            Action
-                          </TableSortLabel>
-                        </TableCell>
-                        <TableCell>Target</TableCell>
-                        <TableCell>IP Address</TableCell>
-                        <TableCell>Details</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {logs.map((log) => {
-                        const isExpanded = expandedRowId === log.id;
-                        return (
-                          <Fragment key={log.id}>
-                            <TableRow
-                              hover
-                              onClick={() =>
-                                setExpandedRowId(isExpanded ? null : log.id)
-                              }
-                              sx={{
-                                cursor: "pointer",
-                                "& > *": {
-                                  borderBottom: isExpanded
-                                    ? "unset"
-                                    : undefined,
-                                },
-                              }}
-                            >
-                              <TableCell padding="checkbox">
-                                <IconButton size="small">
-                                  {isExpanded ? (
-                                    <CollapseIcon />
-                                  ) : (
-                                    <ExpandIcon />
-                                  )}
-                                </IconButton>
-                              </TableCell>
-                              <TableCell sx={{ whiteSpace: "nowrap" }}>
-                                {new Date(log.createdAt).toLocaleString()}
-                              </TableCell>
-                              <TableCell>
-                                <Box
-                                  sx={{
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: 0.5,
-                                  }}
-                                >
-                                  <Chip
-                                    label={
-                                      ACTION_LABELS[log.action] || log.action
-                                    }
-                                    color={getActionColor(log.action)}
-                                    size="small"
-                                  />
-                                  {log.flags?.includes("IMPOSSIBLE_TRAVEL") && (
-                                    <Tooltip title="Impossible travel detected">
-                                      <WarningIcon
-                                        color="warning"
-                                        fontSize="small"
-                                      />
-                                    </Tooltip>
-                                  )}
-                                  {[
-                                    "SESSION_START",
-                                    "SESSION_END",
-                                    "SESSION_TERMINATED_POLICY_VIOLATION",
-                                  ].includes(log.action) &&
-                                    Boolean(
-                                      (log.details as Record<string, unknown>)
-                                        ?.sessionId,
-                                    ) && (
-                                      <Tooltip title="View Recording">
-                                        <IconButton
-                                          size="small"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleViewRecording(log);
-                                          }}
-                                          disabled={
-                                            loadingRecordingId === log.id
-                                          }
+              {/* General Table */}
+              <div className="rounded-lg border bg-card">
+                {loading ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : logs.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-muted-foreground">
+                      {hasActiveFilters ? "No logs match your filters" : "No activity recorded yet"}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="w-8 px-2 py-2" />
+                          <th className="text-left px-3 py-2 font-medium">
+                            <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => handleSort("createdAt")}>
+                              Date/Time
+                              {auditLogSortBy === "createdAt" && (auditLogSortOrder === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />)}
+                            </button>
+                          </th>
+                          <th className="text-left px-3 py-2 font-medium">
+                            <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => handleSort("action")}>
+                              Action
+                              {auditLogSortBy === "action" && (auditLogSortOrder === "asc" ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />)}
+                            </button>
+                          </th>
+                          <th className="text-left px-3 py-2 font-medium">Target</th>
+                          <th className="text-left px-3 py-2 font-medium">IP Address</th>
+                          <th className="text-left px-3 py-2 font-medium">Details</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {logs.map((log) => {
+                          const isExpanded = expandedRowId === log.id;
+                          return (
+                            <Fragment key={log.id}>
+                              <tr
+                                className="border-b hover:bg-accent/50 cursor-pointer"
+                                onClick={() => setExpandedRowId(isExpanded ? null : log.id)}
+                              >
+                                <td className="px-2 py-2">
+                                  <Button variant="ghost" size="icon" className="size-6">
+                                    {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                  </Button>
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {new Date(log.createdAt).toLocaleString()}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <div className="inline-flex items-center gap-1.5">
+                                    <Badge variant="outline" className={cn("border", ACTION_COLOR_MAP[getActionColor(log.action) as string] || "")}>
+                                      {ACTION_LABELS[log.action] || log.action}
+                                    </Badge>
+                                    {log.flags?.includes("IMPOSSIBLE_TRAVEL") && (
+                                      <span title="Impossible travel detected"><AlertTriangle className="size-4 text-yellow-500" /></span>
+                                    )}
+                                    {["SESSION_START", "SESSION_END", "SESSION_TERMINATED_POLICY_VIOLATION"].includes(log.action) &&
+                                      Boolean((log.details as Record<string, unknown>)?.sessionId) && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="size-6"
+                                          onClick={(e) => { e.stopPropagation(); handleViewRecording(log); }}
+                                          disabled={loadingRecordingId === log.id}
+                                          title="View Recording"
                                         >
                                           {loadingRecordingId === log.id ? (
-                                            <CircularProgress size={16} />
+                                            <Loader2 className="size-3.5 animate-spin" />
                                           ) : (
-                                            <PlayArrowIcon fontSize="small" />
+                                            <Play className="size-3.5" />
                                           )}
-                                        </IconButton>
-                                      </Tooltip>
+                                        </Button>
                                     )}
-                                </Box>
-                              </TableCell>
-                              <TableCell>
-                                {log.targetType
-                                  ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ""}`
-                                  : "\u2014"}
-                              </TableCell>
-                              <TableCell>
-                                <IpGeoCell
-                                  ipAddress={log.ipAddress}
-                                  geoCountry={log.geoCountry}
-                                  geoCity={log.geoCity}
-                                  onGeoIpClick={onGeoIpClick}
-                                />
-                              </TableCell>
-                              <TableCell
-                                sx={{
-                                  maxWidth: 300,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {formatDetails(log.details)}
-                              </TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell
-                                colSpan={6}
-                                sx={{
-                                  py: 0,
-                                  borderBottom: isExpanded ? undefined : "none",
-                                }}
-                              >
-                                <Collapse
-                                  in={isExpanded}
-                                  timeout="auto"
-                                  unmountOnExit
-                                >
-                                  <Box sx={{ py: 2, px: 3 }}>
-                                    {log.details &&
-                                    typeof log.details === "object" &&
-                                    Object.keys(log.details).length > 0 ? (
-                                      <Box
-                                        sx={{
-                                          display: "grid",
-                                          gridTemplateColumns: "auto 1fr",
-                                          gap: 1,
-                                          maxWidth: 600,
-                                        }}
-                                      >
-                                        {Object.entries(log.details).map(
-                                          ([key, value]) => (
-                                            <Fragment key={key}>
-                                              <Typography
-                                                variant="body2"
-                                                fontWeight={600}
-                                                color="text.secondary"
-                                              >
-                                                {key}
-                                              </Typography>
-                                              <Typography
-                                                variant="body2"
-                                                sx={{ wordBreak: "break-all" }}
-                                              >
-                                                {Array.isArray(value)
-                                                  ? value.join(", ")
-                                                  : String(value)}
-                                              </Typography>
-                                            </Fragment>
-                                          ),
-                                        )}
-                                      </Box>
+                                  </div>
+                                </td>
+                                <td className="px-3 py-2">
+                                  {log.targetType
+                                    ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ""}`
+                                    : "\u2014"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} onGeoIpClick={onGeoIpClick} />
+                                </td>
+                                <td className="px-3 py-2 max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                  {formatDetails(log.details)}
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr>
+                                  <td colSpan={6} className="px-6 py-4 border-b">
+                                    {log.details && typeof log.details === "object" && Object.keys(log.details).length > 0 ? (
+                                      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 max-w-[600px]">
+                                        {Object.entries(log.details).map(([key, value]) => (
+                                          <Fragment key={key}>
+                                            <span className="text-sm font-semibold text-muted-foreground">{key}</span>
+                                            <span className="text-sm break-all">
+                                              {Array.isArray(value) ? value.join(", ") : String(value)}
+                                            </span>
+                                          </Fragment>
+                                        ))}
+                                      </div>
                                     ) : (
-                                      <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                      >
-                                        No additional details
-                                      </Typography>
+                                      <p className="text-sm text-muted-foreground">No additional details</p>
                                     )}
                                     {log.targetId && (
-                                      <Typography
-                                        variant="caption"
-                                        color="text.secondary"
-                                        sx={{ mt: 1, display: "block" }}
-                                      >
-                                        Full Target ID: {log.targetId}
-                                      </Typography>
+                                      <p className="text-xs text-muted-foreground mt-2">Full Target ID: {log.targetId}</p>
                                     )}
-                                  </Box>
-                                </Collapse>
-                              </TableCell>
-                            </TableRow>
-                          </Fragment>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                  <TablePagination
-                    component="div"
-                    count={total}
-                    page={page}
-                    onPageChange={handleChangePage}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={handleChangeRowsPerPage}
-                    rowsPerPageOptions={[25, 50, 100]}
-                  />
-                </>
-              )}
-            </Card>
-          </>
-        )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    <div className="flex items-center justify-between px-4 py-2 border-t text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <span>Rows per page:</span>
+                        <Select value={String(rowsPerPage)} onValueChange={(v) => { setRowsPerPage(parseInt(v, 10)); setPage(0); }}>
+                          <SelectTrigger className="h-8 w-[70px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="25">25</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span>{page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, total)} of {total}</span>
+                        <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+                        <Button variant="ghost" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
 
-        {activeTab === "sql" && hasTenant && (
-          <>
-            <Card sx={{ mb: 2 }}>
-              <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
-                <TextField
-                  size="small"
-                  fullWidth
-                  placeholder="Search SQL queries, tables, or block reasons..."
-                  value={dbSearch}
-                  onChange={(e) => {
-                    setDbSearch(e.target.value);
-                    setDbPage(0);
-                  }}
-                  slotProps={{
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <SearchIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    },
-                  }}
-                  sx={{ mb: 1.5 }}
-                />
-                <Stack
-                  direction="row"
-                  spacing={2}
-                  alignItems="center"
-                  flexWrap="wrap"
-                  useFlexGap
-                >
-                  <FormControl size="small" sx={{ minWidth: 140 }}>
-                    <InputLabel>Query Type</InputLabel>
-                    <Select
-                      value={dbQueryType}
-                      label="Query Type"
-                      onChange={(e) => {
-                        setDbQueryType(e.target.value);
-                        setDbPage(0);
-                      }}
-                    >
-                      <MenuItem value="">All Types</MenuItem>
-                      {ALL_QUERY_TYPES.map((qt) => (
-                        <MenuItem key={qt} value={qt}>
-                          {QUERY_TYPE_LABELS[qt]}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  {dbConnections.length > 0 && (
-                    <FormControl size="small" sx={{ minWidth: 160 }}>
-                      <InputLabel>Connection</InputLabel>
-                      <Select
-                        value={dbConnectionId}
-                        label="Connection"
-                        onChange={(e) => {
-                          setDbConnectionId(e.target.value);
-                          setDbPage(0);
-                        }}
-                      >
-                        <MenuItem value="">All Connections</MenuItem>
-                        {dbConnections.map((c) => (
-                          <MenuItem key={c.id} value={c.id}>
-                            {c.name}
-                          </MenuItem>
+          {activeTab === "sql" && hasTenant && (
+            <>
+              {/* SQL Filters */}
+              <div className="rounded-lg border bg-card p-3 mb-4">
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Search SQL queries, tables, or block reasons..."
+                    value={dbSearch}
+                    onChange={(e) => { setDbSearch(e.target.value); setDbPage(0); }}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="min-w-[140px] space-y-1">
+                    <Label className="text-xs">Query Type</Label>
+                    <Select value={dbQueryType || "__all__"} onValueChange={(v) => { setDbQueryType(v === "__all__" ? "" : v); setDbPage(0); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All Types</SelectItem>
+                        {ALL_QUERY_TYPES.map((qt) => (
+                          <SelectItem key={qt} value={qt}>{QUERY_TYPE_LABELS[qt]}</SelectItem>
                         ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {dbConnections.length > 0 && (
+                    <div className="min-w-[160px] space-y-1">
+                      <Label className="text-xs">Connection</Label>
+                      <Select value={dbConnectionId || "__all__"} onValueChange={(v) => { setDbConnectionId(v === "__all__" ? "" : v); setDbPage(0); }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All Connections</SelectItem>
+                          {dbConnections.map((c) => (
+                            <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
                       </Select>
-                    </FormControl>
+                    </div>
                   )}
                   {dbUsers.length > 0 && (
-                    <FormControl size="small" sx={{ minWidth: 160 }}>
-                      <InputLabel>User</InputLabel>
-                      <Select
-                        value={dbUserId}
-                        label="User"
-                        onChange={(e) => {
-                          setDbUserId(e.target.value);
-                          setDbPage(0);
-                        }}
-                      >
-                        <MenuItem value="">All Users</MenuItem>
-                        {dbUsers.map((u) => (
-                          <MenuItem key={u.id} value={u.id}>
-                            {u.username || u.email}
-                          </MenuItem>
-                        ))}
+                    <div className="min-w-[160px] space-y-1">
+                      <Label className="text-xs">User</Label>
+                      <Select value={dbUserId || "__all__"} onValueChange={(v) => { setDbUserId(v === "__all__" ? "" : v); setDbPage(0); }}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__all__">All Users</SelectItem>
+                          {dbUsers.map((u) => (
+                            <SelectItem key={u.id} value={u.id}>{u.username || u.email}</SelectItem>
+                          ))}
+                        </SelectContent>
                       </Select>
-                    </FormControl>
+                    </div>
                   )}
-                  <FormControl size="small" sx={{ minWidth: 130 }}>
-                    <InputLabel>Status</InputLabel>
-                    <Select
-                      value={dbBlocked}
-                      label="Status"
-                      onChange={(e) => {
-                        setDbBlocked(e.target.value);
-                        setDbPage(0);
-                      }}
-                    >
-                      <MenuItem value="">All</MenuItem>
-                      <MenuItem value="true">Blocked</MenuItem>
-                      <MenuItem value="false">Allowed</MenuItem>
+                  <div className="min-w-[130px] space-y-1">
+                    <Label className="text-xs">Status</Label>
+                    <Select value={dbBlocked || "__all__"} onValueChange={(v) => { setDbBlocked(v === "__all__" ? "" : v); setDbPage(0); }}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__all__">All</SelectItem>
+                        <SelectItem value="true">Blocked</SelectItem>
+                        <SelectItem value="false">Allowed</SelectItem>
+                      </SelectContent>
                     </Select>
-                  </FormControl>
-                  <TextField
-                    size="small"
-                    type="date"
-                    label="From"
-                    value={dbStartDate}
-                    onChange={(e) => {
-                      setDbStartDate(e.target.value);
-                      setDbPage(0);
-                    }}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                  />
-                  <TextField
-                    size="small"
-                    type="date"
-                    label="To"
-                    value={dbEndDate}
-                    onChange={(e) => {
-                      setDbEndDate(e.target.value);
-                      setDbPage(0);
-                    }}
-                    slotProps={{ inputLabel: { shrink: true } }}
-                  />
-                </Stack>
-              </CardContent>
-            </Card>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">From</Label>
+                    <Input type="date" value={dbStartDate} onChange={(e) => { setDbStartDate(e.target.value); setDbPage(0); }} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">To</Label>
+                    <Input type="date" value={dbEndDate} onChange={(e) => { setDbEndDate(e.target.value); setDbPage(0); }} />
+                  </div>
+                </div>
+              </div>
 
-            {dbError && (
-              <Alert severity="error" sx={{ mb: 2 }}>
-                {dbError}
-              </Alert>
-            )}
+              {dbError && (
+                <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4">
+                  {dbError}
+                </div>
+              )}
 
-            <Card>
-              {dbLoading ? (
-                <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-                  <CircularProgress />
-                </Box>
-              ) : dbLogs.length === 0 ? (
-                <Box sx={{ textAlign: "center", py: 6 }}>
-                  <Typography color="text.secondary">
-                    {hasDbActiveFilters
-                      ? "No SQL audit logs match your filters"
-                      : "No SQL queries recorded yet"}
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell padding="checkbox" />
-                        <TableCell>Date/Time</TableCell>
-                        <TableCell>User</TableCell>
-                        <TableCell>Connection</TableCell>
-                        <TableCell>Type</TableCell>
-                        <TableCell>Tables</TableCell>
-                        <TableCell>Status</TableCell>
-                        <TableCell>Time (ms)</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {dbLogs.map((entry) => {
-                        const isExpanded = dbExpandedRowId === entry.id;
-                        return (
-                          <Fragment key={entry.id}>
-                            <TableRow
-                              hover
-                              onClick={() =>
-                                setDbExpandedRowId(isExpanded ? null : entry.id)
-                              }
-                              sx={{
-                                cursor: "pointer",
-                                "& > *": {
-                                  borderBottom: isExpanded
-                                    ? "unset"
-                                    : undefined,
-                                },
-                              }}
-                            >
-                              <TableCell padding="checkbox">
-                                <IconButton size="small">
-                                  {isExpanded ? (
-                                    <CollapseIcon />
+              {/* SQL Table */}
+              <div className="rounded-lg border bg-card">
+                {dbLoading ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : dbLogs.length === 0 ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm text-muted-foreground">
+                      {hasDbActiveFilters ? "No SQL audit logs match your filters" : "No SQL queries recorded yet"}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50">
+                          <th className="w-8 px-2 py-2" />
+                          <th className="text-left px-3 py-2 font-medium">Date/Time</th>
+                          <th className="text-left px-3 py-2 font-medium">User</th>
+                          <th className="text-left px-3 py-2 font-medium">Connection</th>
+                          <th className="text-left px-3 py-2 font-medium">Type</th>
+                          <th className="text-left px-3 py-2 font-medium">Tables</th>
+                          <th className="text-left px-3 py-2 font-medium">Status</th>
+                          <th className="text-left px-3 py-2 font-medium">Time (ms)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dbLogs.map((entry) => {
+                          const isExpanded = dbExpandedRowId === entry.id;
+                          return (
+                            <Fragment key={entry.id}>
+                              <tr
+                                className="border-b hover:bg-accent/50 cursor-pointer"
+                                onClick={() => setDbExpandedRowId(isExpanded ? null : entry.id)}
+                              >
+                                <td className="px-2 py-2">
+                                  <Button variant="ghost" size="icon" className="size-6">
+                                    {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                                  </Button>
+                                </td>
+                                <td className="px-3 py-2 whitespace-nowrap">
+                                  {new Date(entry.createdAt).toLocaleString()}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {entry.userName || entry.userEmail || entry.userId.slice(0, 8)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {entry.connectionName || entry.connectionId.slice(0, 8)}
+                                </td>
+                                <td className="px-3 py-2">
+                                  <Badge variant="outline" className={cn("border", QUERY_TYPE_COLORS[entry.queryType] || "")}>
+                                    {QUERY_TYPE_LABELS[entry.queryType] || entry.queryType}
+                                  </Badge>
+                                </td>
+                                <td className="px-3 py-2 max-w-[200px] overflow-hidden text-ellipsis whitespace-nowrap">
+                                  {entry.tablesAccessed.length > 0 ? entry.tablesAccessed.join(", ") : "\u2014"}
+                                </td>
+                                <td className="px-3 py-2">
+                                  {entry.blocked ? (
+                                    <Badge variant="outline" className="border bg-destructive/15 text-destructive border-destructive/30">Blocked</Badge>
+                                  ) : entry.blockReason ? (
+                                    <Badge variant="outline" className="border bg-yellow-600/15 text-yellow-500 border-yellow-600/30">Alert</Badge>
                                   ) : (
-                                    <ExpandIcon />
+                                    <Badge variant="outline" className="border bg-emerald-600/15 text-emerald-400 border-emerald-600/30">OK</Badge>
                                   )}
-                                </IconButton>
-                              </TableCell>
-                              <TableCell sx={{ whiteSpace: "nowrap" }}>
-                                {new Date(entry.createdAt).toLocaleString()}
-                              </TableCell>
-                              <TableCell>
-                                {entry.userName ||
-                                  entry.userEmail ||
-                                  entry.userId.slice(0, 8)}
-                              </TableCell>
-                              <TableCell>
-                                {entry.connectionName ||
-                                  entry.connectionId.slice(0, 8)}
-                              </TableCell>
-                              <TableCell>
-                                <Chip
-                                  label={
-                                    QUERY_TYPE_LABELS[entry.queryType] ||
-                                    entry.queryType
-                                  }
-                                  color={
-                                    QUERY_TYPE_COLORS[entry.queryType] ||
-                                    "default"
-                                  }
-                                  size="small"
-                                />
-                              </TableCell>
-                              <TableCell
-                                sx={{
-                                  maxWidth: 200,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {entry.tablesAccessed.length > 0
-                                  ? entry.tablesAccessed.join(", ")
-                                  : "\u2014"}
-                              </TableCell>
-                              <TableCell>
-                                {entry.blocked ? (
-                                  <Chip
-                                    label="Blocked"
-                                    color="error"
-                                    size="small"
-                                  />
-                                ) : entry.blockReason ? (
-                                  <Chip
-                                    label="Alert"
-                                    color="warning"
-                                    size="small"
-                                  />
-                                ) : (
-                                  <Chip
-                                    label="OK"
-                                    color="success"
-                                    size="small"
-                                    variant="outlined"
-                                  />
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {entry.executionTimeMs !== null
-                                  ? `${entry.executionTimeMs}`
-                                  : "\u2014"}
-                              </TableCell>
-                            </TableRow>
-                            <TableRow>
-                              <TableCell
-                                colSpan={8}
-                                sx={{
-                                  py: 0,
-                                  borderBottom: isExpanded ? undefined : "none",
-                                }}
-                              >
-                                <Collapse
-                                  in={isExpanded}
-                                  timeout="auto"
-                                  unmountOnExit
-                                >
-                                  <Box sx={{ py: 2, px: 3, maxWidth: 800 }}>
-                                    <Typography
-                                      variant="body2"
-                                      fontWeight={600}
-                                      color="text.secondary"
-                                      gutterBottom
-                                    >
-                                      Query
-                                    </Typography>
-                                    <Box
-                                      sx={{
-                                        p: 1.5,
-                                        bgcolor: "action.hover",
-                                        borderRadius: 1,
-                                        fontFamily: "monospace",
-                                        fontSize: "0.85rem",
-                                        whiteSpace: "pre-wrap",
-                                        wordBreak: "break-all",
-                                        mb: 1.5,
-                                      }}
-                                    >
+                                </td>
+                                <td className="px-3 py-2">
+                                  {entry.executionTimeMs !== null ? `${entry.executionTimeMs}` : "\u2014"}
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr>
+                                  <td colSpan={8} className="px-6 py-4 border-b max-w-[800px]">
+                                    <p className="text-sm font-semibold text-muted-foreground mb-1">Query</p>
+                                    <div className="p-3 rounded bg-accent/50 font-mono text-[0.85rem] whitespace-pre-wrap break-all mb-3">
                                       {entry.queryText}
-                                    </Box>
-                                    <Box
-                                      sx={{
-                                        display: "grid",
-                                        gridTemplateColumns: "auto 1fr",
-                                        gap: 1,
-                                      }}
-                                    >
-                                      <Typography
-                                        variant="body2"
-                                        fontWeight={600}
-                                        color="text.secondary"
-                                      >
-                                        Rows Affected
-                                      </Typography>
-                                      <Typography variant="body2">
-                                        {entry.rowsAffected ?? "\u2014"}
-                                      </Typography>
+                                    </div>
+                                    <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                                      <span className="text-sm font-semibold text-muted-foreground">Rows Affected</span>
+                                      <span className="text-sm">{entry.rowsAffected ?? "\u2014"}</span>
                                       {entry.blockReason && (
                                         <>
-                                          <Typography
-                                            variant="body2"
-                                            fontWeight={600}
-                                            color="text.secondary"
-                                          >
-                                            {entry.blocked
-                                              ? "Block Reason"
-                                              : "Firewall Alert"}
-                                          </Typography>
-                                          <Typography
-                                            variant="body2"
-                                            color={
-                                              entry.blocked
-                                                ? "error.main"
-                                                : "warning.main"
-                                            }
-                                          >
+                                          <span className="text-sm font-semibold text-muted-foreground">
+                                            {entry.blocked ? "Block Reason" : "Firewall Alert"}
+                                          </span>
+                                          <span className={cn("text-sm", entry.blocked ? "text-destructive" : "text-yellow-500")}>
                                             {entry.blockReason}
-                                          </Typography>
+                                          </span>
                                         </>
                                       )}
-                                    </Box>
-                                    <Box sx={{ mt: 1.5 }}>
-                                      <Tooltip title="Open query visualizer">
-                                        <IconButton
-                                          size="small"
-                                          color="primary"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setVisualizerEntry(entry);
-                                          }}
-                                        >
-                                          <VisualizeIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                    </Box>
-                                  </Box>
-                                </Collapse>
-                              </TableCell>
-                            </TableRow>
-                          </Fragment>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                  <TablePagination
-                    component="div"
-                    count={dbTotal}
-                    page={dbPage}
-                    onPageChange={(_, p) => setDbPage(p)}
-                    rowsPerPage={dbRowsPerPage}
-                    onRowsPerPageChange={(e) => {
-                      setDbRowsPerPage(parseInt(e.target.value, 10));
-                      setDbPage(0);
-                    }}
-                    rowsPerPageOptions={[25, 50, 100]}
-                  />
-                </>
-              )}
-            </Card>
-          </>
-        )}
-      </Box>
+                                    </div>
+                                    <div className="mt-3">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-7 text-primary"
+                                        onClick={(e) => { e.stopPropagation(); setVisualizerEntry(entry); }}
+                                        title="Open query visualizer"
+                                      >
+                                        <Eye className="size-4" />
+                                      </Button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    <div className="flex items-center justify-between px-4 py-2 border-t text-sm text-muted-foreground">
+                      <div className="flex items-center gap-2">
+                        <span>Rows per page:</span>
+                        <Select value={String(dbRowsPerPage)} onValueChange={(v) => { setDbRowsPerPage(parseInt(v, 10)); setDbPage(0); }}>
+                          <SelectTrigger className="h-8 w-[70px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="25">25</SelectItem>
+                            <SelectItem value="50">50</SelectItem>
+                            <SelectItem value="100">100</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span>{dbPage * dbRowsPerPage + 1}-{Math.min((dbPage + 1) * dbRowsPerPage, dbTotal)} of {dbTotal}</span>
+                        <Button variant="ghost" size="sm" disabled={dbPage === 0} onClick={() => setDbPage((p) => p - 1)}>Previous</Button>
+                        <Button variant="ghost" size="sm" disabled={dbPage + 1 >= dbTotalPages} onClick={() => setDbPage((p) => p + 1)}>Next</Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
-      {/* Query Visualizer drawer */}
-      <QueryVisualizer
-        open={Boolean(visualizerEntry)}
-        onClose={() => setVisualizerEntry(null)}
-        queryText={visualizerEntry?.queryText ?? ""}
-        queryType={visualizerEntry?.queryType ?? ""}
-        executionTimeMs={visualizerEntry?.executionTimeMs ?? null}
-        rowsAffected={visualizerEntry?.rowsAffected ?? null}
-        tablesAccessed={visualizerEntry?.tablesAccessed ?? []}
-        blocked={visualizerEntry?.blocked ?? false}
-        blockReason={visualizerEntry?.blockReason}
-        storedExecutionPlan={visualizerEntry?.executionPlan ?? null}
-      />
+        {/* Query Visualizer drawer */}
+        <QueryVisualizer
+          open={Boolean(visualizerEntry)}
+          onClose={() => setVisualizerEntry(null)}
+          queryText={visualizerEntry?.queryText ?? ""}
+          queryType={visualizerEntry?.queryType ?? ""}
+          executionTimeMs={visualizerEntry?.executionTimeMs ?? null}
+          rowsAffected={visualizerEntry?.rowsAffected ?? null}
+          tablesAccessed={visualizerEntry?.tablesAccessed ?? []}
+          blocked={visualizerEntry?.blocked ?? false}
+          blockReason={visualizerEntry?.blockReason}
+          storedExecutionPlan={visualizerEntry?.executionPlan ?? null}
+        />
 
-      <RecordingPlayerDialog
-        open={recordingPlayerOpen}
-        onClose={() => {
-          setRecordingPlayerOpen(false);
-          setSelectedRecording(null);
-        }}
-        recording={selectedRecording}
-      />
+        <RecordingPlayerDialog
+          open={recordingPlayerOpen}
+          onClose={() => {
+            setRecordingPlayerOpen(false);
+            setSelectedRecording(null);
+          }}
+          recording={selectedRecording}
+        />
+      </DialogContent>
     </Dialog>
   );
 }

@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Box, Alert,
-  FormControl, InputLabel, Select, MenuItem, FormControlLabel, Checkbox, Typography,
-  IconButton, InputAdornment, Paper, Stack,
-} from '@mui/material';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import RefreshIcon from '@mui/icons-material/Refresh';
+  Dialog, DialogContent, DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Copy, RefreshCw, X } from 'lucide-react';
 import { useTenantStore } from '../../store/tenantStore';
 import { getEmailStatus } from '../../api/admin.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -94,150 +100,212 @@ export default function CreateUserDialog({ open, onClose }: CreateUserDialogProp
 
   if (result) {
     return (
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>User Created Successfully</DialogTitle>
-        <DialogContent>
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Account created for {result.user.email}
-          </Alert>
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Stack spacing={1.5}>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Email</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', flex: 1 }}>{result.user.email}</Typography>
-                  <IconButton size="small" onClick={() => handleCopy(result.user.email, 'email')}>
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Password</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', flex: 1 }}>{password}</Typography>
-                  <IconButton size="small" onClick={() => handleCopy(password, 'password')}>
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Recovery Key (show once)</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', flex: 1, wordBreak: 'break-all' }}>{result.recoveryKey}</Typography>
-                  <IconButton size="small" onClick={() => handleCopy(result.recoveryKey, 'recovery')}>
-                    <ContentCopyIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              </Box>
-              {copied && (
-                <Typography variant="caption" color="success.main">
-                  Copied {copied}!
-                </Typography>
-              )}
-            </Stack>
-          </Paper>
-          <Alert severity="warning" sx={{ mt: 2 }}>
-            Save these credentials now. The recovery key will not be shown again.
-          </Alert>
+      <Dialog open={open} onOpenChange={(next) => { if (!next) handleClose(); }}>
+        <DialogContent
+          showCloseButton={false}
+          className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+        >
+          <DialogTitle className="sr-only">User Created Successfully</DialogTitle>
+          <DialogDescription className="sr-only">User account details</DialogDescription>
+
+          {/* Compact header */}
+          <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+            <span className="text-xs font-medium">User Created Successfully</span>
+            <div className="ml-auto">
+              <Button variant="ghost" size="icon-xs" onClick={handleClose}>
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1">
+            <div className="mx-auto max-w-2xl px-6 py-4">
+              <div className="rounded-md border border-emerald-600/50 bg-emerald-600/10 px-4 py-3 text-sm text-emerald-400">
+                Account created for {result.user.email}
+              </div>
+
+              <div className="mt-4 rounded-lg border p-4 space-y-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Email</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono flex-1">{result.user.email}</span>
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => handleCopy(result.user.email, 'email')}>
+                      <Copy className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Password</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono flex-1">{password}</span>
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => handleCopy(password, 'password')}>
+                      <Copy className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Recovery Key (show once)</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono flex-1 break-all">{result.recoveryKey}</span>
+                    <Button variant="ghost" size="icon" className="size-7" onClick={() => handleCopy(result.recoveryKey, 'recovery')}>
+                      <Copy className="size-3.5" />
+                    </Button>
+                  </div>
+                </div>
+                {copied && (
+                  <p className="text-xs text-emerald-400">Copied {copied}!</p>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-md border border-yellow-600/50 bg-yellow-600/10 px-4 py-3 text-sm text-yellow-500">
+                Save these credentials now. The recovery key will not be shown again.
+              </div>
+            </div>
+          </ScrollArea>
+
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+            <Button onClick={handleClose}>Done</Button>
+          </div>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose} variant="contained">Done</Button>
-        </DialogActions>
       </Dialog>
     );
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Create User</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <TextField
-            label="Email Address"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            fullWidth
-            required
-            autoFocus
-          />
-          <TextField
-            label="Username (optional)"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            fullWidth
-          />
-          <TextField
-            label="Password"
-            type="text"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            fullWidth
-            required
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton size="small" onClick={handleGenerate} title="Generate password">
-                      <RefreshIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-          <TextField
-            label="Confirm Password"
-            type="text"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            fullWidth
-            required
-            error={!!confirmPassword && password !== confirmPassword}
-            helperText={confirmPassword && password !== confirmPassword ? 'Passwords do not match' : ''}
-          />
-          <FormControl fullWidth>
-            <InputLabel>Role</InputLabel>
-            <Select
-              value={role}
-              label="Role"
-              onChange={(e) => setRole(e.target.value as TenantRole)}
-            >
-              {ASSIGNABLE_ROLES.map((r) => (
-                <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <TextField
-            label="Access Expires At"
-            type="datetime-local"
-            value={expiresAt}
-            onChange={(e) => setExpiresAt(e.target.value)}
-            fullWidth
-            size="small"
-            slotProps={{ inputLabel: { shrink: true } }}
-            helperText="Leave empty for permanent access"
-          />
-          {emailConfigured && (
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={sendWelcomeEmail}
-                  onChange={(e) => setSendWelcomeEmail(e.target.checked)}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) handleClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+      >
+        <DialogTitle className="sr-only">Create User</DialogTitle>
+        <DialogDescription className="sr-only">Create a new user account</DialogDescription>
+
+        {/* Compact header */}
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+          <span className="text-xs font-medium">Create User</span>
+          <div className="ml-auto">
+            <Button variant="ghost" size="icon-xs" onClick={handleClose}>
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="mx-auto max-w-2xl px-6 py-4">
+            {error && (
+              <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="create-email">Email Address</Label>
+                <Input
+                  id="create-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoFocus
                 />
-              }
-              label="Send welcome email with credentials"
-            />
-          )}
-        </Box>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="create-username">Username (optional)</Label>
+                <Input
+                  id="create-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="create-password">Password</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="create-password"
+                    type="text"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="flex-1"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleGenerate}
+                    title="Generate password"
+                    type="button"
+                  >
+                    <RefreshCw className="size-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="create-confirm">Confirm Password</Label>
+                <Input
+                  id="create-confirm"
+                  type="text"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className={confirmPassword && password !== confirmPassword ? 'border-destructive' : ''}
+                />
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-xs text-destructive">Passwords do not match</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={role} onValueChange={(v) => setRole(v as TenantRole)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ASSIGNABLE_ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="create-expires">Access Expires At</Label>
+                <Input
+                  id="create-expires"
+                  type="datetime-local"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">Leave empty for permanent access</p>
+              </div>
+
+              {emailConfigured && (
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="send-welcome"
+                    checked={sendWelcomeEmail}
+                    onCheckedChange={(v) => setSendWelcomeEmail(v === true)}
+                  />
+                  <Label htmlFor="send-welcome" className="font-normal">
+                    Send welcome email with credentials
+                  </Label>
+                </div>
+              )}
+            </div>
+          </div>
+        </ScrollArea>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading ? 'Creating...' : 'Create User'}
+          </Button>
+        </div>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
-          {loading ? 'Creating...' : 'Create User'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

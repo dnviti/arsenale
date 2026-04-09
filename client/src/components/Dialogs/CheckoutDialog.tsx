@@ -1,18 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Dialog, AppBar, Toolbar, IconButton, Typography, Box,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Chip, Tabs, Tab, Paper, Tooltip, Alert,
-  CircularProgress,
-} from '@mui/material';
+  Dialog, DialogContent, DialogDescription, DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
-  Close as CloseIcon,
-  CheckCircle as ApproveIcon,
-  Cancel as RejectIcon,
-  Undo as CheckinIcon,
-  Refresh as RefreshIcon,
-} from '@mui/icons-material';
-import { SlideUp } from '../common/SlideUp';
+  X, CheckCircle, XCircle, Undo2, RefreshCw, Loader2,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useCheckoutStore } from '../../store/checkoutStore';
 import type { CheckoutRequest, CheckoutStatus } from '../../store/checkoutStore';
 import { useAuthStore } from '../../store/authStore';
@@ -23,12 +19,12 @@ interface CheckoutDialogProps {
   onClose: () => void;
 }
 
-const STATUS_COLORS: Record<CheckoutStatus, 'warning' | 'success' | 'error' | 'default' | 'info'> = {
-  PENDING: 'warning',
-  APPROVED: 'success',
-  REJECTED: 'error',
-  EXPIRED: 'default',
-  CHECKED_IN: 'info',
+const STATUS_VARIANT: Record<CheckoutStatus, string> = {
+  PENDING: 'bg-yellow-600/15 text-yellow-500 border-yellow-600/30',
+  APPROVED: 'bg-emerald-600/15 text-emerald-400 border-emerald-600/30',
+  REJECTED: 'bg-destructive/15 text-destructive border-destructive/30',
+  EXPIRED: 'bg-muted text-muted-foreground border-border',
+  CHECKED_IN: 'bg-blue-600/15 text-blue-400 border-blue-600/30',
 };
 
 function formatDuration(minutes: number): string {
@@ -58,9 +54,9 @@ function TimeRemaining({ expiresAt }: { expiresAt: string | null }) {
 
   if (!expiresAt) return null;
   const diff = new Date(expiresAt).getTime() - now;
-  if (diff <= 0) return <Chip label="Expired" size="small" color="default" />;
+  if (diff <= 0) return <Badge variant="secondary">Expired</Badge>;
   const mins = Math.floor(diff / 60000);
-  return <Chip label={`${formatDuration(mins)} left`} size="small" color="success" variant="outlined" />;
+  return <Badge variant="outline" className="border-emerald-600/30 text-emerald-400">{formatDuration(mins)} left</Badge>;
 }
 
 export default function CheckoutDialog({ open, onClose }: CheckoutDialogProps) {
@@ -74,12 +70,12 @@ export default function CheckoutDialog({ open, onClose }: CheckoutDialogProps) {
   const checkin = useCheckoutStore((s) => s.checkin);
   const currentUserId = useAuthStore((s) => s.user?.id);
 
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState('all');
   const { loading: actionLoading, error: actionError, setError, run } = useAsyncAction();
 
-  const handleTabChange = useCallback((_: unknown, newVal: number) => {
+  const handleTabChange = useCallback((newVal: string) => {
     setTab(newVal);
-    const roles: Array<'all' | 'requester' | 'approver'> = ['all', 'requester', 'approver'];
+    const roles: Record<string, 'all' | 'requester' | 'approver'> = { all: 'all', requester: 'requester', approver: 'approver' };
     setFilters({ role: roles[newVal], offset: 0 });
   }, [setFilters]);
 
@@ -125,132 +121,145 @@ export default function CheckoutDialog({ open, onClose }: CheckoutDialogProps) {
   };
 
   return (
-    <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
-      <AppBar position="static" sx={{ position: 'relative' }}>
-        <Toolbar variant="dense">
-          <IconButton edge="start" color="inherit" onClick={onClose} aria-label="close">
-            <CloseIcon />
-          </IconButton>
-          <Typography sx={{ ml: 2, flex: 1 }} variant="h6" component="div">
-            Credential Check-out
-          </Typography>
-          <IconButton color="inherit" onClick={fetchRequests} disabled={loading}>
-            <RefreshIcon />
-          </IconButton>
-        </Toolbar>
-      </AppBar>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+        showCloseButton={false}
+      >
+        <DialogTitle className="sr-only">Credential Check-out</DialogTitle>
+        <DialogDescription className="sr-only">Manage credential checkout requests</DialogDescription>
 
-      <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 2 }}>
-        {actionError && (
-          <Alert severity="error" onClose={() => setError('')} sx={{ mb: 2 }}>
-            {actionError}
-          </Alert>
-        )}
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b px-4 py-2.5 bg-card">
+          <Button variant="ghost" size="icon" onClick={onClose} className="size-8">
+            <X className="size-4" />
+          </Button>
+          <h2 className="flex-1 text-lg font-semibold">Credential Check-out</h2>
+          <Button variant="ghost" size="icon" onClick={fetchRequests} disabled={loading} className="size-8">
+            <RefreshCw className="size-4" />
+          </Button>
+        </div>
 
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-          <Tabs value={tab} onChange={handleTabChange}>
-            <Tab label={`All (${total})`} />
-            <Tab label="My Requests" />
-            <Tab label="Pending Approvals" />
+        {/* Body */}
+        <div className="flex flex-1 flex-col overflow-hidden p-4">
+          {actionError && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4 flex items-center justify-between">
+              {actionError}
+              <Button variant="ghost" size="icon" className="size-6" onClick={() => setError('')}>
+                <X className="size-3" />
+              </Button>
+            </div>
+          )}
+
+          <Tabs value={tab} onValueChange={handleTabChange}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="all">All ({total})</TabsTrigger>
+              <TabsTrigger value="requester">My Requests</TabsTrigger>
+              <TabsTrigger value="approver">Pending Approvals</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value={tab} className="flex-1 overflow-auto mt-0">
+              {loading && !actionLoading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="size-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : requests.length === 0 ? (
+                <div className="flex justify-center py-8">
+                  <p className="text-sm text-muted-foreground">No checkout requests found</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border overflow-auto flex-1">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-card">
+                      <tr className="border-b">
+                        <th className="text-left px-3 py-2 font-medium">Resource</th>
+                        <th className="text-left px-3 py-2 font-medium">Requester</th>
+                        <th className="text-left px-3 py-2 font-medium">Duration</th>
+                        <th className="text-left px-3 py-2 font-medium">Reason</th>
+                        <th className="text-left px-3 py-2 font-medium">Status</th>
+                        <th className="text-left px-3 py-2 font-medium">Time Left</th>
+                        <th className="text-left px-3 py-2 font-medium">Requested</th>
+                        <th className="text-right px-3 py-2 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {requests.map((req) => (
+                        <tr key={req.id} className="border-b hover:bg-accent/50">
+                          <td className="px-3 py-2">
+                            <span className="truncate max-w-[200px] block text-sm">
+                              {resourceLabel(req)}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="truncate block text-sm">
+                              {req.requester.username || req.requester.email}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">{formatDuration(req.durationMinutes)}</td>
+                          <td className="px-3 py-2">
+                            <span className="truncate max-w-[150px] block text-sm">
+                              {req.reason || '-'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Badge variant="outline" className={cn('border', STATUS_VARIANT[req.status])}>
+                              {req.status}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2">
+                            {req.status === 'APPROVED' ? <TimeRemaining expiresAt={req.expiresAt} /> : '-'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className="text-xs">{formatDate(req.createdAt)}</span>
+                          </td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            {canApprove(req) && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-emerald-400 hover:text-emerald-300"
+                                  onClick={() => handleApprove(req.id)}
+                                  disabled={actionLoading}
+                                  title="Approve"
+                                >
+                                  <CheckCircle className="size-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-destructive hover:text-destructive/80"
+                                  onClick={() => handleReject(req.id)}
+                                  disabled={actionLoading}
+                                  title="Reject"
+                                >
+                                  <XCircle className="size-4" />
+                                </Button>
+                              </>
+                            )}
+                            {canCheckin(req) && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-7 text-primary hover:text-primary/80"
+                                onClick={() => handleCheckin(req.id)}
+                                disabled={actionLoading}
+                                title="Check in (return access)"
+                              >
+                                <Undo2 className="size-4" />
+                              </Button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
           </Tabs>
-        </Box>
-
-        {loading && !actionLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : requests.length === 0 ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <Typography color="text.secondary">No checkout requests found</Typography>
-          </Box>
-        ) : (
-          <TableContainer component={Paper} sx={{ flex: 1, overflow: 'auto' }}>
-            <Table stickyHeader size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Resource</TableCell>
-                  <TableCell>Requester</TableCell>
-                  <TableCell>Duration</TableCell>
-                  <TableCell>Reason</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Time Left</TableCell>
-                  <TableCell>Requested</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {requests.map((req) => (
-                  <TableRow key={req.id} hover>
-                    <TableCell>
-                      <Typography variant="body2" noWrap sx={{ maxWidth: 200 }}>
-                        {resourceLabel(req)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" noWrap>
-                        {req.requester.username || req.requester.email}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{formatDuration(req.durationMinutes)}</TableCell>
-                    <TableCell>
-                      <Typography variant="body2" noWrap sx={{ maxWidth: 150 }}>
-                        {req.reason || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Chip label={req.status} size="small" color={STATUS_COLORS[req.status]} />
-                    </TableCell>
-                    <TableCell>
-                      {req.status === 'APPROVED' ? <TimeRemaining expiresAt={req.expiresAt} /> : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption">{formatDate(req.createdAt)}</Typography>
-                    </TableCell>
-                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                      {canApprove(req) && (
-                        <>
-                          <Tooltip title="Approve">
-                            <IconButton
-                              size="small"
-                              color="success"
-                              onClick={() => handleApprove(req.id)}
-                              disabled={actionLoading}
-                            >
-                              <ApproveIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                          <Tooltip title="Reject">
-                            <IconButton
-                              size="small"
-                              color="error"
-                              onClick={() => handleReject(req.id)}
-                              disabled={actionLoading}
-                            >
-                              <RejectIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </>
-                      )}
-                      {canCheckin(req) && (
-                        <Tooltip title="Check in (return access)">
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={() => handleCheckin(req.id)}
-                            disabled={actionLoading}
-                          >
-                            <CheckinIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 }

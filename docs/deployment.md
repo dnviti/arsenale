@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-05T18:35:00Z
+generated-at: 2026-04-08T16:00:00Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -16,6 +16,7 @@ source-files:
   - deployment/ansible/README.md
   - deployment/ansible/install/capabilities.yml
   - deployment/ansible/playbooks/install.yml
+  - deployment/ansible/playbooks/dev_refresh.yml
   - deployment/ansible/playbooks/status.yml
   - deployment/ansible/playbooks/deploy.yml
   - deployment/ansible/roles/deploy/templates/compose.yml.j2
@@ -36,6 +37,7 @@ Arsenale now has one installer-driven deployment story for both development and 
 
 - `Makefile` is the human entry point,
 - `deployment/ansible/playbooks/install.yml` is the interactive installer entrypoint,
+- `deployment/ansible/playbooks/dev_refresh.yml` is the targeted dev-service refresh entrypoint,
 - `deployment/ansible/playbooks/status.yml` reads encrypted installer status,
 - `deployment/ansible/playbooks/deploy.yml` is the shared apply engine under the installer,
 - `deployment/ansible/roles/deploy/templates/compose.yml.j2` is the authoritative Podman Compose template.
@@ -51,6 +53,8 @@ flowchart TD
 ```
 
 The checked-in `docker-compose.yml` mirrors the current generated development stack, but the installer flow and Ansible templates remain the source of truth.
+
+For local code iteration, the root `Makefile` now supports scoped refreshes such as `make dev client`, `make dev gateways`, and `make dev control-plane`. Those commands reuse the saved dev render state and rebuild/restart only the requested services; full `make dev` is still the correct path for installer/profile/cert/secret/compose changes.
 
 ## 🔐 Installer Artifacts
 
@@ -289,6 +293,8 @@ Useful script-level entry points:
 ./scripts/go-test-all.sh
 ./scripts/go-build-all.sh
 ```
+
+`./scripts/go-build-all.sh` writes local Go application binaries to `./build/go/` so source directories stay clean.
 
 `scripts/db-migrate.sh` now auto-detects a container runtime, supports `ARSENALE_COMPOSE_FILE` and related overrides, and uses `deployment/ansible/scripts/run_compose_service.py` for Podman one-shot migration runs.
 

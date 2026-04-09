@@ -1,6 +1,6 @@
 # Components Overview
 
-> Auto-generated on 2026-03-15 by /docs create components.
+> Auto-generated on 2026-04-07 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
 ## Overview
@@ -9,7 +9,7 @@ The client is built with:
 
 - **React 19** with TypeScript
 - **Vite** — build tool and dev server
-- **Material-UI (MUI) v7** — component library and theming
+- **Tailwind CSS 4 + shadcn/ui + Material-UI (MUI) v7** — hybrid UI layer and theming bridge during migration
 - **Zustand** — state management (17 stores with localStorage persistence for UI preferences)
 - **Axios** — HTTP client with JWT auto-refresh
 - **WebSocket / Guacamole clients** — real-time SSH terminals, desktop sessions, and broker transport

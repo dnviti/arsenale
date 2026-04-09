@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import {
-  Box, Button, Typography, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, IconButton, Chip, Alert, CircularProgress,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
-} from '@mui/material';
-import {
-  Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon,
-  RocketLaunch as DeployIcon, Description as TemplateIcon,
-} from '@mui/icons-material';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Plus, Trash2, Pencil, Rocket, FileText, Loader2 } from 'lucide-react';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import type { GatewayTemplateData } from '../../api/gateway.api';
@@ -66,119 +68,117 @@ export default function GatewayTemplateSection() {
     }
   };
 
+  const typeBadge = (tpl: GatewayTemplateData) => {
+    const label = tpl.type === 'GUACD' ? 'GUACD' : tpl.type === 'MANAGED_SSH' ? 'Managed SSH' : tpl.type === 'DB_PROXY' ? 'DB Proxy' : 'SSH Bastion';
+    const cls = tpl.type === 'GUACD' ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+      : tpl.type === 'MANAGED_SSH' ? 'bg-green-500/15 text-green-400 border-green-500/30'
+      : tpl.type === 'DB_PROXY' ? 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+      : 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30';
+    return <Badge variant="outline" className={cls}>{label}</Badge>;
+  };
+
   return (
-    <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h6" sx={{ flexGrow: 1 }}>Gateway Templates</Typography>
+    <div>
+      <div className="flex items-center mb-3">
+        <h3 className="text-lg font-semibold flex-1">Gateway Templates</h3>
         <Button
-          variant="outlined"
-          startIcon={<AddIcon />}
+          variant="outline"
           onClick={() => { setEditingTemplate(null); setDialogOpen(true); }}
         >
+          <Plus className="h-4 w-4 mr-1" />
           New Template
         </Button>
-      </Box>
+      </div>
 
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+      {error && (
+        <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-400 hover:text-red-300 text-xs">dismiss</button>
+        </div>
+      )}
 
       {templatesLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-          <CircularProgress />
-        </Box>
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
       ) : templates.length === 0 ? (
-        <Box sx={{ textAlign: 'center', py: 6 }}>
-          <TemplateIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
-          <Typography variant="h6" gutterBottom>No Templates Yet</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+        <div className="text-center py-12">
+          <FileText className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+          <h4 className="text-lg font-semibold mb-2">No Templates Yet</h4>
+          <p className="text-sm text-muted-foreground mb-6">
             Create a template to quickly deploy pre-configured gateways.
-          </Typography>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => { setEditingTemplate(null); setDialogOpen(true); }}
-          >
+          </p>
+          <Button onClick={() => { setEditingTemplate(null); setDialogOpen(true); }}>
+            <Plus className="h-4 w-4 mr-1" />
             Create Template
           </Button>
-        </Box>
+        </div>
       ) : (
-        <TableContainer>
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Type</TableCell>
-                <TableCell>Endpoint</TableCell>
-                <TableCell>Auto-Scale</TableCell>
-                <TableCell>Deployed</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
+        <div className="rounded-lg border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 px-3 font-medium">Name</th>
+                <th className="text-left py-2 px-3 font-medium">Type</th>
+                <th className="text-left py-2 px-3 font-medium">Endpoint</th>
+                <th className="text-left py-2 px-3 font-medium">Auto-Scale</th>
+                <th className="text-left py-2 px-3 font-medium">Deployed</th>
+                <th className="text-right py-2 px-3 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
               {templates.map((tpl) => (
-                <TableRow key={tpl.id}>
-                  <TableCell>
-                    <Typography variant="body2">{tpl.name}</Typography>
+                <tr key={tpl.id} className="border-b border-border/50">
+                  <td className="py-2 px-3">
+                    <p className="text-sm">{tpl.name}</p>
                     {tpl.description && (
-                      <Typography variant="caption" color="text.secondary">
-                        {tpl.description}
-                      </Typography>
+                      <p className="text-xs text-muted-foreground">{tpl.description}</p>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={tpl.type === 'GUACD' ? 'GUACD' : tpl.type === 'MANAGED_SSH' ? 'Managed SSH' : tpl.type === 'DB_PROXY' ? 'DB Proxy' : 'SSH Bastion'}
-                      size="small"
-                      color={tpl.type === 'GUACD' ? 'info' : tpl.type === 'MANAGED_SSH' ? 'success' : tpl.type === 'DB_PROXY' ? 'secondary' : 'warning'}
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell>
+                  </td>
+                  <td className="py-2 px-3">{typeBadge(tpl)}</td>
+                  <td className="py-2 px-3">
                     {isGatewayGroup(tpl) ? (
                       <>
-                        <Typography variant="body2" color="text.secondary" fontStyle="italic">
+                        <p className="text-sm text-muted-foreground italic">
                           {gatewayModeLabel(tpl)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
+                        </p>
+                        <p className="text-xs text-muted-foreground">
                           Service port {tpl.port}
-                        </Typography>
+                        </p>
                       </>
                     ) : (
-                      <Typography variant="body2">{tpl.host}:{tpl.port}</Typography>
+                      <p className="text-sm">{tpl.host}:{tpl.port}</p>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={tpl.autoScale ? 'Enabled' : 'Disabled'}
-                      size="small"
-                      color={tpl.autoScale ? 'success' : 'default'}
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{tpl._count.gateways}</Typography>
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton
-                      size="small"
-                      color="primary"
+                  </td>
+                  <td className="py-2 px-3">
+                    <Badge variant="outline" className={tpl.autoScale ? 'bg-green-500/15 text-green-400 border-green-500/30' : ''}>
+                      {tpl.autoScale ? 'Enabled' : 'Disabled'}
+                    </Badge>
+                  </td>
+                  <td className="py-2 px-3">{tpl._count.gateways}</td>
+                  <td className="py-2 px-3 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
                       onClick={() => handleDeploy(tpl)}
                       disabled={deployingId === tpl.id}
                       title="Deploy from template"
                     >
-                      {deployingId === tpl.id ? <CircularProgress size={16} /> : <DeployIcon fontSize="small" />}
-                    </IconButton>
-                    <IconButton size="small" onClick={() => handleEdit(tpl)} title="Edit">
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton size="small" color="error" onClick={() => setDeleteTarget(tpl)} title="Delete">
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
+                      {deployingId === tpl.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleEdit(tpl)} title="Edit">
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400" onClick={() => setDeleteTarget(tpl)} title="Delete">
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            </tbody>
+          </table>
+        </div>
       )}
 
       <GatewayTemplateDialog
@@ -187,21 +187,23 @@ export default function GatewayTemplateSection() {
         template={editingTemplate}
       />
 
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete Template</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete template <strong>{deleteTarget?.name}</strong>?
-            Existing gateways created from this template will not be affected.
-          </DialogContentText>
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Template</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete template <strong>{deleteTarget?.name}</strong>?
+              Existing gateways created from this template will not be affected.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained" disabled={deleting}>
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }

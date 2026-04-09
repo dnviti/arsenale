@@ -1,97 +1,101 @@
-import { Box, Tab, Tabs } from '@mui/material';
+import { DatabaseZap, Monitor, TerminalSquare, X } from 'lucide-react';
 import {
-  Close as CloseIcon,
-  Computer as RdpIcon,
-  Terminal as SshIcon,
-  DesktopWindows as VncIcon,
-} from '@mui/icons-material';
-import { useTabsStore } from '../../store/tabsStore';
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { useTabsStore } from '@/store/tabsStore';
+import { cn } from '@/lib/utils';
+
+function tabIcon(type: string) {
+  switch (type) {
+    case 'SSH':
+      return <TerminalSquare className="size-4" />;
+    case 'VNC':
+      return <Monitor className="size-4" />;
+    case 'DATABASE':
+      return <DatabaseZap className="size-4" />;
+    default:
+      return <Monitor className="size-4" />;
+  }
+}
 
 export default function TabBar() {
-  const tabs = useTabsStore((s) => s.tabs);
-  const activeTabId = useTabsStore((s) => s.activeTabId);
-  const setActiveTab = useTabsStore((s) => s.setActiveTab);
-  const closeTab = useTabsStore((s) => s.closeTab);
+  const tabs = useTabsStore((state) => state.tabs);
+  const activeTabId = useTabsStore((state) => state.activeTabId);
+  const setActiveTab = useTabsStore((state) => state.setActiveTab);
+  const closeTab = useTabsStore((state) => state.closeTab);
 
-  if (tabs.length === 0) return null;
+  if (tabs.length === 0) {
+    return null;
+  }
 
-  const activeIndex = tabs.findIndex((t) => t.id === activeTabId);
+  const handleCloseOthers = (keepId: string) => {
+    tabs.forEach((t) => { if (t.id !== keepId) closeTab(t.id); });
+  };
+
+  const handleCloseAll = () => {
+    tabs.forEach((t) => closeTab(t.id));
+  };
 
   return (
-    <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
-      <Tabs
-        value={activeIndex >= 0 ? activeIndex : 0}
-        onChange={(_e, newValue) => {
-          if (tabs[newValue]) setActiveTab(tabs[newValue].id);
-          // Blur the tab element to prevent MUI Tabs arrow-key navigation
-          // from intercepting keyboard input meant for the connection viewer
-          if (document.activeElement instanceof HTMLElement) {
-            document.activeElement.blur();
-          }
-        }}
-        variant="scrollable"
-        scrollButtons="auto"
-        sx={{
-          minHeight: 36,
-          '& .MuiTabs-indicator': {
-            backgroundColor: 'primary.main',
-          },
-        }}
-      >
+    <div className="border-b bg-background/70 px-2 py-1.5 backdrop-blur">
+      <div className="flex gap-1.5 overflow-x-auto pb-0.5">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
+
           return (
-          <Tab
-            key={tab.id}
-            sx={{
-              minHeight: 36,
-              textTransform: 'none',
-              py: 0,
-              color: 'text.secondary',
-              '&.Mui-selected': { color: 'text.primary' },
-              '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}0A` },
-            }}
-            icon={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                {tab.connection.type === 'SSH' ? (
-                  <SshIcon sx={{ fontSize: 16, color: isActive ? 'primary.main' : 'inherit' }} />
-                ) : tab.connection.type === 'VNC' ? (
-                  <VncIcon sx={{ fontSize: 16, color: isActive ? 'primary.main' : 'inherit' }} />
-                ) : (
-                  <RdpIcon sx={{ fontSize: 16, color: isActive ? 'primary.main' : 'inherit' }} />
-                )}
-                <span>{tab.connection.name}</span>
-                <Box
-                  component="span"
-                  role="button"
-                  tabIndex={-1}
-                  onClick={(e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    closeTab(tab.id);
-                  }}
-                  onMouseDown={(e: React.MouseEvent) => {
-                    // Prevent tab from activating when clicking close
-                    e.stopPropagation();
-                  }}
-                  sx={{
-                    ml: 0.5,
-                    p: 0.25,
-                    borderRadius: '50%',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` },
-                  }}
+            <ContextMenu key={tab.id}>
+              <ContextMenuTrigger asChild>
+                <div
+                  className={cn(
+                    'group inline-flex shrink-0 items-center gap-1 rounded-lg border px-1.5 py-1 text-sm transition-colors',
+                    isActive
+                      ? 'border-primary/40 bg-primary/10 text-foreground'
+                      : 'border-transparent bg-transparent text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground',
+                  )}
                 >
-                  <CloseIcon sx={{ fontSize: 14 }} />
-                </Box>
-              </Box>
-            }
-          />
+                  <button
+                    type="button"
+                    className="inline-flex min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 py-0.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    onClick={(event) => {
+                      event.currentTarget.blur();
+                      setActiveTab(tab.id);
+                    }}
+                  >
+                    <span className={cn(isActive ? 'text-primary' : 'text-muted-foreground')}>
+                      {tabIcon(tab.connection.type)}
+                    </span>
+                    <span className="max-w-44 truncate">{tab.connection.name}</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Close ${tab.connection.name}`}
+                    className="inline-flex size-6 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    onClick={() => closeTab(tab.id)}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-48">
+                <ContextMenuItem onSelect={() => closeTab(tab.id)}>
+                  Close
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => handleCloseOthers(tab.id)} disabled={tabs.length <= 1}>
+                  Close Others
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onSelect={handleCloseAll}>
+                  Close All
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           );
         })}
-      </Tabs>
-    </Box>
+      </div>
+    </div>
   );
 }

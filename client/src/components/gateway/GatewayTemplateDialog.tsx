@@ -1,8 +1,23 @@
 import { useState, useEffect } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Box, Alert,
-  FormControl, InputLabel, Select, MenuItem, FormControlLabel, Typography, Switch, Stack,
-} from '@mui/material';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { GatewayDeploymentMode, GatewayTemplateData } from '../../api/gateway.api';
 import SessionTimeoutConfig from '../orchestration/SessionTimeoutConfig';
@@ -59,308 +74,197 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
       setPublishPorts(template.publishPorts ?? false);
       setLbStrategy(template.lbStrategy ?? 'ROUND_ROBIN');
     } else if (open) {
-      setName('');
-      setType('MANAGED_SSH');
-      setDeploymentMode('MANAGED_GROUP');
-      setHost('');
-      setPort('2222');
-      setDescription('');
-      setApiPort('9022');
-      setMonitoringEnabled(true);
-      setMonitorIntervalMs('5000');
-      setInactivityTimeout('60');
-      setAutoScaleEnabled(false);
-      setMinReplicasVal('1');
-      setMaxReplicasVal('5');
-      setSessPerInstance('10');
-      setCooldownVal('300');
-      setPublishPorts(false);
-      setLbStrategy('ROUND_ROBIN');
+      setName(''); setType('MANAGED_SSH'); setDeploymentMode('MANAGED_GROUP');
+      setHost(''); setPort('2222'); setDescription(''); setApiPort('9022');
+      setMonitoringEnabled(true); setMonitorIntervalMs('5000'); setInactivityTimeout('60');
+      setAutoScaleEnabled(false); setMinReplicasVal('1'); setMaxReplicasVal('5');
+      setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
     }
     setError('');
   }, [open, template]);
 
   const handleTypeChange = (newType: 'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH' | 'DB_PROXY') => {
     setType(newType);
-    if (newType === 'SSH_BASTION') {
-      setDeploymentMode('SINGLE_INSTANCE');
-    }
+    if (newType === 'SSH_BASTION') setDeploymentMode('SINGLE_INSTANCE');
     const defaultPort = newType === 'GUACD' ? '4822' : newType === 'MANAGED_SSH' ? '2222' : newType === 'DB_PROXY' ? '5432' : '22';
-    if (!port || port === '4822' || port === '2222' || port === '5432' || port === '22') {
-      setPort(defaultPort);
-    }
-    if (newType === 'MANAGED_SSH' && !apiPort) {
-      setApiPort('9022');
-    } else if (newType !== 'MANAGED_SSH') {
-      setApiPort('');
-    }
+    if (!port || port === '4822' || port === '2222' || port === '5432' || port === '22') setPort(defaultPort);
+    if (newType === 'MANAGED_SSH' && !apiPort) setApiPort('9022');
+    else if (newType !== 'MANAGED_SSH') setApiPort('');
   };
 
   const isManagedType = type === 'MANAGED_SSH' || type === 'GUACD' || type === 'DB_PROXY';
   const isGroupMode = deploymentMode === 'MANAGED_GROUP';
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      setError('Name is required');
-      return;
-    }
-    if (!isGroupMode && !host.trim()) {
-      setError('Host is required for SSH Bastion gateways');
-      return;
-    }
-    if (!port.trim()) {
-      setError('Port is required for SSH Bastion gateways');
-      return;
-    }
-    setLoading(true);
-    setError('');
+    if (!name.trim()) { setError('Name is required'); return; }
+    if (!isGroupMode && !host.trim()) { setError('Host is required for SSH Bastion gateways'); return; }
+    if (!port.trim()) { setError('Port is required'); return; }
+    setLoading(true); setError('');
     try {
       const data = {
-        name: name.trim(),
-        type,
-        deploymentMode,
-        host: isGroupMode ? '' : host.trim(),
-        port: parseInt(port, 10),
+        name: name.trim(), type, deploymentMode,
+        host: isGroupMode ? '' : host.trim(), port: parseInt(port, 10),
         description: description.trim() || undefined,
         apiPort: apiPort ? parseInt(apiPort, 10) : undefined,
-        monitoringEnabled,
-        monitorIntervalMs: parseInt(monitorIntervalMs, 10),
+        monitoringEnabled, monitorIntervalMs: parseInt(monitorIntervalMs, 10),
         inactivityTimeoutSeconds: parseInt(inactivityTimeout, 10) * 60,
-        autoScale: autoScaleEnabled,
-        minReplicas: parseInt(minReplicasVal, 10),
-        maxReplicas: parseInt(maxReplicasVal, 10),
-        sessionsPerInstance: parseInt(sessPerInstance, 10),
-        scaleDownCooldownSeconds: parseInt(cooldownVal, 10),
-        publishPorts,
-        lbStrategy,
+        autoScale: autoScaleEnabled, minReplicas: parseInt(minReplicasVal, 10),
+        maxReplicas: parseInt(maxReplicasVal, 10), sessionsPerInstance: parseInt(sessPerInstance, 10),
+        scaleDownCooldownSeconds: parseInt(cooldownVal, 10), publishPorts, lbStrategy,
       };
-      if (isEditMode && template) {
-        await updateTemplate(template.id, data);
-      } else {
-        await createTemplate(data);
-      }
+      if (isEditMode && template) { await updateTemplate(template.id, data); }
+      else { await createTemplate(data); }
       onClose();
     } catch (err: unknown) {
       setError(extractApiError(err, `Failed to ${isEditMode ? 'update' : 'create'} template`));
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{isEditMode ? 'Edit Gateway Template' : 'New Gateway Template'}</DialogTitle>
-      <DialogContent>
-        <Stack spacing={2} sx={{ mt: 1 }}>
-          {error && <Alert severity="error">{error}</Alert>}
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{isEditMode ? 'Edit Gateway Template' : 'New Gateway Template'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {error && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>
+          )}
 
-          <TextField
-            label="Template Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            fullWidth
-            required
-          />
+          <div className="space-y-1.5">
+            <Label>Template Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} required />
+          </div>
 
-          <FormControl fullWidth>
-            <InputLabel>Gateway Type</InputLabel>
-            <Select
-              value={type}
-              label="Gateway Type"
-              onChange={(e) => handleTypeChange(e.target.value as typeof type)}
-            >
-              <MenuItem value="GUACD">GUACD (RDP/VNC proxy)</MenuItem>
-              <MenuItem value="SSH_BASTION">SSH Bastion</MenuItem>
-              <MenuItem value="MANAGED_SSH">Managed SSH</MenuItem>
-              <MenuItem value="DB_PROXY">DB Proxy (Database Gateway)</MenuItem>
+          <div className="space-y-1.5">
+            <Label>Gateway Type</Label>
+            <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="GUACD">GUACD (RDP/VNC proxy)</SelectItem>
+                <SelectItem value="SSH_BASTION">SSH Bastion</SelectItem>
+                <SelectItem value="MANAGED_SSH">Managed SSH</SelectItem>
+                <SelectItem value="DB_PROXY">DB Proxy (Database Gateway)</SelectItem>
+              </SelectContent>
             </Select>
-          </FormControl>
+          </div>
+
           {isManagedType ? (
-            <FormControl fullWidth size="small">
-              <InputLabel>Deployment Mode</InputLabel>
-              <Select
-                value={deploymentMode}
-                label="Deployment Mode"
-                onChange={(e) => setDeploymentMode(e.target.value as GatewayDeploymentMode)}
-              >
-                <MenuItem value="SINGLE_INSTANCE">Single Instance</MenuItem>
-                <MenuItem value="MANAGED_GROUP">Managed Group</MenuItem>
+            <div className="space-y-1.5">
+              <Label>Deployment Mode</Label>
+              <Select value={deploymentMode} onValueChange={(v) => setDeploymentMode(v as GatewayDeploymentMode)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SINGLE_INSTANCE">Single Instance</SelectItem>
+                  <SelectItem value="MANAGED_GROUP">Managed Group</SelectItem>
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           ) : (
-            <Alert severity="info" variant="outlined">
+            <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
               SSH bastion templates are always single-instance.
-            </Alert>
+            </div>
           )}
 
           {isGroupMode ? (
-            <Stack spacing={2}>
-              <Alert severity="info" variant="outlined">
+            <div className="space-y-2">
+              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
                 This template creates a logical gateway group. Instances get their own runtime addresses when deployed.
-              </Alert>
-              <TextField
-                label="Service Port"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                type="number"
-                fullWidth
-                required
-                helperText={publishPorts ? 'External host ports are assigned per instance at deploy time.' : undefined}
-              />
-            </Stack>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Service Port</Label>
+                <Input value={port} onChange={(e) => setPort(e.target.value)} type="number" required />
+                {publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}
+              </div>
+            </div>
           ) : (
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField
-                label="Host"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                fullWidth
-                required
-              />
-              <TextField
-                label="Port"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                type="number"
-                sx={{ width: 120 }}
-                required
-              />
-            </Box>
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-1.5">
+                <Label>Host</Label>
+                <Input value={host} onChange={(e) => setHost(e.target.value)} required />
+              </div>
+              <div className="w-[120px] space-y-1.5">
+                <Label>Port</Label>
+                <Input value={port} onChange={(e) => setPort(e.target.value)} type="number" required />
+              </div>
+            </div>
           )}
 
           {isManagedType && isGroupMode && (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={publishPorts}
-                  onChange={(_, v) => setPublishPorts(v)}
-                  size="small"
-                />
-              }
-              label="Publish Ports (external access)"
-            />
+            <div className="flex items-center gap-3">
+              <Switch checked={publishPorts} onCheckedChange={setPublishPorts} />
+              <Label>Publish Ports (external access)</Label>
+            </div>
           )}
 
           {isManagedType && isGroupMode && (
-            <FormControl fullWidth size="small">
-              <InputLabel>Load Balancing Strategy</InputLabel>
-              <Select
-                value={lbStrategy}
-                label="Load Balancing Strategy"
-                onChange={(e) => setLbStrategy(e.target.value as 'ROUND_ROBIN' | 'LEAST_CONNECTIONS')}
-              >
-                <MenuItem value="ROUND_ROBIN">Round Robin</MenuItem>
-                <MenuItem value="LEAST_CONNECTIONS">Least Connections</MenuItem>
+            <div className="space-y-1.5">
+              <Label>Load Balancing Strategy</Label>
+              <Select value={lbStrategy} onValueChange={(v) => setLbStrategy(v as 'ROUND_ROBIN' | 'LEAST_CONNECTIONS')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ROUND_ROBIN">Round Robin</SelectItem>
+                  <SelectItem value="LEAST_CONNECTIONS">Least Connections</SelectItem>
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           )}
 
-          <TextField
-            label="Description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            fullWidth
-            multiline
-            minRows={2}
-            maxRows={4}
-          />
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
+          </div>
 
           {type === 'MANAGED_SSH' && (
-            <TextField
-              label="gRPC Port (key management)"
-              value={apiPort}
-              onChange={(e) => setApiPort(e.target.value)}
-              type="number"
-              fullWidth
-              disabled={publishPorts}
-              helperText={publishPorts ? 'Auto-assigned at deploy' : undefined}
-            />
+            <div className="space-y-1.5">
+              <Label>gRPC Port (key management)</Label>
+              <Input value={apiPort} onChange={(e) => setApiPort(e.target.value)} type="number" disabled={publishPorts} />
+              {publishPorts && <p className="text-xs text-muted-foreground">Auto-assigned at deploy</p>}
+            </div>
           )}
 
-          {/* Monitoring */}
-          <Box>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={monitoringEnabled}
-                  onChange={(e) => setMonitoringEnabled(e.target.checked)}
-                />
-              }
-              label="Enable health monitoring"
-            />
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <Switch checked={monitoringEnabled} onCheckedChange={setMonitoringEnabled} />
+              <Label>Enable health monitoring</Label>
+            </div>
             {monitoringEnabled && (
-              <TextField
-                label="Monitor Interval (ms)"
-                value={monitorIntervalMs}
-                onChange={(e) => setMonitorIntervalMs(e.target.value)}
-                type="number"
-                fullWidth
-                sx={{ mt: 1 }}
-              />
+              <div className="space-y-1.5">
+                <Label>Monitor Interval (ms)</Label>
+                <Input value={monitorIntervalMs} onChange={(e) => setMonitorIntervalMs(e.target.value)} type="number" />
+              </div>
             )}
-          </Box>
+          </div>
 
-          <SessionTimeoutConfig
-            value={inactivityTimeout}
-            onChange={setInactivityTimeout}
-          />
+          <SessionTimeoutConfig value={inactivityTimeout} onChange={setInactivityTimeout} />
 
           {isManagedType && isGroupMode && (
-            <Box sx={{ border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>Auto-Scaling Configuration</Typography>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={autoScaleEnabled}
-                    onChange={(e) => setAutoScaleEnabled(e.target.checked)}
-                  />
-                }
-                label="Enable auto-scaling"
-              />
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-sm font-medium">Auto-Scaling Configuration</p>
+              <div className="flex items-center gap-3">
+                <Switch checked={autoScaleEnabled} onCheckedChange={setAutoScaleEnabled} />
+                <Label>Enable auto-scaling</Label>
+              </div>
               {autoScaleEnabled && (
-                <Stack spacing={2} sx={{ mt: 1 }}>
-                  <Box sx={{ display: 'flex', gap: 2 }}>
-                    <TextField
-                      label="Min Replicas"
-                      value={minReplicasVal}
-                      onChange={(e) => setMinReplicasVal(e.target.value)}
-                      type="number"
-                      fullWidth
-                    />
-                    <TextField
-                      label="Max Replicas"
-                      value={maxReplicasVal}
-                      onChange={(e) => setMaxReplicasVal(e.target.value)}
-                      type="number"
-                      fullWidth
-                    />
-                  </Box>
-                  <TextField
-                    label="Sessions per Instance"
-                    value={sessPerInstance}
-                    onChange={(e) => setSessPerInstance(e.target.value)}
-                    type="number"
-                    fullWidth
-                  />
-                  <TextField
-                    label="Scale-Down Cooldown (seconds)"
-                    value={cooldownVal}
-                    onChange={(e) => setCooldownVal(e.target.value)}
-                    type="number"
-                    fullWidth
-                  />
-                </Stack>
+                <div className="space-y-3">
+                  <div className="flex gap-3">
+                    <div className="flex-1 space-y-1"><Label className="text-xs">Min Replicas</Label><Input value={minReplicasVal} onChange={(e) => setMinReplicasVal(e.target.value)} type="number" className="h-8" /></div>
+                    <div className="flex-1 space-y-1"><Label className="text-xs">Max Replicas</Label><Input value={maxReplicasVal} onChange={(e) => setMaxReplicasVal(e.target.value)} type="number" className="h-8" /></div>
+                  </div>
+                  <div className="space-y-1"><Label className="text-xs">Sessions per Instance</Label><Input value={sessPerInstance} onChange={(e) => setSessPerInstance(e.target.value)} type="number" className="h-8" /></div>
+                  <div className="space-y-1"><Label className="text-xs">Scale-Down Cooldown (seconds)</Label><Input value={cooldownVal} onChange={(e) => setCooldownVal(e.target.value)} type="number" className="h-8" /></div>
+                </div>
               )}
-            </Box>
+            </div>
           )}
-        </Stack>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={loading}>
+            {loading ? 'Saving...' : isEditMode ? 'Update Template' : 'Create Template'}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSave} variant="contained" disabled={loading}>
-          {loading ? 'Saving...' : isEditMode ? 'Update Template' : 'Create Template'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

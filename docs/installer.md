@@ -2,12 +2,13 @@
 title: Installer Guide
 description: Installer flow, modes, backends, capabilities, technician password, artifacts, and operational walkthroughs for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-03T14:30:00Z
+generated-at: 2026-04-08T16:00:00Z
 source-files:
   - Makefile
   - deployment/ansible/README.md
   - deployment/ansible/install/capabilities.yml
   - deployment/ansible/playbooks/install.yml
+  - deployment/ansible/playbooks/dev_refresh.yml
   - deployment/ansible/playbooks/status.yml
   - deployment/ansible/playbooks/deploy.yml
   - deployment/ansible/playbooks/tasks/install_apply.yml
@@ -39,6 +40,7 @@ make deploy      # Deploy or update production stack
 make recover     # Re-apply from last known good encrypted state
 make status      # Read encrypted installer status without deploying
 make dev         # Deploy the installer-aware development stack
+make dev client  # Refresh only the client image/container from saved dev state
 make dev-down    # Tear down the development stack
 ```
 
@@ -52,6 +54,7 @@ Underlying playbooks:
 | `make recover` | `playbooks/install.yml -e installer_mode=production` | Recovery flow |
 | `make status` | `playbooks/status.yml` | Status read |
 | `make dev` | `playbooks/install.yml -e installer_mode=development` | Development |
+| `make dev <selector>` | `playbooks/dev_refresh.yml` | Targeted dev image rebuild and service refresh |
 | `make dev-down` | `playbooks/deploy.yml -e arsenale_env=development -e arsenale_state=absent` | Dev teardown |
 
 ## Modes
@@ -71,6 +74,20 @@ make dev
 - Certificates are generated under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
 - When `connections` is enabled, `dev-bootstrap` registers the local `ssh-gateway` and `guacd` containers as tenant gateways.
 - Demo database services follow the enabled development capabilities, so the default `make dev` profile includes them. Tunnel fixtures still require `DEV_ZERO_TRUST=true`.
+
+After a full development install, you can refresh only the changed services:
+
+```bash
+make dev client
+make dev gateways
+make dev control-plane
+make dev control-plane-api query-runner
+```
+
+- Scoped refreshes reuse the last saved dev installer profile and rendered compose/env artifacts.
+- `client`, `gateways`, and `control-plane` are built-in selector groups; direct service names also work.
+- Backend-targeted refreshes rerun the `migrate` job before force-recreating the requested services.
+- Use full `make dev` instead when installer inputs, capabilities, certs, secrets, or compose/deployment wiring changed.
 
 After completion:
 

@@ -1,102 +1,80 @@
-import { useState, useEffect, useCallback, KeyboardEvent } from 'react';
-import {
-  Card, CardContent, Typography, Switch, FormControlLabel, Alert,
-  CircularProgress, Box, TextField, Button, Chip, Stack, Tooltip,
-  IconButton,
-} from '@mui/material';
-import {
-  Info as InfoIcon,
-  Refresh as RefreshIcon,
-} from '@mui/icons-material';
+import { useCallback, useEffect, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useAuthStore } from '../../store/authStore';
-import { useTenantStore } from '../../store/tenantStore';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useNotificationStore } from '../../store/notificationStore';
+import { useTenantStore } from '../../store/tenantStore';
 import { extractApiError } from '../../utils/apiError';
+import NetworkEntryEditor from './NetworkEntryEditor';
+import {
+  SettingsButtonRow,
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSectionBlock,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+  SettingsSwitchRow,
+} from './settings-ui';
 
-// eslint-disable-next-line security/detect-unsafe-regex
-const CIDR_RE = /^(?:(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?|[0-9a-fA-F:]+(?:\/\d{1,3})?)$/;
-
-// Stable slotProps references to avoid InputBase re-render cycles
-const DAYS_SLOT_PROPS = { htmlInput: { min: 1, max: 365 } } as const;
-
-/** Validate IP/CIDR beyond the regex — checks octet ranges and prefix length */
-function isValidCidr(value: string): boolean {
-  if (!CIDR_RE.test(value)) return false;
-  const slash = value.lastIndexOf('/');
-  if (slash === -1) {
-    // Bare IP — check IPv4 octet ranges
-    const parts = value.split('.');
-    if (parts.length === 4) return parts.every((p) => { const n = Number(p); return n >= 0 && n <= 255; });
-    return true; // IPv6 — regex already validates hex chars
-  }
-  const ip = value.substring(0, slash);
-  const prefix = parseInt(value.substring(slash + 1), 10);
-  const v4Parts = ip.split('.');
-  if (v4Parts.length === 4) {
-    return v4Parts.every((p) => { const n = Number(p); return n >= 0 && n <= 255; }) && prefix >= 0 && prefix <= 32;
-  }
-  // IPv6
-  return prefix >= 0 && prefix <= 128;
-}
+const MIN_TUNNEL_DAYS = 1;
 
 export default function TunnelConfigSection() {
-  const user = useAuthStore((s) => s.user);
-  const tenant = useTenantStore((s) => s.tenant);
-  const updateTenant = useTenantStore((s) => s.updateTenant);
-  const fetchTenant = useTenantStore((s) => s.fetchTenant);
+  const user = useAuthStore((state) => state.user);
+  const tenant = useTenantStore((state) => state.tenant);
+  const updateTenant = useTenantStore((state) => state.updateTenant);
+  const fetchTenant = useTenantStore((state) => state.fetchTenant);
+  const tunnelOverview = useGatewayStore((state) => state.tunnelOverview);
+  const tunnelOverviewLoading = useGatewayStore((state) => state.tunnelOverviewLoading);
+  const fetchTunnelOverview = useGatewayStore((state) => state.fetchTunnelOverview);
+  const notify = useNotificationStore((state) => state.notify);
 
-  const tunnelOverview = useGatewayStore((s) => s.tunnelOverview);
-  const tunnelOverviewLoading = useGatewayStore((s) => s.tunnelOverviewLoading);
-  const fetchTunnelOverview = useGatewayStore((s) => s.fetchTunnelOverview);
-
-  // Local form state
   const [tunnelDefaultEnabled, setTunnelDefaultEnabled] = useState(false);
   const [tunnelRequireForRemote, setTunnelRequireForRemote] = useState(false);
   const [tunnelAutoTokenRotation, setTunnelAutoTokenRotation] = useState(false);
   const [tunnelTokenRotationDays, setTunnelTokenRotationDays] = useState(90);
   const [tunnelTokenMaxLifetimeDays, setTunnelTokenMaxLifetimeDays] = useState<number | null>(null);
   const [tunnelAgentAllowedCidrs, setTunnelAgentAllowedCidrs] = useState<string[]>([]);
-
-  const [newCidr, setNewCidr] = useState('');
-  const [cidrError, setCidrError] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const notify = useNotificationStore((s) => s.notify);
 
-  // Fetch tenant data if not already loaded
   useEffect(() => {
-    if (user?.tenantId && !tenant) fetchTenant();
-  }, [user?.tenantId, tenant, fetchTenant]);
+    if (user?.tenantId && !tenant) {
+      void fetchTenant();
+    }
+  }, [fetchTenant, tenant, user?.tenantId]);
 
-  // Sync local state from tenant data — track individual primitive fields so
-  // the effect doesn't re-run when the tenant object reference changes.
-  const tde = tenant?.tunnelDefaultEnabled;
-  const trfr = tenant?.tunnelRequireForRemote;
-  const tatr = tenant?.tunnelAutoTokenRotation;
-  const ttrd = tenant?.tunnelTokenRotationDays;
-  const ttmld = tenant?.tunnelTokenMaxLifetimeDays;
-  // Stringify the array so the dependency is a stable primitive
-  const taacKey = JSON.stringify(tenant?.tunnelAgentAllowedCidrs ?? []);
   useEffect(() => {
-    if (tde == null) return;
-    setTunnelDefaultEnabled(tde);
-    setTunnelRequireForRemote(Boolean(trfr));
-    setTunnelAutoTokenRotation(Boolean(tatr));
-    setTunnelTokenRotationDays(ttrd ?? 90);
-    setTunnelTokenMaxLifetimeDays(ttmld ?? null);
-    setTunnelAgentAllowedCidrs(JSON.parse(taacKey) as string[]);
-  }, [tde, trfr, tatr, ttrd, ttmld, taacKey]);
+    if (user?.tenantId) {
+      void fetchTunnelOverview();
+    }
+  }, [fetchTunnelOverview, user?.tenantId]);
 
-  // Fetch tunnel overview on mount
+  const tunnelAgentAllowedCidrsKey = JSON.stringify(tenant?.tunnelAgentAllowedCidrs ?? []);
   useEffect(() => {
-    if (user?.tenantId) fetchTunnelOverview();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.tenantId]);
+    if (!tenant) {
+      return;
+    }
+
+    setTunnelDefaultEnabled(tenant.tunnelDefaultEnabled);
+    setTunnelRequireForRemote(tenant.tunnelRequireForRemote);
+    setTunnelAutoTokenRotation(tenant.tunnelAutoTokenRotation);
+    setTunnelTokenRotationDays(tenant.tunnelTokenRotationDays ?? 90);
+    setTunnelTokenMaxLifetimeDays(tenant.tunnelTokenMaxLifetimeDays ?? null);
+    setTunnelAgentAllowedCidrs(JSON.parse(tunnelAgentAllowedCidrsKey) as string[]);
+  }, [
+    tenant,
+    tunnelAgentAllowedCidrsKey,
+  ]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     setError('');
+
     try {
       await updateTenant({
         tunnelDefaultEnabled,
@@ -107,235 +85,184 @@ export default function TunnelConfigSection() {
         tunnelAgentAllowedCidrs,
       });
       await fetchTenant();
-      notify('Settings saved successfully.', 'success');
+      notify('Tunnel configuration saved.', 'success');
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to save tunnel configuration'));
     } finally {
       setSaving(false);
     }
   }, [
-    updateTenant, fetchTenant, notify,
-    tunnelDefaultEnabled, tunnelRequireForRemote, tunnelAutoTokenRotation,
-    tunnelTokenRotationDays, tunnelTokenMaxLifetimeDays, tunnelAgentAllowedCidrs,
+    fetchTenant,
+    notify,
+    tunnelAgentAllowedCidrs,
+    tunnelAutoTokenRotation,
+    tunnelDefaultEnabled,
+    tunnelRequireForRemote,
+    tunnelTokenMaxLifetimeDays,
+    tunnelTokenRotationDays,
+    updateTenant,
   ]);
 
-  const handleAddCidr = useCallback(() => {
-    const trimmed = newCidr.trim();
-    if (!trimmed) return;
-    if (!isValidCidr(trimmed)) {
-      setCidrError('Invalid IP or CIDR format (e.g. 10.0.0.0/8)');
-      return;
-    }
-    if (tunnelAgentAllowedCidrs.includes(trimmed)) {
-      setCidrError('Entry already exists');
-      return;
-    }
-    setTunnelAgentAllowedCidrs((prev) => [...prev, trimmed]);
-    setNewCidr('');
-    setCidrError('');
-  }, [newCidr, tunnelAgentAllowedCidrs]);
-
-  const handleCidrKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAddCidr();
-    }
-  }, [handleAddCidr]);
-
-  const handleRemoveCidr = useCallback((entry: string) => {
-    setTunnelAgentAllowedCidrs((prev) => prev.filter((e) => e !== entry));
-  }, []);
-
-  if (!tenant) return null;
+  if (!tenant) {
+    return (
+      <SettingsPanel
+        title="Tunnel Configuration"
+        description="Zero-trust defaults, token security, and tunnel fleet health."
+      >
+        <SettingsLoadingState message="Loading tunnel configuration..." />
+      </SettingsPanel>
+    );
+  }
 
   return (
-    <Stack spacing={2}>
-      {/* Tunnel Defaults */}
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-            Tunnel Defaults
-          </Typography>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Configure default tunnel behavior for gateways in this organization.
-          </Typography>
+    <SettingsPanel
+      title="Tunnel Configuration"
+      description="Define how gateways join the tunnel fabric, how tunnel tokens rotate, and which networks agents may connect from."
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={tunnelDefaultEnabled}
-                onChange={(e) => { setTunnelDefaultEnabled(e.target.checked);}}
-                disabled={saving}
-              />
-            }
-            label="Enable tunnel by default for new gateways"
+      <SettingsSectionBlock
+        title="Defaults"
+        description="Set the baseline tunnel posture for new and remote gateways."
+      >
+        <SettingsFieldGroup>
+          <SettingsSwitchRow
+            title="Enable tunnels by default"
+            description="New gateways will start with zero-trust tunneling enabled."
+            checked={tunnelDefaultEnabled}
+            disabled={saving}
+            onCheckedChange={setTunnelDefaultEnabled}
           />
-
-          <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={tunnelRequireForRemote}
-                  onChange={(e) => { setTunnelRequireForRemote(e.target.checked);}}
-                  disabled={saving}
-                />
-              }
-              label="Require tunnel for remote gateways"
-            />
-            <Tooltip title="When enabled, connections to gateways outside the local network must use a zero-trust tunnel. Direct connections will be blocked.">
-              <InfoIcon fontSize="small" color="action" sx={{ ml: -1 }} />
-            </Tooltip>
-          </Box>
-        </CardContent>
-      </Card>
-
-      {/* Token Security */}
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-            Token Security
-          </Typography>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Control automatic rotation and lifetime of tunnel authentication tokens.
-          </Typography>
-
-          <FormControlLabel
-            control={
-              <Switch
-                checked={tunnelAutoTokenRotation}
-                onChange={(e) => { setTunnelAutoTokenRotation(e.target.checked);}}
-                disabled={saving}
-              />
-            }
-            label="Auto-rotate tunnel tokens"
+          <SettingsSwitchRow
+            title="Require tunnels for remote gateways"
+            description="Gateways outside the trusted local network must connect through the tunnel fabric."
+            checked={tunnelRequireForRemote}
+            disabled={saving}
+            onCheckedChange={setTunnelRequireForRemote}
           />
+        </SettingsFieldGroup>
+      </SettingsSectionBlock>
 
-          <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
-            <TextField
-              size="small"
-              type="number"
-              label="Rotation interval (days)"
-              value={tunnelTokenRotationDays}
-              onChange={(e) => { setTunnelTokenRotationDays(Math.max(1, parseInt(e.target.value, 10) || 1));}}
-              disabled={saving || !tunnelAutoTokenRotation}
-              slotProps={DAYS_SLOT_PROPS}
-              sx={{ width: 200 }}
-            />
-            <TextField
-              size="small"
-              type="number"
-              label="Max token lifetime (days)"
-              value={tunnelTokenMaxLifetimeDays ?? ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                setTunnelTokenMaxLifetimeDays(val === '' ? null : Math.max(1, parseInt(val, 10) || 1));
-              }}
-              disabled={saving}
-              slotProps={DAYS_SLOT_PROPS}
-              helperText="Leave empty for no limit"
-              sx={{ width: 220 }}
-            />
-          </Box>
-        </CardContent>
-      </Card>
-
-      {/* Agent Restrictions */}
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-            Agent Restrictions
-          </Typography>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            Restrict which IP addresses tunnel agents can connect from.
-          </Typography>
-
-          <Box sx={{ display: 'flex', gap: 1, mb: 1, mt: 1 }}>
-            <TextField
-              size="small"
-              placeholder="e.g. 10.0.0.0/8 or 192.168.1.0/24"
-              value={newCidr}
-              onChange={(e) => { setNewCidr(e.target.value); setCidrError(''); }}
-              onKeyDown={handleCidrKeyDown}
-              error={!!cidrError}
-              helperText={cidrError || 'Leave empty to allow all IPs'}
-              disabled={saving}
-              sx={{ flex: 1 }}
-            />
-            <Button variant="outlined" size="small" onClick={handleAddCidr} disabled={saving || !newCidr.trim()}>
-              Add
-            </Button>
-          </Box>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, minHeight: 32 }}>
-            {tunnelAgentAllowedCidrs.length === 0 && (
-              <Typography variant="caption" color="text.secondary">
-                No restrictions — agents can connect from any IP
-              </Typography>
-            )}
-            {tunnelAgentAllowedCidrs.map((entry) => (
-              <Chip
-                key={entry}
-                label={entry}
-                size="small"
-                variant="outlined"
-                onDelete={() => handleRemoveCidr(entry)}
-                disabled={saving}
+      <SettingsSectionBlock
+        title="Token Security"
+        description="Rotate tunnel tokens automatically and cap how long any issued token can live."
+      >
+        <SettingsFieldGroup>
+          <SettingsSwitchRow
+            title="Auto-rotate tunnel tokens"
+            description="Rotate issued tunnel credentials on a schedule to reduce long-lived exposure."
+            checked={tunnelAutoTokenRotation}
+            disabled={saving}
+            onCheckedChange={setTunnelAutoTokenRotation}
+          />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard
+              label="Rotation interval"
+              description="How often tokens rotate when auto-rotation is enabled."
+            >
+              <Input
+                type="number"
+                min={MIN_TUNNEL_DAYS}
+                aria-label="Tunnel token rotation days"
+                value={tunnelTokenRotationDays}
+                disabled={saving || !tunnelAutoTokenRotation}
+                onChange={(event) => {
+                  const nextValue = Number.parseInt(event.target.value, 10) || MIN_TUNNEL_DAYS;
+                  setTunnelTokenRotationDays(Math.max(MIN_TUNNEL_DAYS, nextValue));
+                }}
               />
-            ))}
-          </Box>
-        </CardContent>
-      </Card>
+            </SettingsFieldCard>
 
-      {/* Fleet Overview */}
-      <Card variant="outlined">
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="subtitle1" fontWeight="bold">
-              Fleet Overview
-            </Typography>
-            <Tooltip title="Refresh">
-              <span>
-                <IconButton size="small" onClick={fetchTunnelOverview} disabled={tunnelOverviewLoading}>
-                  <RefreshIcon fontSize="small" />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
-          {tunnelOverviewLoading && !tunnelOverview ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : tunnelOverview ? (
-            <Stack spacing={1}>
-              <Typography variant="body2">
-                <strong>{tunnelOverview.total}</strong> tunneled gateway{tunnelOverview.total !== 1 ? 's' : ''}:{' '}
-                <Typography component="span" variant="body2" color="success.main">
-                  {tunnelOverview.connected} connected
-                </Typography>
-                {', '}
-                <Typography component="span" variant="body2" color={tunnelOverview.disconnected > 0 ? 'error.main' : 'text.secondary'}>
-                  {tunnelOverview.disconnected} disconnected
-                </Typography>
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Average RTT: {tunnelOverview.avgRttMs != null ? `${tunnelOverview.avgRttMs} ms` : 'N/A'}
-              </Typography>
-            </Stack>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              No tunnel data available.
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
+            <SettingsFieldCard
+              label="Maximum token lifetime"
+              description="Leave empty to allow tokens to persist until rotated or revoked."
+            >
+              <Input
+                type="number"
+                min={MIN_TUNNEL_DAYS}
+                aria-label="Tunnel token max lifetime days"
+                value={tunnelTokenMaxLifetimeDays ?? ''}
+                disabled={saving}
+                placeholder="No limit"
+                onChange={(event) => {
+                  const { value } = event.target;
+                  if (!value) {
+                    setTunnelTokenMaxLifetimeDays(null);
+                    return;
+                  }
+                  const nextValue = Number.parseInt(value, 10) || MIN_TUNNEL_DAYS;
+                  setTunnelTokenMaxLifetimeDays(Math.max(MIN_TUNNEL_DAYS, nextValue));
+                }}
+              />
+            </SettingsFieldCard>
+          </div>
+        </SettingsFieldGroup>
+      </SettingsSectionBlock>
 
-      {/* Save button */}
-      <Box>
-        <Button variant="contained" size="small" onClick={handleSave} disabled={saving}>
+      <SettingsSectionBlock
+        title="Agent Restrictions"
+        description="Constrain tunnel agents to trusted source networks only."
+      >
+        <NetworkEntryEditor
+          label="Allowed Agent Networks"
+          description="Add IPv4 or IPv6 addresses and CIDR ranges that tunnel agents may connect from."
+          inputLabel="Allowed Agent Network"
+          placeholder="e.g. 10.0.0.0/8 or 2001:db8::/32"
+          helperText="Leave empty to allow agents from any IP."
+          emptyState="No restrictions are configured. Tunnel agents can connect from any network."
+          entries={tunnelAgentAllowedCidrs}
+          disabled={saving}
+          onChange={setTunnelAgentAllowedCidrs}
+        />
+      </SettingsSectionBlock>
+
+      <SettingsSectionBlock
+        title="Fleet Overview"
+        description="Live tunnel connectivity across the current tenant."
+        className="space-y-4"
+      >
+        <SettingsButtonRow className="justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={tunnelOverviewLoading}
+            onClick={() => void fetchTunnelOverview()}
+          >
+            <RefreshCw className={tunnelOverviewLoading ? 'animate-spin' : undefined} />
+            Refresh
+          </Button>
+        </SettingsButtonRow>
+
+        {tunnelOverviewLoading && !tunnelOverview ? (
+          <SettingsLoadingState message="Loading tunnel overview..." />
+        ) : tunnelOverview ? (
+          <SettingsSummaryGrid className="xl:grid-cols-4">
+            <SettingsSummaryItem label="Gateways" value={String(tunnelOverview.total)} />
+            <SettingsSummaryItem label="Connected" value={String(tunnelOverview.connected)} />
+            <SettingsSummaryItem label="Disconnected" value={String(tunnelOverview.disconnected)} />
+            <SettingsSummaryItem
+              label="Average RTT"
+              value={tunnelOverview.avgRttMs != null ? `${tunnelOverview.avgRttMs} ms` : 'N/A'}
+            />
+          </SettingsSummaryGrid>
+        ) : (
+          <p className="text-sm leading-6 text-muted-foreground">
+            No tunnel fleet data is available yet.
+          </p>
+        )}
+      </SettingsSectionBlock>
+
+      <SettingsButtonRow>
+        <Button type="button" onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}
         </Button>
-      </Box>
-    </Stack>
+      </SettingsButtonRow>
+    </SettingsPanel>
   );
 }

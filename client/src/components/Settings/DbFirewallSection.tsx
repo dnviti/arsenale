@@ -1,248 +1,140 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, Typography, Box, Button, Stack,
-  Table, TableHead, TableBody, TableRow, TableCell,
-  Chip, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, FormControl, InputLabel,
-  Select, MenuItem, Switch, FormControlLabel, Alert,
-  CircularProgress, Tooltip, Divider, ListSubheader,
-} from '@mui/material';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Shield as ShieldIcon,
-} from '@mui/icons-material';
-import {
-  getFirewallRules, createFirewallRule, updateFirewallRule, deleteFirewallRule,
-  FirewallRule, FirewallRuleInput, FirewallAction,
+  createFirewallRule,
+  deleteFirewallRule,
+  getFirewallRules,
+  updateFirewallRule,
+  type FirewallAction,
+  type FirewallRule,
+  type FirewallRuleInput,
 } from '../../api/dbAudit.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { validateDbFirewallPattern } from '../../utils/dbFirewallPattern';
-
-const ACTION_COLORS: Record<FirewallAction, 'error' | 'warning' | 'info'> = {
-  BLOCK: 'error',
-  ALERT: 'warning',
-  LOG: 'info',
-};
-
-// ---------------------------------------------------------------------------
-// Preset rule templates
-// ---------------------------------------------------------------------------
-
-interface RuleTemplate {
-  name: string;
-  pattern: string;
-  action: FirewallAction;
-  description: string;
-  category: string;
-}
-
-const RULE_TEMPLATES: RuleTemplate[] = [
-  // --- Destructive DDL ---
-  {
-    category: 'Destructive Operations',
-    name: 'Block DROP TABLE',
-    pattern: '\\bDROP\\s+TABLE\\b',
-    action: 'BLOCK',
-    description: 'Prevents dropping database tables',
-  },
-  {
-    category: 'Destructive Operations',
-    name: 'Block TRUNCATE',
-    pattern: '\\bTRUNCATE\\b',
-    action: 'BLOCK',
-    description: 'Prevents truncating tables (deletes all rows without logging)',
-  },
-  {
-    category: 'Destructive Operations',
-    name: 'Block DROP DATABASE',
-    pattern: '\\bDROP\\s+DATABASE\\b',
-    action: 'BLOCK',
-    description: 'Prevents dropping entire databases',
-  },
-  {
-    category: 'Destructive Operations',
-    name: 'Block DROP SCHEMA',
-    pattern: '\\bDROP\\s+SCHEMA\\b',
-    action: 'BLOCK',
-    description: 'Prevents dropping database schemas',
-  },
-  // --- Data Modification ---
-  {
-    category: 'Data Modification',
-    name: 'Alert DELETE without WHERE',
-    pattern: '^\\s*DELETE\\s+FROM\\s+\\S+\\s*;?\\s*$',
-    action: 'ALERT',
-    description: 'Alerts when a DELETE statement has no WHERE clause (deletes all rows)',
-  },
-  {
-    category: 'Data Modification',
-    name: 'Alert UPDATE without WHERE',
-    pattern: '^\\s*UPDATE\\s+\\S+\\s+SET\\s+.*(?<!WHERE\\s+.*)\\s*;?\\s*$',
-    action: 'ALERT',
-    description: 'Alerts when an UPDATE statement has no WHERE clause (updates all rows)',
-  },
-  {
-    category: 'Data Modification',
-    name: 'Log all INSERT statements',
-    pattern: '\\bINSERT\\s+INTO\\b',
-    action: 'LOG',
-    description: 'Logs all INSERT operations for audit purposes',
-  },
-  // --- Schema Changes ---
-  {
-    category: 'Schema Changes',
-    name: 'Alert ALTER TABLE',
-    pattern: '\\bALTER\\s+TABLE\\b',
-    action: 'ALERT',
-    description: 'Alerts on table schema modifications (add/drop columns, rename)',
-  },
-  {
-    category: 'Schema Changes',
-    name: 'Block CREATE/DROP INDEX',
-    pattern: '\\b(CREATE|DROP)\\s+(UNIQUE\\s+)?INDEX\\b',
-    action: 'BLOCK',
-    description: 'Prevents index modifications that can impact performance',
-  },
-  {
-    category: 'Schema Changes',
-    name: 'Alert GRANT/REVOKE',
-    pattern: '\\b(GRANT|REVOKE)\\b',
-    action: 'ALERT',
-    description: 'Alerts when database permissions are being modified',
-  },
-  // --- Security ---
-  {
-    category: 'Security',
-    name: 'Block SQL comment injection',
-    pattern: '(--|/\\*|\\*/)',
-    action: 'BLOCK',
-    description: 'Blocks queries containing SQL comment syntax often used in injection attacks',
-  },
-  {
-    category: 'Security',
-    name: 'Block UNION-based injection',
-    pattern: '\\bUNION\\s+(ALL\\s+)?SELECT\\b',
-    action: 'BLOCK',
-    description: 'Blocks UNION SELECT patterns commonly used in SQL injection',
-  },
-  {
-    category: 'Security',
-    name: 'Block system table access',
-    pattern: '\\b(pg_catalog|information_schema|sys\\.objects|sysobjects|mysql\\.user)\\b',
-    action: 'BLOCK',
-    description: 'Blocks direct access to system catalog tables',
-  },
-  // --- Performance ---
-  {
-    category: 'Performance',
-    name: 'Alert SELECT * (bulk read)',
-    pattern: '^\\s*SELECT\\s+\\*\\s+FROM\\s+\\S+\\s*;?\\s*$',
-    action: 'ALERT',
-    description: 'Alerts on unfiltered SELECT * queries that may return large result sets',
-  },
-  {
-    category: 'Performance',
-    name: 'Alert CROSS JOIN',
-    pattern: '\\bCROSS\\s+JOIN\\b',
-    action: 'ALERT',
-    description: 'Alerts on CROSS JOIN which produces cartesian products',
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+import {
+  EMPTY_FIREWALL_RULE_FORM,
+  FIREWALL_ACTION_VARIANTS,
+  FIREWALL_RULE_TEMPLATES,
+} from './dbFirewallPolicyConfig';
+import {
+  PolicyDialogShell,
+  PolicyEmptyState,
+  PolicyFormSection,
+  PolicyMetadataBadge,
+  PolicyRecordCard,
+  PolicyTemplatePicker,
+} from './databasePolicyUi';
+import {
+  SettingsFieldCard,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSwitchRow,
+} from './settings-ui';
 
 export default function DbFirewallSection() {
   const [rules, setRules] = useState<FirewallRule[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editOpen, setEditOpen] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<FirewallRule | null>(null);
   const [patternError, setPatternError] = useState<string | null>(null);
-  const [formData, setFormData] = useState<FirewallRuleInput>({
-    name: '',
-    pattern: '',
-    action: 'BLOCK',
-    scope: '',
-    description: '',
-    enabled: true,
-    priority: 0,
-  });
+  const [formData, setFormData] = useState<FirewallRuleInput>(EMPTY_FIREWALL_RULE_FORM);
   const { loading: saving, error, run, clearError } = useAsyncAction();
 
   const fetchRules = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getFirewallRules();
-      setRules(data);
+      setRules(await getFirewallRules());
     } catch {
-      // silent
+      setRules([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchRules();
+    void fetchRules();
   }, [fetchRules]);
 
-  const handleOpenCreate = () => {
-    setEditingRule(null);
-    setFormData({ name: '', pattern: '', action: 'BLOCK', scope: '', description: '', enabled: true, priority: 0 });
+  const resetForm = () => {
+    setFormData(EMPTY_FIREWALL_RULE_FORM);
     setPatternError(null);
     clearError();
-    setEditOpen(true);
   };
 
-  const handleOpenEdit = (rule: FirewallRule) => {
+  const openCreate = () => {
+    setEditingRule(null);
+    resetForm();
+    setDialogOpen(true);
+  };
+
+  const openEdit = (rule: FirewallRule) => {
     setEditingRule(rule);
     setFormData({
       name: rule.name,
       pattern: rule.pattern,
       action: rule.action,
-      scope: rule.scope || '',
-      description: rule.description || '',
+      scope: rule.scope ?? '',
+      description: rule.description ?? '',
       enabled: rule.enabled,
       priority: rule.priority,
     });
     setPatternError(null);
     clearError();
-    setEditOpen(true);
+    setDialogOpen(true);
   };
 
-  const handlePatternChange = (value: string) => {
-    setFormData({ ...formData, pattern: value });
-    if (value.trim()) {
-      setPatternError(validateDbFirewallPattern(value));
-    } else {
-      setPatternError(null);
+  const closeDialog = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setEditingRule(null);
+      resetForm();
     }
   };
 
-  const handleApplyTemplate = (templateValue: string) => {
-    const template = RULE_TEMPLATES.find((t) => t.name === templateValue);
-    if (!template) return;
-    setFormData({
-      ...formData,
+  const updateField = <K extends keyof FirewallRuleInput>(key: K, value: FirewallRuleInput[K]) => {
+    setFormData((current) => ({ ...current, [key]: value }));
+  };
+
+  const updatePattern = (value: string) => {
+    updateField('pattern', value);
+    setPatternError(value.trim() ? validateDbFirewallPattern(value) : null);
+  };
+
+  const applyTemplate = (templateName: string) => {
+    const template = FIREWALL_RULE_TEMPLATES.find((entry) => entry.name === templateName);
+    if (!template) {
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
       name: template.name,
       pattern: template.pattern,
       action: template.action,
       description: template.description,
-    });
+    }));
     setPatternError(validateDbFirewallPattern(template.pattern));
   };
 
   const handleSave = async () => {
-    // Validate regex before saving
-    const regexErr = validateDbFirewallPattern(formData.pattern);
-    if (regexErr) {
-      setPatternError(regexErr);
+    const regexError = validateDbFirewallPattern(formData.pattern);
+    if (regexError) {
+      setPatternError(regexError);
       return;
     }
 
-    const ok = await run(async () => {
+    const isSuccessful = await run(async () => {
       if (editingRule) {
         await updateFirewallRule(editingRule.id, formData);
       } else {
@@ -250,203 +142,211 @@ export default function DbFirewallSection() {
       }
     }, 'Failed to save firewall rule');
 
-    if (ok) {
-      setEditOpen(false);
-      fetchRules();
+    if (!isSuccessful) {
+      return;
     }
+
+    closeDialog(false);
+    await fetchRules();
   };
 
   const handleDelete = async (ruleId: string) => {
-    await run(async () => {
+    const isSuccessful = await run(async () => {
       await deleteFirewallRule(ruleId);
-      fetchRules();
     }, 'Failed to delete firewall rule');
+
+    if (isSuccessful) {
+      await fetchRules();
+    }
   };
 
-  // Group templates by category for the Select menu
-  const templateMenuItems: React.ReactNode[] = [];
-  let lastCategory = '';
-  for (const t of RULE_TEMPLATES) {
-    if (t.category !== lastCategory) {
-      templateMenuItems.push(<ListSubheader key={`cat-${t.category}`}>{t.category}</ListSubheader>);
-      lastCategory = t.category;
-    }
-    templateMenuItems.push(
-      <MenuItem key={t.name} value={t.name}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-          <Chip label={t.action} color={ACTION_COLORS[t.action]} size="small" sx={{ minWidth: 56 }} />
-          <Typography variant="body2">{t.name}</Typography>
-        </Box>
-      </MenuItem>,
-    );
-  }
-
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ShieldIcon color="primary" />
-            <Typography variant="subtitle1" fontWeight="bold">SQL Firewall Rules</Typography>
-          </Box>
-          <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+    <>
+      <SettingsPanel
+        title="SQL Firewall Rules"
+        description="Block, alert, or log suspicious SQL patterns before they become an incident."
+        heading={(
+          <Button type="button" size="sm" variant="outline" onClick={openCreate}>
+            <Plus />
             Add Rule
           </Button>
-        </Box>
-
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Define patterns to block, alert, or log dangerous SQL queries executed through database proxy sessions.
-          Built-in rules automatically block DROP TABLE, TRUNCATE, and DROP DATABASE statements.
-        </Typography>
+        )}
+        contentClassName="space-y-4"
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-            <CircularProgress size={24} />
-          </Box>
+          <SettingsLoadingState message="Loading firewall rules..." />
         ) : rules.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-            No custom firewall rules configured. Built-in protections are always active.
-          </Typography>
+          <PolicyEmptyState
+            title="No custom firewall rules"
+            description="Built-in protections still apply. Add custom rules when you need tenant-specific blocking, alerting, or audit coverage."
+          />
         ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Pattern</TableCell>
-                <TableCell>Action</TableCell>
-                <TableCell>Scope</TableCell>
-                <TableCell>Priority</TableCell>
-                <TableCell>Enabled</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rules.map((rule) => (
-                <TableRow key={rule.id}>
-                  <TableCell>{rule.name}</TableCell>
-                  <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: '0.8rem' }}>
-                    <Tooltip title={rule.pattern}><span>{rule.pattern}</span></Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={rule.action} color={ACTION_COLORS[rule.action]} size="small" />
-                  </TableCell>
-                  <TableCell>{rule.scope || 'Global'}</TableCell>
-                  <TableCell>{rule.priority}</TableCell>
-                  <TableCell>
-                    <Chip label={rule.enabled ? 'On' : 'Off'} size="small" color={rule.enabled ? 'success' : 'default'} variant="outlined" />
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpenEdit(rule)}><EditIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => handleDelete(rule.id)}><DeleteIcon fontSize="small" /></IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <div className="space-y-3">
+            {rules.map((rule) => (
+              <PolicyRecordCard
+                key={rule.id}
+                title={rule.name}
+                description={rule.description}
+                code={rule.pattern}
+                badges={(
+                  <>
+                    <PolicyMetadataBadge variant={FIREWALL_ACTION_VARIANTS[rule.action]}>
+                      {rule.action}
+                    </PolicyMetadataBadge>
+                    <PolicyMetadataBadge variant={rule.enabled ? 'default' : 'outline'}>
+                      {rule.enabled ? 'Enabled' : 'Disabled'}
+                    </PolicyMetadataBadge>
+                    <PolicyMetadataBadge variant="outline">
+                      {rule.scope || 'Global scope'}
+                    </PolicyMetadataBadge>
+                  </>
+                )}
+                metadata={(
+                  <>
+                    <span>Priority {rule.priority}</span>
+                    <span>Updated {new Date(rule.updatedAt).toLocaleString()}</span>
+                  </>
+                )}
+                onEdit={() => openEdit(rule)}
+                onDelete={() => void handleDelete(rule.id)}
+              />
+            ))}
+          </div>
         )}
-      </CardContent>
+      </SettingsPanel>
 
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingRule ? 'Edit Firewall Rule' : 'Create Firewall Rule'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Alert severity="error">{error}</Alert>}
+      <PolicyDialogShell
+        open={dialogOpen}
+        onOpenChange={closeDialog}
+        title={editingRule ? 'Edit Firewall Rule' : 'Create Firewall Rule'}
+        description="Define the SQL pattern, response action, and optional scope for this rule."
+        footer={(
+          <>
+            <Button type="button" variant="outline" onClick={() => closeDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving || !formData.name || !formData.pattern || Boolean(patternError)}
+            >
+              {saving ? 'Saving...' : editingRule ? 'Update Rule' : 'Create Rule'}
+            </Button>
+          </>
+        )}
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-            {/* Template selector — only shown when creating */}
-            {!editingRule && (
-              <>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Start from template (optional)</InputLabel>
-                  <Select
-                    value=""
-                    label="Start from template (optional)"
-                    onChange={(e) => handleApplyTemplate(e.target.value)}
-                  >
-                    {templateMenuItems}
-                  </Select>
-                </FormControl>
-                <Divider />
-              </>
-            )}
+        {!editingRule && (
+          <PolicyTemplatePicker
+            title="Start from a template"
+            description="Seed the rule with a proven pattern, then adjust the scope or priority for this tenant."
+            templates={FIREWALL_RULE_TEMPLATES}
+            onApply={applyTemplate}
+          />
+        )}
 
-            <TextField
-              label="Name"
-              size="small"
-              fullWidth
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-            <TextField
-              label="Pattern (Regex)"
-              size="small"
-              fullWidth
-              required
-              value={formData.pattern}
-              onChange={(e) => handlePatternChange(e.target.value)}
-              error={!!patternError}
-              helperText={patternError || 'Basic safety checks run locally. Full regex syntax is validated on save by the backend.'}
-              slotProps={{ htmlInput: { style: { fontFamily: 'monospace' } } }}
-            />
-            <FormControl size="small" fullWidth>
-              <InputLabel>Action</InputLabel>
+        <PolicyFormSection>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard label="Rule name" description="Use a short name that reads well in audit events.">
+              <Input
+                aria-label="Rule name"
+                value={formData.name}
+                onChange={(event) => updateField('name', event.target.value)}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard label="Action" description="Choose whether matching queries are blocked, alerted, or only logged.">
               <Select
                 value={formData.action}
-                label="Action"
-                onChange={(e) => setFormData({ ...formData, action: e.target.value as FirewallAction })}
+                onValueChange={(value) => updateField('action', value as FirewallAction)}
               >
-                <MenuItem value="BLOCK">Block - Deny execution</MenuItem>
-                <MenuItem value="ALERT">Alert - Allow but notify</MenuItem>
-                <MenuItem value="LOG">Log - Allow and log only</MenuItem>
+                <SelectTrigger aria-label="Firewall action">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="BLOCK">Block execution</SelectItem>
+                  <SelectItem value="ALERT">Allow and alert</SelectItem>
+                  <SelectItem value="LOG">Allow and log</SelectItem>
+                </SelectContent>
               </Select>
-            </FormControl>
-            <TextField
-              label="Scope (optional)"
-              size="small"
-              fullWidth
-              value={formData.scope || ''}
-              onChange={(e) => setFormData({ ...formData, scope: e.target.value })}
-              helperText="Limit to a specific database or table name (leave empty for global)"
-            />
-            <TextField
-              label="Description"
-              size="small"
-              fullWidth
-              multiline
-              rows={2}
-              value={formData.description || ''}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            />
-            <TextField
-              label="Priority"
-              size="small"
-              type="number"
-              value={formData.priority ?? 0}
-              onChange={(e) => setFormData({ ...formData, priority: parseInt(e.target.value, 10) || 0 })}
-              helperText="Higher priority rules are evaluated first"
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={formData.enabled ?? true}
-                  onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                />
-              }
-              label="Enabled"
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving || !formData.name || !formData.pattern || !!patternError}
+            </SettingsFieldCard>
+          </div>
+
+          <SettingsFieldCard
+            label="Regex pattern"
+            description="Patterns are evaluated server-side on SQL text before execution."
           >
-            {saving ? <CircularProgress size={20} /> : editingRule ? 'Update' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Card>
+            <Input
+              aria-label="Regex pattern"
+              value={formData.pattern}
+              onChange={(event) => updatePattern(event.target.value)}
+              className="font-mono text-xs"
+            />
+            <p className={`mt-2 text-xs ${patternError ? 'text-destructive' : 'text-muted-foreground'}`}>
+              {patternError ?? 'Basic regex safety checks run locally before the backend validates the final expression.'}
+            </p>
+          </SettingsFieldCard>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard
+              label="Scope"
+              description="Leave empty to apply this rule across every proxied database."
+            >
+              <Input
+                aria-label="Rule scope"
+                value={formData.scope ?? ''}
+                placeholder="database or table name"
+                onChange={(event) => updateField('scope', event.target.value)}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard
+              label="Priority"
+              description="Higher priority rules are evaluated before lower-priority rules."
+            >
+              <Input
+                type="number"
+                min={0}
+                aria-label="Rule priority"
+                value={formData.priority ?? 0}
+                onChange={(event) => {
+                  const nextValue = Number.parseInt(event.target.value, 10) || 0;
+                  updateField('priority', Math.max(0, nextValue));
+                }}
+              />
+            </SettingsFieldCard>
+          </div>
+
+          <SettingsFieldCard
+            label="Description"
+            description="Optional context for responders reviewing why this rule exists."
+          >
+            <Textarea
+              aria-label="Rule description"
+              value={formData.description ?? ''}
+              onChange={(event) => updateField('description', event.target.value)}
+            />
+          </SettingsFieldCard>
+
+          <SettingsSwitchRow
+            title="Enable this rule"
+            description="Disabled rules stay defined but are ignored during query evaluation."
+            checked={formData.enabled ?? true}
+            onCheckedChange={(checked) => updateField('enabled', checked)}
+          />
+        </PolicyFormSection>
+      </PolicyDialogShell>
+    </>
   );
 }

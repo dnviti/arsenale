@@ -2,6 +2,7 @@ import api from './client';
 
 export type GatewayHealthStatus = 'UNKNOWN' | 'REACHABLE' | 'UNREACHABLE';
 export type GatewayDeploymentMode = 'SINGLE_INSTANCE' | 'MANAGED_GROUP';
+export type GatewayOperationalStatus = 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'UNKNOWN';
 
 export interface GatewayData {
   id: string;
@@ -37,11 +38,14 @@ export interface GatewayData {
   lastScaleAction: string | null;
   templateId: string | null;
   totalInstances: number;
+  healthyInstances: number;
   runningInstances: number;
   tunnelEnabled: boolean;
   tunnelConnected: boolean;
   tunnelConnectedAt: string | null;
   tunnelClientCertExp: string | null;
+  operationalStatus: GatewayOperationalStatus;
+  operationalReason: string;
 }
 
 export interface GatewayInput {

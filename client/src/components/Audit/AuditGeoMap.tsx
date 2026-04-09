@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Box, CircularProgress, Typography, Alert, Paper } from '@mui/material';
+import { Loader2 } from 'lucide-react';
 import { MapContainer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -57,28 +57,32 @@ export default function AuditGeoMap({ onSelectCountry }: AuditGeoMapProps) {
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 8 }}>
-        <CircularProgress />
-      </Box>
+      <div className="flex justify-center items-center py-16">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
   if (error) {
-    return <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>;
+    return (
+      <div className="m-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+        {error}
+      </div>
+    );
   }
 
   if (points.length === 0) {
     return (
-      <Box sx={{ textAlign: 'center', py: 8 }}>
-        <Typography color="text.secondary">
+      <div className="text-center py-16">
+        <p className="text-muted-foreground">
           No geolocation data available for the last 30 days
-        </Typography>
-      </Box>
+        </p>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ position: 'relative', height: 500 }}>
+    <div className="relative h-[500px]">
       <MapContainer
         center={[20, 0]}
         zoom={2}
@@ -117,22 +121,22 @@ export default function AuditGeoMap({ onSelectCountry }: AuditGeoMapProps) {
               }}
             >
               <Popup>
-                <Box sx={{ minWidth: 160 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+                <div className="min-w-[160px]">
+                  <p className="text-sm font-semibold">
                     {label}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
+                  </p>
+                  <p className="text-sm text-muted-foreground">
                     {point.count} event{point.count !== 1 ? 's' : ''}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  </p>
+                  <p className="text-xs text-muted-foreground">
                     Last: {new Date(point.lastSeen).toLocaleString()}
-                  </Typography>
+                  </p>
                   {onSelectCountry && (
-                    <Typography variant="caption" color="primary" sx={{ display: 'block', mt: 0.5, cursor: 'pointer' }}>
+                    <p className="text-xs text-primary block mt-1 cursor-pointer">
                       Click to filter by {point.country}
-                    </Typography>
+                    </p>
                   )}
-                </Box>
+                </div>
               </Popup>
             </CircleMarker>
           );
@@ -140,37 +144,27 @@ export default function AuditGeoMap({ onSelectCountry }: AuditGeoMapProps) {
       </MapContainer>
 
       {/* Legend */}
-      <Paper
-        elevation={3}
-        sx={{
-          position: 'absolute',
-          bottom: 16,
-          right: 16,
-          zIndex: 1000,
-          p: 1.5,
-          minWidth: 140,
-        }}
-      >
-        <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5, display: 'block' }}>
+      <div className="absolute bottom-4 right-4 z-[1000] rounded-lg border bg-card p-3 shadow-lg min-w-[140px]">
+        <span className="text-xs font-semibold mb-1 block">
           Event Density
-        </Typography>
+        </span>
         {[
           { color: '#1976d2', label: 'Low' },
           { color: '#f57c00', label: 'Medium' },
           { color: '#d32f2f', label: 'High' },
         ].map(({ color, label }) => (
-          <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: color }} />
-            <Typography variant="caption">{label}</Typography>
-          </Box>
+          <div key={label} className="flex items-center gap-2">
+            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+            <span className="text-xs">{label}</span>
+          </div>
         ))}
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+        <span className="text-xs text-muted-foreground mt-1 block">
           Click marker to filter
-        </Typography>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+        </span>
+        <span className="text-xs text-muted-foreground mt-1 block">
           Tiles served by the IP geolocation module
-        </Typography>
-      </Paper>
-    </Box>
+        </span>
+      </div>
+    </div>
   );
 }

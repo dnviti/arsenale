@@ -168,10 +168,11 @@ curl http://127.0.0.1:18080/healthz
 ### CLI smoke
 
 ```bash
-go build -o /tmp/arsenale-cli ./tools/arsenale-cli
-/tmp/arsenale-cli --server https://localhost:3000 health
-/tmp/arsenale-cli --server https://localhost:3000 login
-/tmp/arsenale-cli --server https://localhost:3000 whoami
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 login
+./build/go/arsenale-cli --server https://localhost:3000 whoami
 ```
 
 ### Acceptance flow

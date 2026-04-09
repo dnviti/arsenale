@@ -1,38 +1,140 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card, CardContent, Typography, Button, TextField, Alert, Box, Chip, Stack,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
-  IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Switch,
-  Select, MenuItem, InputLabel, FormControl, Tooltip,
-  Collapse,
-} from '@mui/material';
+  ChevronDown,
+  ChevronUp,
+  Edit3,
+  FlaskConical,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Sync as SyncIcon,
-  NetworkCheck as TestIcon,
-  ExpandMore as ExpandIcon,
-  ExpandLess as CollapseIcon,
-  Schedule as ScheduleIcon,
-} from '@mui/icons-material';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
-  listSyncProfiles, createSyncProfile, updateSyncProfile, deleteSyncProfile,
-  testSyncConnection, triggerSync, getSyncLogs,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { getSyncLogs, triggerSync, testSyncConnection } from '../../api/sync.api';
+import {
+  createSyncProfile,
+  deleteSyncProfile,
+  listSyncProfiles,
+  updateSyncProfile,
 } from '../../api/sync.api';
-import type { SyncProfileData, SyncLogEntry, SyncPlanData, CreateSyncProfileInput, UpdateSyncProfileInput } from '../../api/sync.api';
+import type {
+  CreateSyncProfileInput,
+  SyncLogEntry,
+  SyncPlanData,
+  SyncProfileData,
+  UpdateSyncProfileInput,
+} from '../../api/sync.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
-import { extractApiError } from '../../utils/apiError';
 import { useNotificationStore } from '../../store/notificationStore';
+import { extractApiError } from '../../utils/apiError';
 import SyncPreviewDialog from './SyncPreviewDialog';
+import {
+  SettingsButtonRow,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsStatusBadge,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+} from './settings-ui';
 
-const STATUS_COLORS: Record<string, 'success' | 'error' | 'warning' | 'info' | 'default'> = {
-  SUCCESS: 'success',
-  ERROR: 'error',
-  PARTIAL: 'warning',
-  RUNNING: 'info',
-  PENDING: 'default',
+interface SyncProfileFormState {
+  name: string;
+  url: string;
+  apiToken: string;
+  filters: string;
+  platformMapping: string;
+  defaultProtocol: string;
+  conflictStrategy: string;
+  cronExpression: string;
+  teamId: string;
+}
+
+const emptyForm: SyncProfileFormState = {
+  name: '',
+  url: '',
+  apiToken: '',
+  filters: '',
+  platformMapping: '',
+  defaultProtocol: 'SSH',
+  conflictStrategy: 'update',
+  cronExpression: '',
+  teamId: '',
 };
+
+const syncStatusTones = {
+  SUCCESS: 'success',
+  ERROR: 'destructive',
+  PARTIAL: 'warning',
+  RUNNING: 'neutral',
+  PENDING: 'neutral',
+} as const;
+
+function createFormState(profile: SyncProfileData | null): SyncProfileFormState {
+  if (!profile) return emptyForm;
+
+  return {
+    name: profile.name,
+    url: profile.config.url,
+    apiToken: '',
+    filters: Object.entries(profile.config.filters ?? {}).map(([key, value]) => `${key}=${value}`).join(', '),
+    platformMapping: Object.entries(profile.config.platformMapping ?? {}).map(([key, value]) => `${key}=${value}`).join(', '),
+    defaultProtocol: profile.config.defaultProtocol || 'SSH',
+    conflictStrategy: profile.config.conflictStrategy || 'update',
+    cronExpression: profile.cronExpression || '',
+    teamId: profile.teamId || '',
+  };
+}
+
+function parseKeyValuePairs(input: string): Record<string, string> {
+  if (!input.trim()) return {};
+
+  return Object.fromEntries(
+    input
+      .split(',')
+      .map((pair) => {
+        const [key, ...rest] = pair.split('=');
+        return [key.trim(), rest.join('=').trim()];
+      })
+      .filter(([key]) => key),
+  );
+}
+
+function formatDateTime(value: string | null): string {
+  return value ? new Date(value).toLocaleString() : 'Never';
+}
+
+function formatLogDetails(details: Record<string, unknown> | null): string {
+  if (!details) return 'No additional details';
+  if (details.dryRun) return '(dry run)';
+  if (details.error) return `Error: ${details.error}`;
+
+  const parts: string[] = [];
+  if (typeof details.created === 'number') parts.push(`+${details.created}`);
+  if (typeof details.updated === 'number') parts.push(`~${details.updated}`);
+  if (typeof details.skipped === 'number') parts.push(`=${details.skipped}`);
+  if (typeof details.failed === 'number' && details.failed > 0) parts.push(`!${details.failed}`);
+  return parts.join(' ') || 'No additional details';
+}
 
 export default function SyncProfileSection() {
   const notify = useNotificationStore((s) => s.notify);
@@ -40,24 +142,14 @@ export default function SyncProfileSection() {
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<SyncProfileData | null>(null);
-  const [expandedLogs, setExpandedLogs] = useState<string | null>(null);
-  const [logs, setLogs] = useState<SyncLogEntry[]>([]);
+  const [form, setForm] = useState<SyncProfileFormState>(emptyForm);
+  const [expandedLogsId, setExpandedLogsId] = useState<string | null>(null);
+  const [loadingLogsId, setLoadingLogsId] = useState<string | null>(null);
+  const [logsByProfile, setLogsByProfile] = useState<Record<string, SyncLogEntry[]>>({});
   const [previewPlan, setPreviewPlan] = useState<SyncPlanData | null>(null);
   const [previewProfileId, setPreviewProfileId] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [snackError, setSnackError] = useState('');
-
-  // Form state
-  const [formName, setFormName] = useState('');
-  const [formUrl, setFormUrl] = useState('');
-  const [formApiToken, setFormApiToken] = useState('');
-  const [formFilters, setFormFilters] = useState('');
-  const [formPlatformMapping, setFormPlatformMapping] = useState('');
-  const [formDefaultProtocol, setFormDefaultProtocol] = useState('SSH');
-  const [formConflictStrategy, setFormConflictStrategy] = useState('update');
-  const [formCronExpression, setFormCronExpression] = useState('');
-  const [formTeamId, setFormTeamId] = useState('');
-
+  const [sectionError, setSectionError] = useState('');
   const { loading: actionLoading, error: actionError, run } = useAsyncAction();
 
   const loadProfiles = useCallback(async () => {
@@ -65,430 +157,396 @@ export default function SyncProfileSection() {
       const data = await listSyncProfiles();
       setProfiles(data);
     } catch {
-      // ignore
+      // Keep the section usable even if the initial fetch fails transiently.
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+  useEffect(() => {
+    loadProfiles();
+  }, [loadProfiles]);
 
-  const resetForm = () => {
-    setFormName('');
-    setFormUrl('');
-    setFormApiToken('');
-    setFormFilters('');
-    setFormPlatformMapping('');
-    setFormDefaultProtocol('SSH');
-    setFormConflictStrategy('update');
-    setFormCronExpression('');
-    setFormTeamId('');
-  };
+  const isSaveDisabled = useMemo(
+    () => actionLoading || !form.name || !form.url || (!editingProfile && !form.apiToken),
+    [actionLoading, editingProfile, form.apiToken, form.name, form.url],
+  );
 
   const openCreate = () => {
     setEditingProfile(null);
-    resetForm();
+    setForm(emptyForm);
     setEditOpen(true);
   };
 
   const openEdit = (profile: SyncProfileData) => {
     setEditingProfile(profile);
-    setFormName(profile.name);
-    setFormUrl(profile.config.url);
-    setFormApiToken('');
-    setFormFilters(Object.entries(profile.config.filters || {}).map(([k, v]) => `${k}=${v}`).join(', '));
-    setFormPlatformMapping(Object.entries(profile.config.platformMapping || {}).map(([k, v]) => `${k}=${v}`).join(', '));
-    setFormDefaultProtocol(profile.config.defaultProtocol || 'SSH');
-    setFormConflictStrategy(profile.config.conflictStrategy || 'update');
-    setFormCronExpression(profile.cronExpression || '');
-    setFormTeamId(profile.teamId || '');
+    setForm(createFormState(profile));
     setEditOpen(true);
   };
 
-  const parseKeyValuePairs = (input: string): Record<string, string> => {
-    if (!input.trim()) return {};
-    return Object.fromEntries(
-      input.split(',').map((pair) => {
-        const [key, ...rest] = pair.split('=');
-        return [key.trim(), rest.join('=').trim()];
-      }).filter(([k]) => k),
-    );
-  };
-
   const handleSave = async () => {
-    const filters = parseKeyValuePairs(formFilters);
-    const platformMapping = parseKeyValuePairs(formPlatformMapping);
+    const filters = parseKeyValuePairs(form.filters);
+    const platformMapping = parseKeyValuePairs(form.platformMapping);
 
     if (editingProfile) {
       const input: UpdateSyncProfileInput = {
-        name: formName,
-        url: formUrl,
+        name: form.name,
+        url: form.url,
         filters,
         platformMapping,
-        defaultProtocol: formDefaultProtocol,
-        conflictStrategy: formConflictStrategy,
-        cronExpression: formCronExpression || null,
-        teamId: formTeamId || null,
+        defaultProtocol: form.defaultProtocol,
+        conflictStrategy: form.conflictStrategy,
+        cronExpression: form.cronExpression || null,
+        teamId: form.teamId || null,
       };
-      if (formApiToken) input.apiToken = formApiToken;
+      if (form.apiToken) input.apiToken = form.apiToken;
 
       const ok = await run(async () => {
         await updateSyncProfile(editingProfile.id, input);
       }, 'Failed to update sync profile');
-      if (ok) {
-        setEditOpen(false);
-        loadProfiles();
-      }
-    } else {
-      if (!formApiToken) return;
-      const input: CreateSyncProfileInput = {
-        name: formName,
-        provider: 'NETBOX',
-        url: formUrl,
-        apiToken: formApiToken,
-        filters,
-        platformMapping,
-        defaultProtocol: formDefaultProtocol,
-        conflictStrategy: formConflictStrategy,
-        cronExpression: formCronExpression || undefined,
-        teamId: formTeamId || undefined,
-      };
 
-      const ok = await run(async () => {
-        await createSyncProfile(input);
-      }, 'Failed to create sync profile');
       if (ok) {
         setEditOpen(false);
-        loadProfiles();
+        await loadProfiles();
       }
+      return;
+    }
+
+    const input: CreateSyncProfileInput = {
+      name: form.name,
+      provider: 'NETBOX',
+      url: form.url,
+      apiToken: form.apiToken,
+      filters,
+      platformMapping,
+      defaultProtocol: form.defaultProtocol,
+      conflictStrategy: form.conflictStrategy,
+      cronExpression: form.cronExpression || undefined,
+      teamId: form.teamId || undefined,
+    };
+
+    const ok = await run(async () => {
+      await createSyncProfile(input);
+    }, 'Failed to create sync profile');
+
+    if (ok) {
+      setEditOpen(false);
+      await loadProfiles();
     }
   };
 
   const handleDelete = async (id: string) => {
-    await run(async () => {
+    const ok = await run(async () => {
       await deleteSyncProfile(id);
-      loadProfiles();
     }, 'Failed to delete sync profile');
+
+    if (ok) {
+      await loadProfiles();
+    }
   };
 
   const handleToggle = async (profile: SyncProfileData) => {
-    await run(async () => {
+    const ok = await run(async () => {
       await updateSyncProfile(profile.id, { enabled: !profile.enabled });
-      loadProfiles();
     }, 'Failed to toggle sync profile');
+
+    if (ok) {
+      await loadProfiles();
+    }
   };
 
   const handleTest = async (id: string) => {
-    setSnackError('');
+    setSectionError('');
     try {
       const result = await testSyncConnection(id);
       if (result.ok) {
         notify('Connection successful', 'success');
       } else {
-        setSnackError(`Connection failed: ${result.error}`);
+        setSectionError(`Connection failed: ${result.error}`);
       }
     } catch (err) {
-      setSnackError(extractApiError(err, 'Connection test failed'));
+      setSectionError(extractApiError(err, 'Connection test failed'));
     }
   };
 
-  const handleSync = async (id: string) => {
-    setSnackError('');
+  const handlePreviewSync = async (id: string) => {
+    setSectionError('');
     try {
       const result = await triggerSync(id, true);
       setPreviewPlan(result.plan);
       setPreviewProfileId(id);
       setPreviewOpen(true);
     } catch (err) {
-      setSnackError(extractApiError(err, 'Failed to run sync preview'));
+      setSectionError(extractApiError(err, 'Failed to run sync preview'));
     }
   };
 
   const handleConfirmSync = async () => {
     if (!previewProfileId) return;
+
     try {
       await triggerSync(previewProfileId, false);
       setPreviewOpen(false);
       setPreviewPlan(null);
       setPreviewProfileId(null);
       notify('Sync completed successfully', 'success');
-      loadProfiles();
+      await loadProfiles();
     } catch (err) {
-      setSnackError(extractApiError(err, 'Sync failed'));
+      setSectionError(extractApiError(err, 'Sync failed'));
     }
   };
 
   const handleToggleLogs = async (profileId: string) => {
-    if (expandedLogs === profileId) {
-      setExpandedLogs(null);
+    if (expandedLogsId === profileId) {
+      setExpandedLogsId(null);
       return;
     }
+
+    setExpandedLogsId(profileId);
+    if (logsByProfile[profileId]) return;
+
+    setLoadingLogsId(profileId);
     try {
       const result = await getSyncLogs(profileId, 1, 10);
-      setLogs(result.logs);
-      setExpandedLogs(profileId);
+      setLogsByProfile((current) => ({ ...current, [profileId]: result.logs }));
     } catch {
-      // ignore
+      setLogsByProfile((current) => ({ ...current, [profileId]: [] }));
+    } finally {
+      setLoadingLogsId(null);
     }
   };
 
-  if (loading) return null;
+  if (loading) {
+    return (
+      <SettingsPanel
+        title="Sync Profiles"
+        description="Import connections from external sources like NetBox."
+      >
+        <SettingsLoadingState message="Loading sync profiles..." />
+      </SettingsPanel>
+    );
+  }
 
   return (
-    <Card>
-      <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-          <Box>
-            <Typography variant="h6">Sync Profiles</Typography>
-            <Typography variant="body2" color="text.secondary">
-              Import connections from external sources like NetBox
-            </Typography>
-          </Box>
-          <Button startIcon={<AddIcon />} variant="contained" size="small" onClick={openCreate}>
+    <>
+      <SettingsPanel
+        title="Sync Profiles"
+        description="Import connections from external sources like NetBox."
+        heading={(
+          <Button type="button" size="sm" onClick={openCreate}>
+            <Plus />
             Add Profile
           </Button>
-        </Stack>
+        )}
+        contentClassName="space-y-4"
+      >
+        {sectionError && (
+          <Alert variant="destructive">
+            <AlertDescription>{sectionError}</AlertDescription>
+          </Alert>
+        )}
 
-        {snackError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setSnackError('')}>{snackError}</Alert>}
-        {actionError && <Alert severity="error" sx={{ mb: 2 }}>{actionError}</Alert>}
+        {actionError && (
+          <Alert variant="destructive">
+            <AlertDescription>{actionError}</AlertDescription>
+          </Alert>
+        )}
 
         {profiles.length === 0 ? (
-          <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+          <div className="rounded-xl border border-dashed border-border/80 px-4 py-8 text-center text-sm text-muted-foreground">
             No sync profiles configured. Add one to start importing connections.
-          </Typography>
+          </div>
         ) : (
-          <TableContainer component={Paper} variant="outlined">
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Name</TableCell>
-                  <TableCell>Provider</TableCell>
-                  <TableCell>Last Sync</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Schedule</TableCell>
-                  <TableCell align="center">Enabled</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {profiles.map((profile) => (
-                  <TableRow key={profile.id}>
-                    <TableCell>
-                      <Stack direction="row" alignItems="center" spacing={1}>
-                        <Typography variant="body2">{profile.name}</Typography>
-                        <IconButton size="small" onClick={() => handleToggleLogs(profile.id)}>
-                          {expandedLogs === profile.id ? <CollapseIcon fontSize="small" /> : <ExpandIcon fontSize="small" />}
-                        </IconButton>
-                      </Stack>
-                      <Collapse in={expandedLogs === profile.id}>
-                        <Box sx={{ mt: 1, pl: 1 }}>
-                          {logs.length === 0 ? (
-                            <Typography variant="caption" color="text.secondary">No sync history</Typography>
-                          ) : (
-                            <Stack spacing={0.5}>
-                              {logs.map((log) => (
-                                <Stack key={log.id} direction="row" spacing={1} alignItems="center">
-                                  <Chip
-                                    label={log.status}
-                                    color={STATUS_COLORS[log.status] || 'default'}
-                                    size="small"
-                                    sx={{ minWidth: 70, fontSize: '0.7rem' }}
-                                  />
-                                  <Typography variant="caption">
-                                    {new Date(log.startedAt).toLocaleString()}
-                                  </Typography>
-                                  {log.details && (
-                                    <Typography variant="caption" color="text.secondary">
-                                      {formatLogDetails(log.details)}
-                                    </Typography>
-                                  )}
-                                </Stack>
-                              ))}
-                            </Stack>
-                          )}
-                        </Box>
-                      </Collapse>
-                    </TableCell>
-                    <TableCell><Chip label={profile.provider} size="small" variant="outlined" /></TableCell>
-                    <TableCell>
-                      {profile.lastSyncAt
-                        ? new Date(profile.lastSyncAt).toLocaleString()
-                        : <Typography variant="caption" color="text.secondary">Never</Typography>}
-                    </TableCell>
-                    <TableCell>
-                      {profile.lastSyncStatus && (
-                        <Chip
-                          label={profile.lastSyncStatus}
-                          color={STATUS_COLORS[profile.lastSyncStatus] || 'default'}
-                          size="small"
-                        />
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {profile.cronExpression ? (
-                        <Tooltip title={profile.cronExpression}>
-                          <Chip icon={<ScheduleIcon />} label="Scheduled" size="small" variant="outlined" />
-                        </Tooltip>
-                      ) : (
-                        <Typography variant="caption" color="text.secondary">Manual</Typography>
-                      )}
-                    </TableCell>
-                    <TableCell align="center">
+          <div className="space-y-4">
+            {profiles.map((profile) => {
+              const logs = logsByProfile[profile.id] ?? [];
+              const statusTone = profile.lastSyncStatus
+                ? syncStatusTones[profile.lastSyncStatus as keyof typeof syncStatusTones] ?? 'neutral'
+                : 'neutral';
+
+              return (
+                <div
+                  key={profile.id}
+                  className="space-y-4 rounded-xl border border-border/70 bg-background/70 p-4"
+                >
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-base font-medium text-foreground">{profile.name}</div>
+                        <Badge variant="outline">{profile.provider}</Badge>
+                        <SettingsStatusBadge tone={statusTone}>
+                          {profile.lastSyncStatus || 'Not synced'}
+                        </SettingsStatusBadge>
+                        <Badge variant="outline">
+                          {profile.cronExpression ? 'Scheduled' : 'Manual'}
+                        </Badge>
+                      </div>
+                      <p className="break-all text-sm leading-6 text-muted-foreground">
+                        {profile.config.url}
+                      </p>
+                    </div>
+
+                    <label className="flex items-center gap-3 rounded-xl border border-border/70 bg-background px-3 py-2">
+                      <span className="text-sm font-medium text-foreground">Enabled</span>
                       <Switch
                         checked={profile.enabled}
-                        onChange={() => handleToggle(profile)}
-                        size="small"
+                        onCheckedChange={() => handleToggle(profile)}
+                        disabled={actionLoading}
+                        aria-label={`Enable ${profile.name}`}
                       />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Stack direction="row" spacing={0} justifyContent="flex-end">
-                        <Tooltip title="Test connection">
-                          <IconButton size="small" onClick={() => handleTest(profile.id)}>
-                            <TestIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Sync now">
-                          <IconButton size="small" onClick={() => handleSync(profile.id)}>
-                            <SyncIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Edit">
-                          <IconButton size="small" onClick={() => openEdit(profile)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Delete">
-                          <IconButton size="small" color="error" onClick={() => handleDelete(profile.id)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </CardContent>
+                    </label>
+                  </div>
 
-      {/* Create / Edit dialog */}
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingProfile ? 'Edit Sync Profile' : 'Create Sync Profile'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField
-              label="Name"
-              value={formName}
-              onChange={(e) => setFormName(e.target.value)}
-              fullWidth
-              required
-              size="small"
-            />
-            <TextField
-              label="NetBox URL"
-              value={formUrl}
-              onChange={(e) => setFormUrl(e.target.value)}
-              fullWidth
-              required
-              size="small"
-              placeholder="https://netbox.example.com"
-            />
-            <TextField
-              label="API Token"
-              type="password"
-              value={formApiToken}
-              onChange={(e) => setFormApiToken(e.target.value)}
-              fullWidth
-              required={!editingProfile}
-              size="small"
-              placeholder={editingProfile ? 'Leave empty to keep current' : ''}
-            />
-            <TextField
-              label="Filters"
-              value={formFilters}
-              onChange={(e) => setFormFilters(e.target.value)}
-              fullWidth
-              size="small"
-              placeholder="site=dc1, status=active, tag=managed"
-              helperText="Comma-separated key=value pairs"
-            />
-            <TextField
-              label="Platform Mapping"
-              value={formPlatformMapping}
-              onChange={(e) => setFormPlatformMapping(e.target.value)}
-              fullWidth
-              size="small"
-              placeholder="linux=SSH, windows=RDP, ubuntu=SSH"
-              helperText="Map NetBox platform slugs to protocols"
-            />
-            <Stack direction="row" spacing={2}>
-              <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel>Default Protocol</InputLabel>
-                <Select
-                  value={formDefaultProtocol}
-                  label="Default Protocol"
-                  onChange={(e) => setFormDefaultProtocol(e.target.value)}
-                >
-                  <MenuItem value="SSH">SSH</MenuItem>
-                  <MenuItem value="RDP">RDP</MenuItem>
-                  <MenuItem value="VNC">VNC</MenuItem>
-                </Select>
-              </FormControl>
-              <FormControl size="small" sx={{ minWidth: 140 }}>
-                <InputLabel>Conflict Strategy</InputLabel>
-                <Select
-                  value={formConflictStrategy}
-                  label="Conflict Strategy"
-                  onChange={(e) => setFormConflictStrategy(e.target.value)}
-                >
-                  <MenuItem value="update">Update</MenuItem>
-                  <MenuItem value="skip">Skip</MenuItem>
-                  <MenuItem value="overwrite">Overwrite</MenuItem>
-                </Select>
-              </FormControl>
-            </Stack>
-            <TextField
-              label="Cron Expression"
-              value={formCronExpression}
-              onChange={(e) => setFormCronExpression(e.target.value)}
-              fullWidth
-              size="small"
-              placeholder="0 */6 * * * (every 6 hours)"
-              helperText="Leave empty for manual sync only"
-            />
-          </Stack>
+                  <SettingsSummaryGrid className="xl:grid-cols-5">
+                    <SettingsSummaryItem label="Last Sync" value={formatDateTime(profile.lastSyncAt)} />
+                    <SettingsSummaryItem label="Default Protocol" value={profile.config.defaultProtocol || 'SSH'} />
+                    <SettingsSummaryItem label="Conflict Strategy" value={profile.config.conflictStrategy || 'update'} />
+                    <SettingsSummaryItem label="Schedule" value={profile.cronExpression || 'Manual only'} />
+                    <SettingsSummaryItem label="Team" value={profile.teamId || 'Personal'} />
+                  </SettingsSummaryGrid>
+
+                  <SettingsButtonRow>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleTest(profile.id)} disabled={actionLoading}>
+                      <FlaskConical />
+                      Test Connection
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handlePreviewSync(profile.id)} disabled={actionLoading}>
+                      <RefreshCw />
+                      Preview Sync
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleToggleLogs(profile.id)}>
+                      {expandedLogsId === profile.id ? <ChevronUp /> : <ChevronDown />}
+                      Recent Activity
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => openEdit(profile)}>
+                      <Edit3 />
+                      Edit
+                    </Button>
+                    <Button type="button" variant="destructive" size="sm" onClick={() => handleDelete(profile.id)} disabled={actionLoading}>
+                      <Trash2 />
+                      Delete
+                    </Button>
+                  </SettingsButtonRow>
+
+                  {expandedLogsId === profile.id && (
+                    <div className="space-y-3 rounded-xl border border-border/70 bg-background p-4">
+                      <div className="text-sm font-medium text-foreground">Recent Activity</div>
+                      {loadingLogsId === profile.id ? (
+                        <SettingsLoadingState message="Loading sync history..." />
+                      ) : logs.length === 0 ? (
+                        <div className="text-sm text-muted-foreground">No sync history.</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {logs.map((logEntry) => (
+                            <div key={logEntry.id} className="rounded-lg border border-border/60 bg-background/70 p-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <SettingsStatusBadge tone={syncStatusTones[logEntry.status as keyof typeof syncStatusTones] ?? 'neutral'}>
+                                  {logEntry.status}
+                                </SettingsStatusBadge>
+                                <span className="text-xs text-muted-foreground">{formatDateTime(logEntry.startedAt)}</span>
+                              </div>
+                              <p className="mt-2 text-sm text-muted-foreground">{formatLogDetails(logEntry.details)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </SettingsPanel>
+
+      <Dialog open={editOpen} onOpenChange={(next) => { if (!next) setEditOpen(false); }}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{editingProfile ? 'Edit Sync Profile' : 'Create Sync Profile'}</DialogTitle>
+            <DialogDescription>
+              Configure a NetBox source and review the import plan before syncing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-1 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="sync-profile-name">Name</Label>
+              <Input id="sync-profile-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="sync-profile-url">NetBox URL</Label>
+              <Input id="sync-profile-url" value={form.url} placeholder="https://netbox.example.com" onChange={(event) => setForm((current) => ({ ...current, url: event.target.value }))} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="sync-profile-token">API Token</Label>
+              <Input id="sync-profile-token" type="password" value={form.apiToken} placeholder={editingProfile ? 'Leave empty to keep current' : ''} onChange={(event) => setForm((current) => ({ ...current, apiToken: event.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sync-profile-filters">Filters</Label>
+              <Input id="sync-profile-filters" value={form.filters} placeholder="site=dc1, status=active" onChange={(event) => setForm((current) => ({ ...current, filters: event.target.value }))} />
+              <p className="text-xs leading-5 text-muted-foreground">Comma-separated `key=value` pairs.</p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="sync-profile-platform-mapping">Platform Mapping</Label>
+              <Input id="sync-profile-platform-mapping" value={form.platformMapping} placeholder="linux=SSH, windows=RDP" onChange={(event) => setForm((current) => ({ ...current, platformMapping: event.target.value }))} />
+              <p className="text-xs leading-5 text-muted-foreground">Map NetBox platform slugs to protocols.</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Default Protocol</Label>
+              <Select value={form.defaultProtocol} onValueChange={(value) => setForm((current) => ({ ...current, defaultProtocol: value }))}>
+                <SelectTrigger aria-label="Default Protocol">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="SSH">SSH</SelectItem>
+                  <SelectItem value="RDP">RDP</SelectItem>
+                  <SelectItem value="VNC">VNC</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Conflict Strategy</Label>
+              <Select value={form.conflictStrategy} onValueChange={(value) => setForm((current) => ({ ...current, conflictStrategy: value }))}>
+                <SelectTrigger aria-label="Conflict Strategy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="update">Update</SelectItem>
+                  <SelectItem value="skip">Skip</SelectItem>
+                  <SelectItem value="overwrite">Overwrite</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="sync-profile-cron">Cron Expression</Label>
+              <Input id="sync-profile-cron" value={form.cronExpression} placeholder="0 */6 * * *" onChange={(event) => setForm((current) => ({ ...current, cronExpression: event.target.value }))} />
+              <p className="text-xs leading-5 text-muted-foreground">Leave empty for manual sync only.</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={handleSave} disabled={isSaveDisabled}>
+              {actionLoading ? <Loader2 className="animate-spin" /> : null}
+              {editingProfile ? 'Save Changes' : 'Save Profile'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleSave}
-            variant="contained"
-            disabled={actionLoading || !formName || !formUrl || (!editingProfile && !formApiToken)}
-          >
-            {actionLoading ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
       </Dialog>
 
       <SyncPreviewDialog
         open={previewOpen}
-        onClose={() => { setPreviewOpen(false); setPreviewPlan(null); }}
+        onClose={() => {
+          setPreviewOpen(false);
+          setPreviewPlan(null);
+          setPreviewProfileId(null);
+        }}
         onConfirm={handleConfirmSync}
         plan={previewPlan}
         confirming={actionLoading}
       />
-    </Card>
+    </>
   );
-}
-
-function formatLogDetails(details: Record<string, unknown>): string {
-  if (details.dryRun) return '(dry run)';
-  if (details.error) return `Error: ${details.error}`;
-  const parts: string[] = [];
-  if (typeof details.created === 'number') parts.push(`+${details.created}`);
-  if (typeof details.updated === 'number') parts.push(`~${details.updated}`);
-  if (typeof details.skipped === 'number') parts.push(`=${details.skipped}`);
-  if (typeof details.failed === 'number' && details.failed > 0) parts.push(`!${details.failed}`);
-  return parts.join(' ');
 }

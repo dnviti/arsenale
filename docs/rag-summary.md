@@ -168,7 +168,7 @@ The Tenant model includes tunnel configuration fields: `tunnelDefaultEnabled` (n
 
 Audit actions `TUNNEL_CONNECT`, `TUNNEL_DISCONNECT`, `TUNNEL_TOKEN_GENERATE`, and `TUNNEL_TOKEN_ROTATE` are recorded for all tunnel lifecycle events.
 
-The `GatewayData` API type exposes `tunnelEnabled`, `tunnelConnected` (live registry check), `tunnelConnectedAt`, and `tunnelClientCertExp`. The client `gateway.api.ts` provides `generateTunnelToken`, `revokeTunnelToken`, `forceDisconnectTunnel`, `getTunnelEvents`, and `getTunnelMetrics` functions. The `gatewayStore` holds a `tunnelStatuses` map updated via `applyTunnelStatusUpdate` and `tunnel:metrics` Socket.IO events.
+The `GatewayData` API type exposes `operationalStatus`, `operationalReason`, `healthyInstances`, `tunnelEnabled`, `tunnelConnected` (live broker check when available), `tunnelConnectedAt`, and `tunnelClientCertExp`. The client `gateway.api.ts` provides `generateTunnelToken`, `revokeTunnelToken`, `forceDisconnectTunnel`, `getTunnelEvents`, and `getTunnelMetrics` functions. The `gatewayStore` holds a `tunnelStatuses` map updated via `applyTunnelStatusUpdate` and `tunnel:metrics` Socket.IO events.
 
 ### Tunnel UI
 
@@ -271,4 +271,4 @@ In multi-instance deployments, the shared Redis coordination layer lets the API 
 
 ## Technology
 
-Arsenale is built on a Go-first service stack backed by PostgreSQL and Redis, with a React client using Zustand and Material UI. The active JavaScript workspaces are `client/`, `gateways/tunnel-agent/`, and `extra-clients/browser-extensions/`; the old `server/` implementation is no longer present. Remote desktop rendering uses guacd and guacamole-common-js, SSH terminals use XTerm.js with the Go terminal broker, and the zero-trust tunnel system uses raw WebSockets with a custom binary multiplexing protocol for proxying TCP streams through outbound-only gateway agent connections. ABAC enforcement now lives in the Go access-policy services and is evaluated on the active Go session path.
+Arsenale is built on a Go-first service stack backed by PostgreSQL and Redis, with a React client using Zustand plus a hybrid Material UI and shadcn/ui plus Tailwind CSS layer. The active JavaScript workspaces are `client/`, `gateways/tunnel-agent/`, and `extra-clients/browser-extensions/`; the old `server/` implementation is no longer present. Remote desktop rendering uses guacd and guacamole-common-js, SSH terminals use XTerm.js with the Go terminal broker, and the zero-trust tunnel system uses raw WebSockets with a custom binary multiplexing protocol for proxying TCP streams through outbound-only gateway agent connections. ABAC enforcement now lives in the Go access-policy services and is evaluated on the active Go session path.

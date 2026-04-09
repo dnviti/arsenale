@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import {
-  Drawer, Box, Typography, IconButton, List, ListItem, ListItemIcon,
-  ListItemText, ListItemSecondaryAction, Button, CircularProgress,
-  Alert, Divider,
-} from '@mui/material';
-import {
-  Close as CloseIcon,
-  Download as DownloadIcon,
-  Delete as DeleteIcon,
-  UploadFile as UploadIcon,
-  InsertDriveFile as FileIcon,
-} from '@mui/icons-material';
+  X,
+  Download,
+  Trash2,
+  Upload,
+  FileText,
+  Loader2,
+  RefreshCw,
+} from 'lucide-react';
 import { listFiles, uploadFile, downloadFile, deleteFile, FileInfo } from '../../api/files.api';
 import { extractApiError } from '../../utils/apiError';
 
@@ -105,109 +104,103 @@ export default function FileBrowser({ open, onClose, disableDownload, disableUpl
     if (file) handleUpload(file);
   };
 
+  if (!open) return null;
+
   return (
-    <Drawer
-      anchor="right"
-      open={open}
-      onClose={onClose}
-      variant="persistent"
-      sx={{
-        '& .MuiDrawer-paper': {
-          width: 320,
-          position: 'absolute',
-        },
-      }}
+    <div
+      className="absolute right-0 top-0 bottom-0 w-[320px] border-l bg-background flex flex-col z-10"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
-      <Box
-        sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-      >
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, pl: 2 }}>
-          <Typography variant="subtitle1" fontWeight={600}>Shared Drive</Typography>
-          <IconButton size="small" onClick={onClose}><CloseIcon /></IconButton>
-        </Box>
+      <div className="flex items-center justify-between p-3 pl-4">
+        <span className="text-sm font-semibold">Shared Drive</span>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
 
-        <Divider />
+      <Separator />
 
-        {!disableUpload && (
-          <Box sx={{ p: 1.5 }}>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
-            <Button
-              variant="outlined"
-              startIcon={uploading ? <CircularProgress size={16} /> : <UploadIcon />}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
-              fullWidth
-              size="small"
-            >
-              {uploading ? 'Uploading...' : 'Upload File'}
-            </Button>
-          </Box>
-        )}
-
-        {dragOver && !disableUpload && (
-          <Box sx={{
-            mx: 1.5, p: 2, border: '2px dashed', borderColor: 'primary.main',
-            borderRadius: 1, textAlign: 'center', bgcolor: 'action.hover',
-          }}>
-            <Typography variant="body2" color="primary">Drop file here</Typography>
-          </Box>
-        )}
-
-        {error && <Alert severity="error" sx={{ mx: 1.5, mb: 1 }} onClose={() => setError('')}>{error}</Alert>}
-
-        <Box sx={{ flex: 1, overflow: 'auto' }}>
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : files.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-              No files yet. Upload a file or copy files to the Shared drive from inside the RDP session.
-            </Typography>
-          ) : (
-            <List dense>
-              {files.map((file) => (
-                <ListItem key={file.name}>
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <FileIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={file.name}
-                    secondary={`${formatFileSize(file.size)} - ${new Date(file.modifiedAt).toLocaleDateString()}`}
-                    primaryTypographyProps={{ noWrap: true, fontSize: '0.85rem' }}
-                    secondaryTypographyProps={{ fontSize: '0.75rem' }}
-                  />
-                  <ListItemSecondaryAction>
-                    {!disableDownload && (
-                      <IconButton size="small" onClick={() => handleDownload(file.name)} title="Download">
-                        <DownloadIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                    <IconButton size="small" onClick={() => handleDelete(file.name)} title="Delete">
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </Box>
-
-        <Divider />
-        <Box sx={{ p: 1, textAlign: 'center' }}>
-          <Button size="small" onClick={fetchFiles} disabled={loading}>
-            Refresh
+      {!disableUpload && (
+        <div className="p-3">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            className="hidden"
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
+            {uploading ? 'Uploading...' : 'Upload File'}
           </Button>
-        </Box>
-      </Box>
-    </Drawer>
+        </div>
+      )}
+
+      {dragOver && !disableUpload && (
+        <div className="mx-3 p-3 border-2 border-dashed border-primary rounded text-center bg-muted/50">
+          <p className="text-sm text-primary">Drop file here</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="mx-3 mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError('')} className="text-red-400 hover:text-red-300">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-auto">
+        {loading ? (
+          <div className="flex justify-center p-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : files.length === 0 ? (
+          <p className="text-sm text-muted-foreground p-4 text-center">
+            No files yet. Upload a file or copy files to the Shared drive from inside the RDP session.
+          </p>
+        ) : (
+          <div>
+            {files.map((file) => (
+              <div key={file.name} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50">
+                <FileText className="h-4 w-4 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[0.85rem] truncate">{file.name}</p>
+                  <p className="text-[0.75rem] text-muted-foreground">
+                    {formatFileSize(file.size)} - {new Date(file.modifiedAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {!disableDownload && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDownload(file.name)} title="Download">
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => handleDelete(file.name)} title="Delete">
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Separator />
+      <div className="p-2 text-center">
+        <Button variant="ghost" size="sm" onClick={fetchFiles} disabled={loading}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1" />
+          Refresh
+        </Button>
+      </div>
+    </div>
   );
 }

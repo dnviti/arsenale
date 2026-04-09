@@ -1,48 +1,131 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Switch, TextField, Select, MenuItem, FormControlLabel,
-  Typography, Chip, Tooltip, IconButton, CircularProgress, InputAdornment,
-  OutlinedInput,
-} from '@mui/material';
-import LockIcon from '@mui/icons-material/Lock';
-import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import SaveIcon from '@mui/icons-material/Save';
-import Visibility from '@mui/icons-material/Visibility';
-import VisibilityOff from '@mui/icons-material/VisibilityOff';
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  RefreshCw,
+  RotateCcw,
+  Save,
+} from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import type { SettingValue } from '../../api/systemSettings.api';
 import { updateSystemSetting } from '../../api/systemSettings.api';
 import { extractApiError } from '../../utils/apiError';
+import { SettingsButtonRow, SettingsStatusBadge } from './settings-ui';
 
 interface Props {
   setting: SettingValue;
   onUpdated: (key: string, value: unknown) => void;
 }
 
-function sourceChip(source: 'env' | 'db' | 'default') {
-  switch (source) {
-    case 'env':
-      return <Chip label="ENV" size="small" color="warning" variant="outlined" icon={<LockIcon />} />;
-    case 'db':
-      return <Chip label="Custom" size="small" color="primary" variant="outlined" />;
-    default:
-      return <Chip label="Default" size="small" variant="outlined" />;
+const EMPTY_SELECT_VALUE = '__EMPTY_OPTION__';
+
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry).trim()).filter(Boolean);
   }
+
+  return String(value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function getComparableValue(setting: SettingValue, value: unknown) {
+  if (setting.type === 'boolean') {
+    return String(Boolean(value));
+  }
+
+  if (setting.type === 'string[]') {
+    return normalizeStringArray(value).join(',');
+  }
+
+  return String(value ?? '');
+}
+
+function toApiValue(setting: SettingValue, value: unknown) {
+  if (setting.type === 'boolean') {
+    return Boolean(value);
+  }
+
+  if (setting.type === 'number') {
+    return Number(value);
+  }
+
+  if (setting.type === 'string[]') {
+    return normalizeStringArray(value).join(',');
+  }
+
+  return String(value ?? '');
+}
+
+function FieldBadges({ setting }: { setting: SettingValue }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {setting.source === 'env' && (
+        <SettingsStatusBadge tone="warning">
+          <LockKeyhole className="mr-1 size-3.5" />
+          ENV Locked
+        </SettingsStatusBadge>
+      )}
+      {setting.source === 'db' && (
+        <SettingsStatusBadge tone="success">Custom</SettingsStatusBadge>
+      )}
+      {setting.source === 'default' && (
+        <SettingsStatusBadge tone="neutral">Default</SettingsStatusBadge>
+      )}
+      {setting.restartRequired && (
+        <SettingsStatusBadge tone="neutral">
+          <RefreshCw className="mr-1 size-3.5" />
+          Restart Required
+        </SettingsStatusBadge>
+      )}
+    </div>
+  );
 }
 
 export default function SettingField({ setting, onUpdated }: Props) {
   const [localValue, setLocalValue] = useState<unknown>(setting.value);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const dirty = String(localValue) !== String(setting.value);
-  const disabled = !setting.canEdit || setting.envLocked || saving;
+  const [showSensitiveValue, setShowSensitiveValue] = useState(false);
 
-  const handleSave = async (value: unknown) => {
+  useEffect(() => {
+    setLocalValue(setting.value);
+  }, [setting.key, setting.value]);
+
+  const disabled = !setting.canEdit || setting.envLocked || saving;
+  const dirty = getComparableValue(setting, localValue) !== getComparableValue(setting, setting.value);
+  const arrayValue = useMemo(() => normalizeStringArray(localValue), [localValue]);
+  const numberValueIsInvalid =
+    setting.type === 'number'
+    && String(localValue ?? '').trim() !== ''
+    && Number.isNaN(Number(localValue));
+
+  const handleSave = async (nextValue: unknown = localValue) => {
     setSaving(true);
     setError('');
+
     try {
-      await updateSystemSetting(setting.key, value);
-      onUpdated(setting.key, value);
+      const payload = toApiValue(setting, nextValue);
+      await updateSystemSetting(setting.key, payload);
+
+      const persistedValue = setting.sensitive ? '[REDACTED]' : payload;
+      setLocalValue(persistedValue);
+      onUpdated(setting.key, persistedValue);
+      setShowSensitiveValue(false);
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to update setting'));
     } finally {
@@ -50,215 +133,217 @@ export default function SettingField({ setting, onUpdated }: Props) {
     }
   };
 
-  const handleBooleanToggle = async () => {
-    const newVal = !localValue;
-    setLocalValue(newVal);
-    await handleSave(newVal);
-  };
+  const fieldShellClassName = 'space-y-3 rounded-xl border border-border/70 bg-background/70 p-4';
 
   if (setting.type === 'boolean') {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.5 }}>
-        <Box sx={{ flex: 1, mr: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={Boolean(localValue)}
-                  onChange={handleBooleanToggle}
-                  disabled={disabled}
-                  size="small"
-                />
-              }
-              label={
-                <Typography variant="body2" fontWeight="medium">{setting.label}</Typography>
-              }
+      <div className={fieldShellClassName}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-2">
+            <div className="space-y-2">
+              <div className="text-sm font-medium text-foreground">{setting.label}</div>
+              <FieldBadges setting={setting} />
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">{setting.description}</p>
+          </div>
+          <div className="flex items-center gap-3 pt-0.5">
+            {saving && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+            <Switch
+              checked={Boolean(localValue)}
+              disabled={disabled}
+              aria-label={setting.label}
+              onCheckedChange={async (checked) => {
+                setLocalValue(checked);
+                await handleSave(checked);
+              }}
             />
-            {sourceChip(setting.source)}
-            {setting.restartRequired && (
-              <Tooltip title="Requires server restart to take effect">
-                <RestartAltIcon fontSize="small" color="action" />
-              </Tooltip>
-            )}
-          </Box>
-          <Typography variant="caption" color="text.secondary" sx={{ ml: 4.5, display: 'block' }}>
-            {setting.description}
-          </Typography>
-          {error && (
-            <Typography variant="caption" color="error" sx={{ ml: 4.5, display: 'block' }}>
-              {error}
-            </Typography>
-          )}
-        </Box>
-        {saving && <CircularProgress size={16} />}
-      </Box>
+          </div>
+        </div>
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+      </div>
     );
   }
 
   if (setting.type === 'select' && setting.options) {
     return (
-      <Box sx={{ py: 0.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-          <Typography variant="body2" fontWeight="medium">{setting.label}</Typography>
-          {sourceChip(setting.source)}
-          {setting.restartRequired && (
-            <Tooltip title="Requires server restart to take effect">
-              <RestartAltIcon fontSize="small" color="action" />
-            </Tooltip>
-          )}
-        </Box>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-          {setting.description}
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+      <div className={fieldShellClassName}>
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-foreground">{setting.label}</div>
+          <FieldBadges setting={setting} />
+          <p className="text-sm leading-6 text-muted-foreground">{setting.description}</p>
+        </div>
+
+        <div className="flex items-center gap-3">
           <Select
-            size="small"
-            value={String(localValue)}
-            onChange={(e) => {
-              setLocalValue(e.target.value);
-              handleSave(e.target.value);
+            value={String(localValue ?? '') || EMPTY_SELECT_VALUE}
+            onValueChange={async (value) => {
+              const nextValue = value === EMPTY_SELECT_VALUE ? '' : value;
+              setLocalValue(nextValue);
+              await handleSave(nextValue);
             }}
             disabled={disabled}
-            sx={{ minWidth: 180 }}
           >
-            {setting.options.map((opt) => (
-              <MenuItem key={opt} value={opt}>
-                {opt || '(disabled)'}
-              </MenuItem>
-            ))}
+            <SelectTrigger aria-label={setting.label} className="max-w-sm">
+              <SelectValue placeholder="Select a value" />
+            </SelectTrigger>
+            <SelectContent>
+              {setting.options.map((option) => (
+                <SelectItem
+                  key={`${setting.key}-${option || 'empty'}`}
+                  value={option || EMPTY_SELECT_VALUE}
+                >
+                  {option || '(disabled)'}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
-          {saving && <CircularProgress size={16} />}
-        </Box>
+          {saving && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
+        </div>
+
         {error && (
-          <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
-            {error}
-          </Typography>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
-      </Box>
+      </div>
     );
   }
 
   if (setting.type === 'string[]' && setting.options) {
-    const arrayValue: string[] = Array.isArray(localValue)
-      ? localValue as string[]
-      : String(localValue || '').split(',').map(s => s.trim()).filter(Boolean);
-
     return (
-      <Box sx={{ py: 0.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-          <Typography variant="body2" fontWeight="medium">{setting.label}</Typography>
-          {sourceChip(setting.source)}
-          {setting.restartRequired && (
-            <Tooltip title="Requires server restart to take effect">
-              <RestartAltIcon fontSize="small" color="action" />
-            </Tooltip>
-          )}
-        </Box>
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-          {setting.description}
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Select
-            size="small"
-            multiple
-            value={arrayValue}
-            onChange={(e) => {
-              const val = e.target.value as string[];
-              setLocalValue(val);
-              handleSave(val.join(','));
-            }}
-            disabled={disabled}
-            input={<OutlinedInput />}
-            renderValue={(selected) => (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {(selected as string[]).map((v) => (
-                  <Chip key={v} label={v} size="small" />
-                ))}
-              </Box>
-            )}
-            sx={{ minWidth: 280 }}
+      <div className={fieldShellClassName}>
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-foreground">{setting.label}</div>
+          <FieldBadges setting={setting} />
+          <p className="text-sm leading-6 text-muted-foreground">{setting.description}</p>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {setting.options.map((option) => {
+            const optionId = `${setting.key}-${option}`;
+            const checked = arrayValue.includes(option);
+
+            return (
+              <label
+                key={option}
+                htmlFor={optionId}
+                className="flex cursor-pointer items-start gap-3 rounded-lg border border-border/70 bg-card/50 px-3 py-3 text-sm transition-colors hover:bg-accent/40"
+              >
+                <Checkbox
+                  id={optionId}
+                  checked={checked}
+                  disabled={disabled}
+                  onCheckedChange={(nextChecked) => {
+                    const nextValue = nextChecked
+                      ? [...arrayValue, option]
+                      : arrayValue.filter((entry) => entry !== option);
+                    setLocalValue(nextValue);
+                  }}
+                />
+                <span className="font-medium text-foreground">{option}</span>
+              </label>
+            );
+          })}
+        </div>
+
+        <SettingsButtonRow>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => handleSave(arrayValue)}
+            disabled={disabled || !dirty}
           >
-            {setting.options.map((opt) => (
-              <MenuItem key={opt} value={opt}>
-                {opt}
-              </MenuItem>
-            ))}
-          </Select>
-          {saving && <CircularProgress size={16} />}
-        </Box>
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            Save Selection
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setLocalValue(normalizeStringArray(setting.value))}
+            disabled={saving || !dirty}
+          >
+            <RotateCcw />
+            Reset
+          </Button>
+        </SettingsButtonRow>
+
         {error && (
-          <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
-            {error}
-          </Typography>
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         )}
-      </Box>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ py: 0.5 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-        <Typography variant="body2" fontWeight="medium">{setting.label}</Typography>
-        {sourceChip(setting.source)}
-        {setting.restartRequired && (
-          <Tooltip title="Requires server restart to take effect">
-            <RestartAltIcon fontSize="small" color="action" />
-          </Tooltip>
-        )}
-      </Box>
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-        {setting.description}
-      </Typography>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <TextField
-          size="small"
-          type={setting.sensitive && !showPassword ? 'password' : setting.type === 'number' ? 'number' : 'text'}
+    <div className={fieldShellClassName}>
+      <div className="space-y-2">
+        <div className="text-sm font-medium text-foreground">{setting.label}</div>
+        <FieldBadges setting={setting} />
+        <p className="text-sm leading-6 text-muted-foreground">{setting.description}</p>
+      </div>
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <Input
+          type={setting.sensitive && !showSensitiveValue ? 'password' : setting.type === 'number' ? 'number' : 'text'}
+          aria-label={setting.label}
           value={String(localValue ?? '')}
-          onChange={(e) => {
-            const val = setting.type === 'number' ? Number(e.target.value) : e.target.value;
-            setLocalValue(val);
-          }}
           disabled={disabled}
-          sx={{ minWidth: 220 }}
-          slotProps={{
-            input: {
-              endAdornment: setting.envLocked ? (
-                <Tooltip title="Set via environment variable">
-                  <LockIcon fontSize="small" color="action" />
-                </Tooltip>
-              ) : setting.sensitive ? (
-                <InputAdornment position="end">
-                  <IconButton
-                    size="small"
-                    onClick={() => setShowPassword(!showPassword)}
-                    edge="end"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <VisibilityOff fontSize="small" /> : <Visibility fontSize="small" />}
-                  </IconButton>
-                </InputAdornment>
-              ) : undefined,
-            },
-          }}
+          className="max-w-xl"
+          onChange={(event) => setLocalValue(event.target.value)}
         />
-        {dirty && !disabled && (
-          <Tooltip title="Save">
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={() => handleSave(localValue)}
-              disabled={saving}
+
+        <SettingsButtonRow>
+          {setting.sensitive && !setting.envLocked && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSensitiveValue((current) => !current)}
             >
-              {saving ? <CircularProgress size={16} /> : <SaveIcon fontSize="small" />}
-            </IconButton>
-          </Tooltip>
-        )}
-      </Box>
-      {error && (
-        <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
-          {error}
-        </Typography>
+              {showSensitiveValue ? <EyeOff /> : <Eye />}
+              {showSensitiveValue ? 'Hide' : 'Show'}
+            </Button>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => handleSave(localValue)}
+            disabled={disabled || !dirty || numberValueIsInvalid}
+          >
+            {saving ? <Loader2 className="animate-spin" /> : <Save />}
+            Save
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setLocalValue(setting.value)}
+            disabled={saving || !dirty}
+          >
+            <RotateCcw />
+            Reset
+          </Button>
+        </SettingsButtonRow>
+      </div>
+
+      {numberValueIsInvalid && (
+        <Alert variant="destructive">
+          <AlertDescription>Enter a valid number before saving.</AlertDescription>
+        </Alert>
       )}
-    </Box>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+    </div>
   );
 }

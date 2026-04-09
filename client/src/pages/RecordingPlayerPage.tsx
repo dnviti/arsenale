@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Loader2 } from 'lucide-react';
 import { restoreSessionApi } from '../api/auth.api';
 import { getRecording } from '../api/recordings.api';
 import type { Recording } from '../api/recordings.api';
@@ -60,27 +60,27 @@ export default function RecordingPlayerPage() {
 
   if (loading || !authReady) {
     return (
-      <Box sx={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#1a1a2e' }}>
-        <CircularProgress />
-      </Box>
+      <div className="flex h-screen w-screen items-center justify-center bg-[#1a1a2e]">
+        <Loader2 className="size-8 animate-spin text-primary" />
+      </div>
     );
   }
 
   if (error || !recording) {
     return (
-      <Box sx={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#1a1a2e' }}>
-        <Typography color="error">{error || 'Recording not found'}</Typography>
-      </Box>
+      <div className="flex h-screen w-screen items-center justify-center bg-[#1a1a2e]">
+        <p className="text-sm text-destructive">{error || 'Recording not found'}</p>
+      </div>
     );
   }
 
   return (
-    <Box sx={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: '#1a1a2e' }}>
+    <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#1a1a2e]">
       {recording.format === 'asciicast' ? (
         <SshPlayer recordingId={recording.id} />
       ) : (
         <GuacPlayer recordingId={recording.id} />
       )}
-    </Box>
+    </div>
   );
 }

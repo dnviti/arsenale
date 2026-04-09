@@ -79,6 +79,19 @@ All endpoints require authentication and tenant membership. Most require Operato
 | `DELETE` | `/api/gateways/:id` | Operator | Delete gateway |
 | `POST` | `/api/gateways/:id/test` | Tenant | Test gateway connectivity |
 
+`GET /api/gateways` returns both the legacy probe fields (`lastHealthStatus`, `lastCheckedAt`, `lastLatencyMs`, `lastError`) and the derived fleet-facing fields used by the UI and CLI:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operationalStatus` | `HEALTHY \| DEGRADED \| UNHEALTHY \| UNKNOWN` | Canonical gateway status shown in the client and CLI |
+| `operationalReason` | `string` | Human-readable explanation for the derived status |
+| `healthyInstances` | `number` | Managed instances currently considered healthy |
+| `runningInstances` | `number` | Managed instances currently running |
+| `tunnelConnected` | `boolean` | Live tunnel connectivity when tunnel status is available |
+| `tunnelConnectedAt` | `string \| null` | Tunnel broker connected-at timestamp when connected |
+
+For tunnel-enabled gateways, `operationalStatus` is derived from the live tunnel broker snapshot and heartbeat metadata. For managed groups, it is derived from healthy instance counts instead of the legacy gateway probe status alone.
+
 ### SSH Key Pair Management
 
 | Method | Endpoint | Description |

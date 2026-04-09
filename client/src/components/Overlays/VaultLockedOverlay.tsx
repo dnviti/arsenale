@@ -1,30 +1,47 @@
-import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import {
-  Box, Typography, TextField, Button, Alert,
-  CircularProgress, Divider, Link, Dialog,
-} from '@mui/material';
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import {
-  Lock as LockIcon,
-  Fingerprint as FingerprintIcon,
-  Smartphone as SmartphoneIcon,
-  Sms as SmsIcon,
-  Key as KeyIcon,
-} from '@mui/icons-material';
+  Fingerprint,
+  KeyRound,
+  Loader2,
+  LockKeyhole,
+  MessageSquareText,
+  Smartphone,
+} from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import { startAuthentication } from '@simplewebauthn/browser';
 import {
-  unlockVault,
-  unlockVaultWithTotp,
-  requestVaultWebAuthnOptions,
-  unlockVaultWithWebAuthn,
   requestVaultSmsCode,
+  requestVaultWebAuthnOptions,
+  unlockVault,
   unlockVaultWithSms,
+  unlockVaultWithTotp,
+  unlockVaultWithWebAuthn,
 } from '../../api/vault.api';
 import { logoutApi } from '../../api/auth.api';
-import { useVaultStore } from '../../store/vaultStore';
 import { useAuthStore } from '../../store/authStore';
+import { useVaultStore } from '../../store/vaultStore';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 type UnlockMethod = 'webauthn' | 'totp' | 'sms' | 'password';
+
 const METHOD_PRIORITY: UnlockMethod[] = ['webauthn', 'totp', 'sms', 'password'];
 
 function resolveAvailableMethods(
@@ -36,90 +53,141 @@ function resolveAvailableMethods(
     : ['password'];
 }
 
-function resolvePreferredMethod(
-  mfaUnlockAvailable: boolean,
-  mfaUnlockMethods: string[],
-): UnlockMethod {
-  return resolveAvailableMethods(mfaUnlockAvailable, mfaUnlockMethods)[0] ?? 'password';
-}
-
-function getMethodLabel(method: UnlockMethod): string {
+function getMethodLabel(method: UnlockMethod) {
   switch (method) {
-    case 'webauthn': return 'passkey';
-    case 'totp': return 'authenticator app';
-    case 'sms': return 'SMS code';
-    case 'password': return 'password';
+    case 'webauthn':
+      return 'passkey';
+    case 'totp':
+      return 'authenticator app';
+    case 'sms':
+      return 'SMS code';
+    case 'password':
+      return 'password';
   }
 }
 
 function getMethodIcon(method: UnlockMethod) {
   switch (method) {
-    case 'webauthn': return <FingerprintIcon fontSize="small" />;
-    case 'totp': return <SmartphoneIcon fontSize="small" />;
-    case 'sms': return <SmsIcon fontSize="small" />;
-    case 'password': return <KeyIcon fontSize="small" />;
+    case 'webauthn':
+      return <Fingerprint className="size-4" />;
+    case 'totp':
+      return <Smartphone className="size-4" />;
+    case 'sms':
+      return <MessageSquareText className="size-4" />;
+    case 'password':
+      return <KeyRound className="size-4" />;
   }
 }
 
+function NumericCodeField({
+  id,
+  autoFocus = false,
+  label,
+  onChange,
+  onKeyDown,
+  value,
+}: {
+  autoFocus?: boolean;
+  id: string;
+  label: string;
+  onChange: (value: string) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  value: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <Input
+        id={id}
+        autoFocus={autoFocus}
+        value={value}
+        inputMode="numeric"
+        maxLength={6}
+        pattern="[0-9]*"
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={onKeyDown}
+      />
+    </div>
+  );
+}
+
+function LoadingPanel({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/80 bg-muted/30 px-4 py-5 text-center">
+      <Loader2 className="size-6 animate-spin text-primary" />
+      <p className="text-sm text-muted-foreground">{message}</p>
+    </div>
+  );
+}
 
 export default function VaultLockedOverlay() {
-  const unlocked = useVaultStore((s) => s.unlocked);
-  const initialized = useVaultStore((s) => s.initialized);
-  const mfaUnlockAvailable = useVaultStore((s) => s.mfaUnlockAvailable);
-  const mfaUnlockMethods = useVaultStore((s) => s.mfaUnlockMethods);
-  const checkVaultStatus = useVaultStore((s) => s.checkStatus);
-  const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
-  const authLogout = useAuthStore((s) => s.logout);
+  const unlocked = useVaultStore((state) => state.unlocked);
+  const initialized = useVaultStore((state) => state.initialized);
+  const mfaUnlockAvailable = useVaultStore((state) => state.mfaUnlockAvailable);
+  const mfaUnlockMethods = useVaultStore((state) => state.mfaUnlockMethods);
+  const checkVaultStatus = useVaultStore((state) => state.checkStatus);
+  const setVaultUnlocked = useVaultStore((state) => state.setUnlocked);
+  const authLogout = useAuthStore((state) => state.logout);
 
-  const [activeMethod, setActiveMethod] = useState<UnlockMethod>('password');
+  const [selectedMethod, setSelectedMethod] = useState<UnlockMethod | null>(null);
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
-  const { loading, error, clearError, run } = useAsyncAction();
   const [smsSent, setSmsSent] = useState(false);
+  const [statusRefreshing, setStatusRefreshing] = useState(false);
+  const { loading, error, clearError, run } = useAsyncAction();
   const autoWebAuthnTriggeredRef = useRef(false);
   const lockStatusResolvedRef = useRef(false);
-  const [statusRefreshing, setStatusRefreshing] = useState(false);
   const mountedRef = useRef(true);
 
   const needsLockStatusRefresh =
-    initialized &&
-    !unlocked &&
-    !mfaUnlockAvailable &&
-    mfaUnlockMethods.length === 0;
+    initialized
+    && !unlocked
+    && !mfaUnlockAvailable
+    && mfaUnlockMethods.length === 0;
 
-  // Determine default method based on priority
-  useLayoutEffect(() => {
-    const availableMethods = resolveAvailableMethods(mfaUnlockAvailable, mfaUnlockMethods);
-    const preferredMethod = availableMethods[0] ?? 'password';
-    setActiveMethod((current) => {
-      if (!availableMethods.includes(current)) {
-        return preferredMethod;
-      }
-      if (current === 'password' && preferredMethod === 'webauthn') {
-        return 'webauthn';
-      }
-      return current;
-    });
-  }, [mfaUnlockAvailable, mfaUnlockMethods]);
+  const availableMethods = useMemo(
+    () => resolveAvailableMethods(mfaUnlockAvailable, mfaUnlockMethods),
+    [mfaUnlockAvailable, mfaUnlockMethods],
+  );
+  const preferredMethod = availableMethods[0] ?? 'password';
+  const activeMethod = selectedMethod && availableMethods.includes(selectedMethod)
+    ? selectedMethod
+    : preferredMethod;
+  const otherMethods = availableMethods.filter((method) => method !== activeMethod);
 
-  // Reset state when switching methods
-  useEffect(() => {
+  const resetInputs = useCallback(() => {
     clearError();
     setCode('');
     setPassword('');
     setSmsSent(false);
-  }, [activeMethod, clearError]);
+  }, [clearError]);
 
-  useEffect(() => {
-    return () => {
-      mountedRef.current = false;
-    };
+  const handleMethodSelect = useCallback((method: UnlockMethod) => {
+    setSelectedMethod(method);
+    resetInputs();
+    if (method === 'webauthn') {
+      autoWebAuthnTriggeredRef.current = false;
+    }
+  }, [resetInputs]);
+
+  useEffect(() => () => {
+    mountedRef.current = false;
   }, []);
+
+  const refreshLockStatus = useCallback(async () => {
+    setStatusRefreshing(true);
+    try {
+      await checkVaultStatus();
+    } finally {
+      if (mountedRef.current) {
+        setStatusRefreshing(false);
+      }
+    }
+  }, [checkVaultStatus]);
 
   useEffect(() => {
     if (unlocked) {
       lockStatusResolvedRef.current = false;
-      setStatusRefreshing(false);
       return;
     }
     if (!needsLockStatusRefresh || lockStatusResolvedRef.current) {
@@ -127,22 +195,18 @@ export default function VaultLockedOverlay() {
     }
 
     lockStatusResolvedRef.current = true;
-    setStatusRefreshing(true);
-
-    void checkVaultStatus().finally(() => {
-      if (mountedRef.current) {
-        setStatusRefreshing(false);
-      }
-    });
-  }, [checkVaultStatus, needsLockStatusRefresh, unlocked]);
+    void refreshLockStatus();
+  }, [needsLockStatusRefresh, refreshLockStatus, unlocked]);
 
   const onSuccess = useCallback(() => {
     setVaultUnlocked(true);
     setPassword('');
     setCode('');
+    setSmsSent(false);
+    setSelectedMethod(null);
+    setStatusRefreshing(false);
   }, [setVaultUnlocked]);
 
-  // WebAuthn flow
   const handleWebAuthn = useCallback(async () => {
     await run(async () => {
       const options = await requestVaultWebAuthnOptions();
@@ -152,7 +216,6 @@ export default function VaultLockedOverlay() {
     }, 'WebAuthn authentication failed');
   }, [onSuccess, run]);
 
-  // Auto-trigger WebAuthn when it's the active method
   useEffect(() => {
     if (unlocked) {
       autoWebAuthnTriggeredRef.current = false;
@@ -161,6 +224,7 @@ export default function VaultLockedOverlay() {
     if (activeMethod !== 'webauthn' || !initialized || autoWebAuthnTriggeredRef.current) {
       return;
     }
+
     autoWebAuthnTriggeredRef.current = true;
     void handleWebAuthn();
   }, [activeMethod, handleWebAuthn, initialized, unlocked]);
@@ -169,223 +233,206 @@ export default function VaultLockedOverlay() {
     const ok = await run(async () => {
       await unlockVault(password);
     }, 'Failed to unlock vault');
-    if (ok) onSuccess();
+    if (ok) {
+      onSuccess();
+    }
   };
 
   const handleTotpSubmit = async () => {
     const ok = await run(async () => {
       await unlockVaultWithTotp(code);
     }, 'Invalid TOTP code');
-    if (ok) onSuccess();
+    if (ok) {
+      onSuccess();
+    }
   };
 
   const handleSmsRequest = async () => {
     const ok = await run(async () => {
       await requestVaultSmsCode();
     }, 'Failed to send SMS code');
-    if (ok) setSmsSent(true);
+    if (ok) {
+      setSmsSent(true);
+    }
   };
 
   const handleSmsSubmit = async () => {
     const ok = await run(async () => {
       await unlockVaultWithSms(code);
     }, 'Invalid or expired SMS code');
-    if (ok) onSuccess();
+    if (ok) {
+      onSuccess();
+    }
   };
 
   const handleLogout = async () => {
-    try { await logoutApi(); } catch { /* ignore */ }
+    try {
+      await logoutApi();
+    } catch {
+      // ignore logout API failures during forced sign-out
+    }
     authLogout();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, onSubmit: () => void) => {
-    if (e.key === 'Enter' && !loading) onSubmit();
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>, onSubmit: () => void) => {
+    if (event.key === 'Enter' && !loading) {
+      onSubmit();
+    }
   };
 
-  if (unlocked || !initialized) return null;
-
-  const availableMethods = resolveAvailableMethods(mfaUnlockAvailable, mfaUnlockMethods);
-  const otherMethods = availableMethods.filter((m) => m !== activeMethod);
+  if (unlocked || !initialized) {
+    return null;
+  }
 
   return (
-    <Dialog
-      open
-      disableEscapeKeyDown
-      sx={{ zIndex: 1400 }}
-      slotProps={{
-        backdrop: { sx: { bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(8,8,10,0.7)' : 'rgba(0,0,0,0.4)' } },
-        paper: { elevation: 8, sx: { p: 4, maxWidth: 400, width: '100%', textAlign: 'center', bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 4 } },
-      }}
-    >
-        <LockIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-        <Typography variant="h6" gutterBottom sx={{ fontFamily: (theme) => theme.typography.h5.fontFamily, color: 'text.primary' }}>
-          Vault Locked
-        </Typography>
-        <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
-          {activeMethod !== 'password'
-            ? 'Your vault was locked. Verify your identity to unlock.'
-            : 'Your vault was locked due to inactivity timeout. Enter your password to unlock and resume.'}
-        </Typography>
+    <Dialog open>
+      <DialogContent
+        showCloseButton={false}
+        className="w-[min(92vw,26rem)] gap-5 rounded-2xl border-border/80 bg-background p-6 shadow-2xl sm:max-w-md"
+        overlayClassName="bg-black/55 backdrop-blur-sm"
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+      >
+        <DialogHeader className="items-center text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
+            <LockKeyhole className="size-5" />
+          </div>
+          <DialogTitle>Vault Locked</DialogTitle>
+          <DialogDescription>
+            {activeMethod !== 'password'
+              ? 'Your vault was locked. Verify your identity to unlock.'
+              : 'Your vault was locked due to inactivity timeout. Enter your password to unlock and resume.'}
+          </DialogDescription>
+        </DialogHeader>
 
         {error && (
-          <Alert severity="error" sx={{ mb: 2, textAlign: 'left' }}>
-            {error}
+          <Alert variant="destructive" className="text-left">
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
-        {statusRefreshing && (
-          <Box sx={{ my: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-            <CircularProgress size={32} />
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Checking available unlock methods...
-            </Typography>
-          </Box>
-        )}
+        {statusRefreshing && <LoadingPanel message="Checking available unlock methods..." />}
 
-        {/* WebAuthn */}
         {!statusRefreshing && activeMethod === 'webauthn' && (
-          <Box sx={{ my: 2 }}>
-            {loading ? (
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-                <CircularProgress size={32} />
-                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                  Waiting for your security key or passkey...
-                </Typography>
-              </Box>
-            ) : (
-              <Button
-                onClick={handleWebAuthn}
-                variant="contained"
-                fullWidth
-                startIcon={<FingerprintIcon />}
-                sx={{ bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
-              >
-                Retry Passkey
-              </Button>
-            )}
-          </Box>
+          loading ? (
+            <LoadingPanel message="Waiting for your security key or passkey..." />
+          ) : (
+            <Button type="button" className="w-full gap-2" onClick={handleWebAuthn}>
+              <Fingerprint className="size-4" />
+              Retry Passkey
+            </Button>
+          )
         )}
 
-        {/* TOTP */}
         {!statusRefreshing && activeMethod === 'totp' && (
-          <Box>
-            <TextField
+          <div className="space-y-3">
+            <NumericCodeField
+              id="vault-unlock-totp"
               autoFocus
               label="Authenticator code"
               value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => handleKeyDown(e, handleTotpSubmit)}
-              fullWidth
-              margin="normal"
-              slotProps={{ htmlInput: { maxLength: 6, inputMode: 'numeric', pattern: '[0-9]*' } }}
+              onChange={setCode}
+              onKeyDown={(event) => handleKeyDown(event, handleTotpSubmit)}
             />
             <Button
-              onClick={handleTotpSubmit}
-              variant="contained"
-              fullWidth
+              type="button"
+              className="w-full"
               disabled={loading || code.length < 6}
-              sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
+              onClick={handleTotpSubmit}
             >
               {loading ? 'Verifying...' : 'Verify Code'}
             </Button>
-          </Box>
+          </div>
         )}
 
-        {/* SMS */}
         {!statusRefreshing && activeMethod === 'sms' && (
-          <Box>
+          <div className="space-y-3">
             {!smsSent ? (
               <Button
-                onClick={handleSmsRequest}
-                variant="contained"
-                fullWidth
+                type="button"
+                className="w-full gap-2"
                 disabled={loading}
-                startIcon={<SmsIcon />}
-                sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
+                onClick={handleSmsRequest}
               >
+                <MessageSquareText className="size-4" />
                 {loading ? 'Sending...' : 'Send SMS Code'}
               </Button>
             ) : (
               <>
-                <TextField
+                <NumericCodeField
+                  id="vault-unlock-sms"
                   autoFocus
                   label="SMS code"
                   value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  onKeyDown={(e) => handleKeyDown(e, handleSmsSubmit)}
-                  fullWidth
-                  margin="normal"
-                  slotProps={{ htmlInput: { maxLength: 6, inputMode: 'numeric', pattern: '[0-9]*' } }}
+                  onChange={setCode}
+                  onKeyDown={(event) => handleKeyDown(event, handleSmsSubmit)}
                 />
                 <Button
-                  onClick={handleSmsSubmit}
-                  variant="contained"
-                  fullWidth
+                  type="button"
+                  className="w-full"
                   disabled={loading || code.length < 6}
-                  sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
+                  onClick={handleSmsSubmit}
                 >
                   {loading ? 'Verifying...' : 'Verify Code'}
                 </Button>
               </>
             )}
-          </Box>
+          </div>
         )}
 
-        {/* Password */}
         {!statusRefreshing && activeMethod === 'password' && (
-          <Box>
-            <TextField
-              autoFocus
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => handleKeyDown(e, handlePasswordSubmit)}
-              fullWidth
-              margin="normal"
-            />
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="vault-unlock-password">Password</Label>
+              <Input
+                id="vault-unlock-password"
+                autoFocus
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => handleKeyDown(event, handlePasswordSubmit)}
+              />
+            </div>
             <Button
-              onClick={handlePasswordSubmit}
-              variant="contained"
-              fullWidth
+              type="button"
+              className="w-full"
               disabled={loading}
-              sx={{ mt: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), '&:hover': { bgcolor: 'secondary.main' } }}
+              onClick={handlePasswordSubmit}
             >
               {loading ? 'Unlocking...' : 'Unlock Vault'}
             </Button>
-          </Box>
+          </div>
         )}
 
-        {/* Method switcher */}
         {!statusRefreshing && otherMethods.length > 0 && (
           <>
-            <Divider sx={{ my: 2, borderColor: 'divider' }} />
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Separator />
+            <div className="flex flex-col gap-1.5 text-center">
               {otherMethods.map((method) => (
-                <Link
+                <Button
                   key={method}
-                  component="button"
-                  variant="body2"
-                  onClick={() => setActiveMethod(method)}
-                  sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, justifyContent: 'center', color: 'primary.main' }}
+                  type="button"
+                  variant="link"
+                  className="h-auto justify-center gap-2 px-0 py-1 text-sm font-normal"
+                  onClick={() => handleMethodSelect(method)}
                 >
                   {getMethodIcon(method)}
                   Use {getMethodLabel(method)} instead
-                </Link>
+                </Button>
               ))}
-            </Box>
+            </div>
           </>
         )}
 
         <Button
+          type="button"
+          variant="ghost"
+          className="w-full text-muted-foreground"
           onClick={handleLogout}
-          variant="text"
-          fullWidth
-          color="inherit"
-          sx={{ mt: 2, color: 'text.secondary' }}
         >
           Logout
         </Button>
+      </DialogContent>
     </Dialog>
   );
 }

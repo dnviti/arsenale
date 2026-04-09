@@ -1,19 +1,32 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Link as RouterLink, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { LoaderCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import AuthCodeInput from '@/components/auth/AuthCodeInput';
+import AuthLayout from '@/components/auth/AuthLayout';
+import AuthLink from '@/components/auth/AuthLink';
+import PasswordStrengthMeter from '@/components/common/PasswordStrengthMeter';
+import RecoveryKeyConfirmDialog from '@/components/common/RecoveryKeyConfirmDialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
-  Box, Card, CardContent, TextField, Button, Typography, Alert, Link,
-  CircularProgress, Collapse,
-} from '@mui/material';
-import {
-  validateResetTokenApi,
-  requestResetSmsCodeApi,
   completePasswordResetApi,
+  requestResetSmsCodeApi,
+  validateResetTokenApi,
 } from '../api/passwordReset.api';
 import { extractApiError } from '../utils/apiError';
-import PasswordStrengthMeter from '../components/common/PasswordStrengthMeter';
-import RecoveryKeyConfirmDialog from '../components/common/RecoveryKeyConfirmDialog';
 
 type Step = 'validating' | 'sms' | 'form' | 'recovery-key' | 'success' | 'error';
+
+const STEP_DESCRIPTIONS: Record<Step, string> = {
+  validating: 'Checking your reset link.',
+  sms: 'Verify your phone number before resetting your password.',
+  form: 'Choose a new password for your account.',
+  'recovery-key': 'Save your new recovery key before continuing.',
+  success: 'Your password has been updated.',
+  error: 'This reset link is invalid or has expired.',
+};
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -22,22 +35,16 @@ export default function ResetPasswordPage() {
   const [step, setStep] = useState<Step>('validating');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-
-  // SMS state
   const [requiresSms, setRequiresSms] = useState(false);
   const [maskedPhone, setMaskedPhone] = useState('');
   const [smsCode, setSmsCode] = useState('');
   const [smsSent, setSmsSent] = useState(false);
   const [smsSending, setSmsSending] = useState(false);
-
-  // Form state
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [hasRecoveryKey, setHasRecoveryKey] = useState(false);
   const [showRecoveryInput, setShowRecoveryInput] = useState(false);
   const [recoveryKey, setRecoveryKey] = useState('');
-
-  // Success state
   const [vaultPreserved, setVaultPreserved] = useState(false);
   const [newRecoveryKey, setNewRecoveryKey] = useState('');
 
@@ -47,6 +54,7 @@ export default function ResetPasswordPage() {
       setStep('error');
       return;
     }
+
     try {
       const result = await validateResetTokenApi(token);
       if (!result.valid) {
@@ -54,15 +62,11 @@ export default function ResetPasswordPage() {
         setStep('error');
         return;
       }
+
       setRequiresSms(result.requiresSmsVerification);
       setMaskedPhone(result.maskedPhone || '');
       setHasRecoveryKey(result.hasRecoveryKey);
-
-      if (result.requiresSmsVerification) {
-        setStep('sms');
-      } else {
-        setStep('form');
-      }
+      setStep(result.requiresSmsVerification ? 'sms' : 'form');
     } catch {
       setError('This reset link is invalid or has expired.');
       setStep('error');
@@ -70,7 +74,7 @@ export default function ResetPasswordPage() {
   }, [token]);
 
   useEffect(() => {
-    validateToken();
+    void validateToken();
   }, [validateToken]);
 
   const handleSendSms = async () => {
@@ -86,12 +90,8 @@ export default function ResetPasswordPage() {
     }
   };
 
-  const handleSmsVerified = () => {
-    setStep('form');
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setError('');
 
     if (newPassword !== confirmPassword) {
@@ -113,11 +113,7 @@ export default function ResetPasswordPage() {
       });
       setVaultPreserved(result.vaultPreserved);
       setNewRecoveryKey(result.newRecoveryKey || '');
-      if (result.newRecoveryKey) {
-        setStep('recovery-key');
-      } else {
-        setStep('success');
-      }
+      setStep(result.newRecoveryKey ? 'recovery-key' : 'success');
     } catch (err: unknown) {
       setError(extractApiError(err, 'Password reset failed. Please try again.'));
     } finally {
@@ -125,215 +121,204 @@ export default function ResetPasswordPage() {
     }
   };
 
+  const passwordsMismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
+
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        bgcolor: 'background.default',
-        background: (theme) => `radial-gradient(ellipse at 50% 0%, ${theme.palette.primary.main}0A 0%, ${theme.palette.background.default} 70%)`,
-      }}
-    >
-      <Card sx={{
-        width: 440,
-        maxWidth: '90vw',
-        bgcolor: 'background.paper',
-        border: 1, borderColor: 'divider',
-        borderRadius: 4,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-      }}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-            <Box sx={{ width: 32, height: 3, borderRadius: 1, bgcolor: 'primary.main' }} />
-          </Box>
-          <Typography variant="h5" gutterBottom align="center" sx={{
-            fontFamily: (theme) => theme.typography.h5.fontFamily,
-            fontSize: '1.75rem',
-            color: 'text.primary',
-          }}>
-            Reset Password
-          </Typography>
+    <>
+      <AuthLayout
+        cardClassName="max-w-lg"
+        title="Reset Password"
+        description={STEP_DESCRIPTIONS[step]}
+      >
+        {step === 'validating' ? (
+          <div className="flex justify-center py-6">
+            <LoaderCircle className="size-6 animate-spin text-primary" />
+          </div>
+        ) : null}
 
-          {step === 'validating' && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress sx={{ color: 'primary.main' }} />
-            </Box>
-          )}
+        {step === 'error' ? (
+          <>
+            <Alert variant="destructive">
+              <AlertDescription className="text-foreground">{error}</AlertDescription>
+            </Alert>
+            <p className="text-center text-sm text-muted-foreground">
+              <AuthLink to="/forgot-password">Request a new reset link</AuthLink>
+            </p>
+          </>
+        ) : null}
 
-          {step === 'error' && (
-            <>
-              <Alert severity="error" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.light', border: (theme) => `1px solid ${theme.palette.error.main}26`, '& .MuiAlert-icon': { color: 'error.light' } }}>{error}</Alert>
-              <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>
-                <Link component={RouterLink} to="/forgot-password" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Request a new reset link</Link>
-              </Typography>
-            </>
-          )}
+        {step === 'sms' ? (
+          <div className="space-y-4">
+            <p className="text-center text-sm text-muted-foreground">
+              Your account has SMS verification enabled. Please verify your phone number to continue.
+            </p>
 
-          {step === 'sms' && (
-            <Box>
-              <Typography variant="body2" align="center" mb={2} sx={{ color: 'text.secondary' }}>
-                Your account has SMS verification enabled. Please verify your phone number to continue.
-              </Typography>
-              {error && <Alert severity="error" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.light', border: (theme) => `1px solid ${theme.palette.error.main}26`, '& .MuiAlert-icon': { color: 'error.light' } }}>{error}</Alert>}
+            {error ? (
+              <Alert variant="destructive">
+                <AlertDescription className="text-foreground">{error}</AlertDescription>
+              </Alert>
+            ) : null}
 
-              {!smsSent ? (
-                <>
-                  <Alert severity="info" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}26`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
+            {!smsSent ? (
+              <>
+                <Alert variant="info">
+                  <AlertDescription className="text-foreground">
                     A verification code will be sent to {maskedPhone}.
-                  </Alert>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    onClick={handleSendSms}
-                    disabled={smsSending}
-                    sx={{ mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
-                  >
-                    {smsSending ? 'Sending...' : 'Send SMS Code'}
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Alert severity="info" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}26`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
+                  </AlertDescription>
+                </Alert>
+                <Button type="button" className="w-full" disabled={smsSending} onClick={() => void handleSendSms()}>
+                  {smsSending ? 'Sending...' : 'Send SMS Code'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Alert variant="info">
+                  <AlertDescription className="text-foreground">
                     A verification code has been sent to {maskedPhone}.
-                  </Alert>
-                  <TextField
-                    fullWidth
-                    label="SMS Code"
-                    type="text"
-                    inputMode="numeric"
-                    value={smsCode}
-                    onChange={(e) => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    margin="normal"
-                    required
-                    autoFocus
-                    placeholder="000000"
-                    slotProps={{ htmlInput: { maxLength: 6 } }}
-                    sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
-                  />
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    onClick={handleSmsVerified}
-                    disabled={smsCode.length !== 6}
-                    sx={{ mt: 1, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
-                  >
-                    Continue
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant="text"
-                    size="small"
-                    onClick={handleSendSms}
-                    disabled={smsSending}
-                    sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main', bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
-                  >
-                    Resend Code
-                  </Button>
-                </>
-              )}
-            </Box>
-          )}
+                  </AlertDescription>
+                </Alert>
+                <AuthCodeInput
+                  autoFocus
+                  label="SMS Code"
+                  value={smsCode}
+                  onChange={setSmsCode}
+                />
+                <Button
+                  type="button"
+                  className="w-full"
+                  disabled={smsCode.length !== 6}
+                  onClick={() => setStep('form')}
+                >
+                  Continue
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full"
+                  disabled={smsSending}
+                  onClick={() => void handleSendSms()}
+                >
+                  Resend Code
+                </Button>
+              </>
+            )}
+          </div>
+        ) : null}
 
-          {step === 'form' && (
-            <Box component="form" onSubmit={handleSubmit}>
-              <Typography variant="body2" align="center" mb={2} sx={{ color: 'text.secondary' }}>
-                Enter your new password.
-              </Typography>
-              {error && <Alert severity="error" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.light', border: (theme) => `1px solid ${theme.palette.error.main}26`, '& .MuiAlert-icon': { color: 'error.light' } }}>{error}</Alert>}
-              <TextField
-                fullWidth
-                label="New Password"
+        {step === 'form' ? (
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <p className="text-center text-sm text-muted-foreground">Enter your new password.</p>
+
+            {error ? (
+              <Alert variant="destructive">
+                <AlertDescription className="text-foreground">{error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <div className="space-y-2">
+              <Label htmlFor="reset-new-password">New Password</Label>
+              <Input
+                id="reset-new-password"
+                autoFocus
+                required
                 type="password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                margin="normal"
-                required
-                autoFocus
-                helperText="Min 10 characters"
-                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' }, '& .MuiFormHelperText-root': { color: 'text.secondary' } }}
+                onChange={(event) => setNewPassword(event.target.value)}
               />
-              <PasswordStrengthMeter password={newPassword} />
-              <TextField
-                fullWidth
-                label="Confirm New Password"
+              <p className="text-xs text-muted-foreground">Minimum 10 characters.</p>
+            </div>
+
+            <PasswordStrengthMeter password={newPassword} />
+
+            <div className="space-y-2">
+              <Label htmlFor="reset-confirm-password">Confirm New Password</Label>
+              <Input
+                id="reset-confirm-password"
+                required
                 type="password"
                 value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                margin="normal"
-                required
-                sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
+                onChange={(event) => setConfirmPassword(event.target.value)}
               />
+              {passwordsMismatch ? (
+                <p className="text-xs text-destructive">Passwords do not match.</p>
+              ) : null}
+            </div>
 
-              {hasRecoveryKey && (
-                <Box sx={{ mt: 1 }}>
-                  <Button
-                    variant="text"
-                    size="small"
-                    onClick={() => setShowRecoveryInput(!showRecoveryInput)}
-                    sx={{ textTransform: 'none', color: 'primary.main', '&:hover': { color: 'secondary.main', bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
-                  >
-                    {showRecoveryInput ? 'Hide recovery key input' : 'I have a vault recovery key'}
-                  </Button>
-                  <Collapse in={showRecoveryInput}>
-                    <Alert severity="info" sx={{ mt: 1, mb: 1, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}26`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
-                      Enter your vault recovery key to preserve your saved credentials.
-                      Without it, your encrypted vault data (connection passwords, secrets) will be reset.
+            {hasRecoveryKey ? (
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="px-0 text-primary hover:text-primary/80"
+                  onClick={() => setShowRecoveryInput((previous) => !previous)}
+                >
+                  {showRecoveryInput ? 'Hide recovery key input' : 'I have a vault recovery key'}
+                </Button>
+
+                {showRecoveryInput ? (
+                  <div className="space-y-3">
+                    <Alert variant="info">
+                      <AlertDescription className="text-foreground">
+                        Enter your vault recovery key to preserve your saved credentials.
+                        Without it, your encrypted vault data will be reset.
+                      </AlertDescription>
                     </Alert>
-                    <TextField
-                      fullWidth
-                      label="Vault Recovery Key"
-                      type="text"
-                      value={recoveryKey}
-                      onChange={(e) => setRecoveryKey(e.target.value.trim())}
-                      margin="normal"
-                      placeholder="Enter your recovery key"
-                      sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'background.default', '& fieldset': { borderColor: 'divider' }, '&:hover fieldset': { borderColor: 'primary.main' }, '&.Mui-focused fieldset': { borderColor: 'primary.main' } }, '& .MuiInputLabel-root': { color: 'text.secondary' }, '& .MuiOutlinedInput-input': { color: 'text.primary' } }}
-                    />
-                  </Collapse>
-                </Box>
-              )}
+                    <div className="space-y-2">
+                      <Label htmlFor="reset-recovery-key">Vault Recovery Key</Label>
+                      <Input
+                        id="reset-recovery-key"
+                        placeholder="Enter your recovery key"
+                        type="text"
+                        value={recoveryKey}
+                        onChange={(event) => setRecoveryKey(event.target.value.trim())}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
-              <Button
-                fullWidth
-                type="submit"
-                variant="contained"
-                disabled={loading}
-                sx={{ mt: 2, mb: 1, bgcolor: 'primary.main', color: (theme) => theme.palette.getContrastText(theme.palette.primary.main), fontWeight: 600, '&:hover': { bgcolor: 'secondary.main' }, '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) } }}
-              >
-                {loading ? 'Resetting...' : 'Reset Password'}
-              </Button>
-            </Box>
-          )}
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Resetting...' : 'Reset Password'}
+            </Button>
+          </form>
+        ) : null}
 
-          {step === 'success' && (
-            <>
-              <Alert severity="success" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}26`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
+        {step === 'success' ? (
+          <>
+            <Alert variant="success">
+              <AlertDescription className="text-foreground">
                 Your password has been reset successfully.
-              </Alert>
-              {vaultPreserved ? (
-                <Alert severity="info" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', border: (theme) => `1px solid ${theme.palette.primary.main}26`, '& .MuiAlert-icon': { color: 'primary.main' } }}>
+              </AlertDescription>
+            </Alert>
+            {vaultPreserved ? (
+              <Alert variant="info">
+                <AlertDescription className="text-foreground">
                   Your vault data has been preserved.
-                </Alert>
-              ) : (
-                <Alert severity="warning" sx={{ mb: 2, bgcolor: (theme) => `${theme.palette.warning.main}14`, color: 'warning.light', border: (theme) => `1px solid ${theme.palette.warning.main}26`, '& .MuiAlert-icon': { color: 'warning.light' } }}>
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert variant="warning">
+                <AlertDescription className="text-foreground">
                   Your vault is locked. Enter your recovery key in Keychain to restore access to your credentials.
-                </Alert>
-              )}
-              <Typography variant="body2" align="center" sx={{ color: 'text.secondary' }}>
-                <Link component={RouterLink} to="/login?passwordReset=true" sx={{ color: 'primary.main', '&:hover': { color: 'secondary.main' } }}>Go to Sign In</Link>
-              </Typography>
-            </>
-          )}
+                </AlertDescription>
+              </Alert>
+            )}
+            <p className="text-center text-sm text-muted-foreground">
+              <AuthLink to="/login?passwordReset=true">Go to Sign In</AuthLink>
+            </p>
+          </>
+        ) : null}
+      </AuthLayout>
 
-          <RecoveryKeyConfirmDialog
-            open={step === 'recovery-key'}
-            recoveryKey={newRecoveryKey}
-            onConfirmed={() => { setNewRecoveryKey(''); setStep('success'); }}
-          />
-        </CardContent>
-      </Card>
-    </Box>
+      <RecoveryKeyConfirmDialog
+        open={step === 'recovery-key'}
+        recoveryKey={newRecoveryKey}
+        onConfirmed={() => {
+          setNewRecoveryKey('');
+          setStep('success');
+        }}
+      />
+    </>
   );
 }

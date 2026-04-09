@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { fireEvent, waitFor } from "@testing-library/dom";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import LoginPage from "./LoginPage";
@@ -88,12 +88,17 @@ vi.mock("../components/OAuthButtons", () => ({
   default: () => <div data-testid="oauth-buttons" />,
 }));
 
-function renderLoginPage() {
+function HomeProbe() {
+  const location = useLocation();
+  return <div data-testid="home-probe">{location.pathname}{location.search}</div>;
+}
+
+function renderLoginPage(initialEntries: string[] = ["/login"]) {
   return render(
-    <MemoryRouter initialEntries={["/login"]}>
+    <MemoryRouter initialEntries={initialEntries}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/" element={<div>home</div>} />
+        <Route path="/" element={<HomeProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -262,6 +267,31 @@ describe("LoginPage", () => {
     ).toBeInTheDocument();
     await waitFor(() => {
       expect(requestPasskeyOptionsApi).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("preserves supported deep-link actions after a successful sign-in", async () => {
+    const view = renderLoginPage(["/login?action=open-settings"]);
+
+    await view.findByText(
+      "Use a passkey to sign in without entering your email and password first.",
+    );
+
+    fireEvent.click(
+      view.getByRole("button", { name: "Use email and password instead" }),
+    );
+
+    fireEvent.change(await view.findByRole("textbox"), {
+      target: { value: "admin@example.com" },
+    });
+    fireEvent.change(view.container.querySelector('input[type="password"]')!, {
+      target: { value: "ArsenaleTemp91Qx" },
+    });
+
+    fireEvent.click(view.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => {
+      expect(view.getByTestId("home-probe")).toHaveTextContent("/?action=open-settings");
     });
   });
 });

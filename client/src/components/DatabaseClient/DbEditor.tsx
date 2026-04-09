@@ -1,47 +1,18 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
-  Box,
-  CircularProgress,
-  Typography,
-  Alert,
-  IconButton,
-  Tooltip,
-  TextField,
-  Button,
-  Collapse,
-  Paper,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Tab,
-  Tabs,
-  Card,
-  CardContent,
-  Chip,
-  Switch,
-  FormControlLabel,
-} from '@mui/material';
+  Play, Square, Database, Maximize, Minimize, Code, Power, Download,
+  Sparkles, GitBranch, History, Save, Plus, X, RefreshCw, SlidersHorizontal,
+  Shield, Send, Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import {
-  PlayArrow as RunIcon,
-  Stop as StopIcon,
-  Storage as SchemaIcon,
-  Fullscreen as FullscreenIcon,
-  FullscreenExit as FullscreenExitIcon,
-  Code as FormatIcon,
-  PowerSettingsNew as DisconnectIcon,
-  Download as ExportIcon,
-  AutoAwesome as AiIcon,
-  AccountTree as VisualizerIcon,
-  History as HistoryIcon,
-  SaveAlt as SaveIcon,
-  Add as AddIcon,
-  Close as CloseIcon,
-  Refresh as ReconnectIcon,
-  Tune as TuneIcon,
-  Security as PermissionIcon,
-  Send as SendIcon,
-} from '@mui/icons-material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import Editor, { type OnMount, type Monaco } from '@monaco-editor/react';
 import type * as monacoNs from 'monaco-editor';
 import api from '../../api/client';
@@ -553,8 +524,6 @@ export default function DbEditor({
     });
 
     // Register Ctrl+Enter keybinding for query execution
-    // Use ref to avoid stale closure — the action is registered once at mount,
-    // but handleRunQueryRef always points to the latest handleRunQuery.
     editor.addAction({
       id: 'run-sql-query',
       label: 'Run Query',
@@ -826,7 +795,7 @@ export default function DbEditor({
   const toolbarActions: ToolbarAction[] = [
     {
       id: 'run-query',
-      icon: activeTab.executing ? <StopIcon /> : <RunIcon />,
+      icon: activeTab.executing ? <Square /> : <Play />,
       tooltip: activeTab.executing ? 'Cancel query' : 'Run query (Ctrl+Enter)',
       onClick: handleRunQuery,
       active: activeTab.executing,
@@ -834,21 +803,21 @@ export default function DbEditor({
     },
     {
       id: 'format-sql',
-      icon: <FormatIcon />,
+      icon: <Code />,
       tooltip: protocol === 'mongodb' ? 'Format JSON query' : 'Format SQL',
       onClick: handleFormatSql,
       disabled: connectionState !== 'connected',
     },
     {
       id: 'save-query',
-      icon: <SaveIcon />,
+      icon: <Save />,
       tooltip: 'Save query (Ctrl+S)',
       onClick: openSaveDialog,
       disabled: !activeTab.sql.trim(),
     },
     {
       id: 'schema-browser',
-      icon: <SchemaIcon />,
+      icon: <Database />,
       tooltip: schemaBrowserOpen ? 'Hide schema browser' : 'Show schema browser',
       onClick: () => {
         const newVal = !schemaBrowserOpen;
@@ -859,28 +828,28 @@ export default function DbEditor({
     },
     {
       id: 'ai-assistant',
-      icon: <AiIcon />,
+      icon: <Sparkles />,
       tooltip: aiPanelOpen ? 'Hide AI assistant' : 'Show AI assistant',
       onClick: () => setPref('dbAiPanelOpen', !aiPanelOpen),
       active: aiPanelOpen,
     },
     {
       id: 'query-history',
-      icon: <HistoryIcon />,
+      icon: <History />,
       tooltip: historyOpen ? 'Hide query history' : 'Show query history',
       onClick: () => setPref('dbQueryHistoryOpen', !historyOpen),
       active: historyOpen,
     },
     {
       id: 'export-csv',
-      icon: <ExportIcon />,
+      icon: <Download />,
       tooltip: 'Export results as CSV',
       onClick: handleExportCsv,
       disabled: !activeTab.result || activeTab.result.columns.length === 0,
     },
     {
       id: 'query-visualizer',
-      icon: <VisualizerIcon />,
+      icon: <GitBranch />,
       tooltip: 'Query visualizer',
       onClick: () => setVisualizerOpen(true),
       disabled: !activeTab.result || !activeTab.sql.trim(),
@@ -888,13 +857,13 @@ export default function DbEditor({
     },
     {
       id: 'fullscreen',
-      icon: isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />,
+      icon: isFullscreen ? <Minimize /> : <Maximize />,
       tooltip: isFullscreen ? 'Exit fullscreen' : 'Fullscreen',
       onClick: toggleFullscreen,
     },
     {
       id: 'disconnect',
-      icon: <DisconnectIcon />,
+      icon: <Power />,
       tooltip: 'Disconnect',
       onClick: handleDisconnect,
       color: 'error.main',
@@ -907,31 +876,16 @@ export default function DbEditor({
   void isActive;
 
   return (
-    <Box
+    <div
       ref={containerRef}
-      sx={{
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        position: 'relative',
-        bgcolor: 'background.default',
-        minWidth: 0,
-        overflow: 'hidden',
-      }}
+      className="flex flex-1 flex-row relative bg-background min-w-0 overflow-hidden"
     >
+      {connectionState === 'connected' && (
+        <DockedToolbar actions={toolbarActions} />
+      )}
+      <div className="flex flex-1 flex-col min-w-0 relative overflow-hidden">
       {/* Status bar */}
-      <Box
-        sx={{
-          px: 1.5,
-          py: 0.5,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderBottom: 1,
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-        }}
-      >
+      <div className="px-3 py-1 flex items-center justify-between border-b border-border bg-card">
         <DbConnectionStatus
           state={connectionState}
           protocol={protocol}
@@ -939,120 +893,107 @@ export default function DbEditor({
           error={connectionState === 'error' ? error : undefined}
           hasSessionConfig={Object.values(currentSessionConfig).some((v) => v !== undefined)}
         />
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        <div className="flex items-center gap-1">
           {connectionState === 'connected' && protocol !== 'mongodb' && (
-            <Tooltip title="Session settings">
-              <IconButton
-                size="small"
-                onClick={(e) => setConfigAnchorEl(e.currentTarget)}
-                color={Object.values(currentSessionConfig).some((v) => v !== undefined) ? 'primary' : 'default'}
-              >
-                <TuneIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn('size-7', Object.values(currentSessionConfig).some((v) => v !== undefined) && 'text-primary')}
+              title="Session settings"
+              onClick={(e) => setConfigAnchorEl(e.currentTarget)}
+            >
+              <SlidersHorizontal className="size-[18px]" />
+            </Button>
           )}
           {(connectionState === 'error' || connectionState === 'disconnected') && (
-            <Tooltip title="Reconnect">
-              <IconButton
-                size="small"
-                onClick={() => {
-                  resetReconnect();
-                  connectSession().catch((err) => {
-                    if (!mountedRef.current) return;
-                    setConnectionState('error');
-                    setError(extractApiError(err, 'Reconnection failed'));
-                  });
-                }}
-                color="warning"
-              >
-                <ReconnectIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-yellow-400"
+              title="Reconnect"
+              onClick={() => {
+                resetReconnect();
+                connectSession().catch((err) => {
+                  if (!mountedRef.current) return;
+                  setConnectionState('error');
+                  setError(extractApiError(err, 'Reconnection failed'));
+                });
+              }}
+            >
+              <RefreshCw className="size-[18px]" />
+            </Button>
           )}
-          <Tooltip title="Run query (Ctrl+Enter)">
-            <span>
-              <IconButton
-                size="small"
-                onClick={handleRunQuery}
-                disabled={connectionState !== 'connected' || !activeTab.sql.trim() || activeTab.executing}
-                color="primary"
-              >
-                {activeTab.executing ? <CircularProgress size={16} /> : <RunIcon sx={{ fontSize: 18 }} />}
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Box>
-      </Box>
+          <span title="Run query (Ctrl+Enter)">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7 text-primary"
+              onClick={handleRunQuery}
+              disabled={connectionState !== 'connected' || !activeTab.sql.trim() || activeTab.executing}
+            >
+              {activeTab.executing ? <Loader2 className="size-4 animate-spin" /> : <Play className="size-[18px]" />}
+            </Button>
+          </span>
+        </div>
+      </div>
 
       {/* Query sub-tabs */}
       {connectionState === 'connected' && (
-        <Box sx={{ display: 'flex', alignItems: 'center', borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper', minHeight: 32 }}>
-          <Tabs
-            value={activeQueryTabId}
-            onChange={(_, id) => setActiveQueryTabId(id as string)}
-            variant="scrollable"
-            scrollButtons="auto"
-            sx={{ minHeight: 32, flex: 1, '& .MuiTab-root': { minHeight: 32, py: 0, px: 1.5, textTransform: 'none', fontSize: '0.75rem' } }}
-          >
+        <div className="flex items-center border-b border-border bg-card min-h-[32px]">
+          <div className="flex-1 flex overflow-x-auto">
             {queryTabs.map((tab) => (
-              <Tab
+              <button
                 key={tab.id}
-                value={tab.id}
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    {tab.executing && <CircularProgress size={10} />}
-                    <span>{tab.label}</span>
-                    {queryTabs.length > 1 && (
-                      <CloseIcon
-                        sx={{ fontSize: 14, ml: 0.5, opacity: 0.5, '&:hover': { opacity: 1 } }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setQueryTabs((prev) => {
-                            const filtered = prev.filter((t) => t.id !== tab.id);
-                            if (activeQueryTabId === tab.id) {
-                              setActiveQueryTabId(filtered[Math.max(0, filtered.length - 1)].id);
-                            }
-                            return filtered;
-                          });
-                        }}
-                      />
-                    )}
-                  </Box>
-                }
-              />
+                onClick={() => setActiveQueryTabId(tab.id)}
+                className={cn(
+                  'flex items-center gap-1 px-3 py-1 text-xs border-b-2 transition-colors whitespace-nowrap',
+                  tab.id === activeQueryTabId
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border',
+                )}
+              >
+                {tab.executing && <Loader2 className="size-2.5 animate-spin" />}
+                <span>{tab.label}</span>
+                {queryTabs.length > 1 && (
+                  <X
+                    className="size-3.5 ml-1 opacity-50 hover:opacity-100"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setQueryTabs((prev) => {
+                        const filtered = prev.filter((t) => t.id !== tab.id);
+                        if (activeQueryTabId === tab.id) {
+                          setActiveQueryTabId(filtered[Math.max(0, filtered.length - 1)].id);
+                        }
+                        return filtered;
+                      });
+                    }}
+                  />
+                )}
+              </button>
             ))}
-          </Tabs>
-          <Tooltip title="New query tab">
-            <IconButton size="small" onClick={() => {
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 mx-1"
+            title="New query tab"
+            onClick={() => {
               const newTab = createSubTab();
               setQueryTabs((prev) => [...prev, newTab]);
               setActiveQueryTabId(newTab.id);
-            }} sx={{ mx: 0.5 }}>
-              <AddIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
+            }}
+          >
+            <Plus className="size-4" />
+          </Button>
+        </div>
       )}
 
       {/* Connecting overlay */}
       {connectionState === 'connecting' && reconnectState === 'idle' && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1,
-            bgcolor: 'rgba(0,0,0,0.5)',
-          }}
-        >
-          <CircularProgress size={24} sx={{ mr: 1 }} />
-          <Typography>Connecting to database...</Typography>
-        </Box>
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/50">
+          <Loader2 className="size-5 animate-spin mr-2" />
+          <span>Connecting to database...</span>
+        </div>
       )}
 
       {/* Reconnect overlay */}
@@ -1068,209 +1009,171 @@ export default function DbEditor({
 
       {/* Error alert */}
       {connectionState === 'error' && (
-        <Alert severity="error" sx={{ m: 1 }}>
+        <div className="m-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
-        </Alert>
+        </div>
       )}
 
       {/* AI Assistant panel */}
-      <Collapse in={aiPanelOpen && connectionState === 'connected'}>
-        <Paper
-          elevation={0}
-          sx={{
-            borderBottom: 1,
-            borderColor: 'divider',
-            p: 1.5,
-            bgcolor: (theme) => theme.palette.mode === 'dark' ? 'rgba(144,202,249,0.04)' : 'rgba(25,118,210,0.02)',
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <AiIcon sx={{ fontSize: 18, color: 'primary.main' }} />
-            <Typography variant="subtitle2" color="primary">
+      {aiPanelOpen && connectionState === 'connected' && (
+        <div className="border-b border-border p-3 bg-primary/[0.04]">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles className="size-[18px] text-primary" />
+            <span className="text-sm font-semibold text-primary">
               AI Assistant
-            </Typography>
-          </Box>
+            </span>
+          </div>
 
           {/* Prompt input — shown in idle, error, and result steps */}
           {(aiStep === 'idle' || aiStep === 'error' || aiStep === 'result') && (
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-              <TextField
+            <div className="flex gap-2 items-start">
+              <textarea
                 value={aiPrompt}
                 onChange={(e) => setAiPrompt(e.target.value)}
                 placeholder="Describe the query you need in plain English..."
-                size="small"
-                fullWidth
-                multiline
-                maxRows={3}
+                className="flex-1 min-h-[40px] max-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50 resize-none"
+                rows={1}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     handleAiGenerate();
                   }
                 }}
-                sx={{ '& .MuiInputBase-root': { fontSize: '0.875rem' } }}
               />
               <Button
-                variant="contained"
-                size="small"
+                size="sm"
                 onClick={handleAiGenerate}
                 disabled={!aiPrompt.trim()}
-                sx={{ minWidth: 90, height: 40 }}
+                className="min-w-[90px] h-10"
               >
                 Generate
               </Button>
-            </Box>
+            </div>
           )}
 
           {/* Loading: analyzing or generating */}
           {(aiStep === 'analyzing' || aiStep === 'generating') && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 2, justifyContent: 'center' }}>
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">
+            <div className="flex items-center gap-3 py-4 justify-center">
+              <Loader2 className="size-5 animate-spin" />
+              <span className="text-sm text-muted-foreground">
                 {aiStep === 'analyzing' ? 'Analyzing which tables are needed...' : 'Generating SQL query...'}
-              </Typography>
-            </Box>
+              </span>
+            </div>
           )}
 
           {/* Permissions step — table approval cards */}
           {aiStep === 'permissions' && (
-            <Box sx={{ mt: 0.5 }}>
-              <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <PermissionIcon fontSize="small" color="warning" />
+            <div className="mt-1">
+              <h4 className="text-sm font-semibold mb-1 flex items-center gap-1">
+                <Shield className="size-4 text-yellow-400" />
                 Tables needed ({Object.values(aiApprovals).filter(Boolean).length}/{aiObjectRequests.length} approved)
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              </h4>
+              <p className="text-sm text-muted-foreground mb-3">
                 The AI identified these tables for your query. Approve which ones it can read:
-              </Typography>
+              </p>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+              <div className="flex flex-col gap-2 mb-4">
                 {aiObjectRequests.map((req, i) => (
-                  <Card key={i} variant="outlined" sx={{ bgcolor: aiApprovals[i] ? 'action.hover' : undefined }}>
-                    <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Box sx={{ flex: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                            <Chip
-                              label={req.schema}
-                              size="small"
-                              color="primary"
-                              variant="outlined"
-                              sx={{ height: 20 }}
-                            />
-                            <Typography variant="body2" fontWeight={600}>{req.name}</Typography>
-                          </Box>
-                          <Typography variant="caption" color="text.secondary">{req.reason}</Typography>
-                        </Box>
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              checked={aiApprovals[i] ?? false}
-                              onChange={(_, checked) => setAiApprovals((prev) => ({ ...prev, [i]: checked }))}
-                              size="small"
-                            />
-                          }
-                          label={aiApprovals[i] ? 'Allow' : 'Deny'}
-                          labelPlacement="start"
-                          sx={{ ml: 2, mr: 0 }}
+                  <div
+                    key={i}
+                    className={cn(
+                      'rounded-lg border border-border p-3',
+                      aiApprovals[i] && 'bg-accent/50',
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Badge variant="outline" className="h-5">
+                            {req.schema}
+                          </Badge>
+                          <span className="text-sm font-semibold">{req.name}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">{req.reason}</span>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        <span className="text-xs text-muted-foreground">
+                          {aiApprovals[i] ? 'Allow' : 'Deny'}
+                        </span>
+                        <Switch
+                          checked={aiApprovals[i] ?? false}
+                          onCheckedChange={(checked) => setAiApprovals((prev) => ({ ...prev, [i]: checked }))}
                         />
-                      </Box>
-                    </CardContent>
-                  </Card>
+                      </div>
+                    </div>
+                  </div>
                 ))}
-              </Box>
+              </div>
 
-              <Box sx={{ display: 'flex', gap: 1 }}>
+              <div className="flex gap-2">
                 <Button
-                  variant="contained"
-                  size="small"
-                  startIcon={<SendIcon />}
+                  size="sm"
                   onClick={handleAiConfirm}
                   disabled={Object.values(aiApprovals).filter(Boolean).length === 0}
                 >
+                  <Send className="size-4" />
                   Generate with approved ({Object.values(aiApprovals).filter(Boolean).length})
                 </Button>
-                <Button size="small" color="inherit" onClick={handleAiCancel}>Cancel</Button>
-              </Box>
-            </Box>
+                <Button variant="ghost" size="sm" onClick={handleAiCancel}>Cancel</Button>
+              </div>
+            </div>
           )}
 
           {/* Error display */}
           {aiStep === 'error' && aiError && (
-            <Alert severity="error" sx={{ mt: 1 }} onClose={() => { setAiError(''); setAiStep('idle'); }}>
-              {aiError}
-            </Alert>
+            <div className="mt-2 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
+              <span>{aiError}</span>
+              <button onClick={() => { setAiError(''); setAiStep('idle'); }} className="text-red-400 hover:text-red-300 ml-2 text-xs">dismiss</button>
+            </div>
           )}
 
           {/* Result display */}
           {aiStep === 'result' && aiResult && (
-            <Box sx={{ mt: 1.5 }}>
-              <Box
-                sx={{
-                  p: 1,
-                  bgcolor: 'background.default',
-                  borderRadius: 1,
-                  border: 1,
-                  borderColor: 'divider',
-                  fontFamily: 'monospace',
-                  fontSize: '0.8125rem',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word',
-                  maxHeight: 150,
-                  overflow: 'auto',
-                }}
-              >
+            <div className="mt-3">
+              <div className="p-2 bg-background rounded border border-border font-mono text-[0.8125rem] whitespace-pre-wrap break-words max-h-[150px] overflow-auto">
                 {aiResult.sql}
-              </Box>
+              </div>
 
               {aiResult.firewallWarning && (
-                <Alert severity="warning" sx={{ mt: 1 }}>
+                <div className="mt-2 rounded border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-400">
                   {aiResult.firewallWarning}
-                </Alert>
+                </div>
               )}
 
-              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                <Button size="small" variant="outlined" onClick={handleAiInsert}>
+              <div className="flex gap-2 mt-2">
+                <Button variant="outline" size="sm" onClick={handleAiInsert}>
                   Insert into editor
                 </Button>
                 {aiResult.explanation && (
                   <Button
-                    size="small"
-                    variant="text"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setShowExplanation((v) => !v)}
                   >
                     {showExplanation ? 'Hide explanation' : 'Explain'}
                   </Button>
                 )}
-              </Box>
+              </div>
 
-              <Collapse in={showExplanation && Boolean(aiResult.explanation)}>
-                <Typography
-                  variant="body2"
-                  color="text.secondary"
-                  sx={{ mt: 1, pl: 1, borderLeft: 2, borderColor: 'primary.main' }}
-                >
+              {showExplanation && aiResult.explanation && (
+                <p className="text-sm text-muted-foreground mt-2 pl-2 border-l-2 border-primary">
                   {aiResult.explanation}
-                </Typography>
-              </Collapse>
-            </Box>
+                </p>
+              )}
+            </div>
           )}
-        </Paper>
-      </Collapse>
+        </div>
+      )}
 
       {/* Main content area */}
-      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0, minHeight: 0 }}>
+      <div className="flex-1 flex overflow-hidden min-w-0 min-h-0">
         {/* Editor + Results (resizable split) */}
-        <Box ref={splitContainerRef} sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+        <div ref={splitContainerRef} className="flex-1 flex flex-col overflow-hidden min-w-0">
           {/* Query editor area */}
-          <Box
+          <div
             ref={editorPaneRef}
-            sx={{
-              flex: `${splitRatio} 1 0%`,
-              minHeight: 80,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
+            style={{ flex: `${splitRatio} 1 0%` }}
+            className="min-h-[80px] flex flex-col overflow-hidden"
           >
             <Editor
               language={protocol === 'mongodb' ? 'json' : 'sql'}
@@ -1298,35 +1201,32 @@ export default function DbEditor({
                   : 'Enter SQL query here... (Ctrl+Enter to execute)',
               }}
               loading={
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
-                  <CircularProgress size={20} />
-                </Box>
+                <div className="flex items-center justify-center flex-1">
+                  <Loader2 className="size-5 animate-spin" />
+                </div>
               }
             />
-          </Box>
+          </div>
 
           {/* Drag handle */}
-          <Box
+          <div
             onMouseDown={handleSplitDragStart}
-            sx={{
-              height: 4,
-              cursor: 'row-resize',
-              bgcolor: 'divider',
-              flexShrink: 0,
-              '&:hover': { bgcolor: 'primary.main' },
-              transition: 'background-color 0.15s',
-            }}
+            className="h-1 cursor-row-resize bg-border shrink-0 hover:bg-primary transition-colors"
           />
 
           {/* Results area */}
-          <Box ref={resultsPaneRef} sx={{ flex: `${1 - splitRatio} 1 0%`, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 40 }}>
+          <div
+            ref={resultsPaneRef}
+            style={{ flex: `${1 - splitRatio} 1 0%` }}
+            className="overflow-hidden flex flex-col min-h-[40px]"
+          >
             {activeTab.executing && (
-              <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <CircularProgress size={16} />
-                <Typography variant="body2" color="text.secondary">
+              <div className="p-4 flex items-center gap-2">
+                <Loader2 className="size-4 animate-spin" />
+                <span className="text-sm text-muted-foreground">
                   Executing query...
-                </Typography>
-              </Box>
+                </span>
+              </div>
             )}
 
             {!activeTab.executing && activeTab.result && (
@@ -1340,16 +1240,16 @@ export default function DbEditor({
             )}
 
             {!activeTab.executing && !activeTab.result && connectionState === 'connected' && (
-              <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Typography variant="body2" color="text.secondary">
+              <div className="flex-1 flex items-center justify-center">
+                <span className="text-sm text-muted-foreground">
                   {protocol === 'mongodb'
                     ? 'Write a MongoDB JSON query spec and press Ctrl+Enter to execute'
                     : 'Write a SQL query and press Ctrl+Enter to execute'}
-                </Typography>
-              </Box>
+                </span>
+              </div>
             )}
-          </Box>
-        </Box>
+          </div>
+        </div>
 
         {/* Schema browser */}
         <DbSchemaBrowser
@@ -1372,12 +1272,7 @@ export default function DbEditor({
           onSelectQuery={(sql) => updateTab(activeQueryTabId, { sql })}
           refreshTrigger={historyRefresh}
         />
-      </Box>
-
-      {/* Docked toolbar */}
-      {connectionState === 'connected' && (
-        <DockedToolbar actions={toolbarActions} containerRef={containerRef} />
-      )}
+      </div>
 
       {/* Query visualizer drawer */}
       <QueryVisualizer
@@ -1415,47 +1310,31 @@ export default function DbEditor({
       />
 
       {/* Save query dialog */}
-      <Dialog
-        open={saveDialogOpen}
-        onClose={() => setSaveDialogOpen(false)}
-        maxWidth="xs"
-        fullWidth
-      >
-        <DialogTitle>Save Query</DialogTitle>
-        <DialogContent>
-          <TextField
+      <Dialog open={saveDialogOpen} onOpenChange={(open) => !open && setSaveDialogOpen(false)}>
+        <DialogContent className="max-w-xs">
+          <DialogHeader>
+            <DialogTitle>Save Query</DialogTitle>
+          </DialogHeader>
+          <Input
             autoFocus
-            fullWidth
-            size="small"
-            label="Query name"
+            placeholder="Query name"
             value={saveName}
             onChange={(e) => setSaveName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSaveQuery(); } }}
-            sx={{ mt: 1 }}
+            className="mt-1"
           />
-          <Typography
-            variant="caption"
-            color="text.secondary"
-            sx={{
-              mt: 1,
-              display: 'block',
-              fontFamily: 'monospace',
-              fontSize: '0.7rem',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
+          <p className="text-xs text-muted-foreground mt-1 font-mono overflow-hidden text-ellipsis whitespace-nowrap">
             {activeTab.sql.replace(/\s+/g, ' ').trim().slice(0, 120)}
-          </Typography>
+          </p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveQuery} disabled={!saveName.trim()}>
+              Save
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSaveDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveQuery} disabled={!saveName.trim()}>
-            Save
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+      </div>{/* end inner content column */}
+    </div>
   );
 }
