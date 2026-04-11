@@ -63,12 +63,15 @@ interface StatusBarProps {
 
 export default function StatusBar({ onOpenSettings }: StatusBarProps) {
   const user = useAuthStore((s) => s.user);
+  const permissionsLoaded = useAuthStore((s) => s.permissionsLoaded);
+  const canManageGateways = useAuthStore((s) => s.permissions.canManageGateways);
   const vaultUnlocked = useVaultStore((s) => s.unlocked);
   const vaultInitialized = useVaultStore((s) => s.initialized);
   const checkVaultStatus = useVaultStore((s) => s.checkStatus);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
   const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
   const gateways = useGatewayStore((s) => s.gateways);
+  const gatewaysLoading = useGatewayStore((s) => s.loading);
   const tabs = useTabsStore((s) => s.tabs);
   const expiringCount = useSecretStore((s) => s.expiringCount);
   const pwnedCount = useSecretStore((s) => s.pwnedCount);
@@ -85,6 +88,34 @@ export default function StatusBar({ onOpenSettings }: StatusBarProps) {
 
   const gatewaySummary = summarizeGatewayStatuses(gateways);
   const alertCount = expiringCount + pwnedCount;
+  const showGatewayStatus = permissionsLoaded && canManageGateways;
+  const gatewayLabel = gatewaysLoading && gatewaySummary.total === 0
+    ? 'Checking'
+    : gatewaySummary.total === 0
+      ? '0 gateways'
+      : `${gatewaySummary.healthy}/${gatewaySummary.total}`;
+  const gatewayTooltip = gatewaysLoading && gatewaySummary.total === 0
+    ? 'Checking gateway health'
+    : gatewaySummary.total === 0
+      ? 'No gateways configured · Click to open gateways'
+      : [
+          `${gatewaySummary.healthy}/${gatewaySummary.total} gateways healthy`,
+          gatewaySummary.degraded > 0 ? `${gatewaySummary.degraded} degraded` : '',
+          gatewaySummary.unhealthy > 0 ? `${gatewaySummary.unhealthy} unhealthy` : '',
+          gatewaySummary.unknown > 0 ? `${gatewaySummary.unknown} unknown` : '',
+          'Click to open gateways',
+        ].filter(Boolean).join(' · ');
+  const gatewayIndicatorClass = gatewaysLoading && gatewaySummary.total === 0
+    ? 'bg-sky-400 animate-pulse'
+    : gatewaySummary.total === 0
+      ? 'bg-zinc-400'
+      : gatewaySummary.healthy === gatewaySummary.total
+        ? 'bg-emerald-400'
+        : gatewaySummary.healthy > 0 || gatewaySummary.degraded > 0
+          ? 'bg-yellow-400'
+          : gatewaySummary.unknown > 0
+            ? 'bg-zinc-400'
+            : 'bg-destructive';
 
   const handleVaultToggle = async () => {
     if (vaultUnlocked) {
@@ -107,31 +138,14 @@ export default function StatusBar({ onOpenSettings }: StatusBarProps) {
           {tabs.length} session{tabs.length !== 1 ? 's' : ''}
         </StatusBarButton>
 
-        {gatewaySummary.total > 0 ? (
+        {showGatewayStatus ? (
           <StatusBarButton
-            tooltip={[
-              `${gatewaySummary.healthy}/${gatewaySummary.total} gateways healthy`,
-              gatewaySummary.degraded > 0 ? `${gatewaySummary.degraded} degraded` : '',
-              gatewaySummary.unhealthy > 0 ? `${gatewaySummary.unhealthy} unhealthy` : '',
-              gatewaySummary.unknown > 0 ? `${gatewaySummary.unknown} unknown` : '',
-              'Click to open gateways',
-            ].filter(Boolean).join(' · ')}
+            tooltip={gatewayTooltip}
             onClick={() => onOpenSettings?.('infrastructure')}
           >
             <Network className="size-3" />
-            <span
-              className={cn(
-                'size-1.5 rounded-full',
-                gatewaySummary.healthy === gatewaySummary.total
-                  ? 'bg-emerald-400'
-                  : gatewaySummary.healthy > 0 || gatewaySummary.degraded > 0
-                    ? 'bg-yellow-400'
-                    : gatewaySummary.unknown > 0
-                      ? 'bg-zinc-400'
-                      : 'bg-destructive',
-              )}
-            />
-            {gatewaySummary.healthy}/{gatewaySummary.total}
+            <span className={cn('size-1.5 rounded-full', gatewayIndicatorClass)} />
+            {gatewayLabel}
           </StatusBarButton>
         ) : null}
       </div>

@@ -12,6 +12,12 @@ vi.mock('../api/sse', () => ({
 describe('useGatewayMonitor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useGatewayStore.setState((state) => ({
+      ...state,
+      fetchGateways: vi.fn().mockResolvedValue(undefined),
+      watchedScalingGatewayIds: {},
+      watchedInstanceGatewayIds: {},
+    }));
     useAuthStore.setState({
       accessToken: 'token',
       csrfToken: 'csrf',
@@ -40,10 +46,6 @@ describe('useGatewayMonitor', () => {
         canManageSecrets: true,
         canManageTenantSettings: false,
       },
-    });
-    useGatewayStore.setState({
-      watchedScalingGatewayIds: {},
-      watchedInstanceGatewayIds: {},
     });
     useFeatureFlagsStore.setState({ loaded: true, zeroTrustEnabled: true });
   });
@@ -81,10 +83,29 @@ describe('useGatewayMonitor', () => {
     renderHook(() => useGatewayMonitor());
 
     await vi.waitFor(() => {
+      expect(useGatewayStore.getState().fetchGateways).toHaveBeenCalledTimes(1);
       expect(connectSSE).toHaveBeenCalledWith(expect.objectContaining({
         url: '/api/gateways/stream',
         accessToken: 'token',
       }));
     });
+  });
+
+  it('bootstraps the gateway list even when zero trust streaming is disabled', async () => {
+    useAuthStore.setState((state) => ({
+      ...state,
+      permissions: {
+        ...state.permissions,
+        canManageGateways: true,
+      },
+    }));
+    useFeatureFlagsStore.setState({ loaded: true, zeroTrustEnabled: false });
+
+    renderHook(() => useGatewayMonitor());
+
+    await vi.waitFor(() => {
+      expect(useGatewayStore.getState().fetchGateways).toHaveBeenCalledTimes(1);
+    });
+    expect(connectSSE).not.toHaveBeenCalled();
   });
 });

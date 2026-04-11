@@ -12,9 +12,15 @@ export function useGatewayMonitor() {
   const canManageGateways = useAuthStore((s) => s.permissions.canManageGateways);
   const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
   const zeroTrustEnabled = useFeatureFlagsStore((s) => s.zeroTrustEnabled);
+  const fetchGateways = useGatewayStore((s) => s.fetchGateways);
   const watchedScaling = useGatewayStore((s) => Object.keys(s.watchedScalingGatewayIds).sort().join(','));
   const watchedInstances = useGatewayStore((s) => Object.keys(s.watchedInstanceGatewayIds).sort().join(','));
   const applyGatewayStreamSnapshot = useGatewayStore((s) => s.applyGatewayStreamSnapshot);
+
+  useEffect(() => {
+    if (!accessToken || !tenantId || !permissionsLoaded || !canManageGateways) return;
+    void fetchGateways();
+  }, [accessToken, tenantId, permissionsLoaded, canManageGateways, fetchGateways]);
 
   useEffect(() => {
     if (!accessToken || !tenantId || !permissionsLoaded || !canManageGateways || !featureFlagsLoaded || !zeroTrustEnabled) return undefined;

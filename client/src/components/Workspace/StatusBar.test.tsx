@@ -21,6 +21,20 @@ describe('StatusBar', () => {
         tenantId: 'tenant-1',
         tenantRole: 'OWNER',
       },
+      permissionsLoaded: true,
+      permissions: {
+        canConnect: true,
+        canCreateConnections: true,
+        canManageConnections: true,
+        canViewCredentials: true,
+        canShareConnections: true,
+        canViewAuditLog: true,
+        canManageSessions: true,
+        canManageGateways: true,
+        canManageUsers: true,
+        canManageSecrets: true,
+        canManageTenantSettings: true,
+      },
     });
     useFeatureFlagsStore.setState({ loaded: true, keychainEnabled: false });
     useGatewayStore.setState({
@@ -88,5 +102,20 @@ describe('StatusBar', () => {
     fireEvent.click(screen.getByRole('button', { name: /1\/1/i }));
 
     expect(onOpenSettings).toHaveBeenCalledWith('infrastructure');
+  });
+
+  it('keeps the gateway indicator visible while the initial gateway check is loading', () => {
+    useGatewayStore.setState({
+      gateways: [],
+      loading: true,
+    });
+
+    render(
+      <TooltipProvider>
+        <StatusBar />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole('button', { name: /checking/i })).toBeInTheDocument();
   });
 });
