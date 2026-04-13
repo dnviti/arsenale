@@ -514,7 +514,6 @@ export default function MainLayout() {
             initialTab={settingsInitialTab}
             linkedProvider={linkedProvider}
             onViewUserProfile={(userId) => setProfileUserId(userId)}
-            onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined}
             onImport={() => setImportDialogOpen(true)}
             onExport={() => setExportDialogOpen(true)}
           />
@@ -526,6 +525,7 @@ export default function MainLayout() {
             open={auditLogOpen}
             onClose={() => setAuditLogOpen(false)}
             onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined}
+            onViewUserProfile={(userId) => setProfileUserId(userId)}
           />
         </Suspense>
       ) : null}

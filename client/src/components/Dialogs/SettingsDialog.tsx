@@ -44,7 +44,6 @@ interface SettingsDialogProps {
   initialTab?: string;
   linkedProvider?: string | null;
   onViewUserProfile?: (userId: string) => void;
-  onGeoIpClick?: (ip: string) => void;
   onImport?: () => void;
   onExport?: () => void;
 }
@@ -89,7 +88,6 @@ export default function SettingsDialog({
   initialTab,
   linkedProvider,
   onViewUserProfile,
-  onGeoIpClick,
   onImport,
   onExport,
 }: SettingsDialogProps) {
@@ -155,7 +153,6 @@ export default function SettingsDialog({
         tenantId: user?.tenantId ?? null,
         onHasPasswordResolved: setHasPassword,
         onViewUserProfile,
-        onGeoIpClick,
         onImport,
         onExport,
         deleteOrgTrigger,
@@ -177,7 +174,6 @@ export default function SettingsDialog({
       keychainEnabled,
       linkedProvider,
       onExport,
-      onGeoIpClick,
       onImport,
       onViewUserProfile,
       registerDeleteOrgTrigger,

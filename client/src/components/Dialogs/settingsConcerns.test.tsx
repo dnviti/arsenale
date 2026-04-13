@@ -24,7 +24,6 @@ function createContext(
     tenantId: 'tenant-1',
     onHasPasswordResolved: vi.fn(),
     onViewUserProfile: vi.fn(),
-    onGeoIpClick: vi.fn(),
     onImport: vi.fn(),
     onExport: vi.fn(),
     deleteOrgTrigger: vi.fn(),
@@ -127,6 +126,20 @@ describe('buildSettingsConcerns', () => {
     expect(organization?.sections.some((section) => section.id === 'vault-providers')).toBe(false);
     expect(integrations?.sections.some((section) => section.id === 'vault-providers')).toBe(true);
     expect(integrations?.sections.map((section) => section.id)).toContain('vault-providers');
+  });
+
+  it('keeps SQL governance controls in general settings', () => {
+    const concerns = buildSettingsConcerns(createContext());
+
+    const governance = concerns.find((concern) => concern.id === 'governance');
+    expect(governance?.sections.map((section) => section.id)).toEqual([
+      'system',
+      'ip-allowlist',
+      'access-policy',
+      'db-firewall',
+      'db-masking',
+      'db-rate-limit',
+    ]);
   });
 
   it('drops tenant-scoped integrations when there is no active tenant', () => {

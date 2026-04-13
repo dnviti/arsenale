@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { pwaWorkboxConfig } from './pwaWorkbox';
 
 // Allow overriding proxy targets via env vars (set by Docker Compose).
 // Defaults target the local Go split services started by `make dev`.
@@ -85,40 +86,7 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        // Only cache static assets — never cache API calls or WebSocket connections
-        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024, // 3 MiB — main bundle exceeds default 2 MiB
-        globIgnores: ['monaco/vs/**/*'],
-        navigateFallback: 'index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/guacamole\//],
-        runtimeCaching: [
-          {
-            // Navigation requests: online-first with fallback to cache
-            urlPattern: ({ request }) => request.mode === 'navigate',
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'pages',
-              networkTimeoutSeconds: 3,
-            },
-          },
-          {
-            // Static assets (JS, CSS, images, fonts): stale-while-revalidate
-            urlPattern: ({ request }) =>
-              request.destination === 'script' ||
-              request.destination === 'style' ||
-              request.destination === 'image' ||
-              request.destination === 'font',
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'static-assets',
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
-              },
-            },
-          },
-        ],
-      },
+      workbox: pwaWorkboxConfig,
     }),
   ],
   resolve: {

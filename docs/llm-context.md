@@ -111,7 +111,7 @@ flowchart LR
     API --> Postgres["PostgreSQL"]
     API --> Redis["Redis"]
     API --> Brokers["terminal-broker / desktop-broker / tunnel-broker"]
-    Client --> MapAssets["map-assets"]
+    Client --> MapAssets["map-assets OSM cache"]
     API --> Gateways["ssh-gateway / guacd / db-proxy / guacenc"]
 ```
 

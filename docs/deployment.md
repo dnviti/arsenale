@@ -109,7 +109,7 @@ Installer-driven development uses the same capability and routing model as produ
 | Image | Built from | Notes |
 |-------|------------|-------|
 | `control-plane-api` | `backend/Dockerfile` with `SERVICE=control-plane-api` | Generic Go service image pattern |
-| `map-assets` | `backend/Dockerfile` with `SERVICE=map-assets` | Dedicated raster XYZ tile service for GeoIP-enabled deployments |
+| `map-assets` | `backend/Dockerfile` with `SERVICE=map-assets` | OpenStreetMap tile proxy/cache service for GeoIP-enabled deployments |
 | `client` | `client/Dockerfile` | Multi-stage Node build then nginx runtime |
 | `db-proxy` | `gateways/db-proxy/Dockerfile` | Go `db-proxy` binary plus bundled `tunnel-agent` |
 | `ssh-gateway` | `gateways/ssh-gateway/Dockerfile` | Alpine runtime, SSHD, gRPC key server, tunnel agent |
@@ -156,7 +156,7 @@ Primary internal networks:
 | `net-guacd` | Desktop broker and `guacd` |
 | `net-guacenc` | Recording conversion |
 | `net-gateway` | SSH gateway and managed gateway workloads |
-| `net-egress` | Outbound egress network for endpoint-facing services: SSH, RDP/VNC, direct database execution, AI provider calls from `control-plane-api`, and tunneled gateway fixtures |
+| `net-egress` | Outbound egress network for endpoint-facing services: SSH, RDP/VNC, direct database execution, OSM tile fetches from `map-assets`, AI provider calls from `control-plane-api`, and tunneled gateway fixtures |
 
 ## ⚙️ Runtime Env Emitted By The Installer
 
@@ -169,6 +169,9 @@ The compose template now emits more deployment intent into the running services:
 - `CLI_ENABLED`
 - `GATEWAY_ROUTING_MODE`
 - `MAP_ASSETS_UPSTREAM_HOST`
+- `MAP_ASSETS_CACHE_DIR`
+- `MAP_ASSETS_TILE_URL_TEMPLATE`
+- `MAP_ASSETS_USER_AGENT`
 - `ORCHESTRATOR_*`
 - `DEV_BOOTSTRAP_*`
 - `DEV_SAMPLE_*`

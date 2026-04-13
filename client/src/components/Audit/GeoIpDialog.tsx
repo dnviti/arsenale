@@ -19,13 +19,13 @@ import {
   HardDrive,
   Loader2,
 } from 'lucide-react';
-import { MapContainer, Marker, Popup } from 'react-leaflet';
+import { Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../../api/client';
 import { countryFlag } from './IpGeoCell';
 import { extractApiError } from '../../utils/apiError';
 import { ensureLeafletDefaultIcon } from '../../lib/leafletMarkerIcon';
-import { WorldBasemap } from './WorldBasemap';
+import { WorldMapCanvas } from './WorldMapCanvas';
 
 ensureLeafletDefaultIcon();
 
@@ -230,18 +230,11 @@ export default function GeoIpDialog({ open, onClose, ipAddress }: GeoIpDialogPro
               {/* Map */}
               <div className="flex-1 min-h-[300px] md:min-h-0 relative">
                 {hasCoords ? (
-                  <MapContainer
+                  <WorldMapCanvas
                     center={[data.lat ?? 0, data.lon ?? 0]}
                     zoom={10}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      minHeight: 400,
-                      background: 'radial-gradient(circle at top, rgba(15, 23, 42, 0.16), rgba(15, 23, 42, 0.04) 38%, rgba(248, 250, 252, 0.96) 100%)',
-                    }}
-                    scrollWheelZoom
+                    minHeight={400}
                   >
-                    <WorldBasemap />
                     <Marker position={[data.lat ?? 0, data.lon ?? 0]}>
                       <Popup>
                         <strong>{data.query}</strong><br />
@@ -249,7 +242,7 @@ export default function GeoIpDialog({ open, onClose, ipAddress }: GeoIpDialogPro
                         {data.isp && <>ISP: {data.isp}</>}
                       </Popup>
                     </Marker>
-                  </MapContainer>
+                  </WorldMapCanvas>
                 ) : (
                   <div className="flex justify-center items-center h-full">
                     <p className="text-muted-foreground">No coordinates available for this IP</p>

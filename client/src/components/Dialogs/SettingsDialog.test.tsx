@@ -43,6 +43,15 @@ describe('SettingsDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     localStorage.clear();
+    globalThis.IntersectionObserver = class IntersectionObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() { return []; }
+      readonly root = null;
+      readonly rootMargin = '';
+      readonly thresholds = [];
+    } as unknown as typeof IntersectionObserver;
 
     useAuthStore.setState({
       user: {
@@ -90,7 +99,7 @@ describe('SettingsDialog', () => {
       />,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Governance' })).toBeInTheDocument();
+    expect(await screen.findByText('Audit Log content')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Close settings' })).toBeInTheDocument();
     await waitFor(() => {
       expect(useUiPreferencesStore.getState().settingsActiveTab).toBe('governance');
@@ -106,15 +115,15 @@ describe('SettingsDialog', () => {
       />,
     );
 
-    expect(await screen.findByRole('heading', { name: 'Personal' })).toBeInTheDocument();
+    expect(await screen.findByText('Profile content')).toBeInTheDocument();
 
     fireEvent.change(
-      screen.getByPlaceholderText('Search sections, not tabs...'),
+      screen.getByPlaceholderText('Search settings...'),
       { target: { value: 'passkeys' } },
     );
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Security' })).toBeInTheDocument();
+      expect(screen.getByText('Passkeys content')).toBeInTheDocument();
     });
     expect(screen.getByText('Passkeys content')).toBeInTheDocument();
     expect(screen.queryByText('Profile content')).not.toBeInTheDocument();

@@ -2,68 +2,38 @@ package main
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
+	"errors"
 	"net/http"
+	"os"
 	"strconv"
-	"sync"
-	"time"
+	"strings"
 
 	"golang.org/x/sync/singleflight"
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 )
 
-const (
-	tileSize         = 256
-	minZoom          = 0
-	maxNativeZoom    = 7
-	maxDisplayZoom   = 12
-	maxMercatorLat   = 85.05112878
-	tileCacheControl = "public, max-age=86400, stale-while-revalidate=604800"
-)
-
-type coordinate [2]float64
-
-type pixelPoint struct {
-	x float64
-	y float64
-}
-
-type tileKey struct {
-	z uint8
-	x uint32
-	y uint32
-}
-
-type cachedTile struct {
-	data []byte
-	etag string
-}
-
-type tileMetadataResponse struct {
-	Name          string     `json:"name"`
-	Format        string     `json:"format"`
-	TileSize      int        `json:"tileSize"`
-	MinZoom       int        `json:"minZoom"`
-	MaxNativeZoom int        `json:"maxNativeZoom"`
-	MaxZoom       int        `json:"maxZoom"`
-	Bounds        [4]float64 `json:"bounds"`
-	URLTemplate   string     `json:"urlTemplate"`
-	Graticule     []float64  `json:"graticule"`
-	Attribution   string     `json:"attribution"`
-}
-
 type tileService struct {
-	mu      sync.RWMutex
-	cache   map[tileKey]cachedTile
-	renders singleflight.Group
+	config  tileServiceConfig
+	fetches singleflight.Group
 }
 
-func newTileService() *tileService {
-	return &tileService{
-		cache: make(map[tileKey]cachedTile),
+func newTileService() (*tileService, error) {
+	return newTileServiceWithConfig(loadTileServiceConfig())
+}
+
+func newTileServiceWithConfig(config tileServiceConfig) (*tileService, error) {
+	if config.client == nil {
+		config.client = http.DefaultClient
 	}
+	if config.maxTileBytes <= 0 {
+		config.maxTileBytes = 5 << 20
+	}
+	if err := os.MkdirAll(config.cacheDir, 0o755); err != nil {
+		return nil, err
+	}
+	return &tileService{config: config}, nil
 }
 
 func (s *tileService) registerRoutes(mux *http.ServeMux) {
@@ -82,8 +52,8 @@ func (s *tileService) handleWorldMetadata(w http.ResponseWriter, _ *http.Request
 		MaxZoom:       maxDisplayZoom,
 		Bounds:        worldBounds,
 		URLTemplate:   "/v1/tiles/world/{z}/{x}/{y}",
-		Graticule:     []float64{30},
-		Attribution:   "Arsenale IP geolocation basemap",
+		Graticule:     []float64{},
+		Attribution:   s.config.attribution,
 	})
 }
 
@@ -94,16 +64,20 @@ func (s *tileService) handleWorldTile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tile, err := s.getTile(z, x, y)
+	tile, err := s.getTile(r.Context(), tileKey{z: z, x: x, y: y})
 	if err != nil {
-		http.Error(w, "failed to render tile", http.StatusInternalServerError)
+		http.Error(w, "failed to load tile", http.StatusBadGateway)
+		return
+	}
+	if etagMatches(r.Header.Get("If-None-Match"), tile.etag) {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 
 	w.Header().Set("Cache-Control", tileCacheControl)
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("ETag", tile.etag)
-	http.ServeContent(w, r, "", time.UnixMilli(0), bytes.NewReader(tile.data))
+	http.ServeContent(w, r, "", tile.modifiedAt, bytes.NewReader(tile.data))
 }
 
 func parseTileRequest(r *http.Request) (uint8, uint32, uint32, bool) {
@@ -133,38 +107,29 @@ func parseTileRequest(r *http.Request) (uint8, uint32, uint32, bool) {
 	return z, x, y, true
 }
 
-func (s *tileService) getTile(z uint8, x uint32, y uint32) (cachedTile, error) {
-	key := tileKey{z: z, x: x, y: y}
-
-	s.mu.RLock()
-	if tile, ok := s.cache[key]; ok {
-		s.mu.RUnlock()
+func (s *tileService) getTile(ctx context.Context, key tileKey) (cachedTile, error) {
+	tile, err := s.readCachedTile(key)
+	if err == nil {
 		return tile, nil
 	}
-	s.mu.RUnlock()
+	if !errors.Is(err, errCachedTileNotFound) {
+		return cachedTile{}, err
+	}
 
-	result, err, _ := s.renders.Do(tileKeyString(key), func() (any, error) {
-		s.mu.RLock()
-		if tile, ok := s.cache[key]; ok {
-			s.mu.RUnlock()
-			return tile, nil
+	result, err, _ := s.fetches.Do(tileKeyString(key), func() (any, error) {
+		cached, cacheErr := s.readCachedTile(key)
+		if cacheErr == nil {
+			return cached, nil
 		}
-		s.mu.RUnlock()
-
-		rendered, renderErr := renderWorldTile(int(z), int(x), int(y))
-		if renderErr != nil {
-			return cachedTile{}, renderErr
-		}
-		sum := sha256.Sum256(rendered)
-		tile := cachedTile{
-			data: rendered,
-			etag: `"` + hex.EncodeToString(sum[:]) + `"`,
+		if !errors.Is(cacheErr, errCachedTileNotFound) {
+			return cachedTile{}, cacheErr
 		}
 
-		s.mu.Lock()
-		s.cache[key] = tile
-		s.mu.Unlock()
-		return tile, nil
+		data, fetchErr := s.fetchUpstreamTile(ctx, key)
+		if fetchErr != nil {
+			return cachedTile{}, fetchErr
+		}
+		return s.writeCachedTile(key, data)
 	})
 	if err != nil {
 		return cachedTile{}, err
@@ -176,4 +141,14 @@ func tileKeyString(key tileKey) string {
 	return strconv.FormatUint(uint64(key.z), 10) + "/" +
 		strconv.FormatUint(uint64(key.x), 10) + "/" +
 		strconv.FormatUint(uint64(key.y), 10)
+}
+
+func etagMatches(headerValue string, etag string) bool {
+	for _, value := range strings.Split(headerValue, ",") {
+		candidate := strings.TrimSpace(value)
+		if candidate == "*" || candidate == etag {
+			return true
+		}
+	}
+	return false
 }

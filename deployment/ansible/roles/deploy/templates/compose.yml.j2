@@ -368,6 +368,7 @@ services:
     restart: always
     networks:
       - net-edge
+      - net-egress
       - net-db
       - net-gateway
 
@@ -990,8 +991,13 @@ services:
     environment:
       PORT: "8096"
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
+      MAP_ASSETS_CACHE_DIR: "/var/lib/map-assets-cache/world"
+      MAP_ASSETS_TILE_URL_TEMPLATE: "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      MAP_ASSETS_USER_AGENT: "${MAP_ASSETS_USER_AGENT:-arsenale-map-assets/{{ arsenale_image_tag }}}"
     ports:
       - "127.0.0.1:{{ arsenale_map_assets_port | default(18096) }}:8096"
+    volumes:
+      - arsenale_map_assets_cache:/var/lib/map-assets-cache
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8096/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -1001,6 +1007,7 @@ services:
     restart: always
     networks:
       - net-edge
+      - net-egress
 
   desktop-broker:
 {{ compose_service_source('desktop-broker', 'backend/Dockerfile', build_args={'SERVICE': 'desktop-broker'}) | indent(4, true) }}
@@ -1654,6 +1661,7 @@ volumes:
   arsenale_redis:
   arsenale_drive:
   arsenale_recordings:
+  arsenale_map_assets_cache:
   shared_files_s3_data:
   dev_demo_postgres_data:
   dev_demo_mysql_data:

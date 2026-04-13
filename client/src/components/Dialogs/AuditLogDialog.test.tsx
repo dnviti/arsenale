@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import AuditLogDialog from './AuditLogDialog';
 import { useAuthStore } from '../../store/authStore';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
+import { useTenantStore } from '../../store/tenantStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 
 const {
   getAuditLogs,
   getAuditGateways,
   getAuditCountries,
+  getTenantAuditLogs,
+  getTenantAuditGateways,
+  getTenantAuditCountries,
   getSessionRecording,
   getDbAuditLogs,
   getDbAuditConnections,
@@ -20,6 +24,9 @@ const {
   getAuditLogs: vi.fn(),
   getAuditGateways: vi.fn(),
   getAuditCountries: vi.fn(),
+  getTenantAuditLogs: vi.fn(),
+  getTenantAuditGateways: vi.fn(),
+  getTenantAuditCountries: vi.fn(),
   getSessionRecording: vi.fn(),
   getDbAuditLogs: vi.fn(),
   getDbAuditConnections: vi.fn(),
@@ -32,6 +39,9 @@ vi.mock('../../api/audit.api', () => ({
   getAuditLogs,
   getAuditGateways,
   getAuditCountries,
+  getTenantAuditLogs,
+  getTenantAuditGateways,
+  getTenantAuditCountries,
   getSessionRecording,
 }));
 
@@ -63,6 +73,15 @@ describe('AuditLogDialog', () => {
     });
     getAuditGateways.mockResolvedValue([]);
     getAuditCountries.mockResolvedValue([]);
+    getTenantAuditLogs.mockResolvedValue({
+      data: [],
+      total: 0,
+      page: 1,
+      limit: 25,
+      totalPages: 0,
+    });
+    getTenantAuditGateways.mockResolvedValue([]);
+    getTenantAuditCountries.mockResolvedValue([]);
     getDbAuditLogs.mockResolvedValue({
       data: [],
       total: 0,
@@ -91,6 +110,27 @@ describe('AuditLogDialog', () => {
       permissionsLoaded: false,
       permissionsLoading: false,
       permissionsSubject: null,
+    });
+    useTenantStore.setState({
+      tenant: null,
+      users: [],
+      memberships: [],
+      loading: false,
+      usersLoading: false,
+      fetchTenant: vi.fn().mockResolvedValue(undefined),
+      fetchMemberships: vi.fn().mockResolvedValue(undefined),
+      switchTenant: vi.fn().mockResolvedValue(undefined),
+      createTenant: vi.fn().mockResolvedValue(undefined),
+      updateTenant: vi.fn().mockResolvedValue(undefined),
+      deleteTenant: vi.fn().mockResolvedValue(undefined),
+      fetchUsers: vi.fn().mockResolvedValue(undefined),
+      inviteUser: vi.fn().mockResolvedValue(undefined),
+      updateUserRole: vi.fn().mockResolvedValue(undefined),
+      removeUser: vi.fn().mockResolvedValue(undefined),
+      createUser: vi.fn().mockResolvedValue(undefined),
+      toggleUserEnabled: vi.fn().mockResolvedValue(undefined),
+      updateMembershipExpiry: vi.fn().mockResolvedValue(undefined),
+      reset: vi.fn(),
     });
 
     useFeatureFlagsStore.setState({
@@ -135,10 +175,10 @@ describe('AuditLogDialog', () => {
     expect(await view.findByRole('tab', { name: 'General' })).toBeInTheDocument();
     expect(view.queryByRole('tab', { name: 'SQL Audit' })).not.toBeInTheDocument();
     expect(
-      await view.findByPlaceholderText('Search across target, IP address, and details...'),
+      await view.findByLabelText('Search activity'),
     ).toBeInTheDocument();
 
-    expect(getAuditLogs).toHaveBeenCalled();
+    expect(getTenantAuditLogs).toHaveBeenCalled();
     expect(getDbAuditLogs).not.toHaveBeenCalled();
     expect(useUiPreferencesStore.getState().auditLogDialogTab).toBe('general');
   });

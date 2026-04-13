@@ -1,5 +1,6 @@
 import { TileLayer } from 'react-leaflet';
 import {
+  WORLD_BASEMAP_ATTRIBUTION,
   WORLD_BASEMAP_BOUNDS,
   WORLD_BASEMAP_MAX_NATIVE_ZOOM,
   WORLD_BASEMAP_MAX_ZOOM,
@@ -12,7 +13,7 @@ export function WorldBasemap() {
   return (
     <TileLayer
       url={WORLD_BASEMAP_TILE_URL}
-      attribution='Arsenale basemap'
+      attribution={WORLD_BASEMAP_ATTRIBUTION}
       bounds={WORLD_BASEMAP_BOUNDS}
       errorTileUrl={TRANSPARENT_TILE_DATA_URL}
       maxNativeZoom={WORLD_BASEMAP_MAX_NATIVE_ZOOM}

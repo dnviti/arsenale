@@ -1,3 +1,4 @@
+import { Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -12,17 +13,23 @@ export default function TenantAuditEntryCard({
   log,
   onGeoIpClick,
   onToggle,
+  onViewRecording,
   onViewUserProfile,
+  recordingLoading = false,
 }: {
   expanded: boolean;
   log: TenantAuditLogEntry;
   onGeoIpClick?: (ip: string) => void;
   onToggle: () => void;
+  onViewRecording?: () => void;
   onViewUserProfile?: (userId: string) => void;
+  recordingLoading?: boolean;
 }) {
   const detailsPreview = formatDetails(log.details as Record<string, unknown> | null);
   const hasFlag = log.flags?.includes('IMPOSSIBLE_TRAVEL');
   const userLabel = log.userName ?? log.userEmail ?? '\u2014';
+  const canViewRecording = ['SESSION_START', 'SESSION_END', 'SESSION_TERMINATED_POLICY_VIOLATION'].includes(log.action)
+    && Boolean((log.details as Record<string, unknown>)?.sessionId || (log.details as Record<string, unknown>)?.recordingId);
 
   return (
     <SettingsFieldCard
@@ -32,6 +39,12 @@ export default function TenantAuditEntryCard({
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Badge className={cn('border', actionBadgeClasses(log.action))}>{ACTION_LABELS[log.action] || log.action}</Badge>
           {hasFlag ? <Badge className="border border-chart-5/30 bg-chart-5/10 text-foreground">Flagged</Badge> : null}
+          {canViewRecording && onViewRecording ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onViewRecording} disabled={recordingLoading}>
+              <Play className="size-4" />
+              {recordingLoading ? 'Loading...' : 'Recording'}
+            </Button>
+          ) : null}
           <Button type="button" variant="ghost" size="sm" onClick={onToggle}>
             {expanded ? 'Hide Details' : 'Show Details'}
           </Button>
@@ -46,7 +59,11 @@ export default function TenantAuditEntryCard({
             <button
               type="button"
               className="text-left text-sm font-medium text-foreground underline-offset-4 hover:underline"
-              onClick={() => onViewUserProfile(log.userId!)}
+              onClick={() => {
+                if (log.userId) {
+                  onViewUserProfile(log.userId);
+                }
+              }}
             >
               {userLabel}
             </button>

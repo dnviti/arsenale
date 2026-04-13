@@ -10,7 +10,10 @@ import (
 )
 
 func main() {
-	tiles := newTileService()
+	tiles, err := newTileService()
+	if err != nil {
+		panic(err)
+	}
 	service := app.StaticService{
 		Descriptor: catalog.MustService(contracts.ServiceMapAssets),
 		Register: func(mux *http.ServeMux) {

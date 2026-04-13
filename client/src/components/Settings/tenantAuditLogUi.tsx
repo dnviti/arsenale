@@ -273,7 +273,9 @@ export function TenantAuditResults({
   logs,
   onGeoIpClick,
   onToggleRow,
+  onViewRecording,
   onViewUserProfile,
+  recordingLoadingId,
 }: {
   emptyMessage: string;
   error: string;
@@ -282,7 +284,9 @@ export function TenantAuditResults({
   logs: TenantAuditLogEntry[];
   onGeoIpClick?: (ip: string) => void;
   onToggleRow: (logId: string) => void;
+  onViewRecording?: (log: TenantAuditLogEntry) => void;
   onViewUserProfile?: (userId: string) => void;
+  recordingLoadingId?: string | null;
 }) {
   if (error) {
     return (
@@ -321,7 +325,9 @@ export function TenantAuditResults({
           log={log}
           onGeoIpClick={onGeoIpClick}
           onToggle={() => onToggleRow(log.id)}
+          onViewRecording={onViewRecording ? () => onViewRecording(log) : undefined}
           onViewUserProfile={onViewUserProfile}
+          recordingLoading={recordingLoadingId === log.id}
         />
       ))}
     </div>

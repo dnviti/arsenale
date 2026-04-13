@@ -346,7 +346,6 @@ export default function WorkspaceShell() {
             initialTab={settingsInitialTab}
             linkedProvider={linkedProvider}
             onViewUserProfile={(userId) => setProfileUserId(userId)}
-            onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined}
             onImport={() => setImportDialogOpen(true)}
             onExport={() => setExportDialogOpen(true)}
           />
@@ -354,7 +353,12 @@ export default function WorkspaceShell() {
       ) : null}
       {auditLogDialogMounted ? (
         <Suspense fallback={null}>
-          <AuditLogDialog open={auditLogOpen} onClose={() => setAuditLogOpen(false)} onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined} />
+          <AuditLogDialog
+            open={auditLogOpen}
+            onClose={() => setAuditLogOpen(false)}
+            onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined}
+            onViewUserProfile={(userId) => setProfileUserId(userId)}
+          />
         </Suspense>
       ) : null}
       {keychainEnabled && keychainDialogMounted ? (

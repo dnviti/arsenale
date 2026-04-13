@@ -60,7 +60,12 @@ func (s Service) HandleTenantGeoSummary(w http.ResponseWriter, r *http.Request, 
 		app.ErrorJSON(w, err.status, err.message)
 		return
 	}
-	days := 30
+	query, err := parseAuditQuery(r)
+	if err != nil {
+		app.ErrorJSON(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	days := 0
 	if raw := strings.TrimSpace(r.URL.Query().Get("days")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 || parsed > 365 {
@@ -69,7 +74,7 @@ func (s Service) HandleTenantGeoSummary(w http.ResponseWriter, r *http.Request, 
 		}
 		days = parsed
 	}
-	points, err := s.GetTenantGeoSummary(r.Context(), claims.TenantID, days)
+	points, err := s.GetTenantGeoSummary(r.Context(), claims.TenantID, query, days)
 	if err != nil {
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		return

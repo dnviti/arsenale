@@ -53,7 +53,7 @@ The database rule remains deliberate: the control plane is an orchestrator and p
 | Runtime | `desktop-broker` | `8091` | Browser RDP and VNC runtime |
 | Runtime | `tunnel-broker` | `8092` | Tunnel registration and TCP proxying |
 | Runtime | `query-runner` | `8093` | Shared query execution service |
-| Runtime | `map-assets` | `8096` | Dedicated raster XYZ tile service for GeoIP-enabled UIs |
+| Runtime | `map-assets` | `8096` | OpenStreetMap tile proxy and authoritative on-disk tile cache for GeoIP-enabled UIs |
 | Runtime | `recording-worker` | `8094` | Recording conversion and retention |
 | Execution | `runtime-agent` | `8095` | Host-local workload validation |
 | Runtime gateway | `db-proxy` | `5432` | Database middleware for connectivity, query, schema, plan, introspection, and tunneled database access |

@@ -70,7 +70,7 @@ The installer now passes install profile context directly into the runtime.
 | `ARSENALE_INSTALL_BACKEND` | `podman` or `kubernetes` |
 | `ARSENALE_INSTALL_CAPABILITIES` | Comma-separated enabled capability set |
 | `FEATURE_CONNECTIONS_ENABLED` | Enables SSH, RDP, VNC connections and folders |
-| `FEATURE_IP_GEOLOCATION_ENABLED` | Enables GeoIP lookups, audit map views, and the `map-assets` tile service |
+| `FEATURE_IP_GEOLOCATION_ENABLED` | Enables GeoIP lookups, audit map views, and the `map-assets` OSM tile proxy/cache microservice |
 | `FEATURE_DATABASE_PROXY_ENABLED` | Enables database sessions and DB audit |
 | `FEATURE_KEYCHAIN_ENABLED` | Enables vault, secrets, files, and external vault providers |
 | `FEATURE_MULTI_TENANCY_ENABLED` | Enables multiple organizations, tenant switching, and self-service organization creation |
@@ -134,6 +134,14 @@ Production and local containers prefer secret files over inline env values. Comm
 | `LOG_FORMAT` | `text` | Log output format (text or json) |
 | `LOG_TIMESTAMPS` | `true` | Include ISO-8601 timestamps |
 | `LOG_HTTP_REQUESTS` | `false` | Log HTTP request details |
+
+## 🗺 Map Assets Runtime Variables
+
+| Variable | Typical value | Why it matters |
+|----------|---------------|----------------|
+| `MAP_ASSETS_CACHE_DIR` | `/var/lib/map-assets-cache/world` | Filesystem cache root for tiles owned by the `map-assets` microservice |
+| `MAP_ASSETS_TILE_URL_TEMPLATE` | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Upstream template fetched by `map-assets` on cache miss; frontend clients must continue requesting only the local `/map-assets/...` tile endpoint |
+| `MAP_ASSETS_USER_AGENT` | `arsenale-map-assets/<version>` | User-Agent presented to the upstream OSM tile endpoint |
 
 ## 🛡 Authentication, Security, And Public Config
 

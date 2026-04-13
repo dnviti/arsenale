@@ -148,8 +148,13 @@ export interface GeoSummaryPoint {
   lastSeen: string;
 }
 
-export async function getTenantGeoSummary(days: number = 30): Promise<GeoSummaryPoint[]> {
-  const { data } = await api.get('/audit/tenant/geo-summary', { params: { days } });
+export interface TenantGeoSummaryParams extends Omit<TenantAuditLogParams, 'page' | 'limit' | 'sortBy' | 'sortOrder'> {
+  days?: number;
+}
+
+export async function getTenantGeoSummary(paramsOrDays: TenantGeoSummaryParams | number = {}): Promise<GeoSummaryPoint[]> {
+  const params = typeof paramsOrDays === 'number' ? { days: paramsOrDays } : paramsOrDays;
+  const { data } = await api.get('/audit/tenant/geo-summary', { params });
   return data.points;
 }
 

@@ -8,6 +8,7 @@ import {
   type AuditGateway,
   type TenantAuditLogEntry,
   type TenantAuditLogParams,
+  type TenantGeoSummaryParams,
 } from '../../api/audit.api';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { useTenantStore } from '../../store/tenantStore';
@@ -156,6 +157,18 @@ export default function TenantAuditLogSection({
     flaggedOnly,
   ]);
   const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
+  const mapFilters: TenantGeoSummaryParams = {
+    action: tenantAuditLogAction ? tenantAuditLogAction as AuditAction : undefined,
+    search: tenantAuditLogSearch || undefined,
+    targetType: tenantAuditLogTargetType || undefined,
+    gatewayId: tenantAuditLogGatewayId || undefined,
+    userId: tenantAuditLogUserId || undefined,
+    ipAddress: ipAddress || undefined,
+    geoCountry: geoCountry || undefined,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    flaggedOnly: flaggedOnly || undefined,
+  };
 
   const clearFilters = () => {
     setSearchInput('');
@@ -271,9 +284,9 @@ export default function TenantAuditLogSection({
           <Card>
             <CardContent className="p-0">
               <AuditGeoMap
+                filters={mapFilters}
                 onSelectCountry={(country) => {
                   setGeoCountry(country);
-                  setUiPref('tenantAuditLogViewMode', 'table');
                   setPage(0);
                 }}
               />

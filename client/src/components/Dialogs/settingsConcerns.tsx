@@ -27,7 +27,6 @@ import EmailProviderSection from '../Settings/EmailProviderSection';
 import SelfSignupSection from '../Settings/SelfSignupSection';
 import SystemSettingsSection from '../Settings/SystemSettingsSection';
 import IpAllowlistSection from '../Settings/IpAllowlistSection';
-import TenantAuditLogSection from '../Settings/TenantAuditLogSection';
 import LdapConfigSection from '../Settings/LdapConfigSection';
 import SyncProfileSection from '../Settings/SyncProfileSection';
 import TenantConnectionPolicySection from '../Settings/TenantConnectionPolicySection';
@@ -38,14 +37,14 @@ import VaultProvidersSection from '../Settings/VaultProvidersSection';
 import AccessPolicySection from '../Settings/AccessPolicySection';
 import NativeSshSection from '../Settings/NativeSshSection';
 import RdGatewayConfigSection from '../Settings/RdGatewayConfigSection';
-import DbFirewallSection from '../Settings/DbFirewallSection';
-import DbMaskingSection from '../Settings/DbMaskingSection';
 import AiQueryConfigSection from '../Settings/AiQueryConfigSection';
-import DbRateLimitSection from '../Settings/DbRateLimitSection';
 import AppearanceSection from '../Settings/AppearanceSection';
 import SqlEditorSection from '../Settings/SqlEditorSection';
 import NotificationPreferencesSection from '../Settings/NotificationPreferencesSection';
 import NotificationsSection from '../Settings/NotificationsSection';
+import DbFirewallSection from '../Settings/DbFirewallSection';
+import DbMaskingSection from '../Settings/DbMaskingSection';
+import DbRateLimitSection from '../Settings/DbRateLimitSection';
 
 export interface SettingsConcern {
   id: string;
@@ -80,7 +79,6 @@ export interface SettingsConcernContext {
   tenantId?: string | null;
   onHasPasswordResolved: (hasPassword: boolean) => void;
   onViewUserProfile?: (userId: string) => void;
-  onGeoIpClick?: (ip: string) => void;
   onImport?: () => void;
   onExport?: () => void;
   deleteOrgTrigger: (() => void) | null;
@@ -390,17 +388,34 @@ export function buildSettingsConcerns(context: SettingsConcernContext): Settings
   concerns.push({
     id: 'governance',
     label: 'Governance',
-    description: 'Platform-wide policy, audit, and operational safeguards.',
+    description: 'Platform-wide policy and operational safeguards.',
     icon: <ServerCog className="size-4" />,
-    keywords: ['system', 'policy', 'audit', 'database', 'governance'],
+    keywords: ['system', 'policy', 'governance', 'sql firewall', 'masking', 'rate limits'],
     sections: [
       { id: 'system', label: 'System Settings', description: 'Global runtime defaults and control plane behavior.', keywords: ['system'], content: context.isAdmin ? <SystemSettingsSection /> : null },
       { id: 'ip-allowlist', label: 'IP Allowlist', description: 'Restrict who can reach the platform.', keywords: ['ip', 'allowlist'], content: context.isAdmin ? <IpAllowlistSection /> : null },
       { id: 'access-policy', label: 'Access Policy', description: 'Connection authorization and decision rules.', keywords: ['access policy', 'authorization'], content: context.isAdmin && context.connectionsEnabled ? <AccessPolicySection /> : null },
-      { id: 'db-firewall', label: 'DB Firewall', description: 'Database query blocking and alerting.', keywords: ['db firewall', 'database'], content: context.isAdmin && context.databaseProxyEnabled ? <DbFirewallSection /> : null },
-      { id: 'db-masking', label: 'DB Masking', description: 'Database result redaction and masking.', keywords: ['masking', 'database'], content: context.isAdmin && context.databaseProxyEnabled ? <DbMaskingSection /> : null },
-      { id: 'db-rate-limit', label: 'DB Rate Limits', description: 'Query throughput controls and abuse prevention.', keywords: ['rate limit', 'database'], content: context.isAdmin && context.databaseProxyEnabled ? <DbRateLimitSection /> : null },
-      { id: 'tenant-audit', label: 'Audit Log', description: 'Tenant-wide activity review and geo-IP inspection.', keywords: ['audit', 'activity'], content: context.isAdmin ? <TenantAuditLogSection onViewUserProfile={context.onViewUserProfile} onGeoIpClick={context.onGeoIpClick} /> : null },
+      {
+        id: 'db-firewall',
+        label: 'SQL Firewall',
+        description: 'Tenant-wide SQL firewall rules and enforcement.',
+        keywords: ['sql firewall', 'database firewall', 'db firewall'],
+        content: context.isAdmin && context.databaseProxyEnabled ? <DbFirewallSection /> : null,
+      },
+      {
+        id: 'db-masking',
+        label: 'SQL Masking',
+        description: 'Masking policies for sensitive database fields.',
+        keywords: ['masking', 'sql masking', 'database masking'],
+        content: context.isAdmin && context.databaseProxyEnabled ? <DbMaskingSection /> : null,
+      },
+      {
+        id: 'db-rate-limit',
+        label: 'SQL Rate Limits',
+        description: 'Query throttling and burst protection policies.',
+        keywords: ['rate limits', 'sql rate limit', 'database rate limit'],
+        content: context.isAdmin && context.databaseProxyEnabled ? <DbRateLimitSection /> : null,
+      },
     ].filter((section) => section.content !== null) as SettingsSection[],
   });
 

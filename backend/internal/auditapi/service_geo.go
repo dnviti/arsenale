@@ -27,18 +27,29 @@ ORDER BY a."geoCountry" ASC
 `, tenantID)
 }
 
-func (s Service) GetTenantGeoSummary(ctx context.Context, tenantID string, days int) ([]geoSummaryPoint, error) {
+func (s Service) GetTenantGeoSummary(ctx context.Context, tenantID string, query auditQuery, days int) ([]geoSummaryPoint, error) {
+	if query.StartDate == nil && query.EndDate == nil && days > 0 {
+		start := time.Now().UTC().Add(-time.Duration(days) * 24 * time.Hour)
+		query.StartDate = &start
+	}
+
+	baseArgs := []any{tenantID}
+	filterSQL, filterArgs := buildAuditFilters("a", query, len(baseArgs)+1)
+	args := append(baseArgs, filterArgs...)
+
 	rows, err := s.DB.Query(ctx, `
 SELECT a."geoCountry", COALESCE(a."geoCity", ''), a."geoCoords", COUNT(*)::int, MAX(a."createdAt")
 FROM "AuditLog" a
-JOIN "TenantMember" tm ON tm."userId" = a."userId"
-WHERE tm."tenantId" = $1
-  AND a."geoCountry" IS NOT NULL
+JOIN "TenantMember" tm
+  ON tm."userId" = a."userId"
+ AND tm."tenantId" = $1
+ AND tm.status = 'ACCEPTED'
+WHERE a."geoCountry" IS NOT NULL
   AND cardinality(a."geoCoords") >= 2
-  AND a."createdAt" >= $2
+`+filterSQL+`
 GROUP BY a."geoCountry", a."geoCity", a."geoCoords"
 ORDER BY MAX(a."createdAt") DESC
-`, tenantID, time.Now().UTC().Add(-time.Duration(days)*24*time.Hour))
+`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list tenant geo summary: %w", err)
 	}
