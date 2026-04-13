@@ -64,6 +64,7 @@ interface UiPreferences {
   workspaceActiveView: string;
   workspaceSidebarOpen: boolean;
   uiZoomLevel: number;
+  lastLoginMethod: 'passkey' | 'credentials';
 }
 
 interface UiPreferencesState extends UiPreferences {
@@ -136,6 +137,7 @@ const defaults: UiPreferences = {
   workspaceActiveView: 'remote',
   workspaceSidebarOpen: true,
   uiZoomLevel: 100,
+  lastLoginMethod: 'credentials',
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(

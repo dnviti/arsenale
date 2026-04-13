@@ -54,7 +54,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
-  const [step, setStep] = useState<LoginStep>('passkey');
+  const [step, setStep] = useState<LoginStep>(() => {
+    const last = useUiPreferencesStore.getState().lastLoginMethod;
+    if (last === 'passkey' && browserSupportsWebAuthn()) {
+      return 'passkey';
+    }
+    return 'credentials';
+  });
   const [tempToken, setTempToken] = useState('');
   const [emailCode, setEmailCode] = useState('');
   const [totpCode, setTotpCode] = useState('');
@@ -348,6 +354,7 @@ export default function LoginPage() {
         String(response.options.challenge ?? ''),
       );
       setPasskeyFailures(0);
+      useUiPreferencesStore.getState().set('lastLoginMethod', 'passkey');
       await applyAuthResponse(data);
     } catch (err: unknown) {
       if ((err as Error)?.name === 'NotAllowedError') {
@@ -381,6 +388,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await loginApi(email, password);
+      useUiPreferencesStore.getState().set('lastLoginMethod', 'credentials');
       await applyAuthResponse(data);
     } catch (err: unknown) {
       setError(extractApiError(err, 'Login failed'));
@@ -490,6 +498,7 @@ export default function LoginPage() {
     setError('');
     setStep('credentials');
     setPasskeyAttempted(true);
+    useUiPreferencesStore.getState().set('lastLoginMethod', 'credentials');
   };
 
   const handleReturnToPasskey = () => {
@@ -497,6 +506,7 @@ export default function LoginPage() {
     setPasskeyAttempted(false);
     setPasskeyFailures(0);
     setStep('passkey');
+    useUiPreferencesStore.getState().set('lastLoginMethod', 'passkey');
   };
 
   const handleMfaSetupSubmit = async (event: FormEvent<HTMLFormElement>) => {

@@ -218,7 +218,17 @@ describe("LoginPage", () => {
     });
   });
 
+  it("defaults to credentials when no previous login method is stored", async () => {
+    const view = renderLoginPage();
+
+    expect(
+      await view.findByRole("button", { name: "Sign In" }),
+    ).toBeInTheDocument();
+    expect(view.getByRole("button", { name: "Try passkey instead" })).toBeInTheDocument();
+  });
+
   it("starts in passkey-first mode and falls back after three failed attempts", async () => {
+    useUiPreferencesStore.setState({ lastLoginMethod: "passkey" });
     const view = renderLoginPage();
 
     expect(
@@ -243,6 +253,7 @@ describe("LoginPage", () => {
   });
 
   it("reveals password fallback immediately when the user chooses it", async () => {
+    useUiPreferencesStore.setState({ lastLoginMethod: "passkey" });
     const view = renderLoginPage();
 
     await view.findByText(
@@ -270,7 +281,35 @@ describe("LoginPage", () => {
     });
   });
 
+  it("remembers passkey preference after successful passkey login", async () => {
+    useUiPreferencesStore.setState({ lastLoginMethod: "passkey" });
+    startAuthentication.mockResolvedValueOnce({ id: "cred-1" });
+    const view = renderLoginPage();
+
+    await waitFor(() => {
+      expect(verifyPasskeyApi).toHaveBeenCalled();
+    });
+
+    expect(useUiPreferencesStore.getState().lastLoginMethod).toBe("passkey");
+  });
+
+  it("remembers credentials preference when user switches to password", async () => {
+    useUiPreferencesStore.setState({ lastLoginMethod: "passkey" });
+    const view = renderLoginPage();
+
+    await view.findByText(
+      "Use a passkey to sign in without entering your email and password first.",
+    );
+
+    fireEvent.click(
+      view.getByRole("button", { name: "Use email and password instead" }),
+    );
+
+    expect(useUiPreferencesStore.getState().lastLoginMethod).toBe("credentials");
+  });
+
   it("preserves supported deep-link actions after a successful sign-in", async () => {
+    useUiPreferencesStore.setState({ lastLoginMethod: "passkey" });
     const view = renderLoginPage(["/login?action=open-settings"]);
 
     await view.findByText(
