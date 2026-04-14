@@ -3,7 +3,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import AuthCodeInput from '@/components/auth/AuthCodeInput';
 import AuthLayout from '@/components/auth/AuthLayout';
-//import SecretPayloadView from '@/components/secrets/SecretPayloadView';
+import SecretPayloadView from '../components/secrets/SecretPayloadView';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
@@ -106,12 +106,7 @@ export default function PublicSharePage() {
               This shared data may expire or become unavailable. Save what you need.
             </p>
           </div>
-          {/*<SecretPayloadView data={data} />*/} 
-          <Alert variant="info">
-            <AlertDescription className="text-foreground">
-              This shared data may expire or become unavailable. Save what you need.
-            </AlertDescription>
-          </Alert>
+          <SecretPayloadView data={data} />
         </div>
       ) : info?.hasPin ? (
         <div className="space-y-4">

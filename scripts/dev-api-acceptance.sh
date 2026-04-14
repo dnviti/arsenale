@@ -27,6 +27,11 @@ PY
 }
 
 resolve_server_encryption_key() {
+  if [[ -n "${ARSENALE_SERVER_ENCRYPTION_KEY:-}" ]]; then
+    printf '%s' "${ARSENALE_SERVER_ENCRYPTION_KEY}"
+    return
+  fi
+
   python3 - "$vault_file" <<'PY'
 import re
 import sys
@@ -42,6 +47,11 @@ PY
 }
 
 resolve_jwt_secret() {
+  if [[ -n "${ARSENALE_JWT_SECRET:-}" ]]; then
+    printf '%s' "${ARSENALE_JWT_SECRET}"
+    return
+  fi
+
   python3 - "$vault_file" <<'PY'
 import re
 import sys

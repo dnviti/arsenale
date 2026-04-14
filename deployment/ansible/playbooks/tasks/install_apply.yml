@@ -309,11 +309,11 @@
 - name: Validate required vault secrets
   assert:
     that:
-      - vault_jwt_secret != 'CHANGE_ME'
-      - vault_guacamole_secret != 'CHANGE_ME'
-      - vault_server_encryption_key != 'CHANGE_ME'
-      - vault_postgres_password != 'CHANGE_ME'
-      - vault_guacenc_auth_token != 'CHANGE_ME'
+      - (vault_jwt_secret | default('CHANGE_ME')) != 'CHANGE_ME'
+      - (vault_guacamole_secret | default('CHANGE_ME')) != 'CHANGE_ME'
+      - (vault_server_encryption_key | default('CHANGE_ME')) != 'CHANGE_ME'
+      - (vault_postgres_password | default('CHANGE_ME')) != 'CHANGE_ME'
+      - (vault_guacenc_auth_token | default('CHANGE_ME')) != 'CHANGE_ME'
     fail_msg: "Run 'make setup' or './scripts/generate-vault.sh' first to generate secrets"
 
 - name: Apply installer plan

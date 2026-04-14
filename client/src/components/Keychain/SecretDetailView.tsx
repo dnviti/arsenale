@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  Pencil, Share2, Trash2, Star, Copy, Eye, EyeOff, ChevronDown,
+  Pencil, Share2, Trash2, Star, Copy, Eye, EyeOff,
   KeyRound, Key, ShieldCheck, Webhook, StickyNote,
   ExternalLink, Link, ShieldAlert, Shield, Loader2,
 } from 'lucide-react';

@@ -106,7 +106,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 > Implementation + Test = ONE task. Never separate.
 > EVERY task MUST have: Agent Profile + Parallelization + QA Scenarios.
 
-- [ ] 1. Remove unused imports and vars in dialog/keychain files
+- [x] 1. Remove unused imports and vars in dialog/keychain files
 
   **What to do**: Delete the currently unused imports/vars reported by lint in the dialog/keychain cluster only: `client/src/components/Dialogs/ConnectionAuditLogDialog.tsx`, `client/src/components/Dialogs/KeychainDialog.tsx`, `client/src/components/Keychain/ExternalShareDialog.tsx`, `client/src/components/Keychain/PasswordRotationPanel.tsx`, `client/src/components/Keychain/SecretDetailView.tsx`, `client/src/components/Keychain/SecretDialog.tsx`, and `client/src/components/Keychain/ShareSecretDialog.tsx`. Remove the dead symbols instead of renaming them to `_` or adding eslint suppressions.
   **Must NOT do**: Do not touch runtime logic, dialog copy, styles, or any warning-only lint findings in these files.
@@ -145,7 +145,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `lint(client): remove unused dialog and keychain imports` | Files: `[client/src/components/Dialogs/ConnectionAuditLogDialog.tsx, client/src/components/Dialogs/KeychainDialog.tsx, client/src/components/Keychain/ExternalShareDialog.tsx, client/src/components/Keychain/PasswordRotationPanel.tsx, client/src/components/Keychain/SecretDetailView.tsx, client/src/components/Keychain/SecretDialog.tsx, client/src/components/Keychain/ShareSecretDialog.tsx]`
 
-- [ ] 2. Remove remaining unused imports and vars in non-dialog client files
+- [x] 2. Remove remaining unused imports and vars in non-dialog client files
 
   **What to do**: Remove the remaining unused symbols flagged by the current lint run in `client/src/components/DatabaseClient/DbSchemaBrowser.tsx`, `client/src/components/Workspace/CommandPalette.tsx`, `client/src/components/orchestration/GatewayInstanceList.tsx`, and `client/src/pages/LoginPage.test.tsx`.
   **Must NOT do**: Do not change query behavior, command palette UX, orchestration loading states, or test assertions beyond deleting the dead binding.
@@ -183,7 +183,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `lint(client): remove remaining unused vars` | Files: `[client/src/components/DatabaseClient/DbSchemaBrowser.tsx, client/src/components/Workspace/CommandPalette.tsx, client/src/components/orchestration/GatewayInstanceList.tsx, client/src/pages/LoginPage.test.tsx]`
 
-- [ ] 3. Derive expanded concern state in `SettingsDialog` instead of mutating it from effects
+- [x] 3. Derive expanded concern state in `SettingsDialog` instead of mutating it from effects
 
   **What to do**: Replace the current `expandedConcerns` effect-driven sync with a two-layer model in `client/src/components/Dialogs/SettingsDialog.tsx`: keep only manually toggled/seeded concern ids in state, then derive the effective expanded set via `useMemo` by unioning (a) manual expansions, (b) the active `resolvedConcern`, and (c) every filtered concern while search is non-empty. Remove the two effect blocks at lines `242-260` and update `toggleConcernExpanded`/`handleConcernClick` to mutate only the manual state.
   **Must NOT do**: Do not add `eslint-disable` comments, do not change filtering semantics, and do not break persistence of the resolved concern.
@@ -224,7 +224,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `fix(settings-dialog): derive expanded concern state` | Files: `[client/src/components/Dialogs/SettingsDialog.tsx, client/src/components/Dialogs/SettingsDialog.test.tsx]`
 
-- [ ] 4. Derive active section selection in `SettingsDialog` instead of setting it inside the observer effect
+- [x] 4. Derive active section selection in `SettingsDialog` instead of setting it inside the observer effect
 
   **What to do**: Rename the mutable active-section state to an explicit requested/observed id, then derive the effective active section from the current concern’s section ids. Remove the effect-side `setActiveSectionId(sectionIds[0])` at lines `319-321`; instead, compute the fallback first section when the current stored id is absent/invalid. Keep the `IntersectionObserver` callback and `jumpToSection` updating the mutable requested id, but update render-time lookups and highlight logic to use the derived effective id.
   **Must NOT do**: Do not weaken the observer logic, do not remove programmatic scroll protection, and do not add lint suppressions.
@@ -264,7 +264,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `fix(settings-dialog): derive active section state` | Files: `[client/src/components/Dialogs/SettingsDialog.tsx, client/src/components/Dialogs/SettingsDialog.test.tsx]`
 
-- [ ] 5. Replace impure sidebar skeleton randomness with deterministic width generation
+- [x] 5. Replace impure sidebar skeleton randomness with deterministic width generation
 
   **What to do**: In `client/src/components/ui/sidebar.tsx`, replace the render-time `Math.random()` usage in `SidebarMenuSkeleton` with a deterministic width generator seeded from stable component data (default: `React.useId()` + a small local hash helper that maps to `50-89%`). Keep the visual variation, but make it idempotent across re-renders. Add `client/src/components/ui/sidebar.test.tsx` to assert the skeleton width CSS variable remains in-range and stable across rerenders.
   **Must NOT do**: Do not hard-disable the purity rule, do not remove the width variation entirely, and do not alter the exported component API.
@@ -303,7 +303,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `fix(sidebar): make skeleton width deterministic` | Files: `[client/src/components/ui/sidebar.tsx, client/src/components/ui/sidebar.test.tsx]`
 
-- [ ] 6. Render login domain and certificate expiry in the shared public secret view
+- [x] 6. Render login domain and certificate expiry in the shared public secret view
 
   **What to do**: First verify whether `client/src/components/secrets/SecretPayloadView.tsx` exists on the working branch. If it does not exist, create `client/src/components/secrets/SecretPayloadView.tsx` (and the `client/src/components/secrets/` directory if needed) so it satisfies the existing import in `client/src/pages/PublicSharePage.tsx`. If `.gitignore` still blocks that path, add or retain the repo-specific negation needed so `git check-ignore -v client/src/components/secrets/SecretPayloadView.tsx` returns no match. Then implement the shared renderer so the `LOGIN` branch renders `domain` between `URL` and `Notes` only when present, and the `CERTIFICATE` branch renders payload-level `expiresAt` as a formatted date string. Extend `client/src/pages/PublicSharePage.test.tsx` with focused cases that prove both values appear for external shares.
   **Must NOT do**: Do not change the order or masking behavior of existing fields, and do not conflate payload-level `CertificateData.expiresAt` with top-level secret expiry from list/detail metadata.
@@ -345,7 +345,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `fix(public-share): render domain and certificate expiry` | Files: `[client/src/components/secrets/SecretPayloadView.tsx, client/src/pages/PublicSharePage.test.tsx]`
 
-- [ ] 7. Render API key headers in the shared public secret view and keep secure-note behavior unchanged
+- [x] 7. Render API key headers in the shared public secret view and keep secure-note behavior unchanged
 
   **What to do**: Continue from the created or existing `client/src/components/secrets/SecretPayloadView.tsx` in Task 6. Update the `API_KEY` branch so it renders `headers` when present, using a deterministic string form compatible with the current `ValueField` API (default: `JSON.stringify(headers, null, 2)` as a multiline value). Extend `client/src/pages/PublicSharePage.test.tsx` to assert the headers render. Leave `SECURE_NOTE` plain-text behavior unchanged, but make that intentional by verifying it through test coverage rather than changing sensitivity semantics.
   **Must NOT do**: Do not mark secure notes as sensitive in this PR, do not mask API key headers, and do not change existing `API Key`, `Endpoint`, or `Notes` labels.
@@ -386,7 +386,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `fix(public-share): render api key headers` | Files: `[client/src/components/secrets/SecretPayloadView.tsx, client/src/pages/PublicSharePage.test.tsx]`
 
-- [ ] 8. Align `docker-build.yml` publish behavior with the documented branch/tag policy
+- [x] 8. Align `docker-build.yml` publish behavior with the documented branch/tag policy
 
   **What to do**: In `.github/workflows/docker-build.yml`, keep the PR trigger reduction already introduced by PR #602, but make the publish-profile logic decision-complete: `develop` sets `publish_latest=true`; `main` sets `publish_stable=true` and does **not** enable branch-ref publishing; `v*` tags publish semver tags only when `git branch -r --contains "$GITHUB_SHA"` confirms ancestry on `origin/main`. Preserve `fetch-depth: 0`, reusable verify/security jobs, and PR metadata tags.
   **Must NOT do**: Do not reintroduce `staging`, do not remove `fetch-depth: 0`, do not change verify/security job commands, and do not restore `{{is_default_branch}}` logic.
@@ -426,7 +426,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 
   **Commit**: YES | Message: `ci(docker-build): publish stable only from main` | Files: `[.github/workflows/docker-build.yml]`
 
-- [ ] 9. Align `gateways-build.yml` publish behavior with the documented branch/tag policy
+- [x] 9. Align `gateways-build.yml` publish behavior with the documented branch/tag policy
 
   **What to do**: Mirror the same policy decisions in `.github/workflows/gateways-build.yml`: `develop` emits `latest`, `main` emits `stable` only, semver tags require ancestry on `origin/main`, and `fetch-depth: 0` stays intact for the ancestry check. Preserve the gateway Go verify loop and the existing build/scan structure.
   **Must NOT do**: Do not modify gateway verify commands, do not add/remove gateway matrix entries, and do not diverge from the Docker workflow’s policy naming.
@@ -469,7 +469,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
 > 4 review agents run in PARALLEL. ALL must APPROVE. Present consolidated results to user and get explicit "okay" before completing.
 > **Do NOT auto-proceed after verification. Wait for user's explicit approval before marking work complete.**
 > **Never mark F1-F4 as checked before getting user's okay.** Rejection or user feedback -> fix -> re-run -> present again -> wait for okay.
-- [ ] F1. Plan Compliance Audit — oracle
+- [x] F1. Plan Compliance Audit — oracle
 
   **What to do**: Run an oracle review against the completed diff plus `.sisyphus/plans/pr-602-fixes.md` and verify every touched file maps back to Tasks 1-9 with no unplanned scope expansion.
   **Acceptance Criteria**:
@@ -491,7 +491,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
     Evidence: .sisyphus/evidence/f1-acceptance-evidence.txt
   ```
 
-- [ ] F2. Code Quality Review — unspecified-high
+- [x] F2. Code Quality Review — unspecified-high
 
   **What to do**: Run an independent code-quality review over the final diff, focusing on accidental regressions, unnecessary churn, brittle test additions, and whether the SettingsDialog/sidebar refactors preserved behavior cleanly.
   **Acceptance Criteria**:
@@ -513,7 +513,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
     Evidence: .sisyphus/evidence/f2-quality-checks.txt
   ```
 
-- [ ] F3. Real Manual QA — unspecified-high (+ playwright if UI)
+- [x] F3. Real Manual QA — unspecified-high (+ playwright if UI)
 
   **What to do**: Execute real UI QA against the local stack for the shared public-secret flows and any touched settings/sidebar behavior that can be exercised safely, plus rerun the matching command-line verification suite.
   **Acceptance Criteria**:
@@ -535,7 +535,7 @@ Wave 2: shared payload rendering fixes + workflow publish-policy alignment (Task
     Evidence: .sisyphus/evidence/f3-repo-verify.txt
   ```
 
-- [ ] F4. Scope Fidelity Check — deep
+- [x] F4. Scope Fidelity Check — deep
 
   **What to do**: Run a deep scope audit to ensure the final implementation fixed only the approved problems: renderer gaps, blocking lint errors, SettingsDialog/sidebar purity errors, and Docker/Gateway publish policy.
   **Acceptance Criteria**:

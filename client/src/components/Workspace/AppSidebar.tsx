@@ -82,8 +82,6 @@ export default function AppSidebar({
   const setPreference = useUiPreferencesStore((s) => s.set);
   const { setOpen } = useSidebar();
 
-  const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
-
   const setFilter = (filter: ConnectionFilter) => {
     setPreference('workspaceActiveView', filter);
   };

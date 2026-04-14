@@ -28,7 +28,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
-import { cn } from '@/lib/utils';
 import SecretTree from '../Keychain/SecretTree';
 import SecretListPanel from '../Keychain/SecretListPanel';
 import SecretDetailView from '../Keychain/SecretDetailView';

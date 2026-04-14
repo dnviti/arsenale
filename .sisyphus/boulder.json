@@ -2,11 +2,57 @@
   "active_plan": "/home/debian/repos/arsenale/.sisyphus/plans/pr-602-fixes.md",
   "started_at": "2026-04-14T17:16:35.014Z",
   "session_ids": [
-    "ses_27358e07fffejnGfXl4A64ziay"
+    "ses_27358e07fffejnGfXl4A64ziay",
+    "ses_272ffa257ffe3zDk1wntd8iLeV",
+    "ses_272ffa23cffeBWs3inGnho2y31",
+    "ses_272ffa238ffeVRLZG5rt49B0yr",
+    "ses_272ffa21cffeFu76iLzA9z3PIm"
   ],
   "session_origins": {
-    "ses_27358e07fffejnGfXl4A64ziay": "direct"
+    "ses_27358e07fffejnGfXl4A64ziay": "direct",
+    "ses_272ffa257ffe3zDk1wntd8iLeV": "appended",
+    "ses_272ffa23cffeBWs3inGnho2y31": "appended",
+    "ses_272ffa238ffeVRLZG5rt49B0yr": "appended",
+    "ses_272ffa21cffeFu76iLzA9z3PIm": "appended"
   },
   "plan_name": "pr-602-fixes",
-  "agent": "atlas"
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:1": {
+      "task_key": "todo:1",
+      "task_label": "1",
+      "task_title": "Remove unused imports and vars in dialog/keychain files",
+      "session_id": "ses_272ffa257ffe3zDk1wntd8iLeV",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-14T17:22:33.500Z"
+    },
+    "todo:6": {
+      "task_key": "todo:6",
+      "task_label": "6",
+      "task_title": "Render login domain and certificate expiry in the shared public secret view",
+      "session_id": "ses_272f34b68ffe0hHIYacKBDnTOe",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-14T17:34:35.091Z"
+    },
+    "todo:7": {
+      "task_key": "todo:7",
+      "task_label": "7",
+      "task_title": "Render API key headers in the shared public secret view and keep secure-note behavior unchanged",
+      "session_id": "ses_272eb5118ffeNCwSAneF0AHm5a",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-04-14T17:42:47.987Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "Plan Compliance Audit — oracle",
+      "session_id": "ses_272e1fa5affe2UP4LkOve1vGt3",
+      "agent": "oracle",
+      "category": "",
+      "updated_at": "2026-04-14T17:55:43.313Z"
+    }
+  }
 }

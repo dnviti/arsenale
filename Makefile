@@ -11,7 +11,7 @@
 # ============================================================================
 
 SHELL := /bin/bash
-ANSIBLE_DIR := deployment/ansible
+ANSIBLE_DIR := $(abspath deployment/ansible)
 PLAYBOOK := cd $(ANSIBLE_DIR) && ansible-playbook
 VAULT_FILE := $(ANSIBLE_DIR)/inventory/group_vars/all/vault.yml
 LOCAL_VAULT_PASS_FILE := $(ANSIBLE_DIR)/.vault-pass

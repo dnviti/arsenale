@@ -114,12 +114,15 @@ export default function SettingsDialog({
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [selectedConcern, setSelectedConcern] = useState<string | null>(null);
-  const [expandedConcerns, setExpandedConcerns] = useState<Set<string>>(
+  const [manualExpandedConcerns, setManualExpandedConcerns] = useState<Set<string>>(
     new Set(),
   );
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
+  const [requestedActiveSectionId, setRequestedActiveSectionId] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const activeSectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollResetRef = useRef<number | null>(null);
 
   const registerDeleteOrgTrigger = useCallback(
     (trigger: (() => void) | null) => {
@@ -232,30 +235,23 @@ export default function SettingsDialog({
     ? persistedConcern
     : filteredConcerns[0]?.id ?? persistedConcern;
 
+  const effectiveExpandedConcerns = useMemo(() => {
+    const next = new Set(manualExpandedConcerns);
+
+    if (resolvedConcern) {
+      next.add(resolvedConcern);
+    }
+
+    if (deferredSearch.trim()) {
+      filteredConcerns.forEach((concern) => next.add(concern.id));
+    }
+
+    return next;
+  }, [deferredSearch, filteredConcerns, manualExpandedConcerns, resolvedConcern]);
+
   const currentConcern =
     filteredConcerns.find((concern) => concern.id === resolvedConcern) ??
     filteredConcerns[0];
-
-  // Auto-expand the active concern in the sidebar
-  useEffect(() => {
-    if (resolvedConcern) {
-      setExpandedConcerns((prev) => {
-        if (prev.has(resolvedConcern)) return prev;
-        const next = new Set(prev);
-        next.add(resolvedConcern);
-        return next;
-      });
-    }
-  }, [resolvedConcern]);
-
-  // When search is active, expand all matching concerns
-  useEffect(() => {
-    if (deferredSearch.trim()) {
-      setExpandedConcerns(
-        new Set(filteredConcerns.map((c) => c.id)),
-      );
-    }
-  }, [deferredSearch, filteredConcerns]);
 
   useEffect(() => {
     if (!open) return;
@@ -270,25 +266,51 @@ export default function SettingsDialog({
     setPreference('settingsActiveTab', persistedConcern);
   }, [open, persistedConcern, setPreference]);
 
-  // Keep activeSectionId pointing at a section that exists in the current concern.
-  // When the concern changes (or search filters the current section out), fall
-  // back to the first available section.
+  const currentSectionIds = currentConcern?.sections.map((section) => section.id) ?? [];
+  const effectiveActiveSectionId =
+    requestedActiveSectionId && currentSectionIds.includes(requestedActiveSectionId)
+      ? requestedActiveSectionId
+      : currentSectionIds[0] ?? null;
+
+  // Single section rendered at a time — sidebar clicks drive navigation.
+  const activeSection =
+    currentConcern?.sections.find((s) => s.id === effectiveActiveSectionId) ??
+    currentConcern?.sections[0];
+  const activeSectionLabel = activeSection?.label;
+
   useEffect(() => {
-    if (!currentConcern) {
-      if (activeSectionId !== null) setActiveSectionId(null);
+    if (!open) return;
+
+    const sectionElement = activeSectionRef.current;
+    const viewport = scrollAreaRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]',
+    );
+
+    if (!sectionElement || !viewport || typeof IntersectionObserver === 'undefined') {
       return;
     }
 
-    const sectionIds = currentConcern.sections.map((s) => s.id);
-    if (sectionIds.length === 0) {
-      if (activeSectionId !== null) setActiveSectionId(null);
-      return;
-    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntry = entries.find((entry) => entry.isIntersecting);
+        if (!visibleEntry || programmaticScrollRef.current) {
+          return;
+        }
 
-    if (!activeSectionId || !sectionIds.includes(activeSectionId)) {
-      setActiveSectionId(sectionIds[0]);
-    }
-  }, [currentConcern, activeSectionId]);
+        const nextSectionId = (visibleEntry.target as HTMLElement).id;
+        setRequestedActiveSectionId((prev) =>
+          prev === nextSectionId ? prev : nextSectionId,
+        );
+      },
+      {
+        root: viewport,
+        threshold: 0.6,
+      },
+    );
+
+    observer.observe(sectionElement);
+    return () => observer.disconnect();
+  }, [activeSection?.id, open]);
 
   // Keyboard shortcut: "/" to focus search
   useEffect(() => {
@@ -317,7 +339,7 @@ export default function SettingsDialog({
   }, [open]);
 
   const toggleConcernExpanded = (concernId: string) => {
-    setExpandedConcerns((prev) => {
+    setManualExpandedConcerns((prev) => {
       const next = new Set(prev);
       if (next.has(concernId)) {
         next.delete(concernId);
@@ -329,16 +351,27 @@ export default function SettingsDialog({
   };
 
   const jumpToSection = (sectionId: string) => {
-    setActiveSectionId(sectionId);
+    setRequestedActiveSectionId(sectionId);
+    programmaticScrollRef.current = true;
+    if (programmaticScrollResetRef.current !== null) {
+      window.clearTimeout(programmaticScrollResetRef.current);
+    }
     const viewport = scrollAreaRef.current?.querySelector(
       '[data-radix-scroll-area-viewport]',
     );
-    viewport?.scrollTo({ top: 0, behavior: 'smooth' });
+    if (viewport instanceof HTMLElement && typeof viewport.scrollTo === 'function') {
+      viewport.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    programmaticScrollResetRef.current = window.setTimeout(() => {
+      programmaticScrollRef.current = false;
+      programmaticScrollResetRef.current = null;
+    }, 250);
   };
 
   const handleConcernClick = (concernId: string) => {
     setSelectedConcern(concernId);
-    setExpandedConcerns((prev) => {
+    setManualExpandedConcerns((prev) => {
+      if (prev.has(concernId)) return prev;
       const next = new Set(prev);
       next.add(concernId);
       return next;
@@ -352,17 +385,17 @@ export default function SettingsDialog({
 
   const handleDialogOpenChange = (next: boolean) => {
     if (next) return;
+    if (programmaticScrollResetRef.current !== null) {
+      window.clearTimeout(programmaticScrollResetRef.current);
+      programmaticScrollResetRef.current = null;
+    }
+    programmaticScrollRef.current = false;
     setSearch('');
     setSelectedConcern(null);
+    setRequestedActiveSectionId(null);
     setDeleteOrgTriggerState(null);
     onClose();
   };
-
-  // Single section rendered at a time — sidebar clicks drive navigation.
-  const activeSection =
-    currentConcern?.sections.find((s) => s.id === activeSectionId) ??
-    currentConcern?.sections[0];
-  const activeSectionLabel = activeSection?.label;
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
@@ -422,7 +455,7 @@ export default function SettingsDialog({
               <nav className="p-2" aria-label="Settings navigation">
                 {filteredConcerns.map((concern) => {
                   const isActive = concern.id === resolvedConcern;
-                  const isExpanded = expandedConcerns.has(concern.id);
+                  const isExpanded = effectiveExpandedConcerns.has(concern.id);
 
                   return (
                     <div key={concern.id} className="mb-0.5">
@@ -430,8 +463,12 @@ export default function SettingsDialog({
                       <button
                         type="button"
                         onClick={() => {
+                          if (concern.id === resolvedConcern) {
+                            toggleConcernExpanded(concern.id);
+                            return;
+                          }
+
                           handleConcernClick(concern.id);
-                          toggleConcernExpanded(concern.id);
                         }}
                         className={cn(
                           'group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors',
@@ -477,7 +514,7 @@ export default function SettingsDialog({
                           {concern.sections.map((section) => {
                             const isSectionActive =
                               isActive &&
-                              activeSectionId === section.id;
+                              effectiveActiveSectionId === section.id;
 
                             return (
                               <button
@@ -582,7 +619,7 @@ export default function SettingsDialog({
                       onClick={() => jumpToSection(section.id)}
                       className={cn(
                         'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                        activeSectionId === section.id
+                        effectiveActiveSectionId === section.id
                           ? 'bg-primary/10 text-primary'
                           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                       )}
@@ -599,6 +636,7 @@ export default function SettingsDialog({
               <div className="settings-content px-5 py-5">
                 {activeSection && (
                   <section
+                    ref={activeSectionRef}
                     key={activeSection.id}
                     id={activeSection.id}
                     className="settings-section"
