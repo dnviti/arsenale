@@ -1,0 +1,12 @@
+{
+  "active_plan": "/home/debian/repos/arsenale/.sisyphus/plans/pr-602-fixes.md",
+  "started_at": "2026-04-14T17:16:35.014Z",
+  "session_ids": [
+    "ses_27358e07fffejnGfXl4A64ziay"
+  ],
+  "session_origins": {
+    "ses_27358e07fffejnGfXl4A64ziay": "direct"
+  },
+  "plan_name": "pr-602-fixes",
+  "agent": "atlas"
+}

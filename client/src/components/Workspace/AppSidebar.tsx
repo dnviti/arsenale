@@ -31,6 +31,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import type { ConnectionData } from '@/api/connections.api';
 import type { Folder } from '@/store/connectionsStore';
@@ -79,6 +80,7 @@ export default function AppSidebar({
   const toggleTheme = useThemeStore((s) => s.toggle);
   const activeFilter = useUiPreferencesStore((s) => s.workspaceActiveView) as ConnectionFilter;
   const setPreference = useUiPreferencesStore((s) => s.set);
+  const { setOpen } = useSidebar();
 
   const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
 
@@ -101,6 +103,7 @@ export default function AppSidebar({
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start" className="w-56">
                 {/* Connections submenu */}
+                {/*
                 {anyConnectionFeature ? (
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
@@ -125,7 +128,7 @@ export default function AppSidebar({
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 ) : null}
-
+                */}
                 {/* Security submenu */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
@@ -182,7 +185,9 @@ export default function AppSidebar({
         </SidebarMenu>
 
         {/* Connection filter tabs */}
-        <SidebarSeparator />
+        <div className='px-2'>
+          <SidebarSeparator />
+        </div>
         <SidebarMenu>
           {connectionsEnabled ? (
             <SidebarMenuItem>
@@ -213,23 +218,36 @@ export default function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarSeparator />
+      <div className='px-2'>
+        <SidebarSeparator />
+      </div>
 
       <SidebarContent>
-        <ConnectionsSidePanel
-          typeFilter={activeFilter}
-          onEditConnection={onEditConnection}
-          onShareConnection={onShareConnection}
-          onConnectAsConnection={onConnectAsConnection}
-          onCreateConnection={onCreateConnection}
-          onCreateFolder={onCreateFolder}
-          onEditFolder={onEditFolder}
-          onShareFolder={onShareFolder}
-          onViewAuditLog={onViewAuditLog}
-        />
+        <div className="group-data-[collapsible=icon]:hidden">
+          <ConnectionsSidePanel
+            typeFilter={activeFilter}
+            onEditConnection={onEditConnection}
+            onShareConnection={onShareConnection}
+            onConnectAsConnection={onConnectAsConnection}
+            onCreateConnection={onCreateConnection}
+            onCreateFolder={onCreateFolder}
+            onEditFolder={onEditFolder}
+            onShareFolder={onShareFolder}
+            onViewAuditLog={onViewAuditLog}
+          />
+        </div>
+        <div className="hidden group-data-[collapsible=icon]:block px-2 pt-2">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="My Connections" onClick={() => setOpen(true)}>
+                <Monitor className="size-4" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </div>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="group-data-[collapsible=icon]:hidden">
         <VersionIndicator />
       </SidebarFooter>
 

@@ -118,10 +118,8 @@ export default function SettingsDialog({
     new Set(),
   );
   const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const programmaticScroll = useRef(false);
 
   const registerDeleteOrgTrigger = useCallback(
     (trigger: (() => void) | null) => {
@@ -196,12 +194,12 @@ export default function SettingsDialog({
         );
         return concernMatches(concern, query) || matchingSections.length > 0
           ? {
-              ...concern,
-              sections:
-                matchingSections.length > 0 || !query
-                  ? matchingSections
-                  : concern.sections,
-            }
+            ...concern,
+            sections:
+              matchingSections.length > 0 || !query
+                ? matchingSections
+                : concern.sections,
+          }
           : null;
       })
       .filter(
@@ -264,7 +262,7 @@ export default function SettingsDialog({
 
     getProfile()
       .then((profile) => setHasPassword(profile.hasPassword))
-      .catch(() => {});
+      .catch(() => { });
   }, [open]);
 
   useEffect(() => {
@@ -272,56 +270,24 @@ export default function SettingsDialog({
     setPreference('settingsActiveTab', persistedConcern);
   }, [open, persistedConcern, setPreference]);
 
-  // IntersectionObserver to track the active section while scrolling
+  // Keep activeSectionId pointing at a section that exists in the current concern.
+  // When the concern changes (or search filters the current section out), fall
+  // back to the first available section.
   useEffect(() => {
-    if (!currentConcern) return;
-
-    const sectionIds = currentConcern.sections.map((s) => s.id);
-    const elements = sectionIds
-      .map((id) => sectionRefs.current[id])
-      .filter(Boolean) as HTMLElement[];
-
-    if (elements.length === 0) return;
-
-    // Find the scroll container (the viewport inside ScrollArea)
-    const scrollContainer = scrollAreaRef.current?.querySelector(
-      '[data-radix-scroll-area-viewport]',
-    );
-    if (!scrollContainer) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (programmaticScroll.current) return;
-
-        // Find the topmost visible section
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) =>
-              a.boundingClientRect.top - b.boundingClientRect.top,
-          );
-
-        if (visible.length > 0) {
-          setActiveSectionId(visible[0].target.id);
-        }
-      },
-      {
-        root: scrollContainer,
-        rootMargin: '-10% 0px -60% 0px',
-        threshold: 0,
-      },
-    );
-
-    for (const el of elements) {
-      observer.observe(el);
+    if (!currentConcern) {
+      if (activeSectionId !== null) setActiveSectionId(null);
+      return;
     }
 
-    // Set initial active section
+    const sectionIds = currentConcern.sections.map((s) => s.id);
+    if (sectionIds.length === 0) {
+      if (activeSectionId !== null) setActiveSectionId(null);
+      return;
+    }
+
     if (!activeSectionId || !sectionIds.includes(activeSectionId)) {
       setActiveSectionId(sectionIds[0]);
     }
-
-    return () => observer.disconnect();
   }, [currentConcern, activeSectionId]);
 
   // Keyboard shortcut: "/" to focus search
@@ -362,6 +328,14 @@ export default function SettingsDialog({
     });
   };
 
+  const jumpToSection = (sectionId: string) => {
+    setActiveSectionId(sectionId);
+    const viewport = scrollAreaRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]',
+    );
+    viewport?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleConcernClick = (concernId: string) => {
     setSelectedConcern(concernId);
     setExpandedConcerns((prev) => {
@@ -369,24 +343,10 @@ export default function SettingsDialog({
       next.add(concernId);
       return next;
     });
-    // Scroll content to top
-    const viewport = scrollAreaRef.current?.querySelector(
-      '[data-radix-scroll-area-viewport]',
-    );
-    if (viewport) {
-      viewport.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const jumpToSection = (sectionId: string) => {
-    const target = sectionRefs.current[sectionId];
-    if (target) {
-      programmaticScroll.current = true;
-      setActiveSectionId(sectionId);
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => {
-        programmaticScroll.current = false;
-      }, 600);
+    const concern = concerns.find((c) => c.id === concernId);
+    const firstSectionId = concern?.sections[0]?.id;
+    if (firstSectionId) {
+      jumpToSection(firstSectionId);
     }
   };
 
@@ -398,10 +358,11 @@ export default function SettingsDialog({
     onClose();
   };
 
-  // Build the breadcrumb from active section
-  const activeSectionLabel = currentConcern?.sections.find(
-    (s) => s.id === activeSectionId,
-  )?.label;
+  // Single section rendered at a time — sidebar clicks drive navigation.
+  const activeSection =
+    currentConcern?.sections.find((s) => s.id === activeSectionId) ??
+    currentConcern?.sections[0];
+  const activeSectionLabel = activeSection?.label;
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
@@ -525,15 +486,8 @@ export default function SettingsDialog({
                                 onClick={() => {
                                   if (concern.id !== resolvedConcern) {
                                     setSelectedConcern(concern.id);
-                                    // Wait for content to render before scrolling
-                                    requestAnimationFrame(() => {
-                                      requestAnimationFrame(() => {
-                                        jumpToSection(section.id);
-                                      });
-                                    });
-                                  } else {
-                                    jumpToSection(section.id);
                                   }
+                                  jumpToSection(section.id);
                                 }}
                                 className={cn(
                                   'relative flex w-full items-center gap-2 py-1.5 pl-4 pr-2 text-left text-xs transition-colors',
@@ -640,32 +594,28 @@ export default function SettingsDialog({
               )}
             </div>
 
-            {/* Scrollable content */}
+            {/* Scrollable content — single active section at a time */}
             <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
               <div className="settings-content px-5 py-5">
-                {currentConcern?.sections.map((section, index) => (
+                {activeSection && (
                   <section
-                    key={section.id}
-                    id={section.id}
-                    ref={(node) => {
-                      sectionRefs.current[section.id] = node;
-                    }}
-                    className={cn(
-                      'settings-section',
-                      index > 0 && 'mt-8 border-t border-border/40 pt-8',
-                    )}
+                    key={activeSection.id}
+                    id={activeSection.id}
+                    className="settings-section"
                   >
+                    {/*
                     <div className="mb-4">
                       <h3 className="text-sm font-semibold text-foreground">
-                        {section.label}
+                        {activeSection.label}
                       </h3>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                        {section.description}
+                        {activeSection.description}
                       </p>
                     </div>
-                    {section.content}
+                    */}
+                    {activeSection.content}
                   </section>
-                ))}
+                )}
               </div>
             </ScrollArea>
           </main>
