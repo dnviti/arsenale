@@ -9,7 +9,9 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const SessionsPage = lazy(() => import('./pages/SessionsPage'));
 const ConnectionViewerPage = lazy(() => import('./pages/ConnectionViewerPage'));
+const SessionObserverPage = lazy(() => import('./pages/SessionObserverPage'));
 const RecordingPlayerPage = lazy(() => import('./pages/RecordingPlayerPage'));
 const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage'));
 const VaultSetupPage = lazy(() => import('./pages/VaultSetupPage'));
@@ -101,10 +103,26 @@ export default function App() {
           }
         />
         <Route
+          path="/sessions"
+          element={
+            <ProtectedRoute>
+              <SessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/connection/:id"
           element={
             <ProtectedRoute>
               <ConnectionViewerPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/session-observer/:protocol/:id"
+          element={
+            <ProtectedRoute>
+              <SessionObserverPage />
             </ProtectedRoute>
           }
         />

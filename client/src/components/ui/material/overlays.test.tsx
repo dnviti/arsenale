@@ -14,6 +14,6 @@ describe('Material Dialog Adapter', () => {
     expect(dialog.className).toContain('flex');
     expect(dialog.className).toContain('h-screen');
     expect(dialog.className).toContain('p-0');
-    expect(dialog.className).toContain('data-[state=open]:slide-in-from-bottom-6');
+    expect(dialog.className).toContain('data-[state=open]:animate-in');
   });
 });

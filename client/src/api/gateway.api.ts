@@ -1,3 +1,5 @@
+import type { SessionProtocol } from './sessions.api';
+
 import api from './client';
 
 export type GatewayHealthStatus = 'UNKNOWN' | 'REACHABLE' | 'UNREACHABLE';
@@ -184,8 +186,8 @@ export interface ActiveSessionData {
   gatewayName: string | null;
   instanceId: string | null;
   instanceName: string | null;
-  protocol: 'SSH' | 'RDP';
-  status: 'ACTIVE' | 'IDLE' | 'CLOSED';
+  protocol: SessionProtocol;
+  status: 'ACTIVE' | 'IDLE' | 'PAUSED' | 'CLOSED';
   startedAt: string;
   lastActivityAt: string;
   endedAt: string | null;
@@ -193,7 +195,7 @@ export interface ActiveSessionData {
 }
 
 export async function listActiveSessions(params?: {
-  protocol?: 'SSH' | 'RDP';
+  protocol?: SessionProtocol;
   gatewayId?: string;
 }): Promise<ActiveSessionData[]> {
   const { data } = await api.get('/sessions/active', { params });

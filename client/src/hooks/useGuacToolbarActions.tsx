@@ -166,7 +166,7 @@ export function useGuacToolbarActions({
       list.push({
         id: 'shared-drive',
         icon: <FolderOpen className="size-4" />,
-        tooltip: fileBrowserOpen ? 'Close Shared Drive' : 'Shared Drive',
+        tooltip: fileBrowserOpen ? 'Close Shared Drive' : 'Open Shared Drive',
         onClick: () => onToggleDrive?.(),
         active: fileBrowserOpen,
         hidden: !enableDrive || !!driveHiddenByDlp,

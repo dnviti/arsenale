@@ -1,42 +1,54 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
-  X,
-  Download,
-  Trash2,
-  Upload,
-  Folder,
-  FileText,
-  Link as LinkIcon,
-  FolderPlus,
-  RefreshCw,
-  ChevronRight,
-  Home,
-  Loader2,
-} from 'lucide-react';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { X, RefreshCw } from 'lucide-react';
 import type { CredentialOverride } from '../../store/tabsStore';
 import {
-  listSshFiles,
   createSshDirectory,
   deleteSshPath,
-  renameSshPath,
-  uploadSshFile,
   downloadSshFile,
+  listSshFiles,
+  renameSshPath,
   type SshFileEntry,
+  uploadSshFile,
 } from '../../api/sshFiles.api';
+import type { ManagedHistoryEntry } from '../../api/managedHistory.api';
+import {
+  deleteSshHistoryItem,
+  downloadSshHistoryItem,
+  listSshHistory,
+  restoreSshHistoryItem,
+} from '../../api/managedHistory.api';
 import type { TransferItem } from '../../hooks/useSftpTransfers';
 import { extractApiError } from '../../utils/apiError';
+import ManagedHistoryList from '../shared/ManagedHistoryList';
+import {
+  isDisallowedSandboxPath,
+  joinSandboxPath,
+  mapSandboxBrowserMessage,
+  normalizeSandboxRelativePath,
+  REMOTE_BROWSING_DISABLED_COPY,
+  SANDBOX_BROWSER_BANNER_TEXT,
+  triggerBlobDownload,
+} from '../shared/managedSandboxUi';
 import SftpTransferQueue from './SftpTransferQueue';
 import SftpBrowserDialogs from './SftpBrowserDialogs';
 import {
-  formatDate,
-  formatFileSize,
-  joinRemotePath,
   normalizeCredentials,
-  triggerBlobDownload,
   updateTransfer,
 } from './sftpBrowserUtils';
+import SftpWorkspacePane from './SftpWorkspacePane';
 
 interface SftpBrowserProps {
   open: boolean;
@@ -55,9 +67,12 @@ export default function SftpBrowser({
   disableDownload,
   disableUpload,
 }: SftpBrowserProps) {
-  const [currentPath, setCurrentPath] = useState('/');
+  const [activeView, setActiveView] = useState<'workspace' | 'history'>('workspace');
+  const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<SshFileEntry[]>([]);
+  const [historyItems, setHistoryItems] = useState<ManagedHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [mkdirOpen, setMkdirOpen] = useState(false);
@@ -65,6 +80,8 @@ export default function SftpBrowser({
   const [deleteTarget, setDeleteTarget] = useState<SshFileEntry | null>(null);
   const [renameTarget, setRenameTarget] = useState<SshFileEntry | null>(null);
   const [renameName, setRenameName] = useState('');
+  const [restoreTarget, setRestoreTarget] = useState<ManagedHistoryEntry | null>(null);
+  const [restorePath, setRestorePath] = useState('');
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const controllersRef = useRef<Map<string, AbortController>>(new Map());
@@ -74,6 +91,10 @@ export default function SftpBrowser({
     [connectionId, credentials],
   );
 
+  const setMappedError = useCallback((message: string) => {
+    setError(mapSandboxBrowserMessage(message));
+  }, []);
+
   const fetchEntries = useCallback(async (dirPath: string) => {
     setLoading(true);
     setError('');
@@ -81,36 +102,44 @@ export default function SftpBrowser({
       const result = await listSshFiles({ ...requestCredentials(), path: dirPath });
       setEntries(result.entries);
     } catch (err) {
-      setError(extractApiError(err, `Failed to list ${dirPath}`));
+      setMappedError(extractApiError(err, 'Failed to load workspace files'));
     } finally {
       setLoading(false);
     }
-  }, [requestCredentials]);
+  }, [requestCredentials, setMappedError]);
+
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    setError('');
+    try {
+      const result = await listSshHistory(requestCredentials());
+      setHistoryItems(result);
+    } catch (err) {
+      setMappedError(extractApiError(err, 'Failed to load upload history'));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [requestCredentials, setMappedError]);
 
   useEffect(() => {
-    if (open) {
-      void fetchEntries(currentPath);
+    if (!open) {
+      return;
     }
-  }, [open, currentPath, fetchEntries]);
+    if (activeView === 'workspace') {
+      void fetchEntries(currentPath);
+      return;
+    }
+    void fetchHistory();
+  }, [activeView, currentPath, fetchEntries, fetchHistory, open]);
 
   useEffect(() => () => {
     controllersRef.current.forEach((controller) => controller.abort());
     controllersRef.current.clear();
   }, []);
 
-  const navigateTo = (newPath: string) => {
-    setCurrentPath(newPath);
-  };
-
-  const handleEntryDoubleClick = (entry: SshFileEntry) => {
-    if (entry.type === 'directory' || entry.type === 'symlink') {
-      navigateTo(joinRemotePath(currentPath, entry.name));
-    }
-  };
-
   const handleUploadOne = useCallback(async (file: File) => {
     const transferId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const remotePath = joinRemotePath(currentPath, file.name);
+    const remotePath = joinSandboxPath(currentPath, file.name);
     const controller = new AbortController();
     controllersRef.current.set(transferId, controller);
 
@@ -148,18 +177,21 @@ export default function SftpBrowser({
         status: 'complete',
       });
       await fetchEntries(currentPath);
+      await fetchHistory();
     } catch (err) {
       updateTransfer(setTransfers, transferId, {
         status: controller.signal.aborted ? 'cancelled' : 'error',
-        errorMessage: controller.signal.aborted ? undefined : extractApiError(err, 'Upload failed'),
+        errorMessage: controller.signal.aborted
+          ? undefined
+          : mapSandboxBrowserMessage(extractApiError(err, 'Upload failed')),
       });
       if (!controller.signal.aborted) {
-        setError(extractApiError(err, 'Upload failed'));
+        setMappedError(extractApiError(err, 'Upload failed'));
       }
     } finally {
       controllersRef.current.delete(transferId);
     }
-  }, [currentPath, fetchEntries, requestCredentials]);
+  }, [currentPath, fetchEntries, fetchHistory, requestCredentials, setMappedError]);
 
   const handleUpload = (files: FileList | null) => {
     if (!files) return;
@@ -168,14 +200,14 @@ export default function SftpBrowser({
     });
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    handleUpload(e.target.files);
-    e.target.value = '';
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpload(event.target.files);
+    event.target.value = '';
   };
 
   const handleDownload = async (entry: SshFileEntry) => {
     const transferId = `download-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const remotePath = joinRemotePath(currentPath, entry.name);
+    const remotePath = joinSandboxPath(currentPath, entry.name);
     const controller = new AbortController();
     controllersRef.current.set(transferId, controller);
 
@@ -214,13 +246,27 @@ export default function SftpBrowser({
     } catch (err) {
       updateTransfer(setTransfers, transferId, {
         status: controller.signal.aborted ? 'cancelled' : 'error',
-        errorMessage: controller.signal.aborted ? undefined : extractApiError(err, 'Download failed'),
+        errorMessage: controller.signal.aborted
+          ? undefined
+          : mapSandboxBrowserMessage(extractApiError(err, 'Download failed')),
       });
       if (!controller.signal.aborted) {
-        setError(extractApiError(err, 'Download failed'));
+        setMappedError(extractApiError(err, 'Download failed'));
       }
     } finally {
       controllersRef.current.delete(transferId);
+    }
+  };
+
+  const handleHistoryDownload = async (item: ManagedHistoryEntry) => {
+    try {
+      const blob = await downloadSshHistoryItem({
+        ...requestCredentials(),
+        id: item.id,
+      });
+      triggerBlobDownload(blob, item.fileName);
+    } catch (err) {
+      setMappedError(extractApiError(err, 'History download failed'));
     }
   };
 
@@ -229,13 +275,13 @@ export default function SftpBrowser({
     try {
       await createSshDirectory({
         ...requestCredentials(),
-        path: joinRemotePath(currentPath, mkdirName.trim()),
+        path: joinSandboxPath(currentPath, mkdirName.trim()),
       });
       await fetchEntries(currentPath);
       setMkdirOpen(false);
       setMkdirName('');
     } catch (err) {
-      setError(extractApiError(err, 'Failed to create directory'));
+      setMappedError(extractApiError(err, 'Failed to create folder'));
     }
   };
 
@@ -244,12 +290,24 @@ export default function SftpBrowser({
     try {
       await deleteSshPath({
         ...requestCredentials(),
-        path: joinRemotePath(currentPath, deleteTarget.name),
+        path: joinSandboxPath(currentPath, deleteTarget.name),
       });
       await fetchEntries(currentPath);
       setDeleteTarget(null);
     } catch (err) {
-      setError(extractApiError(err, 'Failed to delete path'));
+      setMappedError(extractApiError(err, 'Failed to delete path'));
+    }
+  };
+
+  const handleHistoryDelete = async (item: ManagedHistoryEntry) => {
+    try {
+      await deleteSshHistoryItem({
+        ...requestCredentials(),
+        id: item.id,
+      });
+      await fetchHistory();
+    } catch (err) {
+      setMappedError(extractApiError(err, 'Failed to delete history item'));
     }
   };
 
@@ -258,14 +316,42 @@ export default function SftpBrowser({
     try {
       await renameSshPath({
         ...requestCredentials(),
-        oldPath: joinRemotePath(currentPath, renameTarget.name),
-        newPath: joinRemotePath(currentPath, renameName.trim()),
+        oldPath: joinSandboxPath(currentPath, renameTarget.name),
+        newPath: joinSandboxPath(currentPath, renameName.trim()),
       });
       await fetchEntries(currentPath);
       setRenameTarget(null);
       setRenameName('');
     } catch (err) {
-      setError(extractApiError(err, 'Failed to rename path'));
+      setMappedError(extractApiError(err, 'Failed to rename path'));
+    }
+  };
+
+  const openRestoreDialog = (item: ManagedHistoryEntry) => {
+    setRestoreTarget(item);
+    setRestorePath(joinSandboxPath(currentPath, item.restoredName || item.fileName));
+  };
+
+  const handleHistoryRestore = async () => {
+    if (!restoreTarget) return;
+    const normalizedPath = normalizeSandboxRelativePath(restorePath);
+    if (!normalizedPath || isDisallowedSandboxPath(normalizedPath)) {
+      setError(REMOTE_BROWSING_DISABLED_COPY);
+      return;
+    }
+    try {
+      await restoreSshHistoryItem({
+        ...requestCredentials(),
+        id: restoreTarget.id,
+        path: normalizedPath,
+      });
+      await fetchEntries(currentPath);
+      await fetchHistory();
+      setRestoreTarget(null);
+      setRestorePath('');
+      setActiveView('workspace');
+    } catch (err) {
+      setMappedError(extractApiError(err, 'Failed to restore history item'));
     }
   };
 
@@ -277,44 +363,26 @@ export default function SftpBrowser({
     setTransfers((prev) => prev.filter((transfer) => transfer.status === 'active'));
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handleDragOver = (event: React.DragEvent) => {
+    event.preventDefault();
     setDragOver(true);
   };
 
   const handleDragLeave = () => setDragOver(false);
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
+  const handleDrop = (event: React.DragEvent) => {
+    event.preventDefault();
     setDragOver(false);
-    handleUpload(e.dataTransfer.files);
-  };
-
-  const pathSegments = currentPath === '/' ? [] : currentPath.split('/').filter(Boolean);
-
-  const entryIcon = (type: SshFileEntry['type']) => {
-    switch (type) {
-      case 'directory':
-        return <Folder className="h-4 w-4 text-primary" />;
-      case 'symlink':
-        return <LinkIcon className="h-4 w-4 text-muted-foreground" />;
-      default:
-        return <FileText className="h-4 w-4" />;
-    }
+    handleUpload(event.dataTransfer.files);
   };
 
   if (!open) return null;
 
   return (
     <>
-      <div
-        className="absolute right-0 top-0 bottom-0 w-[360px] border-l bg-background flex flex-col z-10"
-        onDragOver={disableUpload ? undefined : handleDragOver}
-        onDragLeave={disableUpload ? undefined : handleDragLeave}
-        onDrop={disableUpload ? undefined : handleDrop}
-      >
+      <div className="absolute right-0 top-0 bottom-0 z-10 flex w-[360px] flex-col border-l bg-background">
         <div className="flex items-center justify-between p-3 pl-4">
-          <span className="text-sm font-semibold">SFTP</span>
+          <span className="text-sm font-semibold">File Browser</span>
           <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
@@ -322,114 +390,85 @@ export default function SftpBrowser({
 
         <Separator />
 
-        <div className="px-3 py-2 overflow-auto">
-          <nav className="flex items-center gap-0.5 text-xs">
-            <button className="flex items-center hover:underline text-muted-foreground" onClick={() => navigateTo('/')}>
-              <Home className="h-3.5 w-3.5" />
-            </button>
-            {pathSegments.map((segment, idx) => {
-              const segPath = `/${pathSegments.slice(0, idx + 1).join('/')}`;
-              const isLast = idx === pathSegments.length - 1;
-              return (
-                <span key={segPath} className="flex items-center gap-0.5">
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                  {isLast ? (
-                    <span className="text-foreground">{segment}</span>
-                  ) : (
-                    <button className="hover:underline text-muted-foreground" onClick={() => navigateTo(segPath)}>
-                      {segment}
-                    </button>
-                  )}
-                </span>
-              );
-            })}
-          </nav>
+        <div className="px-3 py-3">
+          <Alert variant="info">
+            <AlertDescription>{SANDBOX_BROWSER_BANNER_TEXT}</AlertDescription>
+          </Alert>
         </div>
 
-        <Separator />
+        <Tabs
+          value={activeView}
+          onValueChange={(value) => setActiveView(value as 'workspace' | 'history')}
+          className="flex min-h-0 flex-1 flex-col"
+        >
+          <div className="px-3 pb-2">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="workspace">Workspace</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+            </TabsList>
+          </div>
 
-        <div className="flex gap-1 p-2 px-3">
-          {!disableUpload && (
-            <>
-              <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} className="hidden" />
-              <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={() => fileInputRef.current?.click()}>
-                <Upload className="h-3.5 w-3.5 mr-1" />
-                Upload
+          {error && (
+            <div className="mx-3 mb-2 flex items-center justify-between rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+              <span>{error}</span>
+              <button onClick={() => setError('')} className="text-red-400 hover:text-red-300" type="button">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+
+          <TabsContent value="workspace" className="mt-0 flex min-h-0 flex-1 flex-col outline-none">
+            <SftpWorkspacePane
+              currentPath={currentPath}
+              entries={entries}
+              loading={loading}
+              disableUpload={disableUpload}
+              disableDownload={disableDownload}
+              dragOver={dragOver}
+              fileInputRef={fileInputRef}
+              onNavigateTo={setCurrentPath}
+              onRefresh={() => void fetchEntries(currentPath)}
+              onFileSelect={handleFileSelect}
+              onOpenCreateFolder={() => setMkdirOpen(true)}
+              onDownload={(entry) => void handleDownload(entry)}
+              onRename={(entry) => {
+                setRenameTarget(entry);
+                setRenameName(entry.name);
+              }}
+              onDelete={setDeleteTarget}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            />
+          </TabsContent>
+
+          <TabsContent value="history" className="mt-0 flex min-h-0 flex-1 flex-col outline-none">
+            <div className="flex items-center justify-between px-3 pb-2 text-xs text-muted-foreground">
+              <span>Retained successful uploads stay here and never mix into the active workspace.</span>
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void fetchHistory()} disabled={historyLoading}>
+                <RefreshCw className="h-3.5 w-3.5" />
               </Button>
-            </>
-          )}
-          <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={() => setMkdirOpen(true)}>
-            <FolderPlus className="h-3.5 w-3.5 mr-1" />
-            New Folder
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => void fetchEntries(currentPath)} disabled={loading}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-
-        {dragOver && !disableUpload && (
-          <div className="mx-3 p-3 border-2 border-dashed border-primary rounded text-center bg-muted/50">
-            <p className="text-sm text-primary">Drop files here to upload</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="mx-3 mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError('')} className="text-red-400 hover:text-red-300">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        )}
-
-        <div className="flex-1 overflow-auto">
-          {loading ? (
-            <div className="flex justify-center p-6">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ) : entries.length === 0 ? (
-            <p className="text-sm text-muted-foreground p-4 text-center">
-              This directory is empty.
-            </p>
-          ) : (
-            <div>
-              {entries.map((entry) => (
-                <div
-                  key={entry.name}
-                  className="group flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-default"
-                  onDoubleClick={() => handleEntryDoubleClick(entry)}
-                >
-                  {entryIcon(entry.type)}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[0.85rem] truncate">{entry.name}</p>
-                    <p className="text-[0.75rem] text-muted-foreground">
-                      {entry.type === 'directory' ? 'Folder' : formatFileSize(entry.size)} • {formatDate(entry.modifiedAt)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    {entry.type === 'file' && !disableDownload && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => void handleDownload(entry)} title="Download">
-                        <Download className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setRenameTarget(entry); setRenameName(entry.name); }} title="Rename">
-                      <RefreshCw className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setDeleteTarget(entry)} title="Delete">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
+            <div className="min-h-0 flex-1 overflow-auto">
+              <ManagedHistoryList
+                items={historyItems}
+                loading={historyLoading}
+                emptyMessage="No retained uploads yet."
+                disableDownload={disableDownload}
+                disableRestore={disableUpload}
+                onDownload={(item) => void handleHistoryDownload(item)}
+                onRestore={openRestoreDialog}
+                onDelete={(item) => void handleHistoryDelete(item)}
+              />
             </div>
-          )}
-        </div>
+          </TabsContent>
+        </Tabs>
 
         <SftpTransferQueue transfers={transfers} onCancel={cancelTransfer} onClearCompleted={clearCompleted} />
       </div>
 
       <SftpBrowserDialogs
-        currentPath={currentPath}
+        currentPath={currentPath || 'Workspace'}
         mkdirOpen={mkdirOpen}
         onMkdirOpenChange={setMkdirOpen}
         mkdirName={mkdirName}
@@ -444,6 +483,28 @@ export default function SftpBrowser({
         onRenameNameChange={setRenameName}
         onRename={() => void handleRename()}
       />
+
+      <Dialog open={!!restoreTarget} onOpenChange={(next) => !next && setRestoreTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Restore Upload</DialogTitle>
+            <DialogDescription>
+              Restore {restoreTarget?.fileName} into the workspace using a sandbox-relative path.
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={restorePath}
+            onChange={(event) => setRestorePath(event.target.value)}
+            placeholder="docs/restored.txt"
+            autoFocus
+          />
+          <p className="text-xs text-muted-foreground">Remote filesystem browsing is disabled. Use sandbox-relative paths only.</p>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRestoreTarget(null)}>Cancel</Button>
+            <Button onClick={() => void handleHistoryRestore()} disabled={!restorePath.trim()}>Restore</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

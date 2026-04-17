@@ -26,6 +26,22 @@ describe('PermissionOverridesDialog', () => {
 
     getUserPermissions.mockResolvedValue({
       role: 'MEMBER',
+      permissions: {
+        canConnect: true,
+        canCreateConnections: false,
+        canManageConnections: false,
+        canViewCredentials: false,
+        canShareConnections: false,
+        canViewAuditLog: false,
+        canViewSessions: false,
+        canObserveSessions: false,
+        canControlSessions: false,
+        canManageSessions: false,
+        canManageGateways: false,
+        canManageUsers: false,
+        canManageSecrets: false,
+        canManageTenantSettings: false,
+      },
       defaults: {
         canConnect: true,
         canCreateConnections: false,
@@ -33,17 +49,36 @@ describe('PermissionOverridesDialog', () => {
         canViewCredentials: false,
         canShareConnections: false,
         canViewAuditLog: false,
+        canViewSessions: false,
+        canObserveSessions: false,
+        canControlSessions: false,
         canManageSessions: false,
         canManageGateways: false,
         canManageUsers: false,
         canManageSecrets: false,
         canManageTenantSettings: false,
       },
-      overrides: {},
+      overrides: { canViewSessions: true, canManageSessions: true },
     });
 
     updateUserPermissions.mockResolvedValue({
       role: 'MEMBER',
+      permissions: {
+        canConnect: true,
+        canCreateConnections: false,
+        canManageConnections: false,
+        canViewCredentials: false,
+        canShareConnections: false,
+        canViewAuditLog: false,
+        canViewSessions: true,
+        canObserveSessions: false,
+        canControlSessions: true,
+        canManageSessions: true,
+        canManageGateways: false,
+        canManageUsers: false,
+        canManageSecrets: false,
+        canManageTenantSettings: false,
+      },
       defaults: {
         canConnect: true,
         canCreateConnections: false,
@@ -51,17 +86,20 @@ describe('PermissionOverridesDialog', () => {
         canViewCredentials: false,
         canShareConnections: false,
         canViewAuditLog: false,
+        canViewSessions: false,
+        canObserveSessions: false,
+        canControlSessions: false,
         canManageSessions: false,
         canManageGateways: false,
         canManageUsers: false,
         canManageSecrets: false,
         canManageTenantSettings: false,
       },
-      overrides: { canManageUsers: true },
+      overrides: { canViewSessions: true, canControlSessions: true, canManageSessions: true },
     });
   });
 
-  it('groups permissions by concern and saves explicit overrides', async () => {
+  it('groups split session permissions and saves explicit overrides without the legacy alias', async () => {
     render(
       <PermissionOverridesDialog
         open
@@ -74,13 +112,18 @@ describe('PermissionOverridesDialog', () => {
 
     expect(await screen.findByText('Session access')).toBeInTheDocument();
     expect(screen.getByText('Administration')).toBeInTheDocument();
+    expect(screen.getByText('View active sessions')).toBeInTheDocument();
+    expect(screen.getByText('Observe live sessions')).toBeInTheDocument();
+    expect(screen.getByText('Control active sessions')).toBeInTheDocument();
+    expect(screen.queryByText('Manage sessions')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('switch', { name: 'Manage users' }));
+    fireEvent.click(screen.getByRole('switch', { name: 'Control active sessions' }));
     fireEvent.click(screen.getByRole('button', { name: 'Save overrides' }));
 
     await waitFor(() => {
       expect(updateUserPermissions).toHaveBeenCalledWith('tenant-1', 'user-2', {
-        canManageUsers: true,
+        canViewSessions: true,
+        canControlSessions: true,
       });
     });
   });

@@ -43,7 +43,10 @@ interface RecordingPlayerDialogProps {
   open: boolean;
   onClose: () => void;
   recording: Recording | null;
+  initialPanel?: RecordingPlayerInitialPanel;
 }
+
+export type RecordingPlayerInitialPanel = 'player' | 'analysis' | 'audit';
 
 const PROTOCOL_BADGE: Record<string, string> = {
   SSH: 'bg-green-500/15 text-green-400 border-green-500/30',
@@ -58,7 +61,12 @@ const ACTION_BADGE: Record<string, string> = {
   info: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
 };
 
-export default function RecordingPlayerDialog({ open, onClose, recording }: RecordingPlayerDialogProps) {
+export default function RecordingPlayerDialog({
+  open,
+  onClose,
+  recording,
+  initialPanel = 'player',
+}: RecordingPlayerDialogProps) {
   const [fullScreen, setFullScreen] = useState(false);
   const [analysis, setAnalysis] = useState<RecordingAnalysis | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -76,6 +84,34 @@ export default function RecordingPlayerDialog({ open, onClose, recording }: Reco
     setShowAnalysis(false);
     setAnalysisError('');
   }, [recording?.id]);
+
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+
+    if (initialPanel === 'analysis') {
+      setShowAnalysis(true);
+      setShowAuditTrail(false);
+      if (!analysis && !analyzing && recording.format !== 'asciicast') {
+        void handleAnalyze();
+      }
+      return;
+    }
+
+    if (initialPanel === 'audit') {
+      setShowAuditTrail(true);
+      setShowAnalysis(false);
+      if (auditTrail.length === 0 && !auditLoading) {
+        void handleAuditTrail();
+      }
+      return;
+    }
+
+    setShowAnalysis(false);
+    setShowAuditTrail(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording?.id, initialPanel]);
 
   if (!recording) return null;
 

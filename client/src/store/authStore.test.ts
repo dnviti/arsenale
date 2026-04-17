@@ -101,6 +101,9 @@ describe('useAuthStore', () => {
         canViewCredentials: true,
         canShareConnections: true,
         canViewAuditLog: true,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: true,
         canManageSessions: true,
         canManageGateways: false,
         canManageUsers: false,
@@ -118,7 +121,8 @@ describe('useAuthStore', () => {
       permissionsSubject: 'user-1:tenant-1',
     });
     expect(useAuthStore.getState().permissions.canManageGateways).toBe(false);
-    expect(useAuthStore.getState().permissions.canManageSessions).toBe(true);
+    expect(useAuthStore.getState().permissions.canViewSessions).toBe(true);
+    expect(useAuthStore.getState().permissions.canControlSessions).toBe(true);
 
     const persisted = JSON.parse(localStorage.getItem('arsenale-auth') ?? '{}');
     expect(persisted.state.permissions).toBeUndefined();
@@ -138,6 +142,9 @@ describe('useAuthStore', () => {
         canViewCredentials: true,
         canShareConnections: true,
         canViewAuditLog: true,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: true,
         canManageSessions: true,
         canManageGateways: true,
         canManageUsers: true,

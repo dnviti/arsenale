@@ -46,13 +46,13 @@ describe('useTabsStore', () => {
       user: null,
       isAuthenticated: false,
     });
-    useTabsStore.setState({ tabs: [], activeTabId: null, recentTick: 0 });
+    useTabsStore.setState({ tabs: [], activeTabId: null, persistedActiveTabId: null, recentTick: 0 });
     vi.clearAllMocks();
     vi.mocked(getPersistedTabs).mockResolvedValue([]);
     vi.mocked(syncPersistedTabs).mockResolvedValue([]);
     vi.mocked(clearPersistedTabs).mockResolvedValue();
     await useTabsStore.getState().clearAll();
-    useTabsStore.setState({ tabs: [], activeTabId: null, recentTick: 0 });
+    useTabsStore.setState({ tabs: [], activeTabId: null, persistedActiveTabId: null, recentTick: 0 });
     vi.clearAllMocks();
   });
 
@@ -86,6 +86,7 @@ describe('useTabsStore', () => {
 
     expect(syncPersistedTabs).toHaveBeenCalledWith([
       {
+        id: state.tabs[0]?.id,
         connectionId: 'conn-1',
         sortOrder: 0,
         isActive: true,
@@ -110,7 +111,7 @@ describe('useTabsStore', () => {
     ]);
   });
 
-  it('focuses an existing RDP tab when the same connection and username are opened again', () => {
+  it('opens duplicate RDP tabs for the same connection instead of collapsing them', () => {
     const connection = makeTypedConnection('conn-1', 'RDP');
 
     useTabsStore.getState().openTab(connection, {
@@ -118,51 +119,28 @@ describe('useTabsStore', () => {
       password: 'secret',
       credentialMode: 'manual',
     });
-    const firstTabId = useTabsStore.getState().tabs[0]?.id;
-
     useTabsStore.getState().openTab(connection, {
       username: 'ROOT',
       password: 'secret-2',
       credentialMode: 'manual',
     });
 
-    expect(useTabsStore.getState().tabs).toHaveLength(1);
-    expect(useTabsStore.getState().activeTabId).toBe(firstTabId);
-  });
-
-  it('opens a second RDP tab when the username differs', () => {
-    const connection = makeTypedConnection('conn-1', 'RDP');
-
-    useTabsStore.getState().openTab(connection, {
-      username: 'root',
-      password: 'secret',
-      credentialMode: 'manual',
-    });
-    useTabsStore.getState().openTab(connection, {
-      username: 'admin',
-      password: 'secret',
-      credentialMode: 'manual',
-    });
-
     expect(useTabsStore.getState().tabs).toHaveLength(2);
   });
 
-  it('updates resolved RDP identity and uses it for later matching', () => {
+  it('updates resolved RDP identity on the requested tab without affecting tab count', () => {
     const connection = makeTypedConnection('conn-1', 'RDP');
 
     useTabsStore.getState().openTab(connection);
     const firstTabId = useTabsStore.getState().tabs[0]?.id as string;
     useTabsStore.getState().setRdpIdentity(firstTabId, 'resolved-user', 'corp');
 
-    useTabsStore.getState().openTab(connection, {
-      username: 'resolved-user',
-      password: 'secret',
-      domain: 'CORP',
-      credentialMode: 'manual',
-    });
-
     expect(useTabsStore.getState().tabs).toHaveLength(1);
-    expect(useTabsStore.getState().activeTabId).toBe(firstTabId);
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      id: firstTabId,
+      rdpResolvedUsername: 'resolved-user',
+      rdpResolvedDomain: 'corp',
+    });
   });
 
   it('closes the active tab and allows switching the active tab explicitly', () => {
@@ -185,11 +163,12 @@ describe('useTabsStore', () => {
     ]);
   });
 
-  it('restores persisted tabs in order and ignores missing connections', async () => {
+  it('restores persisted tab instances in order and keeps same-connection duplicates separate', async () => {
     const persisted: PersistedTab[] = [
-      { connectionId: 'missing', sortOrder: 0, isActive: false },
-      { connectionId: 'conn-2', sortOrder: 2, isActive: false },
-      { connectionId: 'conn-1', sortOrder: 1, isActive: true },
+      { id: 'tab-missing', connectionId: 'missing', sortOrder: 0, isActive: false },
+      { id: 'tab-conn-1-a', connectionId: 'conn-1', sortOrder: 1, isActive: false },
+      { id: 'tab-conn-1-b', connectionId: 'conn-1', sortOrder: 2, isActive: true },
+      { id: 'tab-conn-2', connectionId: 'conn-2', sortOrder: 3, isActive: false },
     ];
     vi.mocked(getPersistedTabs).mockResolvedValue(persisted);
 
@@ -198,9 +177,56 @@ describe('useTabsStore', () => {
       .restoreTabs([makeConnection('conn-1'), makeConnection('conn-2')]);
 
     const state = useTabsStore.getState();
-    expect(state.tabs.map((tab) => tab.connection.id)).toEqual(['conn-1', 'conn-2']);
-    expect(state.tabs.find((tab) => tab.id === state.activeTabId)?.connection.id).toBe('conn-1');
+    expect(state.tabs.map((tab) => ({ id: tab.id, connectionId: tab.connection.id }))).toEqual([
+      { id: 'tab-conn-1-a', connectionId: 'conn-1' },
+      { id: 'tab-conn-1-b', connectionId: 'conn-1' },
+      { id: 'tab-conn-2', connectionId: 'conn-2' },
+    ]);
+    expect(state.activeTabId).toBe('tab-conn-1-b');
     expect(syncPersistedTabs).not.toHaveBeenCalled();
+  });
+
+  it('does not persist credential override tabs to the tabs api', async () => {
+    useTabsStore.getState().openTab(makeTypedConnection('conn-1', 'DATABASE'), {
+      username: 'dbuser',
+      password: 'secret',
+      credentialMode: 'manual',
+    });
+    useTabsStore.getState().openTab(makeConnection('conn-2'));
+
+    const persistedTab = useTabsStore.getState().tabs[1];
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(syncPersistedTabs).toHaveBeenCalledWith([
+      {
+        id: persistedTab?.id,
+        connectionId: 'conn-2',
+        sortOrder: 0,
+        isActive: true,
+      },
+    ]);
+  });
+
+  it('keeps the prior persisted tab active when a credential override tab is focused', async () => {
+    useTabsStore.getState().openTab(makeConnection('conn-1'));
+    const persistedTabId = useTabsStore.getState().tabs[0]?.id;
+
+    useTabsStore.getState().openTab(makeTypedConnection('conn-2', 'DATABASE'), {
+      username: 'dbuser',
+      password: 'secret',
+      credentialMode: 'manual',
+    });
+
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(syncPersistedTabs).toHaveBeenLastCalledWith([
+      {
+        id: persistedTabId,
+        connectionId: 'conn-1',
+        sortOrder: 0,
+        isActive: true,
+      },
+    ]);
   });
 
   it('sets and clears db tunnel metadata on an existing tab', () => {
@@ -241,7 +267,7 @@ describe('useTabsStore', () => {
     });
 
     vi.mocked(getPersistedTabs).mockResolvedValue([
-      { connectionId: 'conn-1', sortOrder: 0, isActive: true },
+      { id: 'tab-conn-1', connectionId: 'conn-1', sortOrder: 0, isActive: true },
     ]);
     await useTabsStore.getState().restoreTabs([connection]);
 

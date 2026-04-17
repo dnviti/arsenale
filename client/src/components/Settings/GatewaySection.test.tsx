@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
@@ -47,12 +48,19 @@ describe('GatewaySection', () => {
       permissionsLoaded: true,
       permissions: {
         ...useAuthStore.getState().permissions,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: true,
         canManageGateways: true,
         canManageSessions: true,
       },
     });
 
-    render(<GatewaySection />);
+    render(
+      <MemoryRouter>
+        <GatewaySection />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText('Gateway access')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Set Up Organization' })).toBeInTheDocument();
@@ -71,6 +79,9 @@ describe('GatewaySection', () => {
       permissionsLoaded: true,
       permissions: {
         ...useAuthStore.getState().permissions,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: true,
         canManageGateways: true,
         canManageSessions: true,
       },
@@ -166,6 +177,8 @@ describe('GatewaySection', () => {
       fetchActiveSessions: vi.fn().mockResolvedValue(undefined),
       fetchSessionCount: vi.fn().mockResolvedValue(undefined),
       fetchSessionCountByGateway: vi.fn().mockResolvedValue(undefined),
+      pauseSession: vi.fn().mockResolvedValue(undefined),
+      resumeSession: vi.fn().mockResolvedValue(undefined),
       terminateSession: vi.fn().mockResolvedValue(undefined),
       fetchScalingStatus: vi.fn().mockResolvedValue(undefined),
       fetchInstances: vi.fn().mockResolvedValue(undefined),
@@ -196,12 +209,57 @@ describe('GatewaySection', () => {
       reset: vi.fn(),
     });
 
-    render(<GatewaySection />);
+    render(
+      <MemoryRouter>
+        <GatewaySection />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText('SSH Key Pair')).toBeInTheDocument();
     expect(screen.getByText('Gateway Inventory')).toBeInTheDocument();
     expect(screen.getByText('Tunnel SSH')).toBeInTheDocument();
     expect(screen.getByText('Tunnel healthy')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Push Key' })).toBeInTheDocument();
+  });
+
+  it('allows session viewers to open Active Sessions without gateway management access', async () => {
+    useUiPreferencesStore.setState({
+      gatewayActiveSubTab: 'gateways',
+    });
+
+    useAuthStore.setState({
+      user: {
+        id: 'user-1',
+        email: 'viewer@example.com',
+        username: 'Viewer',
+        avatarData: null,
+        tenantId: 'tenant-1',
+        tenantRole: 'AUDITOR',
+      },
+      permissionsLoaded: true,
+      permissions: {
+        ...useAuthStore.getState().permissions,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: false,
+        canManageGateways: false,
+        canManageSessions: false,
+      },
+    });
+
+    const onOpenSessions = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <GatewaySection onOpenSessions={onOpenSessions} />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Session dashboard')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Sessions' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /open the sessions console/i }));
+    expect(onOpenSessions).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('tab', { name: 'Gateways' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Gateway access is restricted')).not.toBeInTheDocument();
   });
 });

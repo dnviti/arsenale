@@ -29,6 +29,9 @@ describe('StatusBar', () => {
         canViewCredentials: true,
         canShareConnections: true,
         canViewAuditLog: true,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: true,
         canManageSessions: true,
         canManageGateways: true,
         canManageUsers: true,
@@ -38,6 +41,7 @@ describe('StatusBar', () => {
     });
     useFeatureFlagsStore.setState({ loaded: true, keychainEnabled: false });
     useGatewayStore.setState({
+      sessionCount: 4,
       gateways: [
         {
           id: 'gateway-1',
@@ -88,6 +92,20 @@ describe('StatusBar', () => {
     useTabsStore.setState({ tabs: [] });
     useUiPreferencesStore.setState({ uiZoomLevel: 100 });
     useVaultStore.setState({ unlocked: false, initialized: false });
+  });
+
+  it('opens the sessions console when the session counter is clicked', () => {
+    const onOpenSessions = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <StatusBar onOpenSessions={onOpenSessions} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /4 sessions/i }));
+
+    expect(onOpenSessions).toHaveBeenCalledTimes(1);
   });
 
   it('opens the infrastructure settings concern when the gateway indicator is clicked', () => {

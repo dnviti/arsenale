@@ -45,6 +45,7 @@ import NotificationsSection from '../Settings/NotificationsSection';
 import DbFirewallSection from '../Settings/DbFirewallSection';
 import DbMaskingSection from '../Settings/DbMaskingSection';
 import DbRateLimitSection from '../Settings/DbRateLimitSection';
+import type { SessionsRouteState } from '@/components/sessions/sessionConsoleRoute';
 
 export interface SettingsConcern {
   id: string;
@@ -81,6 +82,7 @@ export interface SettingsConcernContext {
   onViewUserProfile?: (userId: string) => void;
   onImport?: () => void;
   onExport?: () => void;
+  onOpenSessions?: (initialState?: Partial<SessionsRouteState>) => void;
   deleteOrgTrigger: (() => void) | null;
   setDeleteOrgTrigger: (trigger: (() => void) | null) => void;
   navigateToConcern: (concernId: string) => void;
@@ -299,7 +301,9 @@ export function buildSettingsConcerns(context: SettingsConcernContext): Settings
         label: 'Gateways',
         description: 'Gateway inventory, sessions, orchestration, and templates.',
         keywords: ['gateways', 'orchestration', 'sessions'],
-        content: context.hasTenant && context.anyConnectionFeature ? <GatewaySection onNavigateToTab={context.navigateToConcern} /> : null,
+          content: context.hasTenant && context.anyConnectionFeature
+            ? <GatewaySection onNavigateToTab={context.navigateToConcern} onOpenSessions={context.onOpenSessions} />
+            : null,
       },
       {
         id: 'tunnel',

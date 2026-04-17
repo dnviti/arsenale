@@ -1,6 +1,7 @@
 import api from './client';
 
 export interface PersistedTab {
+  id: string;
   connectionId: string;
   sortOrder: number;
   isActive: boolean;

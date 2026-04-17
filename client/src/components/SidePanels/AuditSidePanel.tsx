@@ -95,8 +95,8 @@ function getActionIcon(action: AuditAction): LucideIcon {
   if (action === 'LOGOUT') return LogOut;
   if (action.startsWith('VAULT')) return Lock;
   if (action === 'VAULT_UNLOCK') return Unlock;
-  if (action.startsWith('CREATE_') || action === 'SFTP_MKDIR') return FolderPlus;
-  if (action.startsWith('DELETE_') || action.startsWith('SFTP_DELETE')) return Trash2;
+  if (action.startsWith('CREATE_') || action === 'FILE_MKDIR' || action === 'SFTP_MKDIR') return FolderPlus;
+  if (action.startsWith('DELETE_') || action === 'FILE_DELETE' || action === 'SFTP_DELETE') return Trash2;
   if (action.startsWith('SHARE_') || action.startsWith('UNSHARE_') || action === 'BATCH_SHARE') return Share2;
   if (action.startsWith('SECRET_')) return KeyRound;
   if (action.startsWith('GATEWAY_')) return Server;
@@ -106,7 +106,7 @@ function getActionIcon(action: AuditAction): LucideIcon {
   if (action.startsWith('TOTP_') || action.startsWith('SMS_') || action.startsWith('OAUTH_') || action === 'PASSWORD_CHANGE') return ShieldAlert;
   if (action === 'PASSWORD_REVEAL') return Eye;
   if (action.startsWith('DB_')) return Database;
-  if (action.startsWith('SFTP_')) return FileText;
+  if (action.startsWith('FILE_') || action.startsWith('SFTP_')) return FileText;
   if (action.startsWith('RECORDING_')) return Video;
   if (action === 'IMPOSSIBLE_TRAVEL_DETECTED' || action === 'ANOMALOUS_LATERAL_MOVEMENT' || action === 'TOKEN_HIJACK_ATTEMPT' || action === 'REFRESH_TOKEN_REUSE') return AlertTriangle;
   if (action === 'PROFILE_UPDATE') return UserCog;
@@ -134,6 +134,10 @@ const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
   {
     label: 'Sessions',
     actions: ['SESSION_START', 'SESSION_END', 'SESSION_TIMEOUT', 'SESSION_ERROR', 'SESSION_TERMINATE', 'SESSION_TERMINATED_POLICY_VIOLATION'],
+  },
+  {
+    label: 'Files',
+    actions: ['FILE_UPLOAD', 'FILE_DOWNLOAD', 'FILE_DELETE', 'FILE_MKDIR', 'FILE_RENAME', 'FILE_LIST', 'SFTP_UPLOAD', 'SFTP_DOWNLOAD', 'SFTP_DELETE', 'SFTP_MKDIR', 'SFTP_RENAME', 'SFTP_LIST'],
   },
   {
     label: 'Gateways',

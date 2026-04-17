@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AlertCircle, Loader2, ShieldEllipsis } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -17,18 +18,22 @@ import { GatewayInventoryPanel, GatewaySshKeyPanel } from './gatewaySectionCards
 import { GatewayDeleteDialog, GatewayForceDeleteDialog, GatewayRotateKeyDialog } from './gatewaySectionDialogs';
 import { triggerTextDownload, type GatewayTestState } from './gatewaySectionUtils';
 import { SettingsPanel, SettingsSummaryGrid, SettingsSummaryItem } from './settings-ui';
+import { buildSessionsRoute } from '@/components/sessions/sessionConsoleRoute';
+import type { SessionsRouteState } from '@/components/sessions/sessionConsoleRoute';
 
 interface GatewaySectionProps {
   onNavigateToTab?: (tabId: string) => void;
+  onOpenSessions?: (initialState?: Partial<SessionsRouteState>) => void;
 }
 
 type GatewaySubTab = 'gateways' | 'sessions' | 'templates';
 
-export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps) {
+export default function GatewaySection({ onNavigateToTab, onOpenSessions }: GatewaySectionProps) {
+  const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const permissionsLoaded = useAuthStore((state) => state.permissionsLoaded);
   const canManageGateways = useAuthStore((state) => state.permissions.canManageGateways);
-  const canManageSessions = useAuthStore((state) => state.permissions.canManageSessions);
+  const canViewSessions = useAuthStore((state) => state.permissions.canViewSessions);
   const gateways = useGatewayStore((state) => state.gateways);
   const loading = useGatewayStore((state) => state.loading);
   const fetchGateways = useGatewayStore((state) => state.fetchGateways);
@@ -59,6 +64,7 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
   const { copied, copy: copyToClipboard } = useCopyToClipboard();
 
   const hasTenant = Boolean(user?.tenantId);
+  const canAccessGatewayArea = canManageGateways || canViewSessions;
   const currentTab = subTab as GatewaySubTab;
   const totalGateways = gateways.length;
   const managedGateways = gateways.filter((gateway) => gateway.deploymentMode === 'MANAGED_GROUP').length;
@@ -73,13 +79,14 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
   }, [canManageGateways, fetchGateways, fetchSshKeyPair, hasTenant, permissionsLoaded]);
 
   useEffect(() => {
-    const allowedTabs = new Set<GatewaySubTab>(['gateways']);
-    if (canManageSessions) allowedTabs.add('sessions');
+    const allowedTabs = new Set<GatewaySubTab>();
+    if (canManageGateways) allowedTabs.add('gateways');
+    if (canViewSessions) allowedTabs.add('sessions');
     if (canManageGateways) allowedTabs.add('templates');
     if (!allowedTabs.has(currentTab)) {
-      setSubTab('gatewayActiveSubTab', 'gateways');
+      setSubTab('gatewayActiveSubTab', canManageGateways ? 'gateways' : 'sessions');
     }
-  }, [canManageGateways, canManageSessions, currentTab, setSubTab]);
+  }, [canManageGateways, canViewSessions, currentTab, setSubTab]);
 
   const handleExpandedChange = (gatewayId: string, expanded: boolean) => {
     setExpandedGatewayIds((previous) => {
@@ -263,13 +270,13 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
     );
   }
 
-  if (!canManageGateways) {
+  if (!canAccessGatewayArea) {
     return (
       <Alert variant="warning">
         <AlertCircle className="size-4" />
         <AlertTitle>Gateway access is restricted</AlertTitle>
         <AlertDescription>
-          You do not have permission to manage gateways for this organization.
+          You do not have permission to view active sessions or manage gateways for this organization.
         </AlertDescription>
       </Alert>
     );
@@ -293,59 +300,78 @@ export default function GatewaySection({ onNavigateToTab }: GatewaySectionProps)
         </Alert>
       ) : null}
 
-      <SettingsSummaryGrid>
-        <SettingsSummaryItem label="Total gateways" value={String(totalGateways)} />
-        <SettingsSummaryItem label="Managed groups" value={String(managedGateways)} />
-        <SettingsSummaryItem label="Tunnel-enabled" value={String(tunnelEnabledGateways)} />
-        <SettingsSummaryItem label="Default routes" value={String(defaultGateways)} />
-      </SettingsSummaryGrid>
+      {canManageGateways ? (
+        <SettingsSummaryGrid>
+          <SettingsSummaryItem label="Total gateways" value={String(totalGateways)} />
+          <SettingsSummaryItem label="Managed groups" value={String(managedGateways)} />
+          <SettingsSummaryItem label="Tunnel-enabled" value={String(tunnelEnabledGateways)} />
+          <SettingsSummaryItem label="Default routes" value={String(defaultGateways)} />
+        </SettingsSummaryGrid>
+      ) : null}
 
       <Tabs value={currentTab} onValueChange={(value) => setSubTab('gatewayActiveSubTab', value)}>
         <TabsList>
-          <TabsTrigger value="gateways">Gateways</TabsTrigger>
-          {canManageSessions && <TabsTrigger value="sessions">Active Sessions</TabsTrigger>}
+          {canManageGateways ? <TabsTrigger value="gateways">Gateways</TabsTrigger> : null}
+          {canViewSessions ? <TabsTrigger value="sessions">Sessions</TabsTrigger> : null}
           {canManageGateways && <TabsTrigger value="templates">Templates</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="gateways" className="space-y-6">
-          <GatewaySshKeyPanel
-            copied={copied}
-            keyActionLoading={keyActionLoading}
-            onCopyPublicKey={handleCopyPublicKey}
-            onDownloadPrivateKey={handleDownloadPrivateKey}
-            onDownloadPublicKey={handleDownloadPublicKey}
-            onGenerateKeyPair={handleGenerateKeyPair}
-            onRotateKeyPair={() => setRotateConfirmOpen(true)}
-            sshKeyLoading={sshKeyLoading}
-            sshKeyPair={sshKeyPair}
-          />
+        {canManageGateways ? (
+          <TabsContent value="gateways" className="space-y-6">
+            <GatewaySshKeyPanel
+              copied={copied}
+              keyActionLoading={keyActionLoading}
+              onCopyPublicKey={handleCopyPublicKey}
+              onDownloadPrivateKey={handleDownloadPrivateKey}
+              onDownloadPublicKey={handleDownloadPublicKey}
+              onGenerateKeyPair={handleGenerateKeyPair}
+              onRotateKeyPair={() => setRotateConfirmOpen(true)}
+              sshKeyLoading={sshKeyLoading}
+              sshKeyPair={sshKeyPair}
+            />
 
-          <GatewayInventoryPanel
-            expandedGatewayIds={expandedGatewayIds}
-            gateways={gateways}
-            loading={loading}
-            pushStates={pushStates}
-            sshKeyReady={Boolean(sshKeyPair)}
-            testStates={testStates}
-            tunnelStatuses={tunnelStatuses}
-            onCreateGateway={() => {
-              setEditingGateway(null);
-              setDialogOpen(true);
-            }}
-            onDeleteGateway={setDeleteTarget}
-            onEditGateway={(gateway) => {
-              setEditingGateway(gateway);
-              setDialogOpen(true);
-            }}
-            onExpandedChange={handleExpandedChange}
-            onPushKey={handlePushKey}
-            onTestGateway={handleTestGateway}
-          />
-        </TabsContent>
+            <GatewayInventoryPanel
+              expandedGatewayIds={expandedGatewayIds}
+              gateways={gateways}
+              loading={loading}
+              pushStates={pushStates}
+              sshKeyReady={Boolean(sshKeyPair)}
+              testStates={testStates}
+              tunnelStatuses={tunnelStatuses}
+              onCreateGateway={() => {
+                setEditingGateway(null);
+                setDialogOpen(true);
+              }}
+              onDeleteGateway={setDeleteTarget}
+              onEditGateway={(gateway) => {
+                setEditingGateway(gateway);
+                setDialogOpen(true);
+              }}
+              onExpandedChange={handleExpandedChange}
+              onPushKey={handlePushKey}
+              onTestGateway={handleTestGateway}
+            />
+          </TabsContent>
+        ) : null}
 
-      {canManageSessions && (
-          <TabsContent value="sessions"><SessionDashboard /></TabsContent>
-        )}
+        {canViewSessions ? (
+          <TabsContent value="sessions" className="space-y-4">
+            <SessionDashboard onOpenSessions={() => onOpenSessions?.()} />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                if (onOpenSessions) {
+                  onOpenSessions();
+                  return;
+                }
+                navigate(buildSessionsRoute());
+              }}
+            >
+              Open the sessions console
+            </Button>
+          </TabsContent>
+        ) : null}
 
         {canManageGateways && (
           <TabsContent value="templates"><GatewayTemplateSection /></TabsContent>

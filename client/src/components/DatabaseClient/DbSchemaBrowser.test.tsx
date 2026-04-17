@@ -54,7 +54,7 @@ describe('DbSchemaBrowser', () => {
     expect(view.getByText('Database: arsenale_demo')).toBeInTheDocument();
     expect(view.queryByText('Tables (1)')).not.toBeInTheDocument();
 
-    const collectionButton = view.getByText('demo_customers').closest('[role="button"]');
+    const collectionButton = view.getByText('demo_customers').closest('button');
     expect(collectionButton).not.toBeNull();
 
     collectionButton!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
@@ -79,7 +79,7 @@ describe('DbSchemaBrowser', () => {
       />,
     );
 
-    const tableButton = view.getByText('demo_customers').closest('[role="button"]');
+    const tableButton = view.getByText('demo_customers').closest('button');
     expect(tableButton).not.toBeNull();
 
     tableButton!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));

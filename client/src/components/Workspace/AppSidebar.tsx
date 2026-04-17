@@ -1,4 +1,5 @@
 import {
+  Activity,
   DatabaseZap,
   History,
   KeyRound,
@@ -9,7 +10,6 @@ import {
   Settings2,
   SunMedium,
   TerminalSquare,
-  Video,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -55,7 +55,7 @@ interface AppSidebarProps {
   onOpenSettings: (tab?: string) => void;
   onOpenKeychain: () => void;
   onOpenAuditLog: () => void;
-  onOpenRecordings: () => void;
+  onOpenSessions: () => void;
 }
 
 export default function AppSidebar({
@@ -70,12 +70,11 @@ export default function AppSidebar({
   onOpenSettings,
   onOpenKeychain,
   onOpenAuditLog,
-  onOpenRecordings,
+  onOpenSessions,
 }: AppSidebarProps) {
   const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
   const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
-  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const themeMode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const activeFilter = useUiPreferencesStore((s) => s.workspaceActiveView) as ConnectionFilter;
@@ -158,12 +157,10 @@ export default function AppSidebar({
                       <Network className="size-4" />
                       Gateways
                     </DropdownMenuItem>
-                    {recordingsEnabled ? (
-                      <DropdownMenuItem onSelect={onOpenRecordings}>
-                        <Video className="size-4" />
-                        Recordings
-                      </DropdownMenuItem>
-                    ) : null}
+                    <DropdownMenuItem onSelect={onOpenSessions}>
+                      <Activity className="size-4" />
+                      Sessions
+                    </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
 

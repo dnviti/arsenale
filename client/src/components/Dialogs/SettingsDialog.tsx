@@ -32,6 +32,7 @@ import { getProfile } from '../../api/user.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { isAdminOrAbove } from '../../utils/roles';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
+import type { SessionsRouteState } from '@/components/sessions/sessionConsoleRoute';
 import {
   buildSettingsConcerns,
   type SettingsConcern,
@@ -46,6 +47,7 @@ interface SettingsDialogProps {
   onViewUserProfile?: (userId: string) => void;
   onImport?: () => void;
   onExport?: () => void;
+  onOpenSessions?: (initialState?: Partial<SessionsRouteState>) => void;
 }
 
 const LEGACY_TAB_TO_CONCERN: Record<string, string> = {
@@ -90,6 +92,7 @@ export default function SettingsDialog({
   onViewUserProfile,
   onImport,
   onExport,
+  onOpenSessions,
 }: SettingsDialogProps) {
   const user = useAuthStore((s) => s.user);
   const connectionsEnabled = useFeatureFlagsStore(
@@ -156,6 +159,7 @@ export default function SettingsDialog({
         onViewUserProfile,
         onImport,
         onExport,
+        onOpenSessions,
         deleteOrgTrigger,
         setDeleteOrgTrigger: registerDeleteOrgTrigger,
         navigateToConcern: (target) =>
@@ -176,6 +180,7 @@ export default function SettingsDialog({
       linkedProvider,
       onExport,
       onImport,
+      onOpenSessions,
       onViewUserProfile,
       registerDeleteOrgTrigger,
       user?.tenantId,

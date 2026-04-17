@@ -26,6 +26,11 @@ export interface ResolvedDlpPolicy {
   disableUpload: boolean;
 }
 
+export interface TransferRetentionPolicy {
+  retainSuccessfulUploads: boolean;
+  maxUploadSizeBytes: number;
+}
+
 export type DbProtocol = 'postgresql' | 'mysql' | 'mongodb' | 'oracle' | 'mssql' | 'db2';
 export type DbCloudProvider = 'azure' | 'aws' | 'gcp';
 export type OracleConnectionType = 'basic' | 'tns' | 'custom';
@@ -133,6 +138,7 @@ export interface ConnectionInput {
   dbSettings?: DbSettings;
   defaultCredentialMode?: 'saved' | 'domain' | 'prompt' | null;
   dlpPolicy?: DlpPolicy | null;
+  transferRetentionPolicy?: TransferRetentionPolicy | null;
   // DB_TUNNEL-specific fields
   targetDbHost?: string;
   targetDbPort?: number;
@@ -165,6 +171,7 @@ export interface ConnectionData {
   dbSettings?: DbSettings | null;
   defaultCredentialMode?: 'saved' | 'domain' | 'prompt' | null;
   dlpPolicy?: DlpPolicy | null;
+  transferRetentionPolicy?: TransferRetentionPolicy | null;
   // DB_TUNNEL-specific fields
   targetDbHost?: string | null;
   targetDbPort?: number | null;
@@ -214,6 +221,7 @@ export interface ConnectionUpdate {
   dbSettings?: DbSettings | null;
   defaultCredentialMode?: 'saved' | 'domain' | 'prompt' | null;
   dlpPolicy?: DlpPolicy | null;
+  transferRetentionPolicy?: TransferRetentionPolicy | null;
   // DB_TUNNEL-specific fields
   targetDbHost?: string | null;
   targetDbPort?: number | null;

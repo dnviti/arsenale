@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import { ConnectionData } from '../api/connections.api';
 import { getPersistedTabs, syncPersistedTabs, clearPersistedTabs, PersistedTab } from '../api/tabs.api';
 import { addRecentConnection } from '../utils/recentConnections';
+import { createTabInstanceId } from '../utils/tabInstance';
 import { useAuthStore } from './authStore';
+import { useUiPreferencesStore } from './uiPreferencesStore';
 
 export interface CredentialOverride {
   username: string;
@@ -36,6 +38,7 @@ export interface Tab {
 interface TabsState {
   tabs: Tab[];
   activeTabId: string | null;
+  persistedActiveTabId: string | null;
   recentTick: number;
   openTab: (connection: ConnectionData, credentials?: CredentialOverride) => void;
   closeTab: (tabId: string) => void;
@@ -54,38 +57,27 @@ const SYNC_DEBOUNCE_MS = 1000;
 // Guard against double-restore
 let tabsRestored = false;
 
-function toPersistedTabs(tabs: Tab[], activeTabId: string | null): PersistedTab[] {
-  const seen = new Set<string>();
-  return tabs
-    .filter((t) => {
-      if (t.credentials || seen.has(t.connection.id)) {
-        return false;
-      }
-      seen.add(t.connection.id);
-      return true;
-    })
+function toPersistedTabs(tabs: Tab[], persistedActiveTabId: string | null): PersistedTab[] {
+  const persistedTabs = tabs.filter((t) => !t.credentials);
+  const resolvedActiveTabId = persistedTabs.some((t) => t.id === persistedActiveTabId)
+    ? persistedActiveTabId
+    : persistedTabs[persistedTabs.length - 1]?.id ?? null;
+
+  return persistedTabs
     .map((t, index) => ({
+      id: t.id,
       connectionId: t.connection.id,
       sortOrder: index,
-      isActive: t.id === activeTabId,
+      isActive: t.id === resolvedActiveTabId,
     }));
-}
-
-function normalizeIdentityPart(value?: string): string {
-  return value?.trim().toLowerCase() ?? '';
-}
-
-function rdpIdentityKey(tab: Pick<Tab, 'credentials' | 'rdpResolvedUsername' | 'rdpResolvedDomain'>): string {
-  const username = normalizeIdentityPart(tab.rdpResolvedUsername ?? tab.credentials?.username);
-  const domain = normalizeIdentityPart(tab.rdpResolvedDomain ?? tab.credentials?.domain);
-  return `${username}::${domain}`;
 }
 
 function scheduleSyncToServer() {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
-    const { tabs, activeTabId } = useTabsStore.getState();
-    const payload = toPersistedTabs(tabs, activeTabId);
+    const { tabs } = useTabsStore.getState();
+    const { persistedActiveTabId } = useTabsStore.getState();
+    const payload = toPersistedTabs(tabs, persistedActiveTabId);
     syncPersistedTabs(payload).catch(() => {
       // Silently ignore sync failures — tabs work fine in-memory
     });
@@ -95,6 +87,7 @@ function scheduleSyncToServer() {
 export const useTabsStore = create<TabsState>((set, get) => ({
   tabs: [],
   activeTabId: null,
+  persistedActiveTabId: null,
   recentTick: 0,
 
   openTab: (connection, credentials) => {
@@ -106,23 +99,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       addRecentConnection(userId, connection.id);
     }
 
-    if (connection.type === 'RDP') {
-      const sameConnectionTabs = tabs.filter((t) => t.connection.type === 'RDP' && t.connection.id === connection.id);
-      const existing = !credentials
-        ? sameConnectionTabs.find((t) => !t.credentials)
-        : sameConnectionTabs.find((t) => rdpIdentityKey(t) === rdpIdentityKey({ credentials }));
-      if (existing) {
-        set((state) => ({ activeTabId: existing.id, recentTick: state.recentTick + 1 }));
-        scheduleSyncToServer();
-        return;
-      }
-    }
-
-    const tabId = `tab-${connection.id}-${Date.now()}`;
+    const tabId = createTabInstanceId('tab', connection.id);
     const newTab: Tab = { id: tabId, connection, active: true, credentials };
     set((state) => ({
       tabs: [...tabs.map((t) => ({ ...t, active: false })), newTab],
       activeTabId: tabId,
+      persistedActiveTabId: credentials ? state.persistedActiveTabId : tabId,
       recentTick: state.recentTick + 1,
     }));
     scheduleSyncToServer();
@@ -137,19 +119,29 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       newActiveId = filtered.length > 0 ? filtered[filtered.length - 1].id : null;
     }
 
+    const nextPersistedTabs = filtered.filter((t) => !t.credentials);
+    const nextPersistedActiveTabId = nextPersistedTabs.some((t) => t.id === get().persistedActiveTabId)
+      ? get().persistedActiveTabId
+      : nextPersistedTabs[nextPersistedTabs.length - 1]?.id ?? null;
+
+    useUiPreferencesStore.getState().removeDbTabState(tabId);
+
     set({
       tabs: filtered.map((t) => ({
         ...t,
         active: t.id === newActiveId,
       })),
       activeTabId: newActiveId,
+      persistedActiveTabId: nextPersistedActiveTabId,
     });
     scheduleSyncToServer();
   },
 
   setActiveTab: (tabId) => {
+    const targetTab = get().tabs.find((t) => t.id === tabId);
     set((state) => ({
       activeTabId: tabId,
+      persistedActiveTabId: targetTab && !targetTab.credentials ? tabId : state.persistedActiveTabId,
       tabs: state.tabs.map((t) => ({ ...t, active: t.id === tabId })),
     }));
     scheduleSyncToServer();
@@ -186,22 +178,21 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
       if (validTabs.length === 0) return;
 
-      const activeConnectionId =
-        validTabs.find((p) => p.isActive)?.connectionId ?? validTabs[validTabs.length - 1].connectionId;
+      const activeTabId =
+        validTabs.find((p) => p.isActive)?.id ?? validTabs[validTabs.length - 1].id;
 
       const restoredTabs: Tab[] = validTabs.map((p) => {
         const connection = connMap.get(p.connectionId) as ConnectionData;
-        const tabId = `tab-${connection.id}-${Date.now()}`;
         return {
-          id: tabId,
+          id: p.id || createTabInstanceId('tab', connection.id),
           connection,
-          active: connection.id === activeConnectionId,
+          active: p.id === activeTabId,
         };
       });
 
       const newActiveId = restoredTabs.find((t) => t.active)?.id ?? null;
 
-      set({ tabs: restoredTabs, activeTabId: newActiveId });
+      set({ tabs: restoredTabs, activeTabId: newActiveId, persistedActiveTabId: newActiveId });
       // No sync after restore — the server already has this state
     } catch {
       // Silently ignore restore failures
@@ -230,7 +221,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       syncTimer = null;
     }
     tabsRestored = false;
-    set({ tabs: [], activeTabId: null });
+    const uiPrefs = useUiPreferencesStore.getState();
+    get().tabs.forEach((tab) => uiPrefs.removeDbTabState(tab.id));
+    set({ tabs: [], activeTabId: null, persistedActiveTabId: null });
     try {
       await clearPersistedTabs();
     } catch {

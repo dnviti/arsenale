@@ -12,19 +12,16 @@ export function isMapAssetsRequest(url: URL): boolean {
 }
 
 export function isStaticAssetRequest(request: WorkboxRequestDetails, url: URL): boolean {
-  if (isMapAssetsRequest(url)) {
-    return false;
-  }
-
-  return request.destination === 'script'
-    || request.destination === 'style'
-    || request.destination === 'image'
-    || request.destination === 'font';
+  return !isMapAssetsRequest(url)
+    && (request.destination === 'script'
+      || request.destination === 'style'
+      || request.destination === 'image'
+      || request.destination === 'font');
 }
 
 const runtimeCaching: RuntimeCaching[] = [
   {
-    urlPattern: ({ url }) => isMapAssetsRequest(url),
+    urlPattern: ({ url }) => url.pathname.startsWith(mapAssetsPathPrefix),
     handler: 'NetworkOnly',
   },
   {
@@ -36,7 +33,11 @@ const runtimeCaching: RuntimeCaching[] = [
     },
   },
   {
-    urlPattern: ({ request, url }) => isStaticAssetRequest(request, url),
+    urlPattern: ({ request, url }) => !url.pathname.startsWith(mapAssetsPathPrefix)
+      && (request.destination === 'script'
+        || request.destination === 'style'
+        || request.destination === 'image'
+        || request.destination === 'font'),
     handler: 'StaleWhileRevalidate',
     options: {
       cacheName: 'static-assets',

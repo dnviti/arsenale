@@ -62,7 +62,7 @@
     "@zxcvbn-ts/core": "3.0.4",
     "@zxcvbn-ts/language-common": "3.0.4",
     "@zxcvbn-ts/language-en": "3.0.2",
-    "axios": "1.13.6",
+    "axios": "1.15.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "2.1.1",
     "cmdk": "^1.1.1",
@@ -97,7 +97,7 @@
     "eslint-plugin-react-refresh": "0.5.2",
     "jsdom": "29.0.1",
     "typescript": "5.9.3",
-    "vite": "8.0.2",
+    "vite": "^8.0.8",
     "vite-plugin-pwa": "1.2.0",
     "vitest": "4.1.1"
   }

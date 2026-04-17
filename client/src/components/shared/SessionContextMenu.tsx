@@ -169,7 +169,7 @@ export default function SessionContextMenu({
         {protocol === 'SSH' && sftpAvailable && onToggleSftp && (
           <DropdownMenuItem onClick={() => handleAction(onToggleSftp)}>
             <FolderOpen className="h-4 w-4 mr-2" />
-            {sftpOpen ? 'Close SFTP Browser' : 'SFTP File Browser'}
+            {sftpOpen ? 'Close File Browser' : 'Open File Browser'}
           </DropdownMenuItem>
         )}
 
@@ -185,7 +185,7 @@ export default function SessionContextMenu({
         {protocol === 'RDP' && driveAvailable && onToggleDrive && (
           <DropdownMenuItem onClick={() => handleAction(onToggleDrive)}>
             <FolderOpen className="h-4 w-4 mr-2" />
-            {driveOpen ? 'Close Shared Drive' : 'Shared Drive'}
+            {driveOpen ? 'Close Shared Drive' : 'Open Shared Drive'}
           </DropdownMenuItem>
         )}
 

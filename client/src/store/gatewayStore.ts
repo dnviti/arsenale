@@ -25,7 +25,6 @@ import {
   listActiveSessions as listActiveSessionsApi,
   getSessionCount as getSessionCountApi,
   getSessionCountByGateway as getSessionCountByGatewayApi,
-  terminateSession as terminateSessionApi,
   deployGateway as deployGatewayApi,
   undeployGateway as undeployGatewayApi,
   scaleGateway as scaleGatewayApi,
@@ -41,6 +40,12 @@ import {
   generateTunnelToken as generateTunnelTokenApi,
   revokeTunnelToken as revokeTunnelTokenApi,
 } from '../api/gateway.api';
+import {
+  pauseSession as pauseSessionApi,
+  resumeSession as resumeSessionApi,
+  terminateSession as terminateSessionApi,
+  type SessionProtocol,
+} from '../api/sessions.api';
 
 export interface TunnelStatusEvent {
   gatewayId: string;
@@ -88,9 +93,11 @@ interface GatewayState {
   pushKeyToGateway: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Session monitoring actions
-  fetchActiveSessions: (filters?: { protocol?: 'SSH' | 'RDP'; gatewayId?: string }) => Promise<void>;
+  fetchActiveSessions: (filters?: { protocol?: SessionProtocol; gatewayId?: string }) => Promise<void>;
   fetchSessionCount: () => Promise<void>;
   fetchSessionCountByGateway: () => Promise<void>;
+  pauseSession: (sessionId: string) => Promise<void>;
+  resumeSession: (sessionId: string) => Promise<void>;
   terminateSession: (sessionId: string) => Promise<void>;
 
   // Managed gateway lifecycle actions
@@ -296,6 +303,24 @@ export const useGatewayStore = create<GatewayState>((set) => ({
     } catch {
       // ignore
     }
+  },
+
+  pauseSession: async (sessionId) => {
+    const result = await pauseSessionApi(sessionId);
+    set((state) => ({
+      activeSessions: state.activeSessions.map((session) =>
+        session.id === sessionId ? { ...session, status: result.status } : session,
+      ),
+    }));
+  },
+
+  resumeSession: async (sessionId) => {
+    const result = await resumeSessionApi(sessionId);
+    set((state) => ({
+      activeSessions: state.activeSessions.map((session) =>
+        session.id === sessionId ? { ...session, status: result.status } : session,
+      ),
+    }));
   },
 
   terminateSession: async (sessionId) => {

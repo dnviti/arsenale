@@ -18,7 +18,6 @@ import { useAuthStore } from '@/store/authStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { useGatewayStore } from '@/store/gatewayStore';
 import { useSecretStore } from '@/store/secretStore';
-import { useTabsStore } from '@/store/tabsStore';
 import { useVaultStore } from '@/store/vaultStore';
 import { useCommandPaletteStore } from '@/store/commandPaletteStore';
 import { useUiPreferencesStore } from '@/store/uiPreferencesStore';
@@ -59,9 +58,10 @@ function StatusBarButton({
 
 interface StatusBarProps {
   onOpenSettings?: (tab?: string) => void;
+  onOpenSessions?: () => void;
 }
 
-export default function StatusBar({ onOpenSettings }: StatusBarProps) {
+export default function StatusBar({ onOpenSettings, onOpenSessions }: StatusBarProps) {
   const user = useAuthStore((s) => s.user);
   const permissionsLoaded = useAuthStore((s) => s.permissionsLoaded);
   const canManageGateways = useAuthStore((s) => s.permissions.canManageGateways);
@@ -72,7 +72,7 @@ export default function StatusBar({ onOpenSettings }: StatusBarProps) {
   const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
   const gateways = useGatewayStore((s) => s.gateways);
   const gatewaysLoading = useGatewayStore((s) => s.loading);
-  const tabs = useTabsStore((s) => s.tabs);
+  const sessionCount = useGatewayStore((s) => s.sessionCount);
   const expiringCount = useSecretStore((s) => s.expiringCount);
   const pwnedCount = useSecretStore((s) => s.pwnedCount);
   const togglePalette = useCommandPaletteStore((s) => s.toggle);
@@ -133,9 +133,9 @@ export default function StatusBar({ onOpenSettings }: StatusBarProps) {
     <footer className="flex h-7 shrink-0 items-center justify-between border-t bg-background/85 px-2 text-[11px] backdrop-blur-xl">
       {/* Left side */}
       <div className="flex items-center gap-0.5">
-        <StatusBarButton tooltip="Active sessions">
+        <StatusBarButton tooltip="Open sessions console" onClick={onOpenSessions}>
           <Activity className="size-3" />
-          {tabs.length} session{tabs.length !== 1 ? 's' : ''}
+          {sessionCount} session{sessionCount !== 1 ? 's' : ''}
         </StatusBarButton>
 
         {showGatewayStatus ? (

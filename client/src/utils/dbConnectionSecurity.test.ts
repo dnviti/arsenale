@@ -43,7 +43,7 @@ describe('dbConnectionSecurity', () => {
 
   it('returns protocol-specific TLS options', () => {
     expect(tlsModeOptions('postgresql').map((option) => option.value)).toEqual([
-      '',
+      '__default__',
       'disable',
       'prefer',
       'require',
@@ -51,7 +51,7 @@ describe('dbConnectionSecurity', () => {
       'verify-full',
     ]);
     expect(tlsModeOptions('mysql').map((option) => option.value)).toEqual([
-      '',
+      '__default__',
       'disable',
       'prefer',
       'require',

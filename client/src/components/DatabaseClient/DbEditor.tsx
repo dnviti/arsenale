@@ -165,11 +165,15 @@ export default function DbEditor({
   const queryTabsRef = useRef<QuerySubTab[]>([]);
 
   // Store selectors — must be declared before any useState that depends on them
-  const storedSubTabs = useUiPreferencesStore((s) => s.dbQuerySubTabs[connectionId]);
-  const storedSessionConfig = useUiPreferencesStore((s) => s.dbSessionConfigs[connectionId]);
+  const storedSubTabs = useUiPreferencesStore((s) => s.dbQuerySubTabs[tabId]);
+  const storedSessionConfig = useUiPreferencesStore((s) => s.dbSessionConfigs[tabId]);
+  const legacyStoredSubTabs = useUiPreferencesStore((s) => s.dbQuerySubTabs[connectionId]);
+  const legacyStoredSessionConfig = useUiPreferencesStore((s) => s.dbSessionConfigs[connectionId]);
   const schemaBrowserOpen = useUiPreferencesStore((s) => s.dbSchemaBrowserOpen);
   const historyOpen = useUiPreferencesStore((s) => s.dbQueryHistoryOpen);
   const setPref = useUiPreferencesStore((s) => s.set);
+  const initialStoredSubTabs = storedSubTabs ?? legacyStoredSubTabs;
+  const initialStoredSessionConfig = storedSessionConfig ?? legacyStoredSessionConfig;
 
   const [connectionState, setConnectionState] = useState<DbConnectionState>('connecting');
   const [error, setError] = useState('');
@@ -183,7 +187,7 @@ export default function DbEditor({
   const [saveName, setSaveName] = useState('');
   const [configAnchorEl, setConfigAnchorEl] = useState<HTMLElement | null>(null);
   const [currentSessionConfig, setCurrentSessionConfig] = useState<DbSessionConfig>(
-    () => storedSessionConfig ?? {},
+    () => initialStoredSessionConfig ?? {},
   );
 
   // AI Assistant state (AISQL-2069)
@@ -200,9 +204,9 @@ export default function DbEditor({
   const aiGenerationAvailable = dbSettings?.aiQueryGenerationEnabled !== false;
 
   const [queryTabs, setQueryTabs] = useState<QuerySubTab[]>(() => {
-    if (storedSubTabs?.tabs?.length) {
+    if (initialStoredSubTabs?.tabs?.length) {
       // Restore persisted tabs (without results/executing state)
-      const restored = storedSubTabs.tabs.map((t) => ({
+      const restored = initialStoredSubTabs.tabs.map((t) => ({
         ...t,
         result: null as DbQueryResult | null,
         executing: false,
@@ -218,8 +222,8 @@ export default function DbEditor({
     return [createSubTab()];
   });
   const [activeQueryTabId, setActiveQueryTabId] = useState(() => {
-    if (storedSubTabs?.activeId && queryTabs.some((t) => t.id === storedSubTabs.activeId)) {
-      return storedSubTabs.activeId;
+    if (initialStoredSubTabs?.activeId && queryTabs.some((t) => t.id === initialStoredSubTabs.activeId)) {
+      return initialStoredSubTabs.activeId;
     }
     return queryTabs[0].id;
   });
@@ -234,32 +238,48 @@ export default function DbEditor({
   const wasConnectedRef = useRef(false);
   const mountedRef = useRef(true);
 
+  useEffect(() => {
+    if (storedSubTabs || !legacyStoredSubTabs) return;
+    setPref('dbQuerySubTabs', {
+      ...useUiPreferencesStore.getState().dbQuerySubTabs,
+      [tabId]: legacyStoredSubTabs,
+    });
+  }, [legacyStoredSubTabs, setPref, storedSubTabs, tabId]);
+
+  useEffect(() => {
+    if (storedSessionConfig || !legacyStoredSessionConfig) return;
+    setPref('dbSessionConfigs', {
+      ...useUiPreferencesStore.getState().dbSessionConfigs,
+      [tabId]: legacyStoredSessionConfig,
+    });
+  }, [legacyStoredSessionConfig, setPref, storedSessionConfig, tabId]);
+
   // Persist query sub-tabs to store (debounced)
   useEffect(() => {
     const timer = setTimeout(() => {
       setPref('dbQuerySubTabs', {
         ...useUiPreferencesStore.getState().dbQuerySubTabs,
-        [connectionId]: {
+        [tabId]: {
           tabs: queryTabs.map(({ id, label, sql }) => ({ id, label, sql })),
           activeId: activeQueryTabId,
         },
       });
     }, 500);
     return () => clearTimeout(timer);
-  }, [queryTabs, activeQueryTabId, connectionId, setPref]);
+  }, [queryTabs, activeQueryTabId, setPref, tabId]);
 
   // Persist session config to store
   useEffect(() => {
     const prev = useUiPreferencesStore.getState().dbSessionConfigs;
     const hasValues = Object.values(currentSessionConfig).some((v) => v !== undefined && v !== '');
     if (hasValues) {
-      setPref('dbSessionConfigs', { ...prev, [connectionId]: currentSessionConfig });
+      setPref('dbSessionConfigs', { ...prev, [tabId]: currentSessionConfig });
     } else {
-      const { [connectionId]: _, ...rest } = prev;
+      const { [tabId]: _, ...rest } = prev;
       void _;
       setPref('dbSessionConfigs', rest);
     }
-  }, [currentSessionConfig, connectionId, setPref]);
+  }, [currentSessionConfig, setPref, tabId]);
 
   // Derived active tab
   const activeTab = queryTabs.find((t) => t.id === activeQueryTabId) ?? queryTabs[0];
@@ -883,7 +903,6 @@ export default function DbEditor({
   ];
 
   // Suppress unused var lint for tabId and isActive
-  void tabId;
   void isActive;
 
   return (

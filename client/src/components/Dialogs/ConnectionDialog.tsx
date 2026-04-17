@@ -14,7 +14,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { Keyboard, KeyRound, Cloud, X } from 'lucide-react';
-import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData, DlpPolicy, DbSettings, DbProtocol } from '../../api/connections.api';
+import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData, DlpPolicy, DbSettings, DbProtocol, TransferRetentionPolicy } from '../../api/connections.api';
 import { useConnectionsStore } from '../../store/connectionsStore';
 import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import { mergeTerminalConfig } from '../../constants/terminalThemes';
@@ -53,6 +53,20 @@ function supportsPersistedExecutionPlans(protocol?: DbProtocol): boolean {
 
 function supportsDatabaseSettings(type: 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL'): boolean {
   return type === 'DATABASE' || type === 'DB_TUNNEL';
+}
+
+function supportsTransferRetention(type: 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL'): boolean {
+  return type === 'SSH' || type === 'RDP';
+}
+
+const DEFAULT_CONNECTION_UPLOAD_LIMIT_MB = 100;
+const DEFAULT_CONNECTION_UPLOAD_LIMIT_BYTES = DEFAULT_CONNECTION_UPLOAD_LIMIT_MB * 1048576;
+
+function normalizeTransferRetentionPolicy(policy?: TransferRetentionPolicy | null): TransferRetentionPolicy {
+  return {
+    retainSuccessfulUploads: policy?.retainSuccessfulUploads ?? false,
+    maxUploadSizeBytes: policy?.maxUploadSizeBytes ?? DEFAULT_CONNECTION_UPLOAD_LIMIT_BYTES,
+  };
 }
 
 function inferDbProtocol(value?: string | null): DbProtocol {
@@ -134,6 +148,8 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   const [vaultProviders, setVaultProviders] = useState<VaultProviderData[]>([]);
   const [defaultConnectMode, setDefaultConnectMode] = useState<string>('');
   const [dlpPolicy, setDlpPolicy] = useState<DlpPolicy>({});
+  const [transferRetentionPolicy, setTransferRetentionPolicy] = useState<TransferRetentionPolicy>(normalizeTransferRetentionPolicy());
+  const [fileTransferMaxUploadSizeMb, setFileTransferMaxUploadSizeMb] = useState(String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB));
   const [targetDbHost, setTargetDbHost] = useState('');
   const [targetDbPort, setTargetDbPort] = useState('');
   const [dbType, setDbType] = useState('');
@@ -195,6 +211,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
       }
       setDefaultConnectMode(connection.defaultCredentialMode ?? '');
       setDlpPolicy((connection.dlpPolicy as DlpPolicy) ?? {});
+      const nextTransferPolicy = normalizeTransferRetentionPolicy(connection.transferRetentionPolicy);
+      setTransferRetentionPolicy(nextTransferPolicy);
+      setFileTransferMaxUploadSizeMb(String(Math.round(nextTransferPolicy.maxUploadSizeBytes / 1048576)));
       setTargetDbHost((connection as ConnectionData & { targetDbHost?: string }).targetDbHost ?? '');
       setTargetDbPort((connection as ConnectionData & { targetDbPort?: number }).targetDbPort?.toString() ?? '');
       setDbType((connection as ConnectionData & { dbType?: string }).dbType ?? '');
@@ -219,6 +238,8 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
       setVaultSecretPath('');
       setDefaultConnectMode('');
       setDlpPolicy({});
+      setTransferRetentionPolicy(normalizeTransferRetentionPolicy());
+      setFileTransferMaxUploadSizeMb(String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB));
       setTargetDbHost('');
       setTargetDbPort('');
       setDbType('');
@@ -254,6 +275,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     { key: 'general', label: 'General' },
     { key: 'credentials', label: 'Credentials' },
     { key: 'options', label: 'Options' },
+    ...(supportsTransferRetention(type) ? [{ key: 'file-transfer', label: 'File Transfer' }] : []),
     ...(type === 'SSH' ? [{ key: 'terminal', label: 'Terminal' }] : []),
     ...(type === 'RDP' ? [{ key: 'rdp', label: 'RDP Settings' }] : []),
     ...(type === 'VNC' ? [{ key: 'vnc', label: 'VNC Settings' }] : []),
@@ -282,6 +304,19 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
       setError('Username is required for new connections');
       return;
     }
+    const uploadLimitMb = supportsTransferRetention(type)
+      ? Number.parseInt(fileTransferMaxUploadSizeMb.trim() || String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB), 10)
+      : DEFAULT_CONNECTION_UPLOAD_LIMIT_MB;
+    if (supportsTransferRetention(type) && (Number.isNaN(uploadLimitMb) || uploadLimitMb < 1 || uploadLimitMb > DEFAULT_CONNECTION_UPLOAD_LIMIT_MB)) {
+      setError(`Max upload size must be between 1 and ${DEFAULT_CONNECTION_UPLOAD_LIMIT_MB} MiB`);
+      return;
+    }
+    const nextTransferRetentionPolicy = supportsTransferRetention(type)
+      ? {
+          ...transferRetentionPolicy,
+          maxUploadSizeBytes: uploadLimitMb * 1048576,
+        }
+      : transferRetentionPolicy;
 
     const ok = await run(async () => {
       if (isEditMode && connection) {
@@ -309,6 +344,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
             dbSettings: normalizeDbSettings(dbSettings),
           }),
           defaultCredentialMode: (defaultConnectMode as 'saved' | 'domain' | 'prompt') || null,
+          ...(supportsTransferRetention(type) && {
+            transferRetentionPolicy: nextTransferRetentionPolicy,
+          }),
           ...((type === 'RDP' || type === 'VNC') && {
             dlpPolicy: Object.values(dlpPolicy).some(Boolean) ? dlpPolicy : null,
           }),
@@ -353,6 +391,9 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
             dbSettings: normalizeDbSettings(dbSettings) as DbSettings,
           }),
           ...(defaultConnectMode ? { defaultCredentialMode: defaultConnectMode as 'saved' | 'domain' | 'prompt' } : {}),
+          ...(supportsTransferRetention(type) && {
+            transferRetentionPolicy: nextTransferRetentionPolicy,
+          }),
           ...((type === 'RDP' || type === 'VNC') && Object.values(dlpPolicy).some(Boolean) && {
             dlpPolicy,
           }),
@@ -390,6 +431,8 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     setVaultSecretPath('');
     setDefaultConnectMode('');
     setDlpPolicy({});
+    setTransferRetentionPolicy(normalizeTransferRetentionPolicy());
+    setFileTransferMaxUploadSizeMb(String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB));
     setTargetDbHost('');
     setTargetDbPort('');
     setDbType('');
@@ -666,6 +709,44 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                       </Label>
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeSection === 'file-transfer' && supportsTransferRetention(type) && (
+                <div className="flex flex-col gap-4">
+                  <p className="text-xs text-muted-foreground">
+                    Successful uploads are cleaned up by default. Enable retention to keep them in history for this connection.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    The workspace stays temporary. Retained uploads appear in a separate History view.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="transfer-max-upload-size">Max upload size (MiB)</Label>
+                    <Input
+                      id="transfer-max-upload-size"
+                      type="number"
+                      min="1"
+                      max={String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB)}
+                      value={fileTransferMaxUploadSizeMb}
+                      onChange={(event) => setFileTransferMaxUploadSizeMb(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default and maximum is {DEFAULT_CONNECTION_UPLOAD_LIMIT_MB} MiB for this connection.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="transfer-retention"
+                      checked={transferRetentionPolicy.retainSuccessfulUploads}
+                      onCheckedChange={(value) => setTransferRetentionPolicy((current) => ({
+                        ...current,
+                        retainSuccessfulUploads: value === true,
+                      }))}
+                    />
+                    <Label htmlFor="transfer-retention" className="font-normal">
+                      Retain successful uploads in history
+                    </Label>
+                  </div>
                 </div>
               )}
 
