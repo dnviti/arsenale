@@ -1,6 +1,68 @@
-import type { DbSessionConfig } from '../../api/database.api';
+import type { DbQueryResult, DbSessionConfig } from '../../api/database.api';
 
 export type WorkspaceQueryType = 'SELECT' | 'INSERT' | 'UPDATE' | 'DELETE' | 'DDL' | 'EXEC' | 'OTHER';
+
+export interface QuerySubTab {
+  id: string;
+  label: string;
+  sql: string;
+  result: DbQueryResult | null;
+  executing: boolean;
+}
+
+export interface PersistedQuerySubTabs {
+  tabs: Array<{ id: string; label: string; sql: string }>;
+  activeId: string;
+}
+
+let subTabCounter = 0;
+
+export function createQuerySubTab(): QuerySubTab {
+  subTabCounter += 1;
+  return {
+    id: `qtab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    label: `Query ${subTabCounter}`,
+    sql: '',
+    result: null,
+    executing: false,
+  };
+}
+
+export function restoreQuerySubTabs(persisted?: PersistedQuerySubTabs): QuerySubTab[] {
+  if (!persisted?.tabs?.length) {
+    return [createQuerySubTab()];
+  }
+
+  const restored = persisted.tabs.map((tab) => ({
+    ...tab,
+    result: null as DbQueryResult | null,
+    executing: false,
+  }));
+  const maxNum = restored.reduce((max, tab) => {
+    const match = tab.label.match(/^Query (\d+)$/);
+    return match ? Math.max(max, parseInt(match[1], 10)) : max;
+  }, 0);
+  if (maxNum > subTabCounter) subTabCounter = maxNum;
+  return restored;
+}
+
+export function activeQueryTabIdForTabs(tabs: QuerySubTab[], persisted?: PersistedQuerySubTabs): string {
+  if (persisted?.activeId && tabs.some((tab) => tab.id === persisted.activeId)) {
+    return persisted.activeId;
+  }
+  return tabs[0]?.id ?? createQuerySubTab().id;
+}
+
+export function persistableQuerySubTabs(tabs: QuerySubTab[], activeId: string): PersistedQuerySubTabs {
+  return {
+    tabs: tabs.map(({ id, label, sql }) => ({ id, label, sql })),
+    activeId,
+  };
+}
+
+export function hasSessionConfigValues(config: DbSessionConfig): boolean {
+  return Object.values(config).some((value) => value !== undefined && value !== '');
+}
 
 export function stripLeadingComments(sql: string): string {
   let remaining = sql.trim();
@@ -67,4 +129,22 @@ export function defaultSessionConfigForProtocol(protocol: string, databaseName?:
     default:
       return defaults;
   }
+}
+
+export function resultToCsv(result: DbQueryResult): string {
+  const header = result.columns.join(',');
+  const rows = result.rows.map((row) =>
+    result.columns
+      .map((col) => {
+        const val = row[col];
+        if (val === null || val === undefined) return '';
+        const str = String(val);
+        if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      })
+      .join(','),
+  );
+  return [header, ...rows].join('\n');
 }

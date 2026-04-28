@@ -17,7 +17,7 @@ import type * as monacoNs from 'monaco-editor';
 import { ensureLocalMonacoLoader } from '../../lib/monacoLoader';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { DbSettings } from '../../api/connections.api';
-import type { DbQueryResult, DbSchemaInfo, DbSessionConfig } from '../../api/database.api';
+import type { DbSchemaInfo, DbSessionConfig } from '../../api/database.api';
 import {
   createDbSession,
   dbSessionHeartbeat,
@@ -41,7 +41,17 @@ import DbQueryHistory from './DbQueryHistory';
 import { addSavedQuery, deriveQueryLabel } from './dbQueryHistoryUtils';
 import DbSessionConfigPopover from './DbSessionConfigPopover';
 import { buildLimitedSelectSql, buildMongoCollectionQuery, qualifyDbObjectName } from './dbBrowserHelpers';
-import { classifyQueryType, defaultSessionConfigForProtocol } from './dbWorkspaceBehavior';
+import {
+  activeQueryTabIdForTabs,
+  classifyQueryType,
+  createQuerySubTab,
+  defaultSessionConfigForProtocol,
+  hasSessionConfigValues,
+  persistableQuerySubTabs,
+  restoreQuerySubTabs,
+  resultToCsv,
+  type QuerySubTab,
+} from './dbWorkspaceBehavior';
 import { format as formatSql } from 'sql-formatter';
 import { createSqlCompletionProvider } from './sqlCompletionProvider';
 import { validateSql } from './sqlValidation';
@@ -55,27 +65,6 @@ interface DbEditorProps {
   credentials?: CredentialOverride;
   initialProtocol?: string;
   dbSettings?: DbSettings | null;
-}
-
-interface QuerySubTab {
-  id: string;
-  label: string;
-  sql: string;
-  result: DbQueryResult | null;
-  executing: boolean;
-}
-
-let subTabCounter = 0;
-
-function createSubTab(): QuerySubTab {
-  subTabCounter += 1;
-  return {
-    id: `qtab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    label: `Query ${subTabCounter}`,
-    sql: '',
-    result: null,
-    executing: false,
-  };
 }
 
 function formatMongoQuery(raw: string): string {
@@ -145,30 +134,10 @@ export default function DbEditor({
   const aiPanelOpen = useUiPreferencesStore((s) => s.dbAiPanelOpen);
   const aiGenerationAvailable = dbSettings?.aiQueryGenerationEnabled !== false;
 
-  const [queryTabs, setQueryTabs] = useState<QuerySubTab[]>(() => {
-    if (initialStoredSubTabs?.tabs?.length) {
-      // Restore persisted tabs (without results/executing state)
-      const restored = initialStoredSubTabs.tabs.map((t) => ({
-        ...t,
-        result: null as DbQueryResult | null,
-        executing: false,
-      }));
-      // Sync the counter so new tabs get unique labels
-      const maxNum = restored.reduce((max, t) => {
-        const m = t.label.match(/^Query (\d+)$/);
-        return m ? Math.max(max, parseInt(m[1], 10)) : max;
-      }, 0);
-      if (maxNum > subTabCounter) subTabCounter = maxNum;
-      return restored;
-    }
-    return [createSubTab()];
-  });
-  const [activeQueryTabId, setActiveQueryTabId] = useState(() => {
-    if (initialStoredSubTabs?.activeId && queryTabs.some((t) => t.id === initialStoredSubTabs.activeId)) {
-      return initialStoredSubTabs.activeId;
-    }
-    return queryTabs[0].id;
-  });
+  const [queryTabs, setQueryTabs] = useState<QuerySubTab[]>(() => restoreQuerySubTabs(initialStoredSubTabs));
+  const [activeQueryTabId, setActiveQueryTabId] = useState(() => (
+    activeQueryTabIdForTabs(queryTabs, initialStoredSubTabs)
+  ));
 
   const sqlEditorTheme = useUiPreferencesStore((s) => s.sqlEditorTheme);
   const sqlEditorFontSize = useUiPreferencesStore((s) => s.sqlEditorFontSize);
@@ -201,10 +170,7 @@ export default function DbEditor({
     const timer = setTimeout(() => {
       setPref('dbQuerySubTabs', {
         ...useUiPreferencesStore.getState().dbQuerySubTabs,
-        [tabId]: {
-          tabs: queryTabs.map(({ id, label, sql }) => ({ id, label, sql })),
-          activeId: activeQueryTabId,
-        },
+        [tabId]: persistableQuerySubTabs(queryTabs, activeQueryTabId),
       });
     }, 500);
     return () => clearTimeout(timer);
@@ -213,8 +179,7 @@ export default function DbEditor({
   // Persist session config to store
   useEffect(() => {
     const prev = useUiPreferencesStore.getState().dbSessionConfigs;
-    const hasValues = Object.values(currentSessionConfig).some((v) => v !== undefined && v !== '');
-    if (hasValues) {
+    if (hasSessionConfigValues(currentSessionConfig)) {
       setPref('dbSessionConfigs', { ...prev, [tabId]: currentSessionConfig });
     } else {
       const { [tabId]: _, ...rest } = prev;
@@ -646,21 +611,7 @@ export default function DbEditor({
     const qr = activeTab.result;
     if (!qr || qr.columns.length === 0) return;
 
-    const header = qr.columns.join(',');
-    const rows = qr.rows.map((row) =>
-      qr.columns
-        .map((col) => {
-          const val = row[col];
-          if (val === null || val === undefined) return '';
-          const str = String(val);
-          if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-            return `"${str.replace(/"/g, '""')}"`;
-          }
-          return str;
-        })
-        .join(','),
-    );
-    const csv = [header, ...rows].join('\n');
+    const csv = resultToCsv(qr);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -808,7 +759,7 @@ export default function DbEditor({
       icon: <SlidersHorizontal />,
       tooltip: 'Session settings',
       onClick: (event) => setConfigAnchorEl(event?.currentTarget ?? null),
-      active: !!configAnchorEl || Object.values(currentSessionConfig).some((v) => v !== undefined),
+      active: !!configAnchorEl || hasSessionConfigValues(currentSessionConfig),
       disabled: connectionState !== 'connected' || protocol === 'mongodb',
     },
     {
@@ -861,7 +812,7 @@ export default function DbEditor({
           protocol={protocol}
           databaseName={databaseName}
           error={connectionState === 'error' ? error : undefined}
-          hasSessionConfig={Object.values(currentSessionConfig).some((v) => v !== undefined)}
+          hasSessionConfig={hasSessionConfigValues(currentSessionConfig)}
         />
         <div className="flex items-center gap-1">
           {(connectionState === 'error' || connectionState === 'disconnected') && (
@@ -926,7 +877,7 @@ export default function DbEditor({
             className="size-7 mx-1"
             title="New query tab"
             onClick={() => {
-              const newTab = createSubTab();
+              const newTab = createQuerySubTab();
               setQueryTabs((prev) => [...prev, newTab]);
               setActiveQueryTabId(newTab.id);
             }}

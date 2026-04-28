@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${repo_root}/scripts/lib/arsenale-cli-harness.sh"
+
 default_state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 default_dev_home="${ARSENALE_DEV_HOME:-$default_state_home/arsenale-dev}"
 ca_cert="${ARSENALE_CA_CERT:-$repo_root/dev-certs/client/ca.pem}"
@@ -29,12 +31,11 @@ cleanup() {
 trap cleanup EXIT
 
 ensure_cli() {
-  mkdir -p "$(dirname "${cli_bin}")"
-  go build -o "${cli_bin}" "${repo_root}/tools/arsenale-cli"
+  arsenale_cli_ensure_built "${repo_root}" "${cli_bin}"
 }
 
 run_cli() {
-  "${cli_bin}" --server "${server_url}" "$@"
+  arsenale_cli_run "${cli_bin}" "${server_url}" "$@"
 }
 
 write_json_payload() {

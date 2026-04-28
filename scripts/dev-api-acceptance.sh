@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${repo_root}/scripts/lib/arsenale-cli-harness.sh"
+
 default_state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 default_dev_home="${ARSENALE_DEV_HOME:-$default_state_home/arsenale-dev}"
 vault_file="${ARSENALE_VAULT_FILE:-$repo_root/deployment/ansible/inventory/group_vars/all/vault.yml}"
@@ -74,6 +76,8 @@ if [[ ! -f "${ca_cert}" && -f "${default_dev_home}/dev-certs/client/ca.pem" ]]; 
   ca_cert="${default_dev_home}/dev-certs/client/ca.pem"
 fi
 api_base="${ARSENALE_API_BASE:-https://localhost:3000/api}"
+server_url="${ARSENALE_SERVER_URL:-${api_base%/api}}"
+cli_bin="${ARSENALE_CLI_BIN:-$(arsenale_cli_default_bin "${repo_root}")}"
 client_base="${ARSENALE_CLIENT_BASE:-}"
 expected_webauthn_rp_id="${ARSENALE_WEBAUTHN_RP_ID:-}"
 cp_base="${ARSENALE_CP_BASE:-http://127.0.0.1:18080}"
@@ -890,6 +894,10 @@ echo '2. login'
 ensure_access_token
 [[ -n "${access_token}" && "${access_token}" != "null" ]]
 [[ -n "${tenant_id}" && "${tenant_id}" != "null" ]]
+
+echo '2.0 CLI health/whoami smoke'
+arsenale_cli_seed_auth "${server_url}" "${access_token}" "${tenant_id}"
+arsenale_cli_smoke_core "${repo_root}" "${cli_bin}" "${server_url}"
 
 echo '2.1 /api/user/profile'
 profile_json="$(curl --silent --show-error --fail \
