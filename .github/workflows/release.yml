@@ -47,8 +47,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version-file: tools/arsenale-cli/go.mod
+          go-version: "1.25.8"
           cache-dependency-path: |
+            go.work
             go.work.sum
             tools/arsenale-cli/go.mod
             tools/arsenale-cli/go.sum
