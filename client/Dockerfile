@@ -33,6 +33,7 @@ FROM docker.io/library/node:22-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/client/node_modules ./client/node_modules
 COPY package.json ./
 COPY client/ ./client/
 
