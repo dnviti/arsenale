@@ -70,6 +70,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.35.0
         with:
           cache: false
+          version: v0.70.0
           scan-type: fs
           scan-ref: .
           scanners: vuln,misconfig,secret

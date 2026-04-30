@@ -32,6 +32,7 @@ import { getProfile } from '../../api/user.api';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { isAdminOrAbove } from '../../utils/roles';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
+import type { SessionsRouteState } from '@/components/sessions/sessionConsoleRoute';
 import {
   buildSettingsConcerns,
   type SettingsConcern,
@@ -46,6 +47,7 @@ interface SettingsDialogProps {
   onViewUserProfile?: (userId: string) => void;
   onImport?: () => void;
   onExport?: () => void;
+  onOpenSessions?: (initialState?: Partial<SessionsRouteState>) => void;
 }
 
 const LEGACY_TAB_TO_CONCERN: Record<string, string> = {
@@ -90,6 +92,7 @@ export default function SettingsDialog({
   onViewUserProfile,
   onImport,
   onExport,
+  onOpenSessions,
 }: SettingsDialogProps) {
   const user = useAuthStore((s) => s.user);
   const connectionsEnabled = useFeatureFlagsStore(
@@ -114,14 +117,15 @@ export default function SettingsDialog({
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [selectedConcern, setSelectedConcern] = useState<string | null>(null);
-  const [expandedConcerns, setExpandedConcerns] = useState<Set<string>>(
+  const [manualExpandedConcerns, setManualExpandedConcerns] = useState<Set<string>>(
     new Set(),
   );
-  const [activeSectionId, setActiveSectionId] = useState<string | null>(null);
-  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const [requestedActiveSectionId, setRequestedActiveSectionId] = useState<string | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  const activeSectionRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const programmaticScroll = useRef(false);
+  const programmaticScrollRef = useRef(false);
+  const programmaticScrollResetRef = useRef<number | null>(null);
 
   const registerDeleteOrgTrigger = useCallback(
     (trigger: (() => void) | null) => {
@@ -155,6 +159,7 @@ export default function SettingsDialog({
         onViewUserProfile,
         onImport,
         onExport,
+        onOpenSessions,
         deleteOrgTrigger,
         setDeleteOrgTrigger: registerDeleteOrgTrigger,
         navigateToConcern: (target) =>
@@ -175,6 +180,7 @@ export default function SettingsDialog({
       linkedProvider,
       onExport,
       onImport,
+      onOpenSessions,
       onViewUserProfile,
       registerDeleteOrgTrigger,
       user?.tenantId,
@@ -196,12 +202,12 @@ export default function SettingsDialog({
         );
         return concernMatches(concern, query) || matchingSections.length > 0
           ? {
-              ...concern,
-              sections:
-                matchingSections.length > 0 || !query
-                  ? matchingSections
-                  : concern.sections,
-            }
+            ...concern,
+            sections:
+              matchingSections.length > 0 || !query
+                ? matchingSections
+                : concern.sections,
+          }
           : null;
       })
       .filter(
@@ -234,35 +240,30 @@ export default function SettingsDialog({
     ? persistedConcern
     : filteredConcerns[0]?.id ?? persistedConcern;
 
-  const currentConcern =
-    filteredConcerns.find((concern) => concern.id === resolvedConcern) ??
-    filteredConcerns[0];
+  const effectiveExpandedConcerns = useMemo(() => {
+    const next = new Set(manualExpandedConcerns);
 
-  const visibleExpandedConcerns = useMemo(() => {
-    const next = new Set(expandedConcerns);
     if (resolvedConcern) {
       next.add(resolvedConcern);
     }
-    if (deferredSearch.trim()) {
-      for (const concern of filteredConcerns) {
-        next.add(concern.id);
-      }
-    }
-    return next;
-  }, [deferredSearch, expandedConcerns, filteredConcerns, resolvedConcern]);
 
-  const effectiveActiveSectionId =
-    activeSectionId &&
-    currentConcern?.sections.some((section) => section.id === activeSectionId)
-      ? activeSectionId
-      : currentConcern?.sections[0]?.id ?? null;
+    if (deferredSearch.trim()) {
+      filteredConcerns.forEach((concern) => next.add(concern.id));
+    }
+
+    return next;
+  }, [deferredSearch, filteredConcerns, manualExpandedConcerns, resolvedConcern]);
+
+  const currentConcern =
+    filteredConcerns.find((concern) => concern.id === resolvedConcern) ??
+    filteredConcerns[0];
 
   useEffect(() => {
     if (!open) return;
 
     getProfile()
       .then((profile) => setHasPassword(profile.hasPassword))
-      .catch(() => {});
+      .catch(() => { });
   }, [open]);
 
   useEffect(() => {
@@ -270,52 +271,52 @@ export default function SettingsDialog({
     setPreference('settingsActiveTab', persistedConcern);
   }, [open, persistedConcern, setPreference]);
 
-  // IntersectionObserver to track the active section while scrolling
+  const currentSectionIds = currentConcern?.sections.map((section) => section.id) ?? [];
+  const effectiveActiveSectionId =
+    requestedActiveSectionId && currentSectionIds.includes(requestedActiveSectionId)
+      ? requestedActiveSectionId
+      : currentSectionIds[0] ?? null;
+
+  // Single section rendered at a time — sidebar clicks drive navigation.
+  const activeSection =
+    currentConcern?.sections.find((s) => s.id === effectiveActiveSectionId) ??
+    currentConcern?.sections[0];
+  const activeSectionLabel = activeSection?.label;
+
   useEffect(() => {
-    if (!currentConcern) return;
+    if (!open) return;
 
-    const sectionIds = currentConcern.sections.map((s) => s.id);
-    const elements = sectionIds
-      .map((id) => sectionRefs.current[id])
-      .filter(Boolean) as HTMLElement[];
+    const sectionElement = activeSectionRef.current;
+    const scrollContainer =
+      scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') instanceof HTMLElement
+        ? (scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement)
+        : scrollAreaRef.current;
 
-    if (elements.length === 0) return;
-
-    // Find the scroll container (the viewport inside ScrollArea)
-    const scrollContainer = scrollAreaRef.current?.querySelector(
-      '[data-radix-scroll-area-viewport]',
-    );
-    if (!scrollContainer) return;
+    if (!sectionElement || !scrollContainer || typeof IntersectionObserver === 'undefined') {
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (programmaticScroll.current) return;
-
-        // Find the topmost visible section
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort(
-            (a, b) =>
-              a.boundingClientRect.top - b.boundingClientRect.top,
-          );
-
-        if (visible.length > 0) {
-          setActiveSectionId(visible[0].target.id);
+        const visibleEntry = entries.find((entry) => entry.isIntersecting);
+        if (!visibleEntry || programmaticScrollRef.current) {
+          return;
         }
+
+        const nextSectionId = (visibleEntry.target as HTMLElement).id;
+        setRequestedActiveSectionId((prev) =>
+          prev === nextSectionId ? prev : nextSectionId,
+        );
       },
       {
         root: scrollContainer,
-        rootMargin: '-10% 0px -60% 0px',
-        threshold: 0,
+        threshold: 0.6,
       },
     );
 
-    for (const el of elements) {
-      observer.observe(el);
-    }
-
+    observer.observe(sectionElement);
     return () => observer.disconnect();
-  }, [currentConcern]);
+  }, [activeSection?.id, open]);
 
   // Keyboard shortcut: "/" to focus search
   useEffect(() => {
@@ -344,7 +345,7 @@ export default function SettingsDialog({
   }, [open]);
 
   const toggleConcernExpanded = (concernId: string) => {
-    setExpandedConcerns((prev) => {
+    setManualExpandedConcerns((prev) => {
       const next = new Set(prev);
       if (next.has(concernId)) {
         next.delete(concernId);
@@ -355,46 +356,53 @@ export default function SettingsDialog({
     });
   };
 
+  const jumpToSection = (sectionId: string) => {
+    setRequestedActiveSectionId(sectionId);
+    programmaticScrollRef.current = true;
+    if (programmaticScrollResetRef.current !== null) {
+      window.clearTimeout(programmaticScrollResetRef.current);
+    }
+    const scrollContainer =
+      scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') instanceof HTMLElement
+        ? (scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement)
+        : scrollAreaRef.current;
+    if (scrollContainer instanceof HTMLElement && typeof scrollContainer.scrollTo === 'function') {
+      scrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    programmaticScrollResetRef.current = window.setTimeout(() => {
+      programmaticScrollRef.current = false;
+      programmaticScrollResetRef.current = null;
+    }, 250);
+  };
+
   const handleConcernClick = (concernId: string) => {
     setSelectedConcern(concernId);
-    setExpandedConcerns((prev) => {
+    setManualExpandedConcerns((prev) => {
+      if (prev.has(concernId)) return prev;
       const next = new Set(prev);
       next.add(concernId);
       return next;
     });
-    // Scroll content to top
-    const viewport = scrollAreaRef.current?.querySelector(
-      '[data-radix-scroll-area-viewport]',
-    );
-    if (viewport) {
-      viewport.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const jumpToSection = (sectionId: string) => {
-    const target = sectionRefs.current[sectionId];
-    if (target) {
-      programmaticScroll.current = true;
-      setActiveSectionId(sectionId);
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      setTimeout(() => {
-        programmaticScroll.current = false;
-      }, 600);
+    const concern = concerns.find((c) => c.id === concernId);
+    const firstSectionId = concern?.sections[0]?.id;
+    if (firstSectionId) {
+      jumpToSection(firstSectionId);
     }
   };
 
   const handleDialogOpenChange = (next: boolean) => {
     if (next) return;
+    if (programmaticScrollResetRef.current !== null) {
+      window.clearTimeout(programmaticScrollResetRef.current);
+      programmaticScrollResetRef.current = null;
+    }
+    programmaticScrollRef.current = false;
     setSearch('');
     setSelectedConcern(null);
+    setRequestedActiveSectionId(null);
     setDeleteOrgTriggerState(null);
     onClose();
   };
-
-  // Build the breadcrumb from active section
-  const activeSectionLabel = currentConcern?.sections.find(
-    (s) => s.id === effectiveActiveSectionId,
-  )?.label;
 
   return (
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
@@ -402,7 +410,7 @@ export default function SettingsDialog({
         showCloseButton={false}
         className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
       >
-        <div className="flex h-full min-h-0 flex-col bg-background sm:flex-row">
+        <div className="flex h-full min-h-0 min-w-0 flex-col bg-background sm:flex-row">
           {/* ── Sidebar ── */}
           <aside className="settings-sidebar flex w-full shrink-0 flex-col border-b bg-card/30 sm:w-[272px] sm:border-b-0 sm:border-r">
             <DialogHeader className="gap-3 px-4 pb-3 pt-4">
@@ -454,7 +462,7 @@ export default function SettingsDialog({
               <nav className="p-2" aria-label="Settings navigation">
                 {filteredConcerns.map((concern) => {
                   const isActive = concern.id === resolvedConcern;
-                  const isExpanded = visibleExpandedConcerns.has(concern.id);
+                  const isExpanded = effectiveExpandedConcerns.has(concern.id);
 
                   return (
                     <div key={concern.id} className="mb-0.5">
@@ -462,8 +470,12 @@ export default function SettingsDialog({
                       <button
                         type="button"
                         onClick={() => {
+                          if (concern.id === resolvedConcern) {
+                            toggleConcernExpanded(concern.id);
+                            return;
+                          }
+
                           handleConcernClick(concern.id);
-                          toggleConcernExpanded(concern.id);
                         }}
                         className={cn(
                           'group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors',
@@ -518,15 +530,8 @@ export default function SettingsDialog({
                                 onClick={() => {
                                   if (concern.id !== resolvedConcern) {
                                     setSelectedConcern(concern.id);
-                                    // Wait for content to render before scrolling
-                                    requestAnimationFrame(() => {
-                                      requestAnimationFrame(() => {
-                                        jumpToSection(section.id);
-                                      });
-                                    });
-                                  } else {
-                                    jumpToSection(section.id);
                                   }
+                                  jumpToSection(section.id);
                                 }}
                                 className={cn(
                                   'relative flex w-full items-center gap-2 py-1.5 pl-4 pr-2 text-left text-xs transition-colors',
@@ -575,7 +580,7 @@ export default function SettingsDialog({
           </aside>
 
           {/* ── Main content ── */}
-          <main className="flex min-h-0 flex-1 flex-col">
+          <main className="flex min-h-0 min-w-0 w-full flex-1 flex-col">
             {/* Compact header with breadcrumb */}
             <div className="flex items-center justify-between border-b px-5 py-3">
               {currentConcern ? (
@@ -633,34 +638,31 @@ export default function SettingsDialog({
               )}
             </div>
 
-            {/* Scrollable content */}
-            <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
-              <div className="settings-content px-5 py-5">
-                {currentConcern?.sections.map((section, index) => (
+            {/* Scrollable content — single active section at a time */}
+            <div ref={scrollAreaRef} className="min-h-0 min-w-0 w-full flex-1 overflow-y-auto">
+              <div className="settings-content min-w-0 w-full px-5 py-5">
+                {activeSection && (
                   <section
-                    key={section.id}
-                    id={section.id}
-                    ref={(node) => {
-                      sectionRefs.current[section.id] = node;
-                    }}
-                    className={cn(
-                      'settings-section',
-                      index > 0 && 'mt-8 border-t border-border/40 pt-8',
-                    )}
+                    ref={activeSectionRef}
+                    key={activeSection.id}
+                    id={activeSection.id}
+                    className="settings-section min-w-0 w-full"
                   >
+                    {/*
                     <div className="mb-4">
                       <h3 className="text-sm font-semibold text-foreground">
-                        {section.label}
+                        {activeSection.label}
                       </h3>
                       <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-                        {section.description}
+                        {activeSection.description}
                       </p>
                     </div>
-                    {section.content}
+                    */}
+                    {activeSection.content}
                   </section>
-                ))}
+                )}
               </div>
-            </ScrollArea>
+            </div>
           </main>
         </div>
       </DialogContent>

@@ -7,11 +7,13 @@ import {
   GatewayData, GatewayInput, GatewayUpdate, SshKeyPairData,
   listGateways, createGateway as createGatewayApi,
   updateGateway as updateGatewayApi, deleteGateway as deleteGatewayApi,
+  updateGatewayEgressPolicy as updateGatewayEgressPolicyApi,
   getSshKeyPair, generateSshKeyPair as generateSshKeyPairApi,
   rotateSshKeyPair as rotateSshKeyPairApi,
   pushKeyToGateway as pushKeyToGatewayApi,
   type RotateKeyPairResponse,
   type GatewayHealthEvent,
+  type GatewayEgressPolicy,
   type ActiveSessionData,
   type ManagedInstanceData,
   type ScalingStatusData,
@@ -25,7 +27,6 @@ import {
   listActiveSessions as listActiveSessionsApi,
   getSessionCount as getSessionCountApi,
   getSessionCountByGateway as getSessionCountByGatewayApi,
-  terminateSession as terminateSessionApi,
   deployGateway as deployGatewayApi,
   undeployGateway as undeployGatewayApi,
   scaleGateway as scaleGatewayApi,
@@ -41,6 +42,12 @@ import {
   generateTunnelToken as generateTunnelTokenApi,
   revokeTunnelToken as revokeTunnelTokenApi,
 } from '../api/gateway.api';
+import {
+  pauseSession as pauseSessionApi,
+  resumeSession as resumeSessionApi,
+  terminateSession as terminateSessionApi,
+  type SessionProtocol,
+} from '../api/sessions.api';
 
 export interface TunnelStatusEvent {
   gatewayId: string;
@@ -73,6 +80,7 @@ interface GatewayState {
   fetchGateways: () => Promise<void>;
   createGateway: (data: GatewayInput) => Promise<GatewayData>;
   updateGateway: (id: string, data: GatewayUpdate) => Promise<void>;
+  updateGatewayEgressPolicy: (id: string, policy: GatewayEgressPolicy) => Promise<void>;
   deleteGateway: (id: string, force?: boolean) => Promise<void>;
   applyHealthUpdate: (event: GatewayHealthEvent) => void;
   applyInstancesUpdate: (gatewayId: string, instances: ManagedInstanceData[]) => void;
@@ -88,9 +96,11 @@ interface GatewayState {
   pushKeyToGateway: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Session monitoring actions
-  fetchActiveSessions: (filters?: { protocol?: 'SSH' | 'RDP'; gatewayId?: string }) => Promise<void>;
+  fetchActiveSessions: (filters?: { protocol?: SessionProtocol; gatewayId?: string }) => Promise<void>;
   fetchSessionCount: () => Promise<void>;
   fetchSessionCountByGateway: () => Promise<void>;
+  pauseSession: (sessionId: string) => Promise<void>;
+  resumeSession: (sessionId: string) => Promise<void>;
   terminateSession: (sessionId: string) => Promise<void>;
 
   // Managed gateway lifecycle actions
@@ -170,6 +180,13 @@ export const useGatewayStore = create<GatewayState>((set) => ({
 
   updateGateway: async (id, data) => {
     const updated = await updateGatewayApi(id, data);
+    set((state) => ({
+      gateways: state.gateways.map((g) => (g.id === id ? { ...g, ...updated } : g)),
+    }));
+  },
+
+  updateGatewayEgressPolicy: async (id, policy) => {
+    const updated = await updateGatewayEgressPolicyApi(id, policy);
     set((state) => ({
       gateways: state.gateways.map((g) => (g.id === id ? { ...g, ...updated } : g)),
     }));
@@ -296,6 +313,24 @@ export const useGatewayStore = create<GatewayState>((set) => ({
     } catch {
       // ignore
     }
+  },
+
+  pauseSession: async (sessionId) => {
+    const result = await pauseSessionApi(sessionId);
+    set((state) => ({
+      activeSessions: state.activeSessions.map((session) =>
+        session.id === sessionId ? { ...session, status: result.status } : session,
+      ),
+    }));
+  },
+
+  resumeSession: async (sessionId) => {
+    const result = await resumeSessionApi(sessionId);
+    set((state) => ({
+      activeSessions: state.activeSessions.map((session) =>
+        session.id === sessionId ? { ...session, status: result.status } : session,
+      ),
+    }));
   },
 
   terminateSession: async (sessionId) => {

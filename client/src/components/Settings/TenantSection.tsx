@@ -53,6 +53,12 @@ import {
   vaultAutoLockOptions,
   vaultDefaultTtlOptions,
 } from './tenantSectionOptions';
+import {
+  formatMegabytes,
+  parseRecordingRetentionPatch,
+  parseSessionTimeoutPatch,
+  parseUserDriveQuotaPatch,
+} from './tenantPolicyValues';
 
 interface TenantSectionProps {
   onDeleteRequest?: (trigger: (() => void) | null) => void;
@@ -60,11 +66,6 @@ interface TenantSectionProps {
 }
 
 type TenantUpdateInput = Parameters<ReturnType<typeof useTenantStore.getState>['updateTenant']>[0];
-
-function formatMegabytes(bytes: number | null | undefined) {
-  if (bytes == null) return 'System default';
-  return `${parseFloat((bytes / 1048576).toFixed(2))} MB`;
-}
 
 function getMemberTarget(user: TenantUser): TenantDialogTarget {
   return {
@@ -177,7 +178,6 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
   const [retentionError, setRetentionError] = useState('');
   const [savingRetention, setSavingRetention] = useState(false);
 
-  const [fileUploadMaxSizeMb, setFileUploadMaxSizeMb] = useState('');
   const [userDriveQuotaMb, setUserDriveQuotaMb] = useState('');
   const [storageError, setStorageError] = useState('');
   const [savingStorage, setSavingStorage] = useState(false);
@@ -238,7 +238,6 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
     setDlpDisableUpload(tenant.dlpDisableUpload);
     setRecordingEnabled(tenant.recordingEnabled);
     setRecordingRetentionDays(tenant.recordingRetentionDays != null ? String(tenant.recordingRetentionDays) : '');
-    setFileUploadMaxSizeMb(tenant.fileUploadMaxSizeBytes != null ? String(parseFloat((tenant.fileUploadMaxSizeBytes / 1048576).toFixed(2))) : '');
     setUserDriveQuotaMb(tenant.userDriveQuotaBytes != null ? String(parseFloat((tenant.userDriveQuotaBytes / 1048576).toFixed(2))) : '');
 
     void fetchUsers();
@@ -305,14 +304,14 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
   };
 
   const handleSaveTimeout = async () => {
-    const minutes = Number.parseInt(sessionTimeout, 10);
-    if (Number.isNaN(minutes) || minutes < 1 || minutes > 1440) {
-      setTimeoutError('Choose a timeout between 1 and 1440 minutes.');
+    const result = parseSessionTimeoutPatch(sessionTimeout);
+    if (result.error || !result.patch) {
+      setTimeoutError(result.error ?? 'Invalid session timeout.');
       return;
     }
 
     await saveTenantPatch({
-      patch: { defaultSessionTimeoutSeconds: minutes * 60 },
+      patch: result.patch,
       setSaving: setSavingTimeout,
       setError: setTimeoutError,
       fallbackMessage: 'Failed to update session timeout.',
@@ -432,14 +431,14 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
   };
 
   const handleSaveRetention = async () => {
-    const nextValue = recordingRetentionDays.trim() === '' ? null : Number.parseInt(recordingRetentionDays, 10);
-    if (nextValue !== null && (Number.isNaN(nextValue) || nextValue < 1 || nextValue > 3650)) {
-      setRetentionError('Retention must be between 1 and 3650 days.');
+    const result = parseRecordingRetentionPatch(recordingRetentionDays);
+    if (result.error || !result.patch) {
+      setRetentionError(result.error ?? 'Invalid retention policy.');
       return;
     }
 
     await saveTenantPatch({
-      patch: { recordingRetentionDays: nextValue },
+      patch: result.patch,
       setSaving: setSavingRetention,
       setError: setRetentionError,
       fallbackMessage: 'Failed to update retention policy.',
@@ -447,23 +446,14 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
   };
 
   const handleSaveStorage = async () => {
-    const uploadSize = fileUploadMaxSizeMb.trim() === '' ? null : Math.round(Number.parseFloat(fileUploadMaxSizeMb) * 1048576);
-    const driveQuota = userDriveQuotaMb.trim() === '' ? null : Math.round(Number.parseFloat(userDriveQuotaMb) * 1048576);
-
-    if (uploadSize !== null && (Number.isNaN(uploadSize) || uploadSize < 1)) {
-      setStorageError('Upload size must be a positive number.');
-      return;
-    }
-    if (driveQuota !== null && (Number.isNaN(driveQuota) || driveQuota < 1)) {
-      setStorageError('Drive quota must be a positive number.');
+    const result = parseUserDriveQuotaPatch(userDriveQuotaMb);
+    if (result.error || !result.patch) {
+      setStorageError(result.error ?? 'Invalid storage policy.');
       return;
     }
 
     await saveTenantPatch({
-      patch: {
-        fileUploadMaxSizeBytes: uploadSize,
-        userDriveQuotaBytes: driveQuota,
-      },
+      patch: result.patch,
       setSaving: setSavingStorage,
       setError: setStorageError,
       fallbackMessage: 'Failed to update storage policy.',
@@ -719,7 +709,6 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
             <SettingsSummaryGrid>
               <SettingsSummaryItem label="MFA Enabled" value={`${mfaDashboard.total - mfaDashboard.withoutMfa} / ${mfaDashboard.total} users`} />
               <SettingsSummaryItem label="Members Without MFA" value={mfaDashboard.withoutMfa} />
-              <SettingsSummaryItem label="Max Upload Size" value={formatMegabytes(tenant.fileUploadMaxSizeBytes)} />
               <SettingsSummaryItem label="User Drive Quota" value={formatMegabytes(tenant.userDriveQuotaBytes)} />
             </SettingsSummaryGrid>
           ) : null}
@@ -1052,19 +1041,6 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
               ) : null}
 
               <div className="grid gap-4 xl:grid-cols-2">
-                <TenantInlineSaveField
-                  label="Max file upload size (MB)"
-                  description="Leave blank to inherit the system default."
-                  value={fileUploadMaxSizeMb}
-                  saving={savingStorage}
-                  error={storageError}
-                  type="number"
-                  onChange={(value) => {
-                    setFileUploadMaxSizeMb(value);
-                    setStorageError('');
-                  }}
-                  onSave={handleSaveStorage}
-                />
                 <TenantInlineSaveField
                   label="User drive quota (MB)"
                   description="Leave blank to inherit the system default."

@@ -1,4 +1,5 @@
 import {
+  Activity,
   DatabaseZap,
   History,
   KeyRound,
@@ -9,7 +10,6 @@ import {
   Settings2,
   SunMedium,
   TerminalSquare,
-  Video,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -31,6 +31,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  useSidebar,
 } from '@/components/ui/sidebar';
 import type { ConnectionData } from '@/api/connections.api';
 import type { Folder } from '@/store/connectionsStore';
@@ -54,7 +55,7 @@ interface AppSidebarProps {
   onOpenSettings: (tab?: string) => void;
   onOpenKeychain: () => void;
   onOpenAuditLog: () => void;
-  onOpenRecordings: () => void;
+  onOpenSessions: () => void;
 }
 
 export default function AppSidebar({
@@ -69,18 +70,16 @@ export default function AppSidebar({
   onOpenSettings,
   onOpenKeychain,
   onOpenAuditLog,
-  onOpenRecordings,
+  onOpenSessions,
 }: AppSidebarProps) {
   const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
   const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
-  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const themeMode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const activeFilter = useUiPreferencesStore((s) => s.workspaceActiveView) as ConnectionFilter;
   const setPreference = useUiPreferencesStore((s) => s.set);
-
-  const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
+  const { setOpen } = useSidebar();
 
   const setFilter = (filter: ConnectionFilter) => {
     setPreference('workspaceActiveView', filter);
@@ -101,6 +100,7 @@ export default function AppSidebar({
               </DropdownMenuTrigger>
               <DropdownMenuContent side="right" align="start" className="w-56">
                 {/* Connections submenu */}
+                {/*
                 {anyConnectionFeature ? (
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
@@ -125,7 +125,7 @@ export default function AppSidebar({
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
                 ) : null}
-
+                */}
                 {/* Security submenu */}
                 <DropdownMenuSub>
                   <DropdownMenuSubTrigger>
@@ -157,12 +157,10 @@ export default function AppSidebar({
                       <Network className="size-4" />
                       Gateways
                     </DropdownMenuItem>
-                    {recordingsEnabled ? (
-                      <DropdownMenuItem onSelect={onOpenRecordings}>
-                        <Video className="size-4" />
-                        Recordings
-                      </DropdownMenuItem>
-                    ) : null}
+                    <DropdownMenuItem onSelect={onOpenSessions}>
+                      <Activity className="size-4" />
+                      Sessions
+                    </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
 
@@ -182,7 +180,9 @@ export default function AppSidebar({
         </SidebarMenu>
 
         {/* Connection filter tabs */}
-        <SidebarSeparator />
+        <div className='px-2'>
+          <SidebarSeparator />
+        </div>
         <SidebarMenu>
           {connectionsEnabled ? (
             <SidebarMenuItem>
@@ -213,23 +213,36 @@ export default function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-      <SidebarSeparator />
+      <div className='px-2'>
+        <SidebarSeparator />
+      </div>
 
       <SidebarContent>
-        <ConnectionsSidePanel
-          typeFilter={activeFilter}
-          onEditConnection={onEditConnection}
-          onShareConnection={onShareConnection}
-          onConnectAsConnection={onConnectAsConnection}
-          onCreateConnection={onCreateConnection}
-          onCreateFolder={onCreateFolder}
-          onEditFolder={onEditFolder}
-          onShareFolder={onShareFolder}
-          onViewAuditLog={onViewAuditLog}
-        />
+        <div className="group-data-[collapsible=icon]:hidden">
+          <ConnectionsSidePanel
+            typeFilter={activeFilter}
+            onEditConnection={onEditConnection}
+            onShareConnection={onShareConnection}
+            onConnectAsConnection={onConnectAsConnection}
+            onCreateConnection={onCreateConnection}
+            onCreateFolder={onCreateFolder}
+            onEditFolder={onEditFolder}
+            onShareFolder={onShareFolder}
+            onViewAuditLog={onViewAuditLog}
+          />
+        </div>
+        <div className="hidden group-data-[collapsible=icon]:block px-2 pt-2">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="My Connections" onClick={() => setOpen(true)}>
+                <Monitor className="size-4" />
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </div>
       </SidebarContent>
 
-      <SidebarFooter>
+      <SidebarFooter className="group-data-[collapsible=icon]:hidden">
         <VersionIndicator />
       </SidebarFooter>
 

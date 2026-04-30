@@ -44,6 +44,7 @@ import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import type {
   GatewayData,
+  GatewayDeploymentMode,
   TunnelEventData,
   TunnelMetricsData,
 } from '../../api/gateway.api';
@@ -56,19 +57,7 @@ import SessionTimeoutConfig from '../orchestration/SessionTimeoutConfig';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { extractApiError } from '../../utils/apiError';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
-import {
-  buildGatewayCreateInput,
-  buildGatewayUpdate,
-  defaultGatewayEditorForm,
-  gatewayToEditorForm,
-  isGatewayGroupMode,
-  nextGatewayTypeForm,
-  nextPublishPortsForm,
-  supportsGatewayGroupMode,
-  validateGatewayEditorForm,
-  type EditableGatewayType,
-  type GatewayEditorForm,
-} from './gatewayEditorWorkflow';
+import GatewayEgressPolicyEditor from './GatewayEgressPolicyEditor';
 
 interface GatewayDialogProps {
   open: boolean;
@@ -77,7 +66,27 @@ interface GatewayDialogProps {
 }
 
 export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogProps) {
-  const [form, setForm] = useState<GatewayEditorForm>(() => defaultGatewayEditorForm());
+  const [name, setName] = useState('');
+  const [type, setType] = useState<'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH' | 'DB_PROXY'>('GUACD');
+  const [deploymentMode, setDeploymentMode] = useState<GatewayDeploymentMode>('SINGLE_INSTANCE');
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('');
+  const [description, setDescription] = useState('');
+  const [isDefault, setIsDefault] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [sshPrivateKey, setSshPrivateKey] = useState('');
+  const [apiPort, setApiPort] = useState('');
+  const [monitoringEnabled, setMonitoringEnabled] = useState(true);
+  const [monitorIntervalMs, setMonitorIntervalMs] = useState('5000');
+  const [inactivityTimeout, setInactivityTimeout] = useState('60');
+  const [autoScaleEnabled, setAutoScaleEnabled] = useState(false);
+  const [minReplicasVal, setMinReplicasVal] = useState('0');
+  const [maxReplicasVal, setMaxReplicasVal] = useState('5');
+  const [sessPerInstance, setSessPerInstance] = useState('10');
+  const [cooldownVal, setCooldownVal] = useState('300');
+  const [publishPorts, setPublishPorts] = useState(false);
+  const [lbStrategy, setLbStrategy] = useState<'ROUND_ROBIN' | 'LEAST_CONNECTIONS'>('ROUND_ROBIN');
 
   const [tunnelToken, setTunnelToken] = useState<string | null>(null);
   const [tunnelDeploying, setTunnelDeploying] = useState(false);
@@ -109,45 +118,37 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
   const { copied: tokenCopied, copy: copyToken } = useCopyToClipboard();
   const { copied: cmdCopied, copy: copyCmd } = useCopyToClipboard();
+  const { copied: composeCopied, copy: copyCompose } = useCopyToClipboard();
+  const { copied: systemdCopied, copy: copySystemd } = useCopyToClipboard();
 
   const isEditMode = Boolean(gateway);
   const isTunnelEnabled = gateway?.tunnelEnabled ?? false;
   const isTunnelConnected = gateway?.tunnelConnected ?? false;
-  const {
-    name,
-    type,
-    deploymentMode,
-    host,
-    port,
-    description,
-    isDefault,
-    username,
-    password,
-    sshPrivateKey,
-    apiPort,
-    monitoringEnabled,
-    monitorIntervalMs,
-    inactivityTimeout,
-    autoScaleEnabled,
-    minReplicasVal,
-    maxReplicasVal,
-    sessPerInstance,
-    cooldownVal,
-    publishPorts,
-    lbStrategy,
-  } = form;
-  const supportsGroupMode = supportsGatewayGroupMode(type);
-  const isGroupMode = isGatewayGroupMode(form);
-
-  const setField = useCallback(<K extends keyof GatewayEditorForm>(key: K, value: GatewayEditorForm[K]) => {
-    setForm((current) => ({ ...current, [key]: value }));
-  }, []);
+  const supportsGroupMode = type === 'MANAGED_SSH' || type === 'GUACD' || type === 'DB_PROXY';
+  const isGroupMode = deploymentMode === 'MANAGED_GROUP';
 
   useEffect(() => {
     if (open && gateway) {
-      setForm(gatewayToEditorForm(gateway));
+      setName(gateway.name); setType(gateway.type);
+      setDeploymentMode(gateway.deploymentMode ?? (gateway.isManaged ? 'MANAGED_GROUP' : 'SINGLE_INSTANCE'));
+      setHost(gateway.host); setPort(String(gateway.port));
+      setDescription(gateway.description || ''); setIsDefault(gateway.isDefault);
+      setUsername(''); setPassword(''); setSshPrivateKey('');
+      setApiPort(gateway.apiPort ? String(gateway.apiPort) : '');
+      setMonitoringEnabled(gateway.monitoringEnabled);
+      setMonitorIntervalMs(String(gateway.monitorIntervalMs));
+      setInactivityTimeout(String(Math.floor(gateway.inactivityTimeoutSeconds / 60)));
+      setAutoScaleEnabled(gateway.autoScale); setMinReplicasVal(String(gateway.minReplicas));
+      setMaxReplicasVal(String(gateway.maxReplicas)); setSessPerInstance(String(gateway.sessionsPerInstance));
+      setCooldownVal(String(gateway.scaleDownCooldownSeconds));
+      setPublishPorts(gateway.publishPorts ?? false); setLbStrategy(gateway.lbStrategy ?? 'ROUND_ROBIN');
     } else if (open) {
-      setForm(defaultGatewayEditorForm());
+      setName(''); setType('GUACD'); setDeploymentMode('SINGLE_INSTANCE');
+      setHost(''); setPort(''); setDescription(''); setIsDefault(false);
+      setUsername(''); setPassword(''); setSshPrivateKey(''); setApiPort('');
+      setMonitoringEnabled(true); setMonitorIntervalMs('5000'); setInactivityTimeout('60');
+      setAutoScaleEnabled(false); setMinReplicasVal('0'); setMaxReplicasVal('5');
+      setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
     }
     setError(''); setTunnelToken(null); setTunnelError(''); setTunnelDeploying(false);
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
@@ -155,23 +156,65 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, gateway]);
 
-  const handleTypeChange = (newType: EditableGatewayType) => {
-    setForm((current) => nextGatewayTypeForm(current, newType));
+  const handleTypeChange = (newType: 'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH' | 'DB_PROXY') => {
+    setType(newType);
+    const defaultPort = newType === 'GUACD' ? '4822' : newType === 'MANAGED_SSH' ? '2222' : newType === 'DB_PROXY' ? '5432' : '22';
+    if (!port || port === '4822' || port === '22' || port === '2222' || port === '5432') setPort(defaultPort);
+    if (newType === 'MANAGED_SSH' && !apiPort) setApiPort('9022');
+    else if (newType !== 'MANAGED_SSH') setApiPort('');
+    if (newType === 'SSH_BASTION') setDeploymentMode('SINGLE_INSTANCE');
   };
 
   const handleSubmit = async () => {
     setError('');
-    const validationError = validateGatewayEditorForm(form);
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+    if (!name.trim()) { setError('Gateway name is required'); return; }
+    if (!isGroupMode && !host.trim()) { setError('Host is required'); return; }
+    const portNum = parseInt(port, 10);
+    if (!port || isNaN(portNum) || portNum < 1 || portNum > 65535) { setError('Port must be between 1 and 65535'); return; }
 
     const ok = await run(async () => {
       if (isEditMode && gateway) {
-        await updateGateway(gateway.id, buildGatewayUpdate(gateway, form));
+        const data: Record<string, unknown> = {};
+        const normalizedHost = isGroupMode ? '' : host.trim();
+        const existingDeploymentMode = gateway.deploymentMode ?? (gateway.isManaged ? 'MANAGED_GROUP' : 'SINGLE_INSTANCE');
+        if (name.trim() !== gateway.name) data.name = name.trim();
+        if (deploymentMode !== existingDeploymentMode) data.deploymentMode = deploymentMode;
+        if (normalizedHost !== gateway.host) data.host = normalizedHost;
+        if (portNum !== gateway.port) data.port = portNum;
+        if ((description.trim() || null) !== gateway.description) data.description = description.trim() || null;
+        if (isDefault !== gateway.isDefault) data.isDefault = isDefault;
+        if (gateway.type === 'MANAGED_SSH') {
+          const newApiPort = apiPort ? parseInt(apiPort, 10) : null;
+          if (newApiPort !== gateway.apiPort) data.apiPort = newApiPort;
+        }
+        if (type === 'SSH_BASTION') {
+          if (username) data.username = username;
+          if (password) data.password = password;
+          if (sshPrivateKey) data.sshPrivateKey = sshPrivateKey;
+        }
+        if (supportsGroupMode && publishPorts !== (gateway.publishPorts ?? false)) data.publishPorts = publishPorts;
+        if (supportsGroupMode && lbStrategy !== (gateway.lbStrategy ?? 'ROUND_ROBIN')) data.lbStrategy = lbStrategy;
+        if (monitoringEnabled !== gateway.monitoringEnabled) data.monitoringEnabled = monitoringEnabled;
+        const intervalNum = parseInt(monitorIntervalMs, 10);
+        if (intervalNum && intervalNum !== gateway.monitorIntervalMs) data.monitorIntervalMs = intervalNum;
+        const timeoutSec = parseInt(inactivityTimeout, 10) * 60;
+        if (timeoutSec && timeoutSec !== gateway.inactivityTimeoutSeconds) data.inactivityTimeoutSeconds = timeoutSec;
+        await updateGateway(gateway.id, data);
       } else {
-        await createGateway(buildGatewayCreateInput(form));
+        const apiPortNum = apiPort ? parseInt(apiPort, 10) : undefined;
+        await createGateway({
+          name: name.trim(), type, deploymentMode,
+          host: isGroupMode ? '' : host.trim(), port: portNum,
+          description: description.trim() || undefined, isDefault: isDefault || undefined,
+          monitoringEnabled, monitorIntervalMs: parseInt(monitorIntervalMs, 10) || 5000,
+          inactivityTimeoutSeconds: (parseInt(inactivityTimeout, 10) || 60) * 60,
+          ...(type === 'SSH_BASTION' && username ? { username } : {}),
+          ...(type === 'SSH_BASTION' && password ? { password } : {}),
+          ...(type === 'SSH_BASTION' && sshPrivateKey ? { sshPrivateKey } : {}),
+          ...(type === 'MANAGED_SSH' && apiPortNum ? { apiPort: apiPortNum } : {}),
+          ...(supportsGroupMode && publishPorts ? { publishPorts } : {}),
+          ...(supportsGroupMode ? { lbStrategy } : {}),
+        });
       }
     }, isEditMode ? 'Failed to update gateway' : 'Failed to create gateway');
     if (ok) handleClose();
@@ -241,10 +284,20 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   }, [gatewayId, runTunnelAction]);
 
   const serverUrl = window.location.origin;
-  const cliBundleCommand = useMemo(() => {
-    if (!gatewayId) return '';
-    return `arsenale --server ${serverUrl} gateway tunnel-token create ${gatewayId} --bundle-dir ./gateway-bundle`;
-  }, [serverUrl, gatewayId]);
+  const dockerCommand = useMemo(() => {
+    if (!tunnelToken) return '';
+    return `docker run -d --restart=unless-stopped \\\n  -e TUNNEL_TOKEN="${tunnelToken}" \\\n  -e TUNNEL_SERVER_URL="${serverUrl}" \\\n  -e TUNNEL_GATEWAY_ID="${gatewayId ?? ''}" \\\n  arsenale/tunnel-agent:latest`;
+  }, [tunnelToken, serverUrl, gatewayId]);
+
+  const dockerCompose = useMemo(() => {
+    if (!tunnelToken) return '';
+    return `services:\n  arsenale-gateway:\n    image: arsenale/tunnel-agent:latest\n    restart: always\n    environment:\n      TUNNEL_SERVER_URL: "${serverUrl}"\n      TUNNEL_TOKEN: "${tunnelToken}"\n      TUNNEL_GATEWAY_ID: "${gatewayId ?? ''}"\n      TUNNEL_LOCAL_PORT: "4822"`;
+  }, [tunnelToken, serverUrl, gatewayId]);
+
+  const systemdUnit = useMemo(() => {
+    if (!tunnelToken) return '';
+    return `[Unit]\nDescription=Arsenale Tunnel Agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nEnvironment=TUNNEL_SERVER_URL=${serverUrl}\nEnvironment=TUNNEL_TOKEN=${tunnelToken}\nEnvironment=TUNNEL_GATEWAY_ID=${gatewayId ?? ''}\nEnvironment=TUNNEL_LOCAL_PORT=4822\nExecStart=/usr/local/bin/arsenale-tunnel-agent\n\n[Install]\nWantedBy=multi-user.target`;
+  }, [tunnelToken, serverUrl, gatewayId]);
 
   const formatUptime = (connectedAt: string): string => {
     const diff = Date.now() - new Date(connectedAt).getTime();
@@ -264,7 +317,12 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   };
 
   const handleClose = () => {
-    setForm(defaultGatewayEditorForm());
+    setName(''); setType('GUACD'); setDeploymentMode('SINGLE_INSTANCE');
+    setHost(''); setPort(''); setDescription(''); setIsDefault(false);
+    setUsername(''); setPassword(''); setSshPrivateKey(''); setApiPort('');
+    setMonitoringEnabled(true); setMonitorIntervalMs('5000'); setInactivityTimeout('60');
+    setAutoScaleEnabled(false); setMinReplicasVal('0'); setMaxReplicasVal('5');
+    setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
     setError(''); setTunnelToken(null); setTunnelError(''); setTunnelDeploying(false);
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
     setTunnelEvents([]); setTunnelMetrics(null);
@@ -285,16 +343,17 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+      <DialogContent className="flex max-h-[min(88vh,calc(100vh-2rem))] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden sm:w-[90vw] sm:max-w-[90vw]">
         <DialogHeader>
           <DialogTitle>{isEditMode ? 'Edit Gateway' : 'New Gateway'}</DialogTitle>
         </DialogHeader>
-        {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>}
-        <div className="space-y-4">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setField('name', e.target.value)} required autoFocus maxLength={100} /></div>
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
+          {error && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>}
+          <div className="space-y-4">
+          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus maxLength={100} /></div>
           <div className="space-y-1.5">
             <Label>Type</Label>
-            <Select value={type} onValueChange={(v) => handleTypeChange(v as EditableGatewayType)} disabled={isEditMode}>
+            <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)} disabled={isEditMode}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="GUACD">GUACD (RDP Gateway)</SelectItem>
@@ -307,7 +366,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {supportsGroupMode && (
             <div className="space-y-1.5">
               <Label>Deployment Mode</Label>
-              <Select value={deploymentMode} onValueChange={(v) => setField('deploymentMode', v as GatewayEditorForm['deploymentMode'])}>
+              <Select value={deploymentMode} onValueChange={(v) => setDeploymentMode(v as GatewayDeploymentMode)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="SINGLE_INSTANCE">Single Instance</SelectItem>
@@ -320,16 +379,16 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {type === 'MANAGED_SSH' && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">This gateway uses the server&apos;s SSH key pair for authentication. No credentials needed.</div>}
           {type === 'DB_PROXY' && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">Database proxy gateway. Credentials are injected per-session from the vault.</div>}
           {type === 'MANAGED_SSH' && (
-            <div className="space-y-1.5"><Label>gRPC Port (key management)</Label><Input value={apiPort} onChange={(e) => setField('apiPort', e.target.value)} type="number" disabled={publishPorts} />{publishPorts ? <p className="text-xs text-muted-foreground">Auto-assigned at deploy</p> : <p className="text-xs text-muted-foreground">gRPC port for key management mTLS (default: 9022)</p>}</div>
+            <div className="space-y-1.5"><Label>gRPC Port (key management)</Label><Input value={apiPort} onChange={(e) => setApiPort(e.target.value)} type="number" disabled={publishPorts} />{publishPorts ? <p className="text-xs text-muted-foreground">Auto-assigned at deploy</p> : <p className="text-xs text-muted-foreground">gRPC port for key management mTLS (default: 9022)</p>}</div>
           )}
           {supportsGroupMode && isGroupMode && (
-            <div className="flex items-center gap-3"><Switch checked={publishPorts} onCheckedChange={(v) => setForm((current) => nextPublishPortsForm(current, v))} /><Label>Publish Ports (external access)</Label></div>
+            <div className="flex items-center gap-3"><Switch checked={publishPorts} onCheckedChange={(v) => { setPublishPorts(v); if (v) { const dp = type === 'GUACD' ? '4822' : type === 'DB_PROXY' ? '5432' : '2222'; setPort(dp); } }} /><Label>Publish Ports (external access)</Label></div>
           )}
           {publishPorts && supportsGroupMode && isGroupMode && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Each deployed instance will get a unique randomly-assigned host port for external access.</div>}
           {supportsGroupMode && isGroupMode && (
             <div className="space-y-1.5">
               <Label>Load Balancing Strategy</Label>
-              <Select value={lbStrategy} onValueChange={(v) => setField('lbStrategy', v as GatewayEditorForm['lbStrategy'])}>
+              <Select value={lbStrategy} onValueChange={(v) => setLbStrategy(v as 'ROUND_ROBIN' | 'LEAST_CONNECTIONS')}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="ROUND_ROBIN">Round Robin</SelectItem><SelectItem value="LEAST_CONNECTIONS">Least Connections</SelectItem></SelectContent>
               </Select>
@@ -338,26 +397,26 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {isGroupMode ? (
             <>
               <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">This gateway is a logical group. The port below is the service port used by deployed instances.</div>
-              <div className="space-y-1.5"><Label>Service Port</Label><Input value={port} onChange={(e) => setField('port', e.target.value)} type="number" />{publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}</div>
+              <div className="space-y-1.5"><Label>Service Port</Label><Input value={port} onChange={(e) => setPort(e.target.value)} type="number" />{publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}</div>
             </>
           ) : (
             <div className="flex gap-3">
-              <div className="flex-1 space-y-1.5"><Label>Host</Label><Input value={host} onChange={(e) => setField('host', e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
-              <div className="w-[120px] space-y-1.5"><Label>Port</Label><Input value={port} onChange={(e) => setField('port', e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
+              <div className="flex-1 space-y-1.5"><Label>Host</Label><Input value={host} onChange={(e) => setHost(e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
+              <div className="w-[120px] space-y-1.5"><Label>Port</Label><Input value={port} onChange={(e) => setPort(e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
             </div>
           )}
           {type === 'SSH_BASTION' && (
             <>
-              <div className="space-y-1.5"><Label>Username</Label><Input value={username} onChange={(e) => setField('username', e.target.value)} placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
-              <div className="space-y-1.5"><Label>Password</Label><Input value={password} onChange={(e) => setField('password', e.target.value)} type="password" placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
-              <div className="space-y-1.5"><Label>SSH Private Key (PEM)</Label><Textarea value={sshPrivateKey} onChange={(e) => setField('sshPrivateKey', e.target.value)} rows={4} className="font-mono text-xs" placeholder={isEditMode ? (gateway?.hasSshKey ? 'Key configured — leave blank to keep unchanged' : 'Paste PEM-encoded private key') : 'Paste PEM-encoded private key (optional)'} /></div>
+              <div className="space-y-1.5"><Label>Username</Label><Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
+              <div className="space-y-1.5"><Label>Password</Label><Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
+              <div className="space-y-1.5"><Label>SSH Private Key (PEM)</Label><Textarea value={sshPrivateKey} onChange={(e) => setSshPrivateKey(e.target.value)} rows={4} className="font-mono text-xs" placeholder={isEditMode ? (gateway?.hasSshKey ? 'Key configured — leave blank to keep unchanged' : 'Paste PEM-encoded private key') : 'Paste PEM-encoded private key (optional)'} /></div>
             </>
           )}
-          <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setField('description', e.target.value)} rows={2} maxLength={500} /></div>
-          <div className="flex items-center gap-3"><Checkbox checked={isDefault} onCheckedChange={(v) => setField('isDefault', v === true)} id="gw-default" /><Label htmlFor="gw-default">Set as default {type === 'GUACD' ? 'GUACD' : type === 'MANAGED_SSH' ? 'Managed SSH' : type === 'DB_PROXY' ? 'DB Proxy' : 'SSH Bastion'} gateway</Label></div>
-          <div className="flex items-center gap-3"><Checkbox checked={monitoringEnabled} onCheckedChange={(v) => setField('monitoringEnabled', v === true)} id="gw-monitor" /><Label htmlFor="gw-monitor">Enable health monitoring</Label></div>
-          {monitoringEnabled && <div className="space-y-1.5"><Label>Monitor interval (ms)</Label><Input value={monitorIntervalMs} onChange={(e) => setField('monitorIntervalMs', e.target.value)} type="number" /><p className="text-xs text-muted-foreground">How often to check connectivity (1000-3600000ms)</p></div>}
-          <SessionTimeoutConfig value={inactivityTimeout} onChange={(value) => setField('inactivityTimeout', value)} />
+          <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={500} /></div>
+          <div className="flex items-center gap-3"><Checkbox checked={isDefault} onCheckedChange={(v) => setIsDefault(v === true)} id="gw-default" /><Label htmlFor="gw-default">Set as default {type === 'GUACD' ? 'GUACD' : type === 'MANAGED_SSH' ? 'Managed SSH' : type === 'DB_PROXY' ? 'DB Proxy' : 'SSH Bastion'} gateway</Label></div>
+          <div className="flex items-center gap-3"><Checkbox checked={monitoringEnabled} onCheckedChange={(v) => setMonitoringEnabled(v === true)} id="gw-monitor" /><Label htmlFor="gw-monitor">Enable health monitoring</Label></div>
+          {monitoringEnabled && <div className="space-y-1.5"><Label>Monitor interval (ms)</Label><Input value={monitorIntervalMs} onChange={(e) => setMonitorIntervalMs(e.target.value)} type="number" /><p className="text-xs text-muted-foreground">How often to check connectivity (1000-3600000ms)</p></div>}
+          <SessionTimeoutConfig value={inactivityTimeout} onChange={setInactivityTimeout} />
 
           {/* Auto-Scaling */}
           {isEditMode && isGroupMode && supportsGroupMode && (
@@ -366,13 +425,13 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                 <AccordionTrigger><span className="text-sm font-medium">Auto-Scaling Configuration</span></AccordionTrigger>
                 <AccordionContent>
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3"><Switch checked={autoScaleEnabled} onCheckedChange={(value) => setField('autoScaleEnabled', value)} /><Label>Enable Auto-Scale</Label></div>
+                    <div className="flex items-center gap-3"><Switch checked={autoScaleEnabled} onCheckedChange={setAutoScaleEnabled} /><Label>Enable Auto-Scale</Label></div>
                     {autoScaleEnabled && (
                       <div className="flex flex-wrap gap-3">
-                        <div className="w-[120px] space-y-1"><Label className="text-xs">Min Replicas</Label><Input value={minReplicasVal} onChange={(e) => setField('minReplicasVal', e.target.value)} type="number" className="h-8" /></div>
-                        <div className="w-[120px] space-y-1"><Label className="text-xs">Max Replicas</Label><Input value={maxReplicasVal} onChange={(e) => setField('maxReplicasVal', e.target.value)} type="number" className="h-8" /></div>
-                        <div className="w-[150px] space-y-1"><Label className="text-xs">Sessions/Instance</Label><Input value={sessPerInstance} onChange={(e) => setField('sessPerInstance', e.target.value)} type="number" className="h-8" /></div>
-                        <div className="w-[120px] space-y-1"><Label className="text-xs">Cooldown (s)</Label><Input value={cooldownVal} onChange={(e) => setField('cooldownVal', e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[120px] space-y-1"><Label className="text-xs">Min Replicas</Label><Input value={minReplicasVal} onChange={(e) => setMinReplicasVal(e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[120px] space-y-1"><Label className="text-xs">Max Replicas</Label><Input value={maxReplicasVal} onChange={(e) => setMaxReplicasVal(e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[150px] space-y-1"><Label className="text-xs">Sessions/Instance</Label><Input value={sessPerInstance} onChange={(e) => setSessPerInstance(e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[120px] space-y-1"><Label className="text-xs">Cooldown (s)</Label><Input value={cooldownVal} onChange={(e) => setCooldownVal(e.target.value)} type="number" className="h-8" /></div>
                       </div>
                     )}
                     <Button variant="outline" size="sm" disabled={scalingSaving} onClick={() => runScaling(async () => { await updateScalingConfig(gateway?.id ?? '', { autoScale: autoScaleEnabled, minReplicas: Number(minReplicasVal), maxReplicas: Number(maxReplicasVal), sessionsPerInstance: Number(sessPerInstance), scaleDownCooldownSeconds: Number(cooldownVal) }); }, 'Failed to save scaling config')}>
@@ -385,7 +444,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           )}
 
           {/* Zero-Trust Tunnel */}
-          {isEditMode && zeroTrustEnabled && (
+          {gateway && zeroTrustEnabled && (
             <Accordion type="single" collapsible value={tunnelSectionOpen ? 'tunnel' : ''} onValueChange={(v) => setUiPref('tunnelSectionOpen', v === 'tunnel')}>
               <AccordionItem value="tunnel">
                 <AccordionTrigger>
@@ -398,6 +457,13 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                 <AccordionContent>
                   <div className="space-y-3">
                     {tunnelError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex justify-between"><span>{tunnelError}</span><button onClick={() => setTunnelError('')} className="text-xs">dismiss</button></div>}
+
+                    <GatewayEgressPolicyEditor
+                      gatewayId={gateway.id}
+                      policy={gateway.egressPolicy}
+                    />
+
+                    <Separator />
 
                     {!isTunnelEnabled ? (
                       <>
@@ -427,15 +493,15 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
                         {!isGroupMode && (
                           <>
-                            <p className="text-sm text-muted-foreground">Create a compose-ready tunnel bundle on the gateway machine:</p>
+                            <p className="text-sm text-muted-foreground">Run the following Docker command on the gateway machine:</p>
                             {tunnelToken ? (
                               <>
-                                <Textarea value={cliBundleCommand} readOnly rows={2} className="font-mono text-xs" />
-                                <Button size="sm" onClick={() => copyCmd(cliBundleCommand)}><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy CLI Command'}</Button>
-                                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-sm text-yellow-400">Standalone compose requires the generated client certificate and key. Use the CLI bundle output for remote installs.</div>
+                                <Textarea value={dockerCommand} readOnly rows={3} className="font-mono text-xs" />
+                                <Button size="sm" onClick={() => copyCmd(dockerCommand)}><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy Docker Command'}</Button>
+                                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-sm text-yellow-400">Copy this command now — the token will not be shown again after closing.</div>
                               </>
                             ) : (
-                              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Tunnel is enabled. Use the CLI bundle command to rotate credentials and create the compose files locally.</div>
+                              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Tunnel is enabled. Rotate the token to get a new docker run command.</div>
                             )}
                           </>
                         )}
@@ -520,7 +586,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                               <AccordionTrigger><div className="flex items-center gap-2"><Rocket className="h-4 w-4" /><span className="text-sm font-medium">Deployment Guides</span></div></AccordionTrigger>
                               <AccordionContent>
                                 <div className="space-y-4">
-                                  <div><p className="text-xs font-medium mb-1">CLI Bundle</p><Textarea value={cliBundleCommand} readOnly rows={2} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copyCmd(cliBundleCommand)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy'}</Button></div>
+                                  <div><p className="text-xs font-medium mb-1">Docker Compose</p><Textarea value={dockerCompose} readOnly rows={3} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copyCompose(dockerCompose)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{composeCopied ? 'Copied!' : 'Copy'}</Button></div>
+                                  <div><p className="text-xs font-medium mb-1">Systemd Unit</p><Textarea value={systemdUnit} readOnly rows={3} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copySystemd(systemdUnit)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{systemdCopied ? 'Copied!' : 'Copy'}</Button></div>
                                 </div>
                               </AccordionContent>
                             </AccordionItem>
@@ -533,6 +600,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
               </AccordionItem>
             </Accordion>
           )}
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>Cancel</Button>

@@ -84,11 +84,11 @@
     - name: Validate required vault secrets
       assert:
         that:
-          - vault_jwt_secret != 'CHANGE_ME'
-          - vault_guacamole_secret != 'CHANGE_ME'
-          - vault_server_encryption_key != 'CHANGE_ME'
-          - vault_postgres_password != 'CHANGE_ME'
-          - vault_guacenc_auth_token != 'CHANGE_ME'
+          - (vault_jwt_secret | default('CHANGE_ME')) != 'CHANGE_ME'
+          - (vault_guacamole_secret | default('CHANGE_ME')) != 'CHANGE_ME'
+          - (vault_server_encryption_key | default('CHANGE_ME')) != 'CHANGE_ME'
+          - (vault_postgres_password | default('CHANGE_ME')) != 'CHANGE_ME'
+          - (vault_guacenc_auth_token | default('CHANGE_ME')) != 'CHANGE_ME'
         fail_msg: "Run 'make setup' or './scripts/generate-vault.sh' first to generate secrets"
       when: _state == 'present'
 
@@ -444,12 +444,15 @@
         {{ container_runtime | default('podman') }} exec arsenale-postgres sh -lc "printf '%s\n' \"UPDATE \\\"User\\\" SET \\\"failedLoginAttempts\\\" = 0, \\\"lockedUntil\\\" = NULL WHERE email = '{{ arsenale_dev_bootstrap_admin_email }}';\" | PGPASSWORD='{{ vault_postgres_password }}' psql -U '{{ arsenale_db_user }}' -d '{{ arsenale_db_name }}' >/dev/null"
         rm -f /tmp/arsenale-dev-access-token /tmp/arsenale-dev-tenant-id
         ARSENALE_CA_CERT='{{ arsenale_cert_dir }}/client/ca.pem' \
+        ARSENALE_DB_PASSWORD='{{ vault_postgres_password }}' \
         ARSENALE_SAMPLE_POSTGRES_HOST='{{ dev_sample_postgres_host }}' \
         ARSENALE_SAMPLE_POSTGRES_PORT='{{ dev_sample_postgres_port }}' \
         ARSENALE_SAMPLE_POSTGRES_DB_NAME='{{ dev_sample_postgres_database }}' \
         ARSENALE_SAMPLE_POSTGRES_USER='{{ dev_sample_postgres_user }}' \
         ARSENALE_SAMPLE_POSTGRES_PASSWORD='{{ dev_sample_postgres_password }}' \
         ARSENALE_SAMPLE_POSTGRES_SSL_MODE='{{ dev_sample_postgres_ssl_mode }}' \
+        ARSENALE_SERVER_ENCRYPTION_KEY='{{ vault_server_encryption_key }}' \
+        ARSENALE_JWT_SECRET='{{ vault_jwt_secret }}' \
         ARSENALE_CONTAINER_RUNTIME='{{ container_runtime | default('podman') }}' \
         {{ playbook_dir }}/../../../scripts/dev-api-acceptance.sh >/tmp/arsenale-ansible-acceptance.log
       args:

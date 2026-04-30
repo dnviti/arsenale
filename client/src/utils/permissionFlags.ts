@@ -5,6 +5,9 @@ export type PermissionFlag =
   | 'canViewCredentials'
   | 'canShareConnections'
   | 'canViewAuditLog'
+  | 'canViewSessions'
+  | 'canObserveSessions'
+  | 'canControlSessions'
   | 'canManageSessions'
   | 'canManageGateways'
   | 'canManageUsers'
@@ -18,6 +21,9 @@ export const ALL_PERMISSION_FLAGS: PermissionFlag[] = [
   'canViewCredentials',
   'canShareConnections',
   'canViewAuditLog',
+  'canViewSessions',
+  'canObserveSessions',
+  'canControlSessions',
   'canManageSessions',
   'canManageGateways',
   'canManageUsers',

@@ -3,9 +3,9 @@ go 1.25.7
 use (
 	./backend
 	./gateways/gateway-core
+	./gateways/tunnel-agent
 	./gateways/guacenc
 	./gateways/rdgw
 	./gateways/ssh-gateway/grpc-server
-	./gateways/tunnel-agent
 	./tools/arsenale-cli
 )

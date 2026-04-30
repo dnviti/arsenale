@@ -43,6 +43,37 @@ func encryptBootstrapValue(key []byte, plaintext string) (encryptedValue, error)
 	}, nil
 }
 
+func decryptBootstrapValue(key []byte, value encryptedValue) (string, error) {
+	if len(key) != 32 {
+		return "", fmt.Errorf("server encryption key is unavailable")
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return "", fmt.Errorf("create cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCMWithNonceSize(block, 16)
+	if err != nil {
+		return "", fmt.Errorf("create gcm: %w", err)
+	}
+	nonce, err := hex.DecodeString(value.IV)
+	if err != nil {
+		return "", fmt.Errorf("decode nonce: %w", err)
+	}
+	ciphertext, err := hex.DecodeString(value.Ciphertext)
+	if err != nil {
+		return "", fmt.Errorf("decode ciphertext: %w", err)
+	}
+	tag, err := hex.DecodeString(value.Tag)
+	if err != nil {
+		return "", fmt.Errorf("decode tag: %w", err)
+	}
+	plaintext, err := gcm.Open(nil, nonce, append(ciphertext, tag...), nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt payload: %w", err)
+	}
+	return string(plaintext), nil
+}
+
 func certificateFingerprint(certPEM string) (string, error) {
 	block, _ := pem.Decode([]byte(certPEM))
 	if block == nil {

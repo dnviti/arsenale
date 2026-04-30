@@ -7,7 +7,6 @@ import {
 } from 'lucide-react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { useTabsStore } from '../../store/tabsStore';
 import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 import type { CredentialOverride } from '../../store/tabsStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
@@ -27,6 +26,7 @@ import {
   type StartSshSessionInput,
   type StartSshSessionResponse,
 } from '../../api/sessions.api';
+import { closeConnectionSurface } from '../../utils/closeConnectionSurface';
 import '@xterm/xterm/css/xterm.css';
 
 interface SshTerminalProps {
@@ -79,6 +79,9 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
   const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
   useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
   const [enforcedSshSettings, setEnforcedSshSettings] = useState<Partial<SshTerminalConfig> | null>(null);
+  const [fileBrowserSupported, setFileBrowserSupported] = useState(false);
+  const fileBrowserSupportedRef = useRef(false);
+  useEffect(() => { fileBrowserSupportedRef.current = fileBrowserSupported; }, [fileBrowserSupported]);
   const [contextMenu, setContextMenu] = useState<{ top: number; left: number } | null>(null);
 
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
@@ -180,13 +183,17 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
     sessionIdRef.current = null;
   }, []);
 
-  const applySessionPolicy = useCallback((session: StartSshSessionResponse | { dlpPolicy?: ResolvedDlpPolicy; enforcedSshSettings?: Partial<SshTerminalConfig> | null }) => {
+  const applySessionPolicy = useCallback((session: StartSshSessionResponse | { dlpPolicy?: ResolvedDlpPolicy; enforcedSshSettings?: Partial<SshTerminalConfig> | null; fileBrowserSupported?: boolean }) => {
     if (session.dlpPolicy) {
       setDlpPolicy(session.dlpPolicy);
       dlpPolicyRef.current = session.dlpPolicy;
     }
     if (session.enforcedSshSettings !== undefined) {
       setEnforcedSshSettings(session.enforcedSshSettings ?? null);
+    }
+    if (session.fileBrowserSupported !== undefined) {
+      setFileBrowserSupported(session.fileBrowserSupported);
+      fileBrowserSupportedRef.current = session.fileBrowserSupported;
     }
   }, []);
 
@@ -209,10 +216,10 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
     actions.push({
       id: 'sftp-browser',
       icon: <FolderOpen className="h-4 w-4" />,
-      tooltip: sftpOpen ? 'Close SFTP Browser' : 'SFTP File Browser',
+      tooltip: sftpOpen ? 'Close File Browser' : 'Open File Browser',
       onClick: () => setUiPref('sshSftpBrowserOpen', !sftpOpen),
       active: sftpOpen,
-      disabled: status !== 'connected',
+      disabled: status !== 'connected' || !fileBrowserSupported,
     });
     actions.push({
       id: 'fullscreen',
@@ -222,7 +229,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
       active: isFullscreen,
     });
     return actions;
-  }, [isFullscreen, setUiPref, sftpOpen, status, toggleFullscreen]);
+  }, [isFullscreen, setUiPref, sftpOpen, status, fileBrowserSupported, toggleFullscreen]);
 
   const connectSession = useCallback(async () => {
     cleanupTransport();
@@ -399,7 +406,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
   }, [isTransportConnected, sendTerminalMessage]);
 
   const handleDisconnect = useCallback(() => {
-    useTabsStore.getState().closeTab(tabId);
+    closeConnectionSurface(tabId);
   }, [tabId]);
 
   useEffect(() => {
@@ -552,7 +559,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
         isFullscreen={isFullscreen}
         onDisconnect={handleDisconnect}
         onToggleSftp={() => setUiPref('sshSftpBrowserOpen', !sftpOpen)}
-        sftpAvailable
+        sftpAvailable={fileBrowserSupported}
         sftpOpen={sftpOpen}
         container={isFullscreen ? containerRef.current : null}
       />
@@ -563,7 +570,7 @@ export default function SshTerminal({ connectionId, tabId, isActive = true, cred
           className="flex-1 overflow-hidden [&_.xterm]:h-full [&_.xterm]:p-1"
         />
         <SftpBrowser
-          open={sftpOpen}
+          open={sftpOpen && fileBrowserSupported}
           onClose={() => setUiPref('sshSftpBrowserOpen', false)}
           connectionId={connectionId}
           credentials={credentials}

@@ -11,7 +11,9 @@ from jinja2 import Environment, FileSystemLoader
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_TEMPLATE = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "templates" / "compose.yml.j2"
+BROWSER_EXTENSION_WORKFLOW = ROOT / ".github" / "workflows" / "browser-extension.yml"
 INSTALL_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "install.yml"
+INSTALL_APPLY_TASKS = ROOT / "deployment" / "ansible" / "playbooks" / "tasks" / "install_apply.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
 DEV_REFRESH_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "dev_refresh.yml"
 DOCKER_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "docker-build.yml"
@@ -54,25 +56,25 @@ def _render_compose(**overrides: object) -> dict[str, object]:
     env.filters["realpath"] = _realpath
 
     component_images = {
-        "migrate": "ghcr.io/dnviti/arsenale/control-plane-api:latest",
-        "control-plane-api": "ghcr.io/dnviti/arsenale/control-plane-api:latest",
-        "control-plane-controller": "ghcr.io/dnviti/arsenale/control-plane-controller:latest",
-        "authz-pdp": "ghcr.io/dnviti/arsenale/authz-pdp:latest",
-        "model-gateway": "ghcr.io/dnviti/arsenale/model-gateway:latest",
-        "tool-gateway": "ghcr.io/dnviti/arsenale/tool-gateway:latest",
-        "terminal-broker": "ghcr.io/dnviti/arsenale/terminal-broker:latest",
-        "desktop-broker": "ghcr.io/dnviti/arsenale/desktop-broker:latest",
-        "tunnel-broker": "ghcr.io/dnviti/arsenale/tunnel-broker-go:latest",
-        "query-runner": "ghcr.io/dnviti/arsenale/query-runner:latest",
-        "map-assets": "ghcr.io/dnviti/arsenale/map-assets:latest",
-        "memory-service": "ghcr.io/dnviti/arsenale/memory-service:latest",
-        "agent-orchestrator": "ghcr.io/dnviti/arsenale/agent-orchestrator:latest",
-        "runtime-agent": "ghcr.io/dnviti/arsenale/runtime-agent:latest",
-        "client": "ghcr.io/dnviti/arsenale/client:latest",
-        "guacd": "ghcr.io/dnviti/arsenale/guacd:latest",
-        "guacenc": "ghcr.io/dnviti/arsenale/guacenc:latest",
-        "ssh-gateway": "ghcr.io/dnviti/arsenale/ssh-gateway:latest",
-        "db-proxy": "ghcr.io/dnviti/arsenale/db-proxy:latest",
+        "migrate": "ghcr.io/dnviti/arsenale/control-plane-api:stable",
+        "control-plane-api": "ghcr.io/dnviti/arsenale/control-plane-api:stable",
+        "control-plane-controller": "ghcr.io/dnviti/arsenale/control-plane-controller:stable",
+        "authz-pdp": "ghcr.io/dnviti/arsenale/authz-pdp:stable",
+        "model-gateway": "ghcr.io/dnviti/arsenale/model-gateway:stable",
+        "tool-gateway": "ghcr.io/dnviti/arsenale/tool-gateway:stable",
+        "terminal-broker": "ghcr.io/dnviti/arsenale/terminal-broker:stable",
+        "desktop-broker": "ghcr.io/dnviti/arsenale/desktop-broker:stable",
+        "tunnel-broker": "ghcr.io/dnviti/arsenale/tunnel-broker-go:stable",
+        "query-runner": "ghcr.io/dnviti/arsenale/query-runner:stable",
+        "map-assets": "ghcr.io/dnviti/arsenale/map-assets:stable",
+        "memory-service": "ghcr.io/dnviti/arsenale/memory-service:stable",
+        "agent-orchestrator": "ghcr.io/dnviti/arsenale/agent-orchestrator:stable",
+        "runtime-agent": "ghcr.io/dnviti/arsenale/runtime-agent:stable",
+        "client": "ghcr.io/dnviti/arsenale/client:stable",
+        "guacd": "ghcr.io/dnviti/arsenale/guacd:stable",
+        "guacenc": "ghcr.io/dnviti/arsenale/guacenc:stable",
+        "ssh-gateway": "ghcr.io/dnviti/arsenale/ssh-gateway:stable",
+        "db-proxy": "ghcr.io/dnviti/arsenale/db-proxy:stable",
     }
 
     context: dict[str, object] = {
@@ -84,7 +86,7 @@ def _render_compose(**overrides: object) -> dict[str, object]:
         "_public_url": "https://arsenale.example.com",
         "installer_runtime_assets_dir": "/opt/arsenale/config/installer-assets",
         "arsenale_registry": "ghcr.io/dnviti/arsenale",
-        "arsenale_image_tag": "latest",
+        "arsenale_image_tag": "stable",
         "arsenale_postgres_image": "quay.io/sclorg/postgresql-16-c10s",
         "arsenale_postgres_data_dir": "/var/lib/pgsql/data",
         "arsenale_db_user": "arsenale",
@@ -167,9 +169,11 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         compose = _render_compose()
         services = compose["services"]
 
-        self.assertEqual(services["control-plane-api"]["image"], "ghcr.io/dnviti/arsenale/control-plane-api:latest")
-        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker-go:latest")
-        self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:latest")
+        self.assertEqual(services["control-plane-api"]["image"], "ghcr.io/dnviti/arsenale/control-plane-api:stable")
+        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker-go:stable")
+        self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:stable")
+        self.assertEqual(services["guacd"]["image"], "ghcr.io/dnviti/arsenale/guacd:stable")
+        self.assertEqual(services["ssh-gateway"]["image"], "ghcr.io/dnviti/arsenale/ssh-gateway:stable")
         self.assertNotIn("build", services["control-plane-api"])
         self.assertNotIn("build", services["migrate"])
 
@@ -268,6 +272,51 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         self.assertIn('_build: "{{ arsenale_build_images | default(false) }}"', install_text)
         self.assertIn('_build: "{{ true if _is_dev | bool else (arsenale_build_images | default(false)) }}"', deploy_text)
 
+    def test_install_playbook_failure_path_uses_one_summary_variable(self) -> None:
+        install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
+        rescue_match = re.search(r"rescue:\n(?P<body>.*?)(?:\n  always:|\Z)", install_text, re.S)
+        self.assertIsNotNone(rescue_match)
+        rescue_block = rescue_match.group("body")
+
+        self.assertIn(
+            '{ src: "{{ playbook_dir }}/../scripts/install_failure.py", dest: "{{ installer_scripts_dir }}/install_failure.py" }',
+            install_text,
+        )
+        self.assertIn("name: Summarize installer failure for operator", rescue_block)
+        self.assertIn("name: Summarize installer failure for encrypted log", rescue_block)
+        self.assertIn("python3", rescue_block)
+        self.assertIn("{{ installer_scripts_dir }}/install_failure.py", rescue_block)
+        self.assertIn("--detail", rescue_block)
+        self.assertIn("changed_when: false", rescue_block)
+        self.assertIn("failed_when: false", rescue_block)
+        self.assertIn("no_log: true", rescue_block)
+        self.assertIn("installer_failure_message", rescue_block)
+        self.assertIn("installer_failure_log_message", rescue_block)
+        self.assertEqual(rescue_block.count("installer_failure_message:"), 1)
+        self.assertEqual(rescue_block.count("installer_failure_log_message:"), 1)
+        message_section = rescue_block[
+            rescue_block.index("installer_failure_message: >-") : rescue_block.index("installer_failure_log_message: >-")
+        ]
+        detail_section = rescue_block[rescue_block.index("installer_failure_log_message: >-") :]
+        self.assertIn("ansible_failed_result.msg | default('installer apply failed')", message_section)
+        self.assertNotIn("ansible_failed_result.stderr", message_section)
+        self.assertIn(
+            "ansible_failed_result.msg | default(ansible_failed_result.stderr | default('installer apply failed'))",
+            detail_section,
+        )
+        self.assertIn('error: "{{ installer_failure_log_message }}"', rescue_block)
+        self.assertIn('msg: "{{ installer_failure_message }}"', rescue_block)
+        self.assertNotIn('error: "{{ installer_failure_message }}"', rescue_block)
+
+        failure_section = rescue_block[rescue_block.index("name: Persist encrypted failure installer artifacts"):]
+        failure_section = failure_section[: failure_section.index("- name: Surface installer failure")]
+        failure_artifacts = failure_section.split("installer_write_artifacts:", 1)[1]
+        self.assertIn("profile:", failure_artifacts)
+        self.assertIn("status:", failure_artifacts)
+        self.assertIn("log:", failure_artifacts)
+        self.assertNotIn("state:", failure_artifacts)
+        self.assertNotIn("rendered:", failure_artifacts)
+
     def test_dev_state_defaults_to_external_home_while_building_from_repo(self) -> None:
         install_text = INSTALL_PLAYBOOK.read_text(encoding="utf-8")
         deploy_text = DEPLOY_PLAYBOOK.read_text(encoding="utf-8")
@@ -304,7 +353,40 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         self.assertIn("compose_target_services", playbook_text)
 
     def test_ci_publishes_required_installer_images(self) -> None:
+        browser_extension = yaml.safe_load(BROWSER_EXTENSION_WORKFLOW.read_text(encoding="utf-8"))
+        browser_triggers = browser_extension.get("on", browser_extension.get(True))
+        self.assertEqual(browser_triggers["push"]["branches"], ["develop", "main"])
+        self.assertEqual(browser_triggers["pull_request"]["branches"], ["develop", "main"])
+
         docker_build = yaml.safe_load(DOCKER_BUILD_WORKFLOW.read_text(encoding="utf-8"))
+        docker_steps = docker_build["jobs"]["build-and-scan"]["steps"]
+        docker_meta = next(step for step in docker_steps if step.get("name") == "Extract metadata")
+        docker_tags = docker_meta["with"]["tags"]
+        docker_publish_profile = next(step for step in docker_steps if step.get("name") == "Determine publish profile")
+        self.assertEqual(docker_publish_profile["id"], "publish_profile")
+        self.assertIn('git branch -r --contains "${GITHUB_SHA}"', docker_publish_profile["run"])
+        self.assertIn("origin/main", docker_publish_profile["run"])
+        docker_publish = next(step for step in docker_steps if step.get("name") == "Push to registry")
+        self.assertIn("steps.publish_profile.outputs.semver_allowed == 'true'", docker_publish["if"])
+        self.assertNotIn("type=ref,event=branch", docker_tags)
+        self.assertIn("type=ref,event=pr", docker_tags)
+        self.assertIn(
+            "type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}",
+            docker_tags,
+        )
+        self.assertIn(
+            "type=raw,value=stable,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}",
+            docker_tags,
+        )
+        self.assertIn(
+            "type=semver,pattern={{version}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true' }}",
+            docker_tags,
+        )
+        self.assertIn(
+            "type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true' }}",
+            docker_tags,
+        )
+
         docker_services = {
             entry["name"]
             for entry in docker_build["jobs"]["build-and-scan"]["strategy"]["matrix"]["service"]
@@ -329,6 +411,13 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         )
 
         gateways_build = yaml.safe_load(GATEWAYS_BUILD_WORKFLOW.read_text(encoding="utf-8"))
+        gateway_steps = gateways_build["jobs"]["build-and-scan"]["steps"]
+        gateway_publish_profile = next(step for step in gateway_steps if step.get("name") == "Determine publish profile")
+        self.assertEqual(gateway_publish_profile["id"], "publish_profile")
+        self.assertIn('git branch -r --contains "${GITHUB_SHA}"', gateway_publish_profile["run"])
+        self.assertIn("origin/main", gateway_publish_profile["run"])
+        gateway_publish = next(step for step in gateway_steps if step.get("name") == "Push to registry")
+        self.assertIn("steps.publish_profile.outputs.semver_allowed == 'true'", gateway_publish["if"])
         gateway_services = {
             entry["name"]
             for entry in gateways_build["jobs"]["build-and-scan"]["strategy"]["matrix"]["gateway"]

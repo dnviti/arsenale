@@ -39,6 +39,27 @@ function createConcern(id: string, label: string, sectionId: string, sectionLabe
   };
 }
 
+function createConcernWithSections(
+  id: string,
+  label: string,
+  sections: Array<{ id: string; label: string }>,
+) {
+  return {
+    id,
+    label,
+    description: `${label} settings`,
+    icon: <span>{label}</span>,
+    keywords: [label.toLowerCase()],
+    sections: sections.map((section) => ({
+      id: section.id,
+      label: section.label,
+      description: `${section.label} details`,
+      keywords: [section.label.toLowerCase(), label.toLowerCase()],
+      content: <div>{section.label} content</div>,
+    })),
+  };
+}
+
 describe('SettingsDialog', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -100,6 +121,7 @@ describe('SettingsDialog', () => {
     );
 
     expect(await screen.findByText('Audit Log content')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Audit Log' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Close settings' })).toBeInTheDocument();
     await waitFor(() => {
       expect(useUiPreferencesStore.getState().settingsActiveTab).toBe('governance');
@@ -119,13 +141,83 @@ describe('SettingsDialog', () => {
 
     fireEvent.change(
       screen.getByPlaceholderText('Search settings...'),
-      { target: { value: 'passkeys' } },
+      { target: { value: 'settings' } },
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Passkeys content')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Profile' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Passkeys' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Audit Log' })).toBeInTheDocument();
     });
-    expect(screen.getByText('Passkeys content')).toBeInTheDocument();
+    expect(screen.getByText('Profile content')).toBeInTheDocument();
+  });
+
+  it('keeps the main settings pane shrinkable for wide section content', async () => {
+    render(
+      <SettingsDialog
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    const activeContent = await screen.findByText('Profile content');
+    const mainPane = activeContent.closest('main');
+    const section = activeContent.closest('.settings-section');
+    const contentWrapper = activeContent.closest('.settings-content');
+    const contentScrollContainer = contentWrapper?.parentElement;
+
+    expect(mainPane).toHaveClass('min-w-0');
+    expect(mainPane).toHaveClass('w-full');
+    expect(section).toHaveClass('min-w-0');
+    expect(section).toHaveClass('w-full');
+    expect(contentWrapper).toHaveClass('min-w-0');
+    expect(contentWrapper).toHaveClass('w-full');
+    expect(contentScrollContainer).toHaveClass('overflow-y-auto');
+    expect(contentScrollContainer).not.toHaveAttribute('data-radix-scroll-area-viewport');
+  });
+
+  it('falls back to the first available section when no requested section exists', async () => {
+    buildSettingsConcerns.mockReturnValue([
+      createConcernWithSections('personal', 'Personal', [
+        { id: 'profile', label: 'Profile' },
+        { id: 'appearance', label: 'Appearance' },
+      ]),
+      createConcern('security', 'Security', 'passkeys', 'Passkeys'),
+    ]);
+
+    render(
+      <SettingsDialog
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText('Profile content')).toBeInTheDocument();
+    expect(screen.queryByText('Appearance content')).not.toBeInTheDocument();
+  });
+
+  it('switches sections within the active concern through the derived requested section id', async () => {
+    buildSettingsConcerns.mockReturnValue([
+      createConcernWithSections('personal', 'Personal', [
+        { id: 'profile', label: 'Profile' },
+        { id: 'appearance', label: 'Appearance' },
+      ]),
+    ]);
+
+    render(
+      <SettingsDialog
+        open
+        onClose={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText('Profile content')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Appearance' })[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText('Appearance content')).toBeInTheDocument();
+    });
     expect(screen.queryByText('Profile content')).not.toBeInTheDocument();
   });
 

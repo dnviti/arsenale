@@ -73,7 +73,7 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
 | `DRIVE_BASE_PATH` | string | `./data/drive` | No | Both | Local materialization cache for Guacamole RDP shared drives |
-| `FILE_UPLOAD_MAX_SIZE` | number | `10485760` (10MB) | No | Both | Max file upload size in bytes |
+| `FILE_UPLOAD_MAX_SIZE` | number | `104857600` (100MB) | No | Both | Max file upload size in bytes. Oversized uploads should reach the backend and return a structured 413 JSON error instead of a raw proxy error page. |
 | `USER_DRIVE_QUOTA` | number | `104857600` (100MB) | No | Both | Per-user drive quota in bytes |
 | `FILE_THREAT_SCANNER_MODE` | string | `builtin` | No | Both | Threat scanner mode for staged file payloads. `builtin` blocks the EICAR signature; `disabled` or `noop` skips scanning. |
 | `SHARED_FILES_S3_BUCKET` | string | — | No | Both | Bucket for staged RDP and SSH file payloads. This is required for the control plane to enable shared-drive and SSH file-transfer APIs. |
@@ -210,6 +210,13 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 | `SSH_AUTHORIZED_KEYS` | — | Authorized public keys (newline-separated) |
 | `GATEWAY_API_TOKEN` | — | Shared secret for gateway API sidecar |
 
+### Gateway Runtime Egress
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ARSENALE_EGRESS_POLICY_JSON` | — | Normalized per-gateway ordered egress firewall policy used by managed gateway runtimes. When present, outbound tunnel targets must match protocol, host/CIDR, port, and optional user/team scope before traffic is opened. |
+| `RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY` / `RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY_FILE` | — | Shared secret used by the control plane to sign runtime user/team context for scoped DB proxy egress rules. Managed DB proxy deployments with scoped rules fail closed if no key is configured. |
+
 ### SSH Key Rotation
 
 | Variable | Default | Description |
@@ -257,7 +264,7 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 | `PODMAN_SOCKET_PATH` | string | `$XDG_RUNTIME_DIR/podman/podman.sock` | Podman socket path |
 | `DOCKER_NETWORK` | string | `arsenale-dev` | Container network name |
 | `ORCHESTRATOR_K8S_NAMESPACE` | string | `arsenale` | Kubernetes namespace |
-| `ORCHESTRATOR_SSH_GATEWAY_IMAGE` | string | `ghcr.io/dnviti/arsenale/ssh-gateway:latest` | SSH gateway container image |
+| `ORCHESTRATOR_SSH_GATEWAY_IMAGE` | string | `ghcr.io/dnviti/arsenale/ssh-gateway:stable` | SSH gateway container image |
 | `ORCHESTRATOR_GUACD_IMAGE` | string | `guacamole/guacd:1.6.0` | guacd container image (>= 1.6.0 for recording) |
 
 ### Session Recording

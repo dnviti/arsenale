@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import {
+  Activity,
   DatabaseZap,
   History,
   Key,
@@ -14,7 +15,6 @@ import {
   StickyNote,
   SunMedium,
   TerminalSquare,
-  Video,
   Webhook,
   ZoomIn,
   ZoomOut,
@@ -38,6 +38,7 @@ import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { useCommandPaletteStore } from '@/store/commandPaletteStore';
 import { useSecretStore } from '@/store/secretStore';
 import { lockVault } from '@/api/vault.api';
+import { broadcastVaultWindowSync } from '@/utils/vaultWindowSync';
 import { getRecentConnectionIds } from '@/utils/recentConnections';
 import { useAuthStore } from '@/store/authStore';
 import {
@@ -77,7 +78,7 @@ interface CommandPaletteProps {
   onCreateConnection: () => void;
   onOpenKeychain: () => void;
   onOpenAuditLog: () => void;
-  onOpenRecordings: () => void;
+  onOpenSessions: () => void;
 }
 
 export default function CommandPalette({
@@ -85,7 +86,7 @@ export default function CommandPalette({
   onCreateConnection,
   onOpenKeychain,
   onOpenAuditLog,
-  onOpenRecordings,
+  onOpenSessions,
 }: CommandPaletteProps) {
   const open = useCommandPaletteStore((s) => s.open);
   const setOpen = useCommandPaletteStore((s) => s.setOpen);
@@ -99,11 +100,11 @@ export default function CommandPalette({
   const themeMode = useThemeStore((s) => s.mode);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const vaultUnlocked = useVaultStore((s) => s.unlocked);
+  const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
   const checkVaultStatus = useVaultStore((s) => s.checkStatus);
   const setPreference = useUiPreferencesStore((s) => s.set);
   const uiZoomLevel = useUiPreferencesStore((s) => s.uiZoomLevel);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
-  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const userId = useAuthStore((s) => s.user?.id);
   const user = useAuthStore((s) => s.user);
   const secrets = useSecretStore((s) => s.secrets);
@@ -174,11 +175,12 @@ export default function CommandPalette({
   };
 
   const handleLockVault = async () => {
+    setVaultUnlocked(false);
+    broadcastVaultWindowSync('lock');
     try {
       await lockVault();
-      await checkVaultStatus();
     } catch {
-      // ignore
+      await checkVaultStatus();
     }
   };
 
@@ -302,15 +304,13 @@ export default function CommandPalette({
             <History className="size-4" />
             <span>Activity Log</span>
           </CommandItem>
-          {recordingsEnabled ? (
-            <CommandItem
-              value="navigate recordings"
-              onSelect={() => handleSelect(onOpenRecordings)}
-            >
-              <Video className="size-4" />
-              <span>Recordings</span>
-            </CommandItem>
-          ) : null}
+          <CommandItem
+            value="navigate sessions recordings"
+            onSelect={() => handleSelect(onOpenSessions)}
+          >
+            <Activity className="size-4" />
+            <span>Sessions</span>
+          </CommandItem>
           <CommandItem
             value="navigate settings preferences"
             onSelect={() => handleSelect(() => onOpenSettings())}
@@ -372,15 +372,13 @@ export default function CommandPalette({
             <History className="size-4" />
             <span>Open Activity Log</span>
           </CommandItem>
-          {recordingsEnabled ? (
-            <CommandItem
-              value="action open recordings"
-              onSelect={() => handleSelect(onOpenRecordings)}
-            >
-              <Video className="size-4" />
-              <span>Open Recordings</span>
-            </CommandItem>
-          ) : null}
+          <CommandItem
+            value="action open sessions recordings"
+            onSelect={() => handleSelect(onOpenSessions)}
+          >
+            <Activity className="size-4" />
+            <span>Open Sessions</span>
+          </CommandItem>
           {keychainEnabled && vaultUnlocked ? (
             <CommandItem
               value="action lock vault"

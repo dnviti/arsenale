@@ -1,8 +1,28 @@
+import type { SessionProtocol } from './sessions.api';
+
 import api from './client';
 
 export type GatewayHealthStatus = 'UNKNOWN' | 'REACHABLE' | 'UNREACHABLE';
 export type GatewayDeploymentMode = 'SINGLE_INSTANCE' | 'MANAGED_GROUP';
 export type GatewayOperationalStatus = 'HEALTHY' | 'DEGRADED' | 'UNHEALTHY' | 'UNKNOWN';
+export type GatewayEgressProtocol = 'SSH' | 'RDP' | 'VNC' | 'DATABASE';
+export type GatewayEgressAction = 'ALLOW' | 'DISALLOW';
+
+export interface GatewayEgressPolicyRule {
+  description?: string;
+  enabled?: boolean;
+  action?: GatewayEgressAction;
+  protocols: GatewayEgressProtocol[];
+  hosts?: string[];
+  cidrs?: string[];
+  ports: number[];
+  userIds?: string[];
+  teamIds?: string[];
+}
+
+export interface GatewayEgressPolicy {
+  rules: GatewayEgressPolicyRule[];
+}
 
 export interface GatewayData {
   id: string;
@@ -44,6 +64,7 @@ export interface GatewayData {
   tunnelConnected: boolean;
   tunnelConnectedAt: string | null;
   tunnelClientCertExp: string | null;
+  egressPolicy?: GatewayEgressPolicy;
   operationalStatus: GatewayOperationalStatus;
   operationalReason: string;
 }
@@ -65,6 +86,7 @@ export interface GatewayInput {
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
+  egressPolicy?: GatewayEgressPolicy;
 }
 
 export interface GatewayUpdate {
@@ -83,6 +105,7 @@ export interface GatewayUpdate {
   monitoringEnabled?: boolean;
   monitorIntervalMs?: number;
   inactivityTimeoutSeconds?: number;
+  egressPolicy?: GatewayEgressPolicy | null;
 }
 
 export interface TestResult {
@@ -120,6 +143,41 @@ export async function createGateway(payload: GatewayInput): Promise<GatewayData>
 
 export async function updateGateway(id: string, payload: GatewayUpdate): Promise<GatewayData> {
   const { data } = await api.put(`/gateways/${id}`, payload);
+  return data;
+}
+
+export async function getGatewayEgressPolicy(id: string): Promise<GatewayEgressPolicy> {
+  const { data } = await api.get(`/gateways/${id}/egress`);
+  return data;
+}
+
+export async function updateGatewayEgressPolicy(id: string, payload: GatewayEgressPolicy): Promise<GatewayData> {
+  const { data } = await api.put(`/gateways/${id}/egress`, payload);
+  return data;
+}
+
+export interface GatewayEgressPolicyTestInput {
+  protocol: GatewayEgressProtocol;
+  host: string;
+  port: number;
+  userId: string;
+  policy?: GatewayEgressPolicy;
+}
+
+export interface GatewayEgressPolicyTestResult {
+  allowed: boolean;
+  reason: string;
+  ruleIndex?: number;
+  ruleAction?: GatewayEgressAction;
+  rule?: string;
+  defaultDeny: boolean;
+}
+
+export async function testGatewayEgressPolicy(
+  id: string,
+  payload: GatewayEgressPolicyTestInput,
+): Promise<GatewayEgressPolicyTestResult> {
+  const { data } = await api.post(`/gateways/${id}/egress/test`, payload);
   return data;
 }
 
@@ -184,8 +242,8 @@ export interface ActiveSessionData {
   gatewayName: string | null;
   instanceId: string | null;
   instanceName: string | null;
-  protocol: 'SSH' | 'RDP';
-  status: 'ACTIVE' | 'IDLE' | 'CLOSED';
+  protocol: SessionProtocol;
+  status: 'ACTIVE' | 'IDLE' | 'PAUSED' | 'CLOSED';
   startedAt: string;
   lastActivityAt: string;
   endedAt: string | null;
@@ -193,7 +251,7 @@ export interface ActiveSessionData {
 }
 
 export async function listActiveSessions(params?: {
-  protocol?: 'SSH' | 'RDP';
+  protocol?: SessionProtocol;
   gatewayId?: string;
 }): Promise<ActiveSessionData[]> {
   const { data } = await api.get('/sessions/active', { params });

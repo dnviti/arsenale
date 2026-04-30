@@ -4,6 +4,7 @@ import {
   FolderPlus,
   Monitor,
   Plus,
+  Rows3,
   SearchX,
   Share2,
   Star,
@@ -392,13 +393,6 @@ export default function ConnectionTree({
             My Connections
           </div>
         </div>
-        <SidebarIconButton
-          active={compact}
-          title={compact ? 'Normal view' : 'Compact view'}
-          onClick={() => togglePreference('sidebarCompact')}
-        >
-          <TimerReset className="size-4" />
-        </SidebarIconButton>
         <SidebarIconButton title="New Connection" onClick={() => onCreateConnection()}>
           <Plus className="size-4" />
         </SidebarIconButton>
@@ -407,7 +401,19 @@ export default function ConnectionTree({
         </SidebarIconButton>
       </div>
 
-      <SidebarSearchInput value={searchQuery} onChange={setSearchQuery} />
+      <SidebarSearchInput
+        value={searchQuery}
+        onChange={setSearchQuery}
+        trailing={
+          <SidebarIconButton
+            active={compact}
+            title={compact ? 'Normal view' : 'Compact view'}
+            onClick={() => togglePreference('sidebarCompact')}
+          >
+            <Rows3 className="size-4" />
+          </SidebarIconButton>
+        }
+      />
 
       {!isSearching && favoriteConnections.length > 0 ? (
         <section className="space-y-1">

@@ -14,7 +14,7 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
 import { Keyboard, KeyRound, Cloud, X } from 'lucide-react';
-import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData, DlpPolicy, DbSettings, DbProtocol } from '../../api/connections.api';
+import { createConnection, updateConnection, ConnectionData, DlpPolicy, DbSettings, TransferRetentionPolicy } from '../../api/connections.api';
 import { useConnectionsStore } from '../../store/connectionsStore';
 import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import { mergeTerminalConfig } from '../../constants/terminalThemes';
@@ -36,8 +36,22 @@ import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { listVaultProviders, VaultProviderData } from '../../api/externalVault.api';
 import { gatewayEndpointLabel } from '../../utils/gatewayMode';
-import { supportsCloudProviderPresets } from '../../utils/dbConnectionSecurity';
 import ConnectionDialogDatabaseSection from './ConnectionDialogDatabaseSection';
+import {
+  applyConnectionTypeChange,
+  buildConnectionInput,
+  buildConnectionUpdate,
+  ConnectionIntakeState,
+  ConnectionType,
+  CredentialMode,
+  DEFAULT_CONNECTION_UPLOAD_LIMIT_MB,
+  connectionToIntakeState,
+  emptyConnectionIntakeState,
+  normalizeTransferRetentionPolicy,
+  supportsDatabaseSettings,
+  supportsTransferRetention,
+  validateConnectionIntake,
+} from './connectionIntake';
 
 interface ConnectionDialogProps {
   open: boolean;
@@ -47,74 +61,11 @@ interface ConnectionDialogProps {
   teamId?: string | null;
 }
 
-function supportsPersistedExecutionPlans(protocol?: DbProtocol): boolean {
-  return protocol === 'postgresql' || protocol === 'mysql' || protocol === 'oracle' || protocol === 'mssql';
-}
-
-function supportsDatabaseSettings(type: 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL'): boolean {
-  return type === 'DATABASE' || type === 'DB_TUNNEL';
-}
-
-function inferDbProtocol(value?: string | null): DbProtocol {
-  switch ((value ?? '').trim().toLowerCase()) {
-    case 'mysql':
-    case 'mariadb':
-      return 'mysql';
-    case 'mongodb':
-    case 'mongo':
-      return 'mongodb';
-    case 'oracle':
-      return 'oracle';
-    case 'mssql':
-    case 'sqlserver':
-      return 'mssql';
-    case 'db2':
-      return 'db2';
-    default:
-      return 'postgresql';
-  }
-}
-
-function seedDbSettings(
-  connectionType: 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL',
-  settings?: Partial<DbSettings> | null,
-  dbType?: string | null,
-): Partial<DbSettings> {
-  if (!supportsDatabaseSettings(connectionType)) {
-    return settings ?? {};
-  }
-
-  const nextSettings = { ...(settings ?? {}) };
-  if (!nextSettings.protocol) {
-    nextSettings.protocol = inferDbProtocol(dbType);
-  }
-  return nextSettings;
-}
-
-function normalizeDbSettings(settings: Partial<DbSettings>): DbSettings | null {
-  const protocol = settings.protocol ?? inferDbProtocol();
-  if (!protocol) {
-    return null;
-  }
-
-  const supportsCloudPresets = supportsCloudProviderPresets(protocol);
-
-  return {
-    ...settings,
-    protocol,
-    cloudProvider: supportsCloudPresets ? settings.cloudProvider : undefined,
-    sslMode: settings.sslMode,
-    persistExecutionPlan: supportsPersistedExecutionPlans(protocol)
-      ? settings.persistExecutionPlan
-      : undefined,
-  };
-}
-
 export default function ConnectionDialog({ open, onClose, connection, folderId, teamId }: ConnectionDialogProps) {
   const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
   const [name, setName] = useState('');
-  const [type, setType] = useState<'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL'>('SSH');
+  const [type, setType] = useState<ConnectionType>('SSH');
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
@@ -127,13 +78,15 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   const [vncSettings, setVncSettings] = useState<Partial<VncSettings>>({});
   const [dbSettings, setDbSettings] = useState<Partial<DbSettings>>({});
   const [gatewayId, setGatewayId] = useState('');
-  const [credentialMode, setCredentialMode] = useState<'manual' | 'keychain' | 'external-vault'>('manual');
+  const [credentialMode, setCredentialMode] = useState<CredentialMode>('manual');
   const [selectedSecretId, setSelectedSecretId] = useState<string | null>(null);
   const [selectedVaultProviderId, setSelectedVaultProviderId] = useState<string | null>(null);
   const [vaultSecretPath, setVaultSecretPath] = useState('');
   const [vaultProviders, setVaultProviders] = useState<VaultProviderData[]>([]);
   const [defaultConnectMode, setDefaultConnectMode] = useState<string>('');
   const [dlpPolicy, setDlpPolicy] = useState<DlpPolicy>({});
+  const [transferRetentionPolicy, setTransferRetentionPolicy] = useState<TransferRetentionPolicy>(normalizeTransferRetentionPolicy());
+  const [fileTransferMaxUploadSizeMb, setFileTransferMaxUploadSizeMb] = useState(String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB));
   const [targetDbHost, setTargetDbHost] = useState('');
   const [targetDbPort, setTargetDbPort] = useState('');
   const [dbType, setDbType] = useState('');
@@ -150,6 +103,62 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
 
   const isEditMode = Boolean(connection);
 
+  const currentIntakeState = (): ConnectionIntakeState => ({
+    name,
+    type,
+    host,
+    port,
+    username,
+    password,
+    domain,
+    description,
+    enableDrive,
+    sshTerminalConfig,
+    rdpSettings,
+    vncSettings,
+    dbSettings,
+    gatewayId,
+    credentialMode,
+    selectedSecretId,
+    selectedVaultProviderId,
+    vaultSecretPath,
+    defaultConnectMode,
+    dlpPolicy,
+    transferRetentionPolicy,
+    fileTransferMaxUploadSizeMb,
+    targetDbHost,
+    targetDbPort,
+    dbType,
+  });
+
+  const applyIntakeState = (next: ConnectionIntakeState) => {
+    setName(next.name);
+    setType(next.type);
+    setHost(next.host);
+    setPort(next.port);
+    setUsername(next.username);
+    setPassword(next.password);
+    setDomain(next.domain);
+    setDescription(next.description);
+    setEnableDrive(next.enableDrive);
+    setGatewayId(next.gatewayId);
+    setSshTerminalConfig(next.sshTerminalConfig);
+    setRdpSettings(next.rdpSettings);
+    setVncSettings(next.vncSettings);
+    setDbSettings(next.dbSettings);
+    setCredentialMode(next.credentialMode);
+    setSelectedSecretId(next.selectedSecretId);
+    setSelectedVaultProviderId(next.selectedVaultProviderId);
+    setVaultSecretPath(next.vaultSecretPath);
+    setDefaultConnectMode(next.defaultConnectMode);
+    setDlpPolicy(next.dlpPolicy);
+    setTransferRetentionPolicy(next.transferRetentionPolicy);
+    setFileTransferMaxUploadSizeMb(next.fileTransferMaxUploadSizeMb);
+    setTargetDbHost(next.targetDbHost);
+    setTargetDbPort(next.targetDbPort);
+    setDbType(next.dbType);
+  };
+
   useEffect(() => {
     if (open && hasTenant) {
       fetchGateways();
@@ -157,90 +166,15 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     }
     if (open && connection) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting form state when dialog opens is intentional
-      setName(connection.name);
-      setType(connection.type);
-      setHost(connection.host);
-      setPort(String(connection.port));
-      setUsername('');
-      setPassword('');
-      setDomain('');
-      setDescription(connection.description || '');
-      setEnableDrive(connection.enableDrive ?? false);
-      setGatewayId(connection.gatewayId || '');
-      setSshTerminalConfig(
-        (connection.sshTerminalConfig as Partial<SshTerminalConfig>) ?? {}
-      );
-      setRdpSettings(
-        (connection.rdpSettings as Partial<RdpSettings>) ?? {}
-      );
-      setVncSettings(
-        (connection.vncSettings as Partial<VncSettings>) ?? {}
-      );
-      setDbSettings(seedDbSettings(connection.type, connection.dbSettings as Partial<DbSettings>, connection.dbType));
-      if (connection.externalVaultProviderId) {
-        setCredentialMode('external-vault');
-        setSelectedVaultProviderId(connection.externalVaultProviderId);
-        setVaultSecretPath(connection.externalVaultPath ?? '');
-        setSelectedSecretId(null);
-      } else if (connection.credentialSecretId) {
-        setCredentialMode('keychain');
-        setSelectedSecretId(connection.credentialSecretId);
-        setSelectedVaultProviderId(null);
-        setVaultSecretPath('');
-      } else {
-        setCredentialMode('manual');
-        setSelectedSecretId(null);
-        setSelectedVaultProviderId(null);
-        setVaultSecretPath('');
-      }
-      setDefaultConnectMode(connection.defaultCredentialMode ?? '');
-      setDlpPolicy((connection.dlpPolicy as DlpPolicy) ?? {});
-      setTargetDbHost((connection as ConnectionData & { targetDbHost?: string }).targetDbHost ?? '');
-      setTargetDbPort((connection as ConnectionData & { targetDbPort?: number }).targetDbPort?.toString() ?? '');
-      setDbType((connection as ConnectionData & { dbType?: string }).dbType ?? '');
+      applyIntakeState(connectionToIntakeState(connection));
     } else if (open && !connection) {
-      setName('');
-      setType('SSH');
-      setHost('');
-      setPort('22');
-      setUsername('');
-      setPassword('');
-      setDomain('');
-      setDescription('');
-      setEnableDrive(false);
-      setGatewayId('');
-      setSshTerminalConfig({});
-      setRdpSettings({});
-      setVncSettings({});
-      setDbSettings({});
-      setCredentialMode('manual');
-      setSelectedSecretId(null);
-      setSelectedVaultProviderId(null);
-      setVaultSecretPath('');
-      setDefaultConnectMode('');
-      setDlpPolicy({});
-      setTargetDbHost('');
-      setTargetDbPort('');
-      setDbType('');
+      applyIntakeState(emptyConnectionIntakeState());
     }
   }, [open, connection, fetchGateways, hasTenant]);
 
-  const handleTypeChange = (newType: 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL') => {
-    setType(newType);
-    const knownPorts = ['22', '3389', '5900', '5432', '3306', '27017', '1521', '1433', '50000'];
-    if (newType === 'SSH' && knownPorts.includes(port)) setPort('22');
-    if (newType === 'RDP' && knownPorts.includes(port)) setPort('3389');
-    if (newType === 'VNC' && knownPorts.includes(port)) setPort('5900');
-    if (newType === 'DATABASE' && knownPorts.includes(port)) setPort('5432');
-    if (newType === 'DB_TUNNEL' && knownPorts.includes(port)) setPort('22');
-    setGatewayId('');
+  const handleTypeChange = (newType: ConnectionType) => {
+    applyIntakeState(applyConnectionTypeChange(currentIntakeState(), newType));
     setActiveSection('general');
-    if (supportsDatabaseSettings(newType)) {
-      setDbSettings((prev) => seedDbSettings(newType, prev));
-      if (newType === 'DB_TUNNEL' && !targetDbPort) {
-        setTargetDbPort('5432');
-      }
-    }
   };
 
   const availableGateways = gateways.filter((g) => {
@@ -254,6 +188,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     { key: 'general', label: 'General' },
     { key: 'credentials', label: 'Credentials' },
     { key: 'options', label: 'Options' },
+    ...(supportsTransferRetention(type) ? [{ key: 'file-transfer', label: 'File Transfer' }] : []),
     ...(type === 'SSH' ? [{ key: 'terminal', label: 'Terminal' }] : []),
     ...(type === 'RDP' ? [{ key: 'rdp', label: 'RDP Settings' }] : []),
     ...(type === 'VNC' ? [{ key: 'vnc', label: 'VNC Settings' }] : []),
@@ -262,107 +197,18 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   ];
 
   const handleSubmit = async () => {
-    if (!name || !host) {
-      setError('Name and host are required');
-      return;
-    }
-    if (type === 'DB_TUNNEL' && (!targetDbHost || !targetDbPort)) {
-      setError('Target database host and port are required for DB Tunnel connections');
-      return;
-    }
-    if (credentialMode === 'keychain' && !selectedSecretId) {
-      setError('Please select a secret from the keychain');
-      return;
-    }
-    if (credentialMode === 'external-vault' && (!selectedVaultProviderId || !vaultSecretPath)) {
-      setError('Please select a vault provider and enter a secret path');
-      return;
-    }
-    if (credentialMode === 'manual' && !isEditMode && !username) {
-      setError('Username is required for new connections');
+    const state = currentIntakeState();
+    const validationError = validateConnectionIntake(state, isEditMode);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     const ok = await run(async () => {
       if (isEditMode && connection) {
-        const data: ConnectionUpdate = {
-          name,
-          type,
-          host,
-          port: parseInt(port, 10),
-          description: description || null,
-          enableDrive,
-          gatewayId: gatewayId || null,
-          credentialSecretId: credentialMode === 'keychain' ? selectedSecretId : null,
-          externalVaultProviderId: credentialMode === 'external-vault' ? selectedVaultProviderId : null,
-          externalVaultPath: credentialMode === 'external-vault' ? vaultSecretPath : null,
-          ...(type === 'SSH' && {
-            sshTerminalConfig: Object.keys(sshTerminalConfig).length > 0 ? sshTerminalConfig : null,
-          }),
-          ...(type === 'RDP' && {
-            rdpSettings: Object.keys(rdpSettings).length > 0 ? rdpSettings : null,
-          }),
-          ...(type === 'VNC' && {
-            vncSettings: Object.keys(vncSettings).length > 0 ? vncSettings : null,
-          }),
-          ...(supportsDatabaseSettings(type) && {
-            dbSettings: normalizeDbSettings(dbSettings),
-          }),
-          defaultCredentialMode: (defaultConnectMode as 'saved' | 'domain' | 'prompt') || null,
-          ...((type === 'RDP' || type === 'VNC') && {
-            dlpPolicy: Object.values(dlpPolicy).some(Boolean) ? dlpPolicy : null,
-          }),
-          ...(type === 'DB_TUNNEL' && {
-            targetDbHost: targetDbHost || null,
-            targetDbPort: targetDbPort ? parseInt(targetDbPort, 10) : null,
-            dbType: dbType || null,
-          }),
-        };
-        if (credentialMode === 'manual') {
-          if (username) data.username = username;
-          if (password) data.password = password;
-          if (domain) data.domain = domain;
-        }
-        await updateConnection(connection.id, data);
+        await updateConnection(connection.id, buildConnectionUpdate(state));
       } else {
-        const data: ConnectionInput = {
-          name,
-          type,
-          host,
-          port: parseInt(port, 10),
-          description: description || undefined,
-          enableDrive,
-          gatewayId: gatewayId || null,
-          ...(credentialMode === 'keychain' && selectedSecretId
-            ? { credentialSecretId: selectedSecretId }
-            : credentialMode === 'external-vault' && selectedVaultProviderId
-              ? { externalVaultProviderId: selectedVaultProviderId, externalVaultPath: vaultSecretPath }
-              : credentialMode === 'manual' ? { username, password, ...(domain ? { domain } : {}) } : {}),
-          ...(folderId ? { folderId } : {}),
-          ...(teamId ? { teamId } : {}),
-          ...(type === 'SSH' && Object.keys(sshTerminalConfig).length > 0 && {
-            sshTerminalConfig,
-          }),
-          ...(type === 'RDP' && Object.keys(rdpSettings).length > 0 && {
-            rdpSettings,
-          }),
-          ...(type === 'VNC' && Object.keys(vncSettings).length > 0 && {
-            vncSettings,
-          }),
-          ...(supportsDatabaseSettings(type) && {
-            dbSettings: normalizeDbSettings(dbSettings) as DbSettings,
-          }),
-          ...(defaultConnectMode ? { defaultCredentialMode: defaultConnectMode as 'saved' | 'domain' | 'prompt' } : {}),
-          ...((type === 'RDP' || type === 'VNC') && Object.values(dlpPolicy).some(Boolean) && {
-            dlpPolicy,
-          }),
-          ...(type === 'DB_TUNNEL' && {
-            targetDbHost,
-            targetDbPort: parseInt(targetDbPort, 10),
-            ...(dbType ? { dbType } : {}),
-          }),
-        };
-        await createConnection(data);
+        await createConnection(buildConnectionInput(state, folderId, teamId));
       }
       await fetchConnections();
     }, isEditMode ? 'Failed to update connection' : 'Failed to create connection');
@@ -370,29 +216,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   };
 
   const handleClose = () => {
-    setName('');
-    setType('SSH');
-    setHost('');
-    setPort('22');
-    setUsername('');
-    setPassword('');
-    setDomain('');
-    setDescription('');
-    setEnableDrive(false);
-    setGatewayId('');
-    setSshTerminalConfig({});
-    setRdpSettings({});
-    setVncSettings({});
-    setDbSettings({});
-    setCredentialMode('manual');
-    setSelectedSecretId(null);
-    setSelectedVaultProviderId(null);
-    setVaultSecretPath('');
-    setDefaultConnectMode('');
-    setDlpPolicy({});
-    setTargetDbHost('');
-    setTargetDbPort('');
-    setDbType('');
+    applyIntakeState(emptyConnectionIntakeState());
     clearError();
     onClose();
   };
@@ -666,6 +490,44 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                       </Label>
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeSection === 'file-transfer' && supportsTransferRetention(type) && (
+                <div className="flex flex-col gap-4">
+                  <p className="text-xs text-muted-foreground">
+                    Successful uploads are cleaned up by default. Enable retention to keep them in history for this connection.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    The workspace stays temporary. Retained uploads appear in a separate History view.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="transfer-max-upload-size">Max upload size (MiB)</Label>
+                    <Input
+                      id="transfer-max-upload-size"
+                      type="number"
+                      min="1"
+                      max={String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB)}
+                      value={fileTransferMaxUploadSizeMb}
+                      onChange={(event) => setFileTransferMaxUploadSizeMb(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Default and maximum is {DEFAULT_CONNECTION_UPLOAD_LIMIT_MB} MiB for this connection.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="transfer-retention"
+                      checked={transferRetentionPolicy.retainSuccessfulUploads}
+                      onCheckedChange={(value) => setTransferRetentionPolicy((current) => ({
+                        ...current,
+                        retainSuccessfulUploads: value === true,
+                      }))}
+                    />
+                    <Label htmlFor="transfer-retention" className="font-normal">
+                      Retain successful uploads in history
+                    </Label>
+                  </div>
                 </div>
               )}
 

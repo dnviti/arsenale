@@ -54,9 +54,10 @@ describe('DbSchemaBrowser', () => {
     expect(view.getByText('Database: arsenale_demo')).toBeInTheDocument();
     expect(view.queryByText('Tables (1)')).not.toBeInTheDocument();
 
-    const collectionButton = view.getByRole('button', { name: /demo_customers/ });
+    const collectionButton = view.getByText('demo_customers').closest('button');
+    expect(collectionButton).not.toBeNull();
 
-    collectionButton.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    collectionButton!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     (await view.findByText('Find documents')).click();
 
     expect(onInsertSql).toHaveBeenCalledWith(expect.stringContaining('"operation": "find"'));
@@ -78,9 +79,10 @@ describe('DbSchemaBrowser', () => {
       />,
     );
 
-    const tableButton = view.getByRole('button', { name: /demo_customers/ });
+    const tableButton = view.getByText('demo_customers').closest('button');
+    expect(tableButton).not.toBeNull();
 
-    tableButton.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    tableButton!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     (await view.findByText('SELECT *')).click();
 
     expect(onInsertSql).toHaveBeenCalledWith('SELECT TOP 100 *\nFROM demo_customers;');

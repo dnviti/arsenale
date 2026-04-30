@@ -8,7 +8,9 @@ import StatusBar from './StatusBar';
 import type { ConnectionData } from '@/api/connections.api';
 import { useDlpBrowserHardening } from '@/hooks/useDlpBrowserHardening';
 import { useGatewayMonitor } from '@/hooks/useGatewayMonitor';
+import { useActivityTouch } from '@/hooks/useActivityTouch';
 import { useLazyMount } from '@/hooks/useLazyMount';
+import { useSessionCountMonitor } from '@/hooks/useSessionCountMonitor';
 import { useShareSync } from '@/hooks/useShareSync';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import { useAuthStore } from '@/store/authStore';
@@ -21,6 +23,10 @@ import { useUiPreferencesStore } from '@/store/uiPreferencesStore';
 import { useVaultStore } from '@/store/vaultStore';
 import type { NavigationActions } from '@/utils/notificationActions';
 import { NotificationToast } from '../Layout/layoutUi';
+import {
+  resolveSessionsRouteState,
+  type SessionsRouteState,
+} from '@/components/sessions/sessionConsoleRoute';
 import AppSidebar from './AppSidebar';
 import MiniHeader from './MiniHeader';
 import TabBar from '../Tabs/TabBar';
@@ -36,13 +42,22 @@ const AuditLogDialog = lazy(() => import('../Dialogs/AuditLogDialog'));
 const KeychainDialog = lazy(() => import('../Dialogs/KeychainDialog'));
 const ConnectionAuditLogDialog = lazy(() => import('../Dialogs/ConnectionAuditLogDialog'));
 const UserProfileDialog = lazy(() => import('../Dialogs/UserProfileDialog'));
-const RecordingsDialog = lazy(() => import('../Recording/RecordingsDialog'));
 const ExportDialog = lazy(() => import('../Dialogs/ExportDialog'));
 const ImportDialog = lazy(() => import('../Dialogs/ImportDialog'));
 const GeoIpDialog = lazy(() => import('../Audit/GeoIpDialog'));
 const CheckoutDialog = lazy(() => import('../Dialogs/CheckoutDialog'));
+const SessionsDialog = lazy(() => import('@/components/sessions/SessionsDialog'));
 
-export default function WorkspaceShell() {
+interface WorkspaceShellProps {
+  view?: 'dashboard';
+  initialSessionsDialogOpen?: boolean;
+  initialSessionsDialogState?: Partial<SessionsRouteState>;
+}
+
+export default function WorkspaceShell({
+  initialSessionsDialogOpen = false,
+  initialSessionsDialogState,
+}: WorkspaceShellProps) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
   const fetchCurrentPermissions = useAuthStore((s) => s.fetchCurrentPermissions);
@@ -58,7 +73,6 @@ export default function WorkspaceShell() {
   const ipGeolocationEnabled = useFeatureFlagsStore((s) => s.ipGeolocationEnabled);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
   const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
-  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const sharingApprovalsEnabled = useFeatureFlagsStore((s) => s.sharingApprovalsEnabled);
   const fetchFeatureFlags = useFeatureFlagsStore((s) => s.fetchFeatureFlags);
   const checkVaultStatus = useVaultStore((s) => s.checkStatus);
@@ -69,6 +83,8 @@ export default function WorkspaceShell() {
   const uiZoomLevel = useUiPreferencesStore((s) => s.uiZoomLevel);
 
   useGatewayMonitor();
+  useActivityTouch();
+  useSessionCountMonitor();
   useShareSync();
   useDlpBrowserHardening();
   useGlobalShortcuts();
@@ -138,13 +154,14 @@ export default function WorkspaceShell() {
   );
   const [auditLogOpen, setAuditLogOpen] = useState(false);
   const [keychainOpen, setKeychainOpen] = useState(() => pwaAction === 'open-keychain');
-  const [recordingsOpen, setRecordingsOpen] = useState(false);
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [connectionAuditTarget, setConnectionAuditTarget] = useState<{ id: string; name: string } | null>(null);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
   const [geoIpTarget, setGeoIpTarget] = useState<string | null>(null);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [sessionsDialogOpen, setSessionsDialogOpen] = useState(initialSessionsDialogOpen);
+  const [sessionsDialogState, setSessionsDialogState] = useState<SessionsRouteState>(() => resolveSessionsRouteState(initialSessionsDialogState));
   const [linkedProvider, setLinkedProvider] = useState<string | null>(() => {
     const linked = new URLSearchParams(window.location.search).get('linked');
     if (linked) window.history.replaceState({}, '', '/');
@@ -161,12 +178,19 @@ export default function WorkspaceShell() {
   const keychainDialogMounted = useLazyMount(keychainOpen);
   const connectionAuditDialogMounted = useLazyMount(connectionAuditTarget);
   const userProfileDialogMounted = useLazyMount(profileUserId);
-  const recordingsDialogMounted = useLazyMount(recordingsOpen);
   const importDialogMounted = useLazyMount(importDialogOpen);
   const exportDialogMounted = useLazyMount(exportDialogOpen);
   const geoIpDialogMounted = useLazyMount(geoIpTarget);
   const checkoutDialogMounted = useLazyMount(checkoutOpen);
+  const sessionsDialogMounted = useLazyMount(sessionsDialogOpen);
   const activeGeoIpTarget = ipGeolocationEnabled ? geoIpTarget : null;
+
+  const openSessions = (initialState?: Partial<SessionsRouteState>) => {
+    setSessionsDialogState(resolveSessionsRouteState(initialState));
+    setSessionsDialogOpen(true);
+  };
+
+  const openRecordedSessions = () => openSessions({ status: ['CLOSED'], recorded: true });
 
   const handleOpenSettings = (tab?: string) => {
     setSettingsInitialTab(tab);
@@ -175,7 +199,7 @@ export default function WorkspaceShell() {
 
   const navigationActions: NavigationActions = {
     openKeychain: () => setKeychainOpen(true),
-    openRecordings: () => { if (recordingsEnabled) setRecordingsOpen(true); },
+    openRecordings: openRecordedSessions,
     openSettings: handleOpenSettings,
     openAuditLog: () => setAuditLogOpen(true),
     selectConnection: (connectionId: string) => {
@@ -226,7 +250,7 @@ export default function WorkspaceShell() {
         onOpenSettings={handleOpenSettings}
         onOpenKeychain={() => setKeychainOpen(true)}
         onOpenAuditLog={() => setAuditLogOpen(true)}
-        onOpenRecordings={() => setRecordingsOpen(true)}
+        onOpenSessions={() => openSessions()}
       />
 
       <SidebarInset>
@@ -252,6 +276,7 @@ export default function WorkspaceShell() {
                   <DashboardPanel
                     onCreateConnection={() => handleCreateConnection()}
                     onOpenKeychain={() => setKeychainOpen(true)}
+                    onOpenSessions={() => openSessions()}
                   />
                 )}
               </>
@@ -259,11 +284,12 @@ export default function WorkspaceShell() {
               <DashboardPanel
                 onCreateConnection={() => handleCreateConnection()}
                 onOpenKeychain={() => setKeychainOpen(true)}
+                onOpenSessions={() => openSessions()}
               />
             )}
           </div>
 
-          <StatusBar onOpenSettings={handleOpenSettings} />
+          <StatusBar onOpenSettings={handleOpenSettings} onOpenSessions={() => openSessions()} />
         </div>
       </SidebarInset>
 
@@ -273,7 +299,7 @@ export default function WorkspaceShell() {
         onCreateConnection={() => handleCreateConnection()}
         onOpenKeychain={() => setKeychainOpen(true)}
         onOpenAuditLog={() => setAuditLogOpen(true)}
-        onOpenRecordings={() => setRecordingsOpen(true)}
+        onOpenSessions={() => openSessions()}
       />
 
       {/* Notification toast */}
@@ -345,6 +371,7 @@ export default function WorkspaceShell() {
             onClose={() => { setSettingsOpen(false); setLinkedProvider(null); fetchFeatureFlags(); }}
             initialTab={settingsInitialTab}
             linkedProvider={linkedProvider}
+            onOpenSessions={openSessions}
             onViewUserProfile={(userId) => setProfileUserId(userId)}
             onImport={() => setImportDialogOpen(true)}
             onExport={() => setExportDialogOpen(true)}
@@ -382,11 +409,6 @@ export default function WorkspaceShell() {
           <UserProfileDialog open={Boolean(profileUserId)} onClose={() => setProfileUserId(null)} userId={profileUserId} />
         </Suspense>
       ) : null}
-      {recordingsEnabled && recordingsDialogMounted ? (
-        <Suspense fallback={null}>
-          <RecordingsDialog open={recordingsOpen} onClose={() => setRecordingsOpen(false)} />
-        </Suspense>
-      ) : null}
       {anyConnectionFeature && importDialogMounted ? (
         <Suspense fallback={null}>
           <ImportDialog open={importDialogOpen} onClose={() => { setImportDialogOpen(false); useConnectionsStore.getState().fetchConnections(); }} />
@@ -405,6 +427,15 @@ export default function WorkspaceShell() {
       {sharingApprovalsEnabled && checkoutDialogMounted ? (
         <Suspense fallback={null}>
           <CheckoutDialog open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />
+        </Suspense>
+      ) : null}
+      {sessionsDialogMounted ? (
+        <Suspense fallback={null}>
+          <SessionsDialog
+            open={sessionsDialogOpen}
+            onClose={() => setSessionsDialogOpen(false)}
+            initialState={sessionsDialogState}
+          />
         </Suspense>
       ) : null}
     </SidebarProvider>

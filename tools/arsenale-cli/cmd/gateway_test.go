@@ -8,24 +8,24 @@ import (
 )
 
 func TestSelectGatewayInstancePrefersHealthyRunningNewest(t *testing.T) {
-	instances := []map[string]any{
+	instances := []gatewayInstance{
 		{
-			"id":           "old-running",
-			"status":       "RUNNING",
-			"healthStatus": "healthy",
-			"updatedAt":    "2026-04-01T10:00:00Z",
+			ID:           "old-running",
+			Status:       "RUNNING",
+			HealthStatus: "healthy",
+			UpdatedAt:    "2026-04-01T10:00:00Z",
 		},
 		{
-			"id":           "new-running",
-			"status":       "RUNNING",
-			"healthStatus": "healthy",
-			"updatedAt":    "2026-04-01T11:00:00Z",
+			ID:           "new-running",
+			Status:       "RUNNING",
+			HealthStatus: "healthy",
+			UpdatedAt:    "2026-04-01T11:00:00Z",
 		},
 		{
-			"id":           "stopped",
-			"status":       "STOPPED",
-			"healthStatus": "unhealthy",
-			"updatedAt":    "2026-04-01T12:00:00Z",
+			ID:           "stopped",
+			Status:       "STOPPED",
+			HealthStatus: "unhealthy",
+			UpdatedAt:    "2026-04-01T12:00:00Z",
 		},
 	}
 
@@ -33,22 +33,22 @@ func TestSelectGatewayInstancePrefersHealthyRunningNewest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("selectGatewayInstance returned error: %v", err)
 	}
-	if got := formatValue(selected["id"]); got != "new-running" {
+	if got := selected.ID; got != "new-running" {
 		t.Fatalf("expected new-running, got %s", got)
 	}
 }
 
 func TestSelectGatewayInstanceReturnsRequestedID(t *testing.T) {
-	instances := []map[string]any{
-		{"id": "one", "status": "RUNNING"},
-		{"id": "two", "status": "STOPPED"},
+	instances := []gatewayInstance{
+		{ID: "one", Status: "RUNNING"},
+		{ID: "two", Status: "STOPPED"},
 	}
 
 	selected, err := selectGatewayInstance(instances, "two")
 	if err != nil {
 		t.Fatalf("selectGatewayInstance returned error: %v", err)
 	}
-	if got := formatValue(selected["id"]); got != "two" {
+	if got := selected.ID; got != "two" {
 		t.Fatalf("expected two, got %s", got)
 	}
 }
@@ -56,27 +56,27 @@ func TestSelectGatewayInstanceReturnsRequestedID(t *testing.T) {
 func TestGatewayInstanceRankOrdersRunningHealthyHighest(t *testing.T) {
 	tests := []struct {
 		name     string
-		instance map[string]any
+		instance gatewayInstance
 		want     int
 	}{
 		{
 			name:     "running healthy",
-			instance: map[string]any{"status": "RUNNING", "healthStatus": "healthy"},
+			instance: gatewayInstance{Status: "RUNNING", HealthStatus: "healthy"},
 			want:     3,
 		},
 		{
 			name:     "running only",
-			instance: map[string]any{"status": "RUNNING", "healthStatus": "starting"},
+			instance: gatewayInstance{Status: "RUNNING", HealthStatus: "starting"},
 			want:     2,
 		},
 		{
 			name:     "healthy only",
-			instance: map[string]any{"status": "STOPPED", "healthStatus": "healthy"},
+			instance: gatewayInstance{Status: "STOPPED", HealthStatus: "healthy"},
 			want:     1,
 		},
 		{
 			name:     "other",
-			instance: map[string]any{"status": "STOPPED", "healthStatus": "unhealthy"},
+			instance: gatewayInstance{Status: "STOPPED", HealthStatus: "unhealthy"},
 			want:     0,
 		},
 	}

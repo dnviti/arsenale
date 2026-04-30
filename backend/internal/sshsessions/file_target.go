@@ -9,13 +9,6 @@ import (
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 )
 
-type ResolvedFileTransferTarget struct {
-	Connection ConnectionSnapshot
-	AccessType string
-	Target     contracts.TerminalEndpoint
-	Bastion    *contracts.TerminalEndpoint
-}
-
 func (s Service) ResolveFileTransferTarget(ctx context.Context, userID, tenantID, connectionID string, opts ResolveConnectionOptions) (ResolvedFileTransferTarget, error) {
 	access, err := s.loadAccess(ctx, userID, tenantID, strings.TrimSpace(connectionID))
 	if err != nil {
@@ -44,7 +37,7 @@ func (s Service) ResolveFileTransferTarget(ctx context.Context, userID, tenantID
 		return ResolvedFileTransferTarget{}, mapResolveError(err)
 	}
 
-	bastionMap, _, _, err := s.resolveBastion(ctx, authn.Claims{UserID: userID, TenantID: tenantID}, access)
+	bastionMap, _, _, err := s.resolveBastion(ctx, authn.Claims{UserID: userID, TenantID: tenantID}, access, "")
 	if err != nil {
 		return ResolvedFileTransferTarget{}, mapResolveError(err)
 	}
@@ -59,19 +52,7 @@ func (s Service) ResolveFileTransferTarget(ctx context.Context, userID, tenantID
 	}
 
 	return ResolvedFileTransferTarget{
-		Connection: ConnectionSnapshot{
-			ID:           access.Connection.ID,
-			Type:         access.Connection.Type,
-			Host:         access.Connection.Host,
-			Port:         access.Connection.Port,
-			TeamID:       cloneStringPtr(access.Connection.TeamID),
-			GatewayID:    cloneStringPtr(access.Connection.GatewayID),
-			TargetDBHost: cloneStringPtr(access.Connection.TargetDBHost),
-			TargetDBPort: cloneIntPtr(access.Connection.TargetDBPort),
-			DBType:       cloneStringPtr(access.Connection.DBType),
-			DBSettings:   cloneRawJSON(access.Connection.DBSettings),
-			DLPPolicy:    cloneRawJSON(access.Connection.DLPPolicy),
-		},
+		Connection: snapshotConnectionRecord(access.Connection),
 		AccessType: access.AccessType,
 		Target:     target,
 		Bastion:    terminalEndpointFromMap(bastionMap),

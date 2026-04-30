@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/credentialresolver"
 	"github.com/dnviti/arsenale/backend/internal/dbauditapi"
 	"github.com/dnviti/arsenale/backend/internal/dbsessions"
-	"github.com/dnviti/arsenale/backend/internal/desktopbroker"
 	"github.com/dnviti/arsenale/backend/internal/desktopsessions"
 	"github.com/dnviti/arsenale/backend/internal/externalvaultapi"
 	"github.com/dnviti/arsenale/backend/internal/files"
@@ -60,83 +58,10 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/vaultapi"
 	"github.com/dnviti/arsenale/backend/internal/vaultfolders"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-type apiRuntime struct {
-	service  app.StaticService
-	deps     *apiDependencies
-	closeFns []func()
-}
-
-func (r *apiRuntime) Close() {
-	for i := len(r.closeFns) - 1; i >= 0; i-- {
-		if r.closeFns[i] != nil {
-			r.closeFns[i]()
-		}
-	}
-}
-
-func (r *apiRuntime) Run(ctx context.Context) error {
-	return app.Run(ctx, r.service)
-}
-
-func (r *apiRuntime) DevBootstrap(ctx context.Context) error {
-	return runDevBootstrap(ctx, r.deps)
-}
-
-type apiDependencies struct {
-	db                      *pgxpool.Pool
-	store                   *orchestration.Store
-	sessionStore            *sessions.Store
-	desktopSessionService   desktopsessions.Service
-	databaseSessionService  dbsessions.Service
-	setupService            setup.Service
-	publicConfigService     publicconfig.Service
-	publicShareService      publicshareapi.Service
-	authService             authservice.Service
-	mfaService              mfaapi.Service
-	userService             users.Service
-	connectionService       connections.Service
-	importExportService     importexportapi.Service
-	cliService              cliapi.Service
-	checkoutService         checkouts.Service
-	folderService           folders.Service
-	vaultFolderService      vaultfolders.Service
-	fileService             files.Service
-	gatewayService          gateways.Service
-	notificationService     notifications.Service
-	oauthService            oauthapi.Service
-	passwordRotationService passwordrotationapi.Service
-	geoIPService            *geoipapi.Service
-	ldapService             ldapapi.Service
-	rdGatewayService        rdgatewayapi.Service
-	recordingService        recordingsapi.Service
-	secretsMetaService      secretsmeta.Service
-	tenantVaultService      tenantvaultapi.Service
-	tabsService             tabs.Service
-	tenantService           tenants.Service
-	teamService             teams.Service
-	syncProfileService      syncprofiles.Service
-	externalVaultService    externalvaultapi.Service
-	vaultService            vaultapi.Service
-	adminService            adminapi.Service
-	systemSettingsService   systemsettingsapi.Service
-	auditService            auditapi.Service
-	dbAuditService          dbauditapi.Service
-	accessPolicyService     accesspolicies.Service
-	keystrokePolicyService  keystrokepolicies.Service
-	sessionAdminService     sessionadmin.Service
-	sshSessionService       sshsessions.Service
-	sshProxyService         sshproxyapi.Service
-	modelGatewayService     modelgatewayapi.Service
-	authenticator           *authn.Authenticator
-	features                runtimefeatures.Manifest
-}
 
 func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	var closeFns []func()
-
 	db, err := storage.OpenPostgres(ctx)
 	if err != nil {
 		return nil, err
@@ -147,85 +72,26 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 
 	redisClient, err := storage.OpenRedis(ctx)
 	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
+		closeRuntimeResources(closeFns)
 		return nil, err
 	}
 	if redisClient != nil {
 		closeFns = append(closeFns, func() { _ = redisClient.Close() })
 	}
 
-	guacamoleSecret, err := desktopbroker.LoadSecret("GUACAMOLE_SECRET", "GUACAMOLE_SECRET_FILE")
+	secrets, err := loadRuntimeSecrets()
 	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
+		closeRuntimeResources(closeFns)
 		return nil, err
 	}
-	jwtSecret, err := desktopbroker.LoadSecret("JWT_SECRET", "JWT_SECRET_FILE")
+	serverEncryptionKey := secrets.ServerEncryptionKey
+	runtimePrincipalKey, err := loadOptionalSecret("RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY", "RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY_FILE")
 	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
-		return nil, err
-	}
-	guacencAuthToken, err := loadOptionalSecret("GUACENC_AUTH_TOKEN", "GUACENC_AUTH_TOKEN_FILE")
-	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
-		return nil, err
-	}
-	serverEncryptionKey, err := modelgateway.LoadServerEncryptionKey()
-	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
+		closeRuntimeResources(closeFns)
 		return nil, err
 	}
 
-	gatewayGRPCTLSCA := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_TLS_CA"))
-	gatewayGRPCTLSCert := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_TLS_CERT"))
-	gatewayGRPCTLSKey := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_TLS_KEY"))
-	gatewayGRPCClientCA := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_CLIENT_CA"))
-	gatewayGRPCServerCert := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_SERVER_CERT"))
-	gatewayGRPCServerKey := strings.TrimSpace(os.Getenv("GATEWAY_GRPC_SERVER_KEY"))
-	guacdTLSCert := strings.TrimSpace(os.Getenv("ORCHESTRATOR_GUACD_TLS_CERT"))
-	guacdTLSKey := strings.TrimSpace(os.Getenv("ORCHESTRATOR_GUACD_TLS_KEY"))
-	orchestratorResolvConfPath := strings.TrimSpace(os.Getenv("ORCHESTRATOR_RESOLV_CONF_PATH"))
-	orchestratorEgressNetwork := strings.TrimSpace(os.Getenv("ORCHESTRATOR_EGRESS_NETWORK"))
-	if gatewayGRPCClientCA == "" && gatewayGRPCTLSCert != "" {
-		candidate := filepath.Join(filepath.Dir(gatewayGRPCTLSCert), "client-ca.pem")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			gatewayGRPCClientCA = candidate
-		}
-	}
-	if gatewayGRPCServerCert == "" && gatewayGRPCTLSCert != "" {
-		candidate := filepath.Join(filepath.Dir(gatewayGRPCTLSCert), "server-cert.pem")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			gatewayGRPCServerCert = candidate
-		}
-	}
-	if gatewayGRPCServerKey == "" && gatewayGRPCTLSKey != "" {
-		candidate := filepath.Join(filepath.Dir(gatewayGRPCTLSKey), "server-key.pem")
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			gatewayGRPCServerKey = candidate
-		}
-	}
-	if guacdTLSCert == "" {
-		candidate := "/certs/guacd/server-cert.pem"
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			guacdTLSCert = candidate
-		}
-	}
-	if guacdTLSKey == "" {
-		candidate := "/certs/guacd/server-key.pem"
-		if _, statErr := os.Stat(candidate); statErr == nil {
-			guacdTLSKey = candidate
-		}
-	}
-
+	gatewayRuntime := loadGatewayRuntimeConfig()
 	store := orchestration.NewStore(db)
 	modelGatewayStore := modelgateway.NewStore(db)
 	featureManifest := runtimefeatures.FromEnv()
@@ -243,9 +109,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	orchestratorDNSServers := parseCSV(os.Getenv("ORCHESTRATOR_DNS_SERVERS"))
 	sharedFileStore, err := files.LoadObjectStoreFromEnv(ctx)
 	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
+		closeRuntimeResources(closeFns)
 		return nil, err
 	}
 	sharedFileScanner := files.LoadThreatScannerFromEnv()
@@ -263,7 +127,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	authService := authservice.Service{
 		DB:                 db,
 		Redis:              redisClient,
-		JWTSecret:          []byte(strings.TrimSpace(jwtSecret)),
+		JWTSecret:          []byte(strings.TrimSpace(secrets.JWTSecret)),
 		ServerKey:          serverEncryptionKey,
 		ClientURL:          getenv("CLIENT_URL", "https://localhost:3000"),
 		TokenBinding:       os.Getenv("TOKEN_BINDING_ENABLED") != "false",
@@ -280,7 +144,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		db:    db,
 		store: store,
 		desktopSessionService: desktopsessions.Service{
-			Secret:             guacamoleSecret,
+			Secret:             secrets.GuacamoleSecret,
 			Store:              sessionStore,
 			DB:                 db,
 			TenantAuth:         tenantAuthService,
@@ -295,6 +159,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			TenantAuth:          tenantAuthService,
 			ConnectionResolver:  sshSessionService,
 			ServerEncryptionKey: serverEncryptionKey,
+			RuntimePrincipalKey: strings.TrimSpace(runtimePrincipalKey),
 		},
 		sessionStore: sessionStore,
 		setupService: setup.Service{
@@ -338,7 +203,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		fileService: files.Service{
 			DB:                 db,
 			DriveBasePath:      getenv("DRIVE_BASE_PATH", "/guacd-drive"),
-			FileUploadMaxSize:  int64(parseInt(getenv("FILE_UPLOAD_MAX_SIZE", "10485760"), 10*1024*1024)),
+			FileUploadMaxSize:  int64(parseInt(getenv("FILE_UPLOAD_MAX_SIZE", "104857600"), 100*1024*1024)),
 			UserDriveQuota:     int64(parseInt(getenv("USER_DRIVE_QUOTA", "104857600"), 100*1024*1024)),
 			ConnectionResolver: sshSessionService,
 			Store:              sharedFileStore,
@@ -349,30 +214,31 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			Redis:                 redisClient,
 			ServerEncryptionKey:   serverEncryptionKey,
 			DefaultGRPCPort:       parseInt(getenv("GATEWAY_GRPC_PORT", "9022"), 9022),
-			GatewayGRPCTLSCA:      gatewayGRPCTLSCA,
-			GatewayGRPCClientCA:   gatewayGRPCClientCA,
-			GatewayGRPCTLSCert:    gatewayGRPCTLSCert,
-			GatewayGRPCTLSKey:     gatewayGRPCTLSKey,
-			GatewayGRPCServerCert: gatewayGRPCServerCert,
-			GatewayGRPCServerKey:  gatewayGRPCServerKey,
-			GuacdTLSCert:          guacdTLSCert,
-			GuacdTLSKey:           guacdTLSKey,
+			GatewayGRPCTLSCA:      gatewayRuntime.GRPCTLSCA,
+			GatewayGRPCClientCA:   gatewayRuntime.GRPCClientCA,
+			GatewayGRPCTLSCert:    gatewayRuntime.GRPCTLSCert,
+			GatewayGRPCTLSKey:     gatewayRuntime.GRPCTLSKey,
+			GatewayGRPCServerCert: gatewayRuntime.GRPCServerCert,
+			GatewayGRPCServerKey:  gatewayRuntime.GRPCServerKey,
+			GuacdTLSCert:          gatewayRuntime.GuacdTLSCert,
+			GuacdTLSKey:           gatewayRuntime.GuacdTLSKey,
 			TunnelBrokerURL:       getenv("GO_TUNNEL_BROKER_URL", getenv("TUNNEL_BROKER_URL", "http://tunnel-broker:8092")),
 			TunnelTrustDomain:     getenv("SPIFFE_TRUST_DOMAIN", "arsenale.local"),
 			OrchestratorType:      strings.TrimSpace(os.Getenv("ORCHESTRATOR_TYPE")),
 			DockerSocketPath:      getenv("DOCKER_SOCKET_PATH", "/var/run/docker.sock"),
 			PodmanSocketPath:      getenv("PODMAN_SOCKET_PATH", "/run/podman/podman.sock"),
 			DNSServers:            orchestratorDNSServers,
-			ResolvConfPath:        orchestratorResolvConfPath,
-			EgressNetwork:         orchestratorEgressNetwork,
+			ResolvConfPath:        gatewayRuntime.OrchestratorResolv,
+			EgressNetwork:         gatewayRuntime.OrchestratorEgressNet,
 			EdgeNetwork:           getenv("ORCHESTRATOR_EDGE_NETWORK", "arsenale-net-edge"),
 			DBNetwork:             getenv("ORCHESTRATOR_DB_NETWORK", "arsenale-net-db"),
 			GuacdNetwork:          getenv("ORCHESTRATOR_GUACD_NETWORK", "arsenale-net-guacd"),
 			GatewayNetwork:        getenv("ORCHESTRATOR_GATEWAY_NETWORK", "arsenale-net-gateway"),
 			SSHGatewayImage:       getenv("ORCHESTRATOR_SSH_GATEWAY_IMAGE", "localhost/arsenale_ssh-gateway:latest"),
 			GuacdImage:            getenv("ORCHESTRATOR_GUACD_IMAGE", "localhost/arsenale_guacd:latest"),
-			DBProxyImage:          getenv("ORCHESTRATOR_DB_PROXY_IMAGE", "ghcr.io/dnviti/arsenale/db-proxy:latest"),
+			DBProxyImage:          getenv("ORCHESTRATOR_DB_PROXY_IMAGE", "ghcr.io/dnviti/arsenale/db-proxy:stable"),
 			RecordingPath:         getenv("RECORDING_PATH", "/recordings"),
+			RuntimePrincipalKey:   strings.TrimSpace(runtimePrincipalKey),
 		},
 		features: featureManifest,
 		notificationService: notifications.Service{
@@ -403,11 +269,12 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		},
 		recordingService: recordingsapi.Service{
 			DB:                    db,
+			TenantAuth:            tenantAuthService,
 			RecordingPath:         getenv("RECORDING_PATH", "/recordings"),
 			GuacencServiceURL:     getenv("GUACENC_SERVICE_URL", "http://guacenc:3003"),
 			GuacencUseTLS:         strings.EqualFold(getenv("GUACENC_USE_TLS", "false"), "true"),
 			GuacencTLSCA:          strings.TrimSpace(os.Getenv("GUACENC_TLS_CA")),
-			GuacencAuthToken:      guacencAuthToken,
+			GuacencAuthToken:      secrets.GuacencAuthToken,
 			GuacencTimeout:        time.Duration(parseInt(getenv("GUACENC_TIMEOUT_MS", "120000"), 120000)) * time.Millisecond,
 			GuacencRecordingPath:  getenv("GUACENC_RECORDING_PATH", "/recordings"),
 			AsciicastConverterURL: getenv("ASCIICAST_CONVERTER_URL", getenv("GUACENC_SERVICE_URL", "http://guacenc:3003")),
@@ -471,13 +338,14 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		accessPolicyService:    accesspolicies.Service{DB: db},
 		keystrokePolicyService: keystrokepolicies.Service{DB: db},
 		sessionAdminService: sessionadmin.Service{
-			Store:      sessionStore,
-			TenantAuth: tenantAuthService,
+			Store:             sessionStore,
+			TenantAuth:        tenantAuthService,
+			SSHObserverGrants: sshSessionService,
 		},
 		sshSessionService: sshSessionService,
 		sshProxyService: sshproxyapi.Service{
 			DB:        db,
-			JWTSecret: []byte(strings.TrimSpace(jwtSecret)),
+			JWTSecret: []byte(strings.TrimSpace(secrets.JWTSecret)),
 		},
 		modelGatewayService: modelgatewayapi.Service{
 			Store:      modelGatewayStore,
@@ -489,6 +357,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 				TenantAuth:          tenantAuthService,
 				ConnectionResolver:  sshSessionService,
 				ServerEncryptionKey: serverEncryptionKey,
+				RuntimePrincipalKey: strings.TrimSpace(runtimePrincipalKey),
 			},
 			ServerEncryptionKey: serverEncryptionKey,
 			AIState:             modelgatewayapi.NewAIState(),
@@ -500,6 +369,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	deps.setupService.TenantService = &deps.tenantService
 	deps.connectionService.Redis = redisClient
 	deps.desktopSessionService.Connections = deps.connectionService
+	deps.sessionAdminService.DesktopObserverGrants = deps.desktopSessionService
 	deps.importExportService = importexportapi.Service{
 		DB:                  db,
 		Redis:               redisClient,
@@ -512,18 +382,14 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 
 	authenticator, err := authn.NewAuthenticator()
 	if err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
+		closeRuntimeResources(closeFns)
 		return nil, err
 	}
 	deps.authenticator = authenticator
 	deps.oauthService.Auth = &deps.authService
 	deps.oauthService.Authenticator = authenticator
 	if err := deps.syncProfileService.StartScheduler(ctx); err != nil {
-		for i := len(closeFns) - 1; i >= 0; i-- {
-			closeFns[i]()
-		}
+		closeRuntimeResources(closeFns)
 		return nil, err
 	}
 	closeFns = append(closeFns, func() {

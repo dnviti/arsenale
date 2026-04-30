@@ -9,7 +9,9 @@ const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const SessionsPage = lazy(() => import('./pages/SessionsPage'));
 const ConnectionViewerPage = lazy(() => import('./pages/ConnectionViewerPage'));
+const SessionObserverPage = lazy(() => import('./pages/SessionObserverPage'));
 const RecordingPlayerPage = lazy(() => import('./pages/RecordingPlayerPage'));
 const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage'));
 const VaultSetupPage = lazy(() => import('./pages/VaultSetupPage'));
@@ -26,6 +28,7 @@ function LazyFallback() {
 import { useAuth } from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
 import { useVaultStatusStream } from './hooks/useVaultStatusStream';
+import { useVaultWindowSync } from './hooks/useVaultWindowSync';
 import { getSetupStatus } from './api/setup.api';
 import { useFeatureFlagsStore } from './store/featureFlagsStore';
 
@@ -82,6 +85,7 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
 export default function App() {
   const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const sharingApprovalsEnabled = useFeatureFlagsStore((s) => s.sharingApprovalsEnabled);
+  useVaultWindowSync();
 
   return (
     <Suspense fallback={<LazyFallback />}>
@@ -101,10 +105,26 @@ export default function App() {
           }
         />
         <Route
+          path="/sessions"
+          element={
+            <ProtectedRoute>
+              <SessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/connection/:id"
           element={
             <ProtectedRoute>
               <ConnectionViewerPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/session-observer/:protocol/:id"
+          element={
+            <ProtectedRoute>
+              <SessionObserverPage />
             </ProtectedRoute>
           }
         />

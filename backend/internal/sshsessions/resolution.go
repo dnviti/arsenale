@@ -7,54 +7,16 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dnviti/arsenale/backend/internal/connectionaccess"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 )
 
-type ResolveError struct {
-	Status  int
-	Message string
-}
-
-func (e *ResolveError) Error() string {
-	return e.Message
-}
-
-type ResolveConnectionOptions struct {
-	ExpectedType     string
-	OverrideUsername string
-	OverridePassword string
-	OverrideDomain   string
-	CredentialMode   string
-}
-
-type ConnectionSnapshot struct {
-	ID           string
-	Type         string
-	Host         string
-	Port         int
-	TeamID       *string
-	GatewayID    *string
-	TargetDBHost *string
-	TargetDBPort *int
-	DBType       *string
-	DBSettings   json.RawMessage
-	DLPPolicy    json.RawMessage
-}
-
-type ResolvedConnection struct {
-	Connection  ConnectionSnapshot
-	AccessType  string
-	Credentials ResolvedCredentials
-}
-
-type ResolvedCredentials struct {
-	Username         string
-	Password         string
-	Domain           string
-	PrivateKey       string
-	Passphrase       string
-	CredentialSource string
-}
+type ResolveError = connectionaccess.ResolveError
+type ResolveConnectionOptions = connectionaccess.ResolveConnectionOptions
+type ConnectionSnapshot = connectionaccess.ConnectionSnapshot
+type ResolvedConnection = connectionaccess.ResolvedConnection
+type ResolvedCredentials = connectionaccess.ResolvedCredentials
+type ResolvedFileTransferTarget = connectionaccess.ResolvedFileTransferTarget
 
 func (s Service) ResolveConnection(ctx context.Context, userID, tenantID, connectionID string, opts ResolveConnectionOptions) (ResolvedConnection, error) {
 	access, err := s.loadAccess(ctx, userID, tenantID, strings.TrimSpace(connectionID))
@@ -87,19 +49,7 @@ func (s Service) ResolveConnection(ctx context.Context, userID, tenantID, connec
 	}
 
 	return ResolvedConnection{
-		Connection: ConnectionSnapshot{
-			ID:           access.Connection.ID,
-			Type:         access.Connection.Type,
-			Host:         access.Connection.Host,
-			Port:         access.Connection.Port,
-			TeamID:       cloneStringPtr(access.Connection.TeamID),
-			GatewayID:    cloneStringPtr(access.Connection.GatewayID),
-			TargetDBHost: cloneStringPtr(access.Connection.TargetDBHost),
-			TargetDBPort: cloneIntPtr(access.Connection.TargetDBPort),
-			DBType:       cloneStringPtr(access.Connection.DBType),
-			DBSettings:   cloneRawJSON(access.Connection.DBSettings),
-			DLPPolicy:    cloneRawJSON(access.Connection.DLPPolicy),
-		},
+		Connection: snapshotConnectionRecord(access.Connection),
 		AccessType: access.AccessType,
 		Credentials: ResolvedCredentials{
 			Username:         credentials.Username,
@@ -156,4 +106,25 @@ func cloneIntPtr(value *int) *int {
 	}
 	cloned := *value
 	return &cloned
+}
+
+func snapshotConnectionRecord(record connectionRecord) ConnectionSnapshot {
+	return ConnectionSnapshot{
+		ID:                      record.ID,
+		Type:                    record.Type,
+		Host:                    record.Host,
+		Port:                    record.Port,
+		TeamID:                  cloneStringPtr(record.TeamID),
+		GatewayID:               cloneStringPtr(record.GatewayID),
+		TargetDBHost:            cloneStringPtr(record.TargetDBHost),
+		TargetDBPort:            cloneIntPtr(record.TargetDBPort),
+		DBType:                  cloneStringPtr(record.DBType),
+		DBSettings:              cloneRawJSON(record.DBSettings),
+		DLPPolicy:               cloneRawJSON(record.DLPPolicy),
+		TransferRetentionPolicy: cloneRawJSON(record.TransferRetentionPolicy),
+	}
+}
+
+func (s Service) HTTPClientForConnectionAccess() *http.Client {
+	return s.HTTPClient
 }

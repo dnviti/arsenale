@@ -248,13 +248,16 @@ services:
       - jwt_secret
       - shared_files_s3_secret_access_key
       - server_encryption_key
+{% if (vault_runtime_egress_principal_signing_key | default('') | length) > 0 %}
+      - runtime_egress_principal_signing_key
+{% endif %}
     environment:
       PORT: "8080"
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
       GO_QUERY_RUNNER_ENABLED: "true"
       HIBP_FAIL_OPEN: "true"
       DRIVE_BASE_PATH: "/guacd-drive"
-      FILE_UPLOAD_MAX_SIZE: "10485760"
+      FILE_UPLOAD_MAX_SIZE: "104857600"
       USER_DRIVE_QUOTA: "104857600"
       FILE_THREAT_SCANNER_MODE: "${FILE_THREAT_SCANNER_MODE:-builtin}"
       SHARED_FILES_S3_BUCKET: "${SHARED_FILES_S3_BUCKET:-}"
@@ -300,6 +303,9 @@ services:
       ASCIICAST_CONVERTER_URL: "https://guacenc:3003"
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
+{% if (vault_runtime_egress_principal_signing_key | default('') | length) > 0 %}
+      RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY_FILE: /run/secrets/runtime_egress_principal_signing_key
+{% endif %}
     ports:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_control_plane_api_port | default(18080) }}:8080"
     depends_on:
@@ -551,6 +557,9 @@ services:
       - jwt_secret
       - shared_files_s3_secret_access_key
       - server_encryption_key
+{% if (vault_runtime_egress_principal_signing_key | default('') | length) > 0 %}
+      - runtime_egress_principal_signing_key
+{% endif %}
     environment:
       PORT: "8080"
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
@@ -608,7 +617,7 @@ services:
       DEV_SAMPLE_MSSQL_USER: "{{ dev_sample_mssql_user }}"
       DEV_SAMPLE_MSSQL_PASSWORD: "{{ dev_sample_mssql_password }}"
       DRIVE_BASE_PATH: "/guacd-drive"
-      FILE_UPLOAD_MAX_SIZE: "10485760"
+      FILE_UPLOAD_MAX_SIZE: "104857600"
       USER_DRIVE_QUOTA: "104857600"
       FILE_THREAT_SCANNER_MODE: "${FILE_THREAT_SCANNER_MODE:-builtin}"
       SHARED_FILES_S3_BUCKET: "${SHARED_FILES_S3_BUCKET:-}"
@@ -654,6 +663,9 @@ services:
       ASCIICAST_CONVERTER_URL: "https://guacenc:3003"
       JWT_SECRET_FILE: /run/secrets/jwt_secret
       SERVER_ENCRYPTION_KEY_FILE: /run/secrets/server_encryption_key
+{% if (vault_runtime_egress_principal_signing_key | default('') | length) > 0 %}
+      RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY_FILE: /run/secrets/runtime_egress_principal_signing_key
+{% endif %}
       GATEWAY_GRPC_TLS_CA: /certs/ca.pem
       GATEWAY_GRPC_CLIENT_CA: /certs/ssh-gateway/client-ca.pem
       GATEWAY_GRPC_TLS_CERT: /certs/ssh-gateway/client-cert.pem
@@ -1479,6 +1491,7 @@ services:
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_MANAGED_SSH_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
       TUNNEL_LOCAL_PORT: "2222"
+      ARSENALE_EGRESS_POLICY_JSON: '{"rules":[{"description":"Development SSH fixtures","protocols":["SSH"],"hosts":["terminal-target","dev-debian-target","dev-debian-ssh-target"],"ports":[22,2224]}]}'
       TUNNEL_CA_CERT_FILE: /tunnel-certs/ca.pem
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
@@ -1532,6 +1545,7 @@ services:
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_GUACD_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
       TUNNEL_LOCAL_PORT: "4822"
+      ARSENALE_EGRESS_POLICY_JSON: '{"rules":[{"description":"Development desktop fixtures","protocols":["RDP"],"hosts":["terminal-target"],"ports":[3389]},{"description":"Development VNC fixtures","protocols":["VNC"],"hosts":["terminal-target"],"ports":[5900]}]}'
       TUNNEL_CA_CERT_FILE: /tunnel-certs/ca.pem
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
@@ -1543,7 +1557,7 @@ services:
       tunnel-broker:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"const net=require('net');const socket=net.connect({host:'127.0.0.1',port:4822});socket.on('connect',()=>{socket.end();process.exit(0);});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),2000);\""]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 4822 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -1579,6 +1593,7 @@ services:
       TUNNEL_GATEWAY_ID: "${DEV_TUNNEL_DB_PROXY_GATEWAY_ID}"
       TUNNEL_LOCAL_HOST: "127.0.0.1"
       TUNNEL_LOCAL_PORT: "5432"
+      ARSENALE_EGRESS_POLICY_JSON: '{"rules":[{"description":"Development database fixtures","protocols":["DATABASE"],"hosts":["dev-demo-postgres","dev-demo-mysql","dev-demo-mongodb","dev-demo-oracle","dev-demo-mssql"],"ports":[5432,3306,27017,1521,1433]}]}'
       TUNNEL_CA_CERT_FILE: /tunnel-certs/ca.pem
       TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
       TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
@@ -1624,6 +1639,10 @@ secrets:
     external: true
   shared_files_s3_secret_access_key:
     external: true
+{% if (vault_runtime_egress_principal_signing_key | default('') | length) > 0 %}
+  runtime_egress_principal_signing_key:
+    external: true
+{% endif %}
   smtp_pass:
     external: true
   sendgrid_api_key:

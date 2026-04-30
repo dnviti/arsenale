@@ -3,7 +3,7 @@ name: Docker Build
 on:
   push:
     tags: ["v*"]
-    branches: [staging, main]
+    branches: [develop, main]
     paths:
       - "backend/**"
       - "client/**"
@@ -26,7 +26,7 @@ on:
       - "eslint.config.mjs"
       - "tsconfig.json"
   pull_request:
-    branches: [develop, staging, main]
+    branches: [develop, main]
     paths:
       - "backend/**"
       - "client/**"
@@ -201,12 +201,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine publish profile
+        id: publish_profile
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          semver_allowed=false
+          if git branch -r --contains "${GITHUB_SHA}" | grep -qE '^[[:space:]]*origin/main$'; then
+            semver_allowed=true
+          fi
+          printf 'semver_allowed=%s\n' "$semver_allowed" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to the Container registry
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
+        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -219,11 +232,11 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service.name }}
           tags: |
-            type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+            type=raw,value=stable,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true' }}
 
       - name: Build image for scanning
         uses: docker/build-push-action@v7
@@ -241,6 +254,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.35.0
         with:
           cache: false
+          version: v0.70.0
           image-ref: arsenale-${{ matrix.service.name }}:scan
           format: sarif
           output: trivy-results.sarif
@@ -254,7 +268,7 @@ jobs:
           category: trivy-${{ matrix.service.name }}
 
       - name: Push to registry
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
+        if: github.event_name == 'push' && ((startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true') || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.service.context }}

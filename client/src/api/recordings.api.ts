@@ -53,6 +53,11 @@ export async function deleteRecording(id: string): Promise<void> {
   await api.delete(`/recordings/${id}`);
 }
 
+export async function downloadRecordingRaw(id: string): Promise<Blob> {
+  const { data } = await api.get(`/recordings/${id}/stream`, { responseType: 'blob' });
+  return data;
+}
+
 export function getRecordingStreamUrl(id: string): string {
   return `/api/recordings/${id}/stream`;
 }

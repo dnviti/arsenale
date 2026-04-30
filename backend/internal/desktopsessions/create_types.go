@@ -54,6 +54,7 @@ type desktopConnectionSnapshot struct {
 
 type gatewaySnapshot struct {
 	ID             string
+	TenantID       string
 	Type           string
 	Host           string
 	Port           int
@@ -61,6 +62,7 @@ type gatewaySnapshot struct {
 	DeploymentMode string
 	TunnelEnabled  bool
 	LBStrategy     string
+	EgressPolicy   json.RawMessage
 }
 
 type managedGatewayInstance struct {

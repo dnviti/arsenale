@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/internal/connectionaccess"
 	"github.com/dnviti/arsenale/backend/internal/sessions"
-	"github.com/dnviti/arsenale/backend/internal/sshsessions"
 	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 )
 
@@ -39,7 +39,7 @@ func (s Service) createSession(ctx context.Context, claims authn.Claims, payload
 		return SessionIssueResponse{}, &requestError{status: http.StatusBadRequest, message: "connectionId is required"}
 	}
 
-	resolution, err := s.ConnectionResolver.ResolveConnection(ctx, claims.UserID, claims.TenantID, connectionID, sshsessions.ResolveConnectionOptions{
+	resolution, err := s.ConnectionResolver.ResolveConnection(ctx, claims.UserID, claims.TenantID, connectionID, connectionaccess.ResolveConnectionOptions{
 		ExpectedType:     "DATABASE",
 		OverrideUsername: payload.Username,
 		OverridePassword: payload.Password,
@@ -58,7 +58,7 @@ func (s Service) createSession(ctx context.Context, claims authn.Claims, payload
 	}
 
 	usesOverrideCredentials := hasOverrideCredentials(payload.Username, payload.Password)
-	route, err := s.resolveDatabaseRoute(ctx, claims.TenantID, resolution.Connection.GatewayID)
+	route, err := s.resolveDatabaseRoute(ctx, claims.TenantID, resolution.Connection.GatewayID, resolution.Connection.Host, resolution.Connection.Port, claims.UserID, resolution.Connection.ID, ipAddress)
 	if err != nil {
 		return SessionIssueResponse{}, err
 	}
@@ -72,6 +72,7 @@ func (s Service) createSession(ctx context.Context, claims authn.Claims, payload
 	target := buildDatabaseTarget(resolution.Connection.Host, resolution.Connection.Port, dbProtocol, databaseName, resolution.Credentials, settings, payload.SessionConfig)
 
 	result, err := s.issueSession(ctx, SessionIssueRequest{
+		TenantID:        claims.TenantID,
 		UserID:          claims.UserID,
 		ConnectionID:    resolution.Connection.ID,
 		GatewayID:       route.GatewayID,
@@ -100,17 +101,18 @@ func (s Service) issueSession(ctx context.Context, req SessionIssueRequest, vali
 	}
 
 	if validateTarget {
-		if err := s.validateTargetViaDBProxy(ctx, req.GatewayID, req.InstanceID, req.Target); err != nil {
+		principal, err := s.dbProxyPrincipal(ctx, req.TenantID, req.UserID)
+		if err != nil {
+			return SessionIssueResponse{}, err
+		}
+		if err := s.validateTargetViaDBProxy(ctx, req.GatewayID, req.InstanceID, principal, req.Target); err != nil {
 			return SessionIssueResponse{}, &requestError{status: classifyConnectivityStatus(err), message: err.Error()}
 		}
 	}
 
 	protocol := strings.ToUpper(strings.TrimSpace(req.Protocol))
-	if _, err := s.Store.CloseStaleSessionsForConnection(ctx, req.UserID, req.ConnectionID, protocol); err != nil {
-		return SessionIssueResponse{}, err
-	}
-
 	sessionID, err := s.Store.StartSession(ctx, sessions.StartSessionParams{
+		TenantID:        req.TenantID,
 		UserID:          req.UserID,
 		ConnectionID:    req.ConnectionID,
 		GatewayID:       req.GatewayID,

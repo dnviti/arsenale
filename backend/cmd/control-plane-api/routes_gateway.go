@@ -40,6 +40,13 @@ func (d *apiDependencies) handleGatewayRoute(w http.ResponseWriter, r *http.Requ
 		d.handleGatewayInstanceRoute(w, r, claims, strings.TrimPrefix(rest, "instances/"))
 		return
 	}
+	if rest == "egress/test" {
+		if !gatewayRouteMethod(w, r, http.MethodPost) {
+			return
+		}
+		d.gatewayService.HandleTestEgressPolicy(w, r, claims)
+		return
+	}
 	if strings.Contains(rest, "/") {
 		gatewayRouteNotFound(w)
 		return
@@ -121,6 +128,15 @@ func (d *apiDependencies) handleGatewayActionRoute(w http.ResponseWriter, r *htt
 			return
 		}
 		d.gatewayService.HandlePushSSHKey(w, r, claims)
+	case "egress":
+		switch r.Method {
+		case http.MethodGet:
+			d.gatewayService.HandleGetEgressPolicy(w, r, claims)
+		case http.MethodPut:
+			d.gatewayService.HandleUpdateEgressPolicy(w, r, claims)
+		default:
+			gatewayRouteMethodNotAllowed(w, "GET, PUT")
+		}
 	case "scaling":
 		switch r.Method {
 		case http.MethodGet:

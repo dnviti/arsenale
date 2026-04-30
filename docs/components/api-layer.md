@@ -3,16 +3,16 @@
 > Auto-generated on 2026-03-15 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
-40 API modules in `client/src/api/` provide typed Axios wrappers:
+41 API modules in `client/src/api/` provide typed Axios wrappers:
 
 | Module | Description |
 |--------|-------------|
-| `client.ts` | Axios instance with JWT interceptor and auto-refresh |
+| `client.ts` | Axios instance with JWT interceptor, browser CSRF cookie handling, and browser-session restore on 401 |
 | `accessPolicy.api.ts` | ABAC access policy CRUD and evaluation |
 | `admin.api.ts` | Admin config (email status, self-signup, system settings) |
 | `aiQuery.api.ts` | Named AI backend config, feature defaults, natural-language-to-SQL generation, and query optimization |
 | `audit.api.ts` | Personal, tenant, and connection audit logs, geo data, geo summary |
-| `auth.api.ts` | Passkey-first login, password fallback, MFA flows, refresh, logout, public config |
+| `auth.api.ts` | Passkey-first login, password fallback, MFA flows, browser-session restore/touch, logout, public config |
 | `checkout.api.ts` | Credential checkout/check-in with approval workflow |
 | `connections.api.ts` | Connection CRUD, favorites, CLI listing |
 | `database.api.ts` | Database session query execution, schema, explain, introspection, history |
@@ -25,6 +25,7 @@
 | `importExport.api.ts` | Connection import/export (CSV, JSON, mRemoteNG, RDP) |
 | `ldap.api.ts` | LDAP status, connection test, and sync trigger |
 | `live.api.ts` | SSE subscription helpers for gateways, sessions, audit, and vault streams |
+| `managedTransfer.api.ts` | Protocol-neutral managed transfer history adapter for RDP and SSH sandboxes |
 | `notifications.api.ts` | Notification listing, preferences, read state, and management |
 | `oauth.api.ts` | OAuth providers, linked accounts, vault setup |
 | `passwordReset.api.ts` | Password reset flow |
@@ -43,7 +44,7 @@
 | `tenant.api.ts` | Tenant CRUD, user management, MFA stats, IP allowlist |
 | `twofa.api.ts` | TOTP 2FA setup/verify/disable |
 | `user.api.ts` | Profile, settings, identity verification, domain profile, notification schedule |
-| `vault.api.ts` | Vault lock/unlock, passkey-first re-unlock, auto-lock, password reveal, recovery |
+| `vault.api.ts` | Vault lock/unlock, activity touch, passkey-first re-unlock, auto-lock, password reveal, recovery |
 | `vault-folders.api.ts` | Vault folder CRUD (create, update, delete, list) |
 | `version.api.ts` | Version check and update notification |
 | `webauthn.api.ts` | WebAuthn credential management |

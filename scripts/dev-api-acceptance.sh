@@ -2,6 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "${repo_root}/scripts/lib/arsenale-cli-harness.sh"
+
 default_state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
 default_dev_home="${ARSENALE_DEV_HOME:-$default_state_home/arsenale-dev}"
 vault_file="${ARSENALE_VAULT_FILE:-$repo_root/deployment/ansible/inventory/group_vars/all/vault.yml}"
@@ -27,6 +29,11 @@ PY
 }
 
 resolve_server_encryption_key() {
+  if [[ -n "${ARSENALE_SERVER_ENCRYPTION_KEY:-}" ]]; then
+    printf '%s' "${ARSENALE_SERVER_ENCRYPTION_KEY}"
+    return
+  fi
+
   python3 - "$vault_file" <<'PY'
 import re
 import sys
@@ -42,6 +49,11 @@ PY
 }
 
 resolve_jwt_secret() {
+  if [[ -n "${ARSENALE_JWT_SECRET:-}" ]]; then
+    printf '%s' "${ARSENALE_JWT_SECRET}"
+    return
+  fi
+
   python3 - "$vault_file" <<'PY'
 import re
 import sys
@@ -64,6 +76,8 @@ if [[ ! -f "${ca_cert}" && -f "${default_dev_home}/dev-certs/client/ca.pem" ]]; 
   ca_cert="${default_dev_home}/dev-certs/client/ca.pem"
 fi
 api_base="${ARSENALE_API_BASE:-https://localhost:3000/api}"
+server_url="${ARSENALE_SERVER_URL:-${api_base%/api}}"
+cli_bin="${ARSENALE_CLI_BIN:-$(arsenale_cli_default_bin "${repo_root}")}"
 client_base="${ARSENALE_CLIENT_BASE:-}"
 expected_webauthn_rp_id="${ARSENALE_WEBAUTHN_RP_ID:-}"
 cp_base="${ARSENALE_CP_BASE:-http://127.0.0.1:18080}"
@@ -755,9 +769,20 @@ login_json_for_password() {
 login_json_for_credentials() {
   local email="$1"
   local password="$2"
-  curl --silent --show-error --fail \
-    --cacert "${ca_cert}" \
-    -H 'content-type: application/json' \
+  local user_agent="${3:-}"
+  local curl_args=(
+    --silent
+    --show-error
+    --fail
+    --cacert "${ca_cert}"
+    -H 'content-type: application/json'
+  )
+
+  if [[ -n "${user_agent}" ]]; then
+    curl_args+=(-H "User-Agent: ${user_agent}")
+  fi
+
+  curl "${curl_args[@]}" \
     -d "{\"email\":\"${email}\",\"password\":\"${password}\"}" \
     "${api_base}/auth/login"
 }
@@ -880,6 +905,17 @@ echo '2. login'
 ensure_access_token
 [[ -n "${access_token}" && "${access_token}" != "null" ]]
 [[ -n "${tenant_id}" && "${tenant_id}" != "null" ]]
+
+echo '2.0 CLI inventory smoke'
+arsenale_cli_ensure_built "${repo_root}" "${cli_bin}"
+cli_user_agent="$(arsenale_cli_user_agent "${cli_bin}")"
+cli_login_json="$(login_json_for_credentials "${admin_email}" "${admin_password}" "${cli_user_agent}")"
+cli_access_token="$(printf '%s' "${cli_login_json}" | jq -r '.accessToken')"
+cli_tenant_id="$(printf '%s' "${cli_login_json}" | jq -r '.user.tenantId')"
+[[ -n "${cli_access_token}" && "${cli_access_token}" != "null" ]]
+[[ -n "${cli_tenant_id}" && "${cli_tenant_id}" != "null" ]]
+arsenale_cli_seed_auth "${server_url}" "${cli_access_token}" "${cli_tenant_id}"
+arsenale_cli_smoke_inventory "${repo_root}" "${cli_bin}" "${server_url}"
 
 echo '2.1 /api/user/profile'
 profile_json="$(curl --silent --show-error --fail \
@@ -4250,7 +4286,7 @@ printf '%s' "${export_json}" \
 
 import_connection_name="Acceptance Import $(date +%s)"
 import_payload_file="$(mktemp)"
-printf '%s' "{\"version\":\"1.0\",\"connections\":[{\"name\":\"${import_connection_name}\",\"type\":\"SSH\",\"host\":\"import-target\",\"port\":22,\"username\":\"import-user\",\"password\":\"ImportPass91Qx!\",\"description\":\"go-native-import\"}]}" > "${import_payload_file}"
+printf '%s' "{\"version\":\"1.0\",\"connections\":[{\"name\":\"${import_connection_name}\",\"type\":\"SSH\",\"host\":\"import-target-${acceptance_suffix}\",\"port\":22,\"username\":\"import-user\",\"password\":\"ImportPass91Qx!\",\"description\":\"go-native-import\"}]}" > "${import_payload_file}"
 import_result_json="$(curl --silent --show-error --fail \
   --cacert "${ca_cert}" \
   -H "authorization: Bearer ${access_token}" \
@@ -4891,8 +4927,8 @@ rdp_file_content="$(curl --silent --show-error --fail \
   --cacert "${ca_cert}" \
   -H "authorization: Bearer ${access_token}" \
   "${api_base}/rdgw/connections/${rdp_connection_id}/rdpfile")"
-printf '%s' "${rdp_file_content}" | rg 'gatewayhostname:s:rdgw\.acceptance\.local:443' >/dev/null
-printf '%s' "${rdp_file_content}" | rg 'full address:s:rdp\.invalid:3389' >/dev/null
+[[ "${rdp_file_content}" == *"gatewayhostname:s:rdgw.acceptance.local:443"* ]]
+[[ "${rdp_file_content}" == *"full address:s:rdp.invalid:3389"* ]]
 
 curl --silent --show-error --fail \
   --cacert "${ca_cert}" \

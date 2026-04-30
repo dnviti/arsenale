@@ -8,7 +8,6 @@ import {
   Network,
   Plus,
   TerminalSquare,
-  Video,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,12 +18,10 @@ import { useGatewayStore } from '@/store/gatewayStore';
 import { useVaultStore } from '@/store/vaultStore';
 import { useAuthStore } from '@/store/authStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
-import { useUiPreferencesStore } from '@/store/uiPreferencesStore';
 import { useCommandPaletteStore } from '@/store/commandPaletteStore';
 import { summarizeGatewayStatuses } from '@/utils/gatewayStatus';
 import { getRecentConnectionIds } from '@/utils/recentConnections';
 import type { ConnectionData } from '@/api/connections.api';
-import type { ConnectionFilter } from './AppSidebar';
 
 function connectionIcon(type: string) {
   switch (type) {
@@ -37,21 +34,20 @@ function connectionIcon(type: string) {
 interface DashboardPanelProps {
   onCreateConnection: () => void;
   onOpenKeychain: () => void;
+  onOpenSessions: () => void;
 }
 
-export default function DashboardPanel({ onCreateConnection, onOpenKeychain }: DashboardPanelProps) {
+export default function DashboardPanel({ onCreateConnection, onOpenKeychain, onOpenSessions }: DashboardPanelProps) {
   const ownConnections = useConnectionsStore((s) => s.ownConnections);
   const sharedConnections = useConnectionsStore((s) => s.sharedConnections);
   const teamConnections = useConnectionsStore((s) => s.teamConnections);
   const openTab = useTabsStore((s) => s.openTab);
-  const tabs = useTabsStore((s) => s.tabs);
+  const sessionCount = useGatewayStore((s) => s.sessionCount);
   const gateways = useGatewayStore((s) => s.gateways);
   const vaultUnlocked = useVaultStore((s) => s.unlocked);
   const vaultInitialized = useVaultStore((s) => s.initialized);
   const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
-  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
   const userId = useAuthStore((s) => s.user?.id);
-  const setPreference = useUiPreferencesStore((s) => s.set);
   const togglePalette = useCommandPaletteStore((s) => s.toggle);
 
   const allConnections = useMemo(
@@ -70,10 +66,6 @@ export default function DashboardPanel({ onCreateConnection, onOpenKeychain }: D
   }, [allConnections, userId]);
 
   const gatewaySummary = summarizeGatewayStatuses(gateways);
-
-  const setConnectionFilter = (filter: ConnectionFilter) => {
-    setPreference('workspaceActiveView', filter);
-  };
 
   return (
     <div className="flex flex-1 items-start justify-center overflow-auto p-6">
@@ -106,16 +98,14 @@ export default function DashboardPanel({ onCreateConnection, onOpenKeychain }: D
               <span className="text-xs font-medium">Keychain</span>
             </button>
           ) : null}
-          {recordingsEnabled ? (
-            <button
-              type="button"
-              className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-colors hover:border-primary/30 hover:bg-primary/5"
-              onClick={() => setConnectionFilter('remote')}
-            >
-              <Video className="size-5 text-muted-foreground group-hover:text-primary" />
-              <span className="text-xs font-medium">Recordings</span>
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="group flex flex-col items-center gap-2 rounded-xl border bg-card p-4 text-center transition-colors hover:border-primary/30 hover:bg-primary/5"
+            onClick={onOpenSessions}
+          >
+            <Activity className="size-5 text-muted-foreground group-hover:text-primary" />
+            <span className="text-xs font-medium">Sessions</span>
+          </button>
         </div>
 
         {/* Stats row */}
@@ -127,9 +117,9 @@ export default function DashboardPanel({ onCreateConnection, onOpenKeychain }: D
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-semibold tabular-nums">{tabs.length}</div>
-            </CardContent>
-          </Card>
+                <div className="text-2xl font-semibold tabular-nums">{sessionCount}</div>
+              </CardContent>
+            </Card>
           <Card className="border-border/50">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1.5 text-xs">

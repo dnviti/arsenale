@@ -3,6 +3,7 @@ import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useThemeStore } from './store/themeStore';
 import { themes } from './theme/index';
 import { applyDocumentTheme } from './theme/documentTheme';
@@ -19,9 +20,11 @@ function Root() {
   }, [mode, theme, themeName]);
 
   return (
-    <BrowserRouter>
-      <App />
-    </BrowserRouter>
+    <TooltipProvider>
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    </TooltipProvider>
   );
 }
 

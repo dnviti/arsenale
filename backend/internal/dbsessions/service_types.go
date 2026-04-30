@@ -1,16 +1,26 @@
 package dbsessions
 
 import (
+	"context"
 	"time"
 
+	"github.com/dnviti/arsenale/backend/internal/connectionaccess"
 	"github.com/dnviti/arsenale/backend/internal/sessions"
-	"github.com/dnviti/arsenale/backend/internal/sshsessions"
 	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+type sessionLifecycleStore interface {
+	StartSession(context.Context, sessions.StartSessionParams) (string, error)
+	LoadOwnedSessionState(context.Context, string, string) (*sessions.SessionState, error)
+	UpdateOwnedSessionMetadata(context.Context, string, string, map[string]any) error
+	HeartbeatOwnedSession(context.Context, string, string) error
+	EndOwnedSession(context.Context, string, string, string) error
+}
+
 type SessionIssueRequest struct {
+	TenantID        string                    `json:"tenantId,omitempty"`
 	UserID          string                    `json:"userId"`
 	ConnectionID    string                    `json:"connectionId"`
 	GatewayID       string                    `json:"gatewayId,omitempty"`
@@ -52,11 +62,12 @@ type ownedSessionConfigPayload struct {
 }
 
 type Service struct {
-	Store               *sessions.Store
+	Store               sessionLifecycleStore
 	DB                  *pgxpool.Pool
 	TenantAuth          tenantauth.Service
-	ConnectionResolver  sshsessions.Service
+	ConnectionResolver  connectionaccess.Resolver
 	ServerEncryptionKey []byte
+	RuntimePrincipalKey string
 }
 
 type QueryHistoryEntry struct {

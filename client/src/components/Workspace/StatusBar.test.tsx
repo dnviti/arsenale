@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '@/store/authStore';
 import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
@@ -10,8 +10,26 @@ import { useVaultStore } from '@/store/vaultStore';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import StatusBar from './StatusBar';
 
+const { lockVault } = vi.hoisted(() => ({
+  lockVault: vi.fn(),
+}));
+
+const { broadcastVaultWindowSync } = vi.hoisted(() => ({
+  broadcastVaultWindowSync: vi.fn(),
+}));
+
+vi.mock('@/api/vault.api', () => ({
+  lockVault,
+}));
+
+vi.mock('@/utils/vaultWindowSync', () => ({
+  broadcastVaultWindowSync,
+}));
+
 describe('StatusBar', () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    lockVault.mockResolvedValue({ unlocked: false });
     useAuthStore.setState({
       user: {
         id: 'user-1',
@@ -29,6 +47,9 @@ describe('StatusBar', () => {
         canViewCredentials: true,
         canShareConnections: true,
         canViewAuditLog: true,
+        canViewSessions: true,
+        canObserveSessions: true,
+        canControlSessions: true,
         canManageSessions: true,
         canManageGateways: true,
         canManageUsers: true,
@@ -38,6 +59,7 @@ describe('StatusBar', () => {
     });
     useFeatureFlagsStore.setState({ loaded: true, keychainEnabled: false });
     useGatewayStore.setState({
+      sessionCount: 4,
       gateways: [
         {
           id: 'gateway-1',
@@ -90,6 +112,20 @@ describe('StatusBar', () => {
     useVaultStore.setState({ unlocked: false, initialized: false });
   });
 
+  it('opens the sessions console when the session counter is clicked', () => {
+    const onOpenSessions = vi.fn();
+
+    render(
+      <TooltipProvider>
+        <StatusBar onOpenSessions={onOpenSessions} />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /4 sessions/i }));
+
+    expect(onOpenSessions).toHaveBeenCalledTimes(1);
+  });
+
   it('opens the infrastructure settings concern when the gateway indicator is clicked', () => {
     const onOpenSettings = vi.fn();
 
@@ -117,5 +153,24 @@ describe('StatusBar', () => {
     );
 
     expect(screen.getByRole('button', { name: /checking/i })).toBeInTheDocument();
+  });
+
+  it('locks the local vault immediately and broadcasts the lock signal', async () => {
+    useFeatureFlagsStore.setState({ loaded: true, keychainEnabled: true });
+    useVaultStore.setState({ unlocked: true, initialized: true });
+
+    render(
+      <TooltipProvider>
+        <StatusBar />
+      </TooltipProvider>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /^open$/i }));
+
+    await waitFor(() => {
+      expect(lockVault).toHaveBeenCalledTimes(1);
+    });
+    expect(useVaultStore.getState()).toMatchObject({ unlocked: false, initialized: true });
+    expect(broadcastVaultWindowSync).toHaveBeenCalledWith('lock');
   });
 });

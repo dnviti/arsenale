@@ -10,6 +10,7 @@ var sessionCreateColumnsSSH = []Column{
 	{Header: "SESSION_ID", Field: "sessionId"},
 	{Header: "TRANSPORT", Field: "transport"},
 	{Header: "SFTP_SUPPORTED", Field: "sftpSupported"},
+	{Header: "FILE_BROWSER_SUPPORTED", Field: "fileBrowserSupported"},
 	{Header: "EXPIRES_AT", Field: "expiresAt"},
 }
 

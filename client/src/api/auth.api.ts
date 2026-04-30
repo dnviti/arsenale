@@ -117,11 +117,30 @@ export async function restoreSessionApi() {
   };
 }
 
+export async function touchAuthActivityApi() {
+  const { data } = await api.post('/auth/activity');
+  return data as { ok: boolean };
+}
+
 export async function logoutApi() {
   await api.post('/auth/logout');
 }
 
+export type RuntimeCapability =
+  | 'keychain'
+  | 'multi_tenancy'
+  | 'connections'
+  | 'ip_geolocation'
+  | 'databases'
+  | 'recordings'
+  | 'zero_trust'
+  | 'agentic_ai'
+  | 'enterprise_auth'
+  | 'sharing_approvals'
+  | 'cli';
+
 export interface FeatureFlags {
+  enabledCapabilities: RuntimeCapability[];
   databaseProxyEnabled: boolean;
   connectionsEnabled: boolean;
   ipGeolocationEnabled: boolean;

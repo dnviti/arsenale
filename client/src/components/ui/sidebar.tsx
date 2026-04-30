@@ -31,6 +31,8 @@ const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+const SIDEBAR_SKELETON_MIN_WIDTH = 50
+const SIDEBAR_SKELETON_WIDTH_VARIATION = 40
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -362,7 +364,7 @@ function SidebarSeparator({
     <Separator
       data-slot="sidebar-separator"
       data-sidebar="separator"
-      className={cn("mx-2 w-auto bg-sidebar-border", className)}
+      className={cn("w-auto bg-sidebar-border", className)}
       {...props}
     />
   )
@@ -569,7 +571,7 @@ function SidebarMenuAction({
         "peer-data-[size=lg]/menu-button:top-2.5",
         "group-data-[collapsible=icon]:hidden",
         showOnHover &&
-          "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 peer-data-[active=true]/menu-button:text-sidebar-accent-foreground data-[state=open]:opacity-100 md:opacity-0",
+        "group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 peer-data-[active=true]/menu-button:text-sidebar-accent-foreground data-[state=open]:opacity-100 md:opacity-0",
         className
       )}
       {...props}
@@ -607,13 +609,17 @@ function SidebarMenuSkeleton({
   showIcon?: boolean
 }) {
   const skeletonId = React.useId()
-  const width = React.useMemo(() => {
-    let hash = 0
-    for (const char of skeletonId) {
-      hash = (hash * 31 + char.charCodeAt(0)) % 40
-    }
-    return `${hash + 50}%`
-  }, [skeletonId])
+  let hash = 0
+
+  for (const character of skeletonId) {
+    hash = (hash * 31 + character.charCodeAt(0)) | 0
+  }
+
+  const normalizedHash = Math.abs(hash)
+  const width = `${
+    SIDEBAR_SKELETON_MIN_WIDTH +
+    (normalizedHash % SIDEBAR_SKELETON_WIDTH_VARIATION)
+  }%`
 
   return (
     <div

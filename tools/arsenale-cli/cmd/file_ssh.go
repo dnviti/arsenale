@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -9,6 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
+const sshSandboxRelativePathErrorText = "Only sandbox-relative paths are allowed; remote filesystem browsing is disabled."
 
 var sshFileColumns = []Column{
 	{Header: "NAME", Field: "name"},
@@ -19,42 +22,42 @@ var sshFileColumns = []Column{
 
 var fileSSHCmd = &cobra.Command{
 	Use:   "ssh",
-	Short: "Manage staged SSH/SFTP file transfers",
+	Short: "Manage SSH sandbox file transfers",
 }
 
 var fileSSHListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List files on the remote SSH target",
+	Short: "List files in the SSH transfer sandbox",
 	Run:   runSSHFileList,
 }
 
 var fileSSHMkdirCmd = &cobra.Command{
 	Use:   "mkdir",
-	Short: "Create a directory on the remote SSH target",
+	Short: "Create a directory in the SSH transfer sandbox",
 	Run:   runSSHFileMkdir,
 }
 
 var fileSSHDeleteCmd = &cobra.Command{
 	Use:   "delete",
-	Short: "Delete a file or directory on the remote SSH target",
+	Short: "Delete a file or directory in the SSH transfer sandbox",
 	Run:   runSSHFileDelete,
 }
 
 var fileSSHRenameCmd = &cobra.Command{
 	Use:   "rename",
-	Short: "Rename a file or directory on the remote SSH target",
+	Short: "Rename a file or directory in the SSH transfer sandbox",
 	Run:   runSSHFileRename,
 }
 
 var fileSSHUploadCmd = &cobra.Command{
 	Use:   "upload",
-	Short: "Upload a local file to the remote SSH target through staged storage",
+	Short: "Upload a local file into the SSH transfer sandbox",
 	Run:   runSSHFileUpload,
 }
 
 var fileSSHDownloadCmd = &cobra.Command{
 	Use:   "download",
-	Short: "Download a remote SSH file through staged storage",
+	Short: "Download a file from the SSH transfer sandbox",
 	Run:   runSSHFileDownload,
 }
 
@@ -91,25 +94,26 @@ func init() {
 		addCredentialOverrideFlags(subcmd, &sshFileOverrides)
 	}
 
-	fileSSHListCmd.Flags().StringVar(&sshFilePath, "path", "/", "Remote directory path to list")
+	fileSSHListCmd.Flags().StringVar(&sshFilePath, "path", ".", "sandbox-relative directory path under workspace/current/ to list; use . for the sandbox root")
 
-	fileSSHMkdirCmd.Flags().StringVar(&sshFilePath, "path", "", "Remote directory path to create")
+	fileSSHMkdirCmd.Flags().StringVar(&sshFilePath, "path", "", "sandbox-relative directory path under workspace/current/ to create")
 	fileSSHMkdirCmd.MarkFlagRequired("path")
 
-	fileSSHDeleteCmd.Flags().StringVar(&sshFilePath, "path", "", "Remote path to delete")
+	fileSSHDeleteCmd.Flags().StringVar(&sshFilePath, "path", "", "sandbox-relative file or directory path under workspace/current/ to delete")
 	fileSSHDeleteCmd.MarkFlagRequired("path")
 
-	fileSSHRenameCmd.Flags().StringVar(&sshFileOldPath, "from", "", "Existing remote path")
-	fileSSHRenameCmd.Flags().StringVar(&sshFileNewPath, "to", "", "New remote path")
+	fileSSHRenameCmd.Flags().StringVar(&sshFileOldPath, "from", "", "existing sandbox-relative path under workspace/current/")
+	fileSSHRenameCmd.Flags().StringVar(&sshFileNewPath, "to", "", "new sandbox-relative path under workspace/current/")
 	fileSSHRenameCmd.MarkFlagRequired("from")
 	fileSSHRenameCmd.MarkFlagRequired("to")
 
 	fileSSHUploadCmd.Flags().StringVar(&sshFileUploadPath, "file", "", "Local file to upload")
-	fileSSHUploadCmd.Flags().StringVar(&sshFileRemotePath, "remote-path", "", "Destination remote path")
+	fileSSHUploadCmd.Flags().StringVar(&sshFileRemotePath, "to", "", "sandbox-relative destination path under workspace/current/")
+	fileSSHUploadCmd.Flags().StringVar(&sshFileRemotePath, "remote-path", "", "deprecated alias for --to")
+	_ = fileSSHUploadCmd.Flags().MarkHidden("remote-path")
 	fileSSHUploadCmd.MarkFlagRequired("file")
-	fileSSHUploadCmd.MarkFlagRequired("remote-path")
 
-	fileSSHDownloadCmd.Flags().StringVar(&sshFilePath, "path", "", "Remote file path to download")
+	fileSSHDownloadCmd.Flags().StringVar(&sshFilePath, "path", "", "sandbox-relative file path under workspace/current/ to download")
 	fileSSHDownloadCmd.Flags().StringVar(&sshFileDownloadDst, "dest", ".", "Destination file or directory")
 	fileSSHDownloadCmd.MarkFlagRequired("path")
 }
@@ -124,7 +128,11 @@ func runSSHFileList(cmd *cobra.Command, args []string) {
 	if conn.Type != "SSH" {
 		fatal("connection %q is type %s, not SSH", conn.Name, conn.Type)
 	}
-	body["path"] = strings.TrimSpace(sshFilePath)
+	cleanPath, err := normalizeSSHSandboxCLIPath(sshFilePath, true)
+	if err != nil {
+		fatal("%v", err)
+	}
+	body["path"] = cleanPath
 
 	respBody, status, err := apiPost("/api/files/ssh/list", body, cfg)
 	if err != nil {
@@ -146,7 +154,11 @@ func runSSHFileMkdir(cmd *cobra.Command, args []string) {
 	if conn.Type != "SSH" {
 		fatal("connection %q is type %s, not SSH", conn.Name, conn.Type)
 	}
-	body["path"] = strings.TrimSpace(sshFilePath)
+	cleanPath, err := normalizeSSHSandboxCLIPath(sshFilePath, false)
+	if err != nil {
+		fatal("%v", err)
+	}
+	body["path"] = cleanPath
 
 	respBody, status, err := apiPost("/api/files/ssh/mkdir", body, cfg)
 	if err != nil {
@@ -154,7 +166,7 @@ func runSSHFileMkdir(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, respBody)
 	if !quiet {
-		fmt.Printf("Directory %q created\n", sshFilePath)
+		fmt.Printf("Directory %q created\n", cleanPath)
 	}
 }
 
@@ -168,7 +180,11 @@ func runSSHFileDelete(cmd *cobra.Command, args []string) {
 	if conn.Type != "SSH" {
 		fatal("connection %q is type %s, not SSH", conn.Name, conn.Type)
 	}
-	body["path"] = strings.TrimSpace(sshFilePath)
+	cleanPath, err := normalizeSSHSandboxCLIPath(sshFilePath, false)
+	if err != nil {
+		fatal("%v", err)
+	}
+	body["path"] = cleanPath
 
 	respBody, status, err := apiPost("/api/files/ssh/delete", body, cfg)
 	if err != nil {
@@ -176,7 +192,7 @@ func runSSHFileDelete(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, respBody)
 	if !quiet {
-		fmt.Printf("Remote path %q deleted\n", sshFilePath)
+		fmt.Printf("Sandbox path %q deleted\n", cleanPath)
 	}
 }
 
@@ -190,8 +206,16 @@ func runSSHFileRename(cmd *cobra.Command, args []string) {
 	if conn.Type != "SSH" {
 		fatal("connection %q is type %s, not SSH", conn.Name, conn.Type)
 	}
-	body["oldPath"] = strings.TrimSpace(sshFileOldPath)
-	body["newPath"] = strings.TrimSpace(sshFileNewPath)
+	cleanOldPath, err := normalizeSSHSandboxCLIPath(sshFileOldPath, false)
+	if err != nil {
+		fatal("%v", err)
+	}
+	cleanNewPath, err := normalizeSSHSandboxCLIPath(sshFileNewPath, false)
+	if err != nil {
+		fatal("%v", err)
+	}
+	body["oldPath"] = cleanOldPath
+	body["newPath"] = cleanNewPath
 
 	respBody, status, err := apiPost("/api/files/ssh/rename", body, cfg)
 	if err != nil {
@@ -199,7 +223,7 @@ func runSSHFileRename(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, respBody)
 	if !quiet {
-		fmt.Printf("Remote path %q renamed to %q\n", sshFileOldPath, sshFileNewPath)
+		fmt.Printf("Sandbox path %q renamed to %q\n", cleanOldPath, cleanNewPath)
 	}
 }
 
@@ -213,10 +237,14 @@ func runSSHFileUpload(cmd *cobra.Command, args []string) {
 	if conn.Type != "SSH" {
 		fatal("connection %q is type %s, not SSH", conn.Name, conn.Type)
 	}
+	cleanRemotePath, err := normalizeSSHSandboxCLIPath(sshFileRemotePath, false)
+	if err != nil {
+		fatal("%v", err)
+	}
 
 	fields := map[string]string{
 		"connectionId": body["connectionId"].(string),
-		"remotePath":   strings.TrimSpace(sshFileRemotePath),
+		"remotePath":   cleanRemotePath,
 	}
 	if value := strings.TrimSpace(sshFileOverrides.Username); value != "" {
 		fields["username"] = value
@@ -251,7 +279,11 @@ func runSSHFileDownload(cmd *cobra.Command, args []string) {
 	if conn.Type != "SSH" {
 		fatal("connection %q is type %s, not SSH", conn.Name, conn.Type)
 	}
-	body["path"] = strings.TrimSpace(sshFilePath)
+	cleanPath, err := normalizeSSHSandboxCLIPath(sshFilePath, false)
+	if err != nil {
+		fatal("%v", err)
+	}
+	body["path"] = cleanPath
 
 	respBody, status, err := apiPost("/api/files/ssh/download", body, cfg)
 	if err != nil {
@@ -259,12 +291,12 @@ func runSSHFileDownload(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, respBody)
 
-	destPath := resolveSSHDownloadDestination(strings.TrimSpace(sshFilePath), strings.TrimSpace(sshFileDownloadDst))
+	destPath := resolveSSHDownloadDestination(cleanPath, strings.TrimSpace(sshFileDownloadDst))
 	if err := writeBytesToPath(destPath, respBody); err != nil {
 		fatal("%v", err)
 	}
 	if !quiet {
-		fmt.Printf("Downloaded %q to %s\n", sshFilePath, destPath)
+		fmt.Printf("Downloaded %q to %s\n", cleanPath, destPath)
 	}
 }
 
@@ -279,4 +311,36 @@ func resolveSSHDownloadDestination(remotePath, destination string) string {
 		return filepath.Join(destination, path.Base(remotePath))
 	}
 	return destination
+}
+
+func normalizeSSHSandboxCLIPath(input string, allowRoot bool) (string, error) {
+	raw := strings.TrimSpace(input)
+	if raw == "" {
+		if allowRoot {
+			return ".", nil
+		}
+		return "", errors.New("path is required")
+	}
+	if raw == "/" || strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "\\") || strings.Contains(raw, "://") || strings.HasPrefix(strings.ToLower(raw), "file:") {
+		return "", errors.New(sshSandboxRelativePathErrorText)
+	}
+	if len(raw) >= 2 && ((raw[0] >= 'a' && raw[0] <= 'z') || (raw[0] >= 'A' && raw[0] <= 'Z')) && raw[1] == ':' {
+		return "", errors.New(sshSandboxRelativePathErrorText)
+	}
+	for _, segment := range strings.Split(strings.ReplaceAll(raw, "\\", "/"), "/") {
+		if segment == ".." {
+			return "", errors.New(sshSandboxRelativePathErrorText)
+		}
+	}
+	clean := path.Clean(strings.TrimPrefix(raw, "./"))
+	if clean == "." {
+		if allowRoot {
+			return ".", nil
+		}
+		return "", errors.New(sshSandboxRelativePathErrorText)
+	}
+	if clean == ".." || strings.HasPrefix(clean, "../") || strings.HasPrefix(clean, "/") {
+		return "", errors.New(sshSandboxRelativePathErrorText)
+	}
+	return clean, nil
 }

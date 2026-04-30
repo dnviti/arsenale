@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-11T11:45:00Z
+generated-at: 2026-04-17T17:56:02Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -115,8 +115,7 @@ Installer-driven development uses the same capability and routing model as produ
 | `ssh-gateway` | `gateways/ssh-gateway/Dockerfile` | Alpine runtime, SSHD, gRPC key server, tunnel agent |
 | `guacd` | `gateways/guacd/Dockerfile` | Alpine runtime, Guacamole server packages, tunnel agent |
 | `guacenc` | `gateways/guacenc/Dockerfile` | Custom build with `guacenc`, `agg`, and Go wrapper |
-| `tunnel-agent` | `gateways/tunnel-agent/Dockerfile` | Standalone Go tunnel agent binary |
-| `rdgw` | `gateways/rdgw/Dockerfile` | Native RD Gateway service for inbound RDP clients |
+| `tunnel-agent` | `gateways/tunnel-agent/Dockerfile` | Standalone Go tunnel agent |
 | `recording-worker` | `backend/Dockerfile` with `SERVICE=recording-worker` | Recording conversion and retention worker |
 
 Important implementation details:
@@ -255,29 +254,6 @@ Each demo database now exposes the same richer baseline shape with `demo_custome
 
 This makes the dev stack suitable for full-stack session, gateway, and DB proxy testing without touching the application's own PostgreSQL data.
 
-## Standalone Gateway Compose Files
-
-Each installable gateway directory includes a standalone Docker Compose entrypoint for remote gateway hosts:
-
-| Directory | Compose role |
-|-----------|--------------|
-| `gateways/ssh-gateway/` | Tunnel-backed SSH gateway, with an optional managed-key override |
-| `gateways/guacd/` | Tunnel-backed RDP/VNC gateway with TLS-enabled guacd |
-| `gateways/db-proxy/` | Tunnel-backed database query gateway |
-| `gateways/tunnel-agent/` | Standalone agent for an already-running local service |
-| `gateways/guacenc/` | Direct HTTPS recording conversion service |
-| `gateways/rdgw/` | Direct inbound native RD Gateway service |
-
-Tunnel-backed compose files require the one-time tunnel token plus mounted client certificate material. Generate those values with:
-
-```bash
-arsenale --server https://arsenale.example.com gateway tunnel-token create <gateway-id> --bundle-dir <gateway-dir>
-```
-
-The command writes `tunnel.env` plus `certs/tunnel-client-cert.pem` and `certs/tunnel-client-key.pem`. Copy `.env.example` to `.env`, fill the gateway-specific non-tunnel settings, and run `docker compose --env-file .env --env-file tunnel.env up -d` from the gateway directory.
-
-These files are for standalone gateway installs against an existing Arsenale server. They do not replace the Ansible installer, which remains the source of truth for full-stack Podman Compose and Kubernetes installs.
-
 ## 🚢 CI/CD Workflows
 
 | Workflow | Purpose |
@@ -292,6 +268,8 @@ Notable facts from the workflow definitions:
 
 - backend verification includes `go vet` and `go test -race`,
 - gateway verification runs `go vet` and `go test -race` for the Go modules under `gateways/`,
+- docker-build publishes `:latest` from `develop`, `:stable` from `main`, and semver tags only for version tags whose commits are on `origin/main` ancestry,
+- gateways-build follows the same channel split for `develop`, `main`, and main-ancestry semver tags,
 - release artifacts currently center on the CLI, not full application bundles.
 
 ## 📦 Compose Project Helper

@@ -26,28 +26,50 @@ import {
   SettingsSummaryItem,
 } from './settings-ui';
 
-const PERMISSION_LABELS: Record<PermissionFlag, string> = {
+type EditablePermissionFlag = Exclude<PermissionFlag, 'canManageSessions'>;
+
+const EDITABLE_PERMISSION_FLAGS: EditablePermissionFlag[] = [
+  'canConnect',
+  'canCreateConnections',
+  'canManageConnections',
+  'canViewCredentials',
+  'canShareConnections',
+  'canViewAuditLog',
+  'canViewSessions',
+  'canObserveSessions',
+  'canControlSessions',
+  'canManageGateways',
+  'canManageUsers',
+  'canManageSecrets',
+  'canManageTenantSettings',
+];
+
+const PERMISSION_LABELS: Record<EditablePermissionFlag, string> = {
   canConnect: 'Connect to machines',
   canCreateConnections: 'Create connections',
   canManageConnections: 'Manage connections',
   canViewCredentials: 'View credentials',
   canShareConnections: 'Share connections',
   canViewAuditLog: 'View audit log',
-  canManageSessions: 'Manage sessions',
+  canViewSessions: 'View active sessions',
+  canObserveSessions: 'Observe live sessions',
+  canControlSessions: 'Control active sessions',
   canManageGateways: 'Manage gateways',
   canManageUsers: 'Manage users',
   canManageSecrets: 'Manage secrets',
   canManageTenantSettings: 'Manage tenant settings',
 };
 
-const PERMISSION_DESCRIPTIONS: Record<PermissionFlag, string> = {
+const PERMISSION_DESCRIPTIONS: Record<EditablePermissionFlag, string> = {
   canConnect: 'Allow the user to start remote sessions and database connections.',
   canCreateConnections: 'Allow creating new saved connection records.',
   canManageConnections: 'Allow editing and deleting saved connections.',
   canViewCredentials: 'Allow seeing stored credentials and secret-backed values.',
   canShareConnections: 'Allow granting other people access to shared resources.',
   canViewAuditLog: 'Allow opening organization-wide audit history.',
-  canManageSessions: 'Allow terminating or administrating active sessions.',
+  canViewSessions: 'Allow opening the Active Sessions workspace and reviewing current session state.',
+  canObserveSessions: 'Allow live session observation capabilities when observation tools are enabled.',
+  canControlSessions: 'Allow pausing, resuming, and terminating active sessions.',
   canManageGateways: 'Allow editing gateway infrastructure and templates.',
   canManageUsers: 'Allow inviting, editing, and removing members.',
   canManageSecrets: 'Allow managing secrets in the keychain and external vault links.',
@@ -56,7 +78,7 @@ const PERMISSION_DESCRIPTIONS: Record<PermissionFlag, string> = {
 
 const PERMISSION_GROUPS: Array<{
   description: string;
-  flags: PermissionFlag[];
+  flags: EditablePermissionFlag[];
   title: string;
 }> = [
   {
@@ -72,7 +94,7 @@ const PERMISSION_GROUPS: Array<{
   {
     title: 'Operations & review',
     description: 'Operational control over sessions, audit visibility, and gateway health.',
-    flags: ['canViewAuditLog', 'canManageSessions', 'canManageGateways'],
+    flags: ['canViewAuditLog', 'canViewSessions', 'canObserveSessions', 'canControlSessions', 'canManageGateways'],
   },
   {
     title: 'Administration',
@@ -97,7 +119,7 @@ export default function PermissionOverridesDialog({
   userName,
 }: PermissionOverridesDialogProps) {
   const [data, setData] = useState<UserPermissionsData | null>(null);
-  const [localOverrides, setLocalOverrides] = useState<Record<string, boolean>>({});
+  const [localOverrides, setLocalOverrides] = useState<Partial<Record<EditablePermissionFlag, boolean>>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -109,7 +131,7 @@ export default function PermissionOverridesDialog({
     try {
       const result = await getUserPermissions(tenantId, userId);
       setData(result);
-      setLocalOverrides(result.overrides ?? {});
+      setLocalOverrides(sanitizePermissionOverrides(result.overrides));
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to load permissions'));
     } finally {
@@ -149,14 +171,14 @@ export default function PermissionOverridesDialog({
     );
   }, [data, localOverrides]);
 
-  const getRoleDefault = (flag: PermissionFlag) => data?.defaults[flag] ?? false;
+  const getRoleDefault = (flag: EditablePermissionFlag) => data?.defaults[flag] ?? false;
 
-  const getEffectiveValue = (flag: PermissionFlag) =>
+  const getEffectiveValue = (flag: EditablePermissionFlag) =>
     (flag in localOverrides ? localOverrides[flag] : getRoleDefault(flag));
 
-  const isOverridden = (flag: PermissionFlag) => flag in localOverrides;
+  const isOverridden = (flag: EditablePermissionFlag) => flag in localOverrides;
 
-  const handleToggle = (flag: PermissionFlag, checked: boolean) => {
+  const handleToggle = (flag: EditablePermissionFlag, checked: boolean) => {
     setLocalOverrides((current) => {
       const roleDefault = getRoleDefault(flag);
       if (roleDefault === checked) {
@@ -176,7 +198,7 @@ export default function PermissionOverridesDialog({
       const overrides = overrideCount > 0 ? localOverrides : null;
       const result = await updateUserPermissions(tenantId, userId, overrides);
       setData(result);
-      setLocalOverrides(result.overrides ?? {});
+      setLocalOverrides(sanitizePermissionOverrides(result.overrides));
       onClose();
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to update permissions'));
@@ -315,4 +337,19 @@ export default function PermissionOverridesDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function sanitizePermissionOverrides(
+  overrides: Record<string, boolean> | null | undefined,
+): Partial<Record<EditablePermissionFlag, boolean>> {
+  if (!overrides) {
+    return {};
+  }
+
+  return EDITABLE_PERMISSION_FLAGS.reduce<Partial<Record<EditablePermissionFlag, boolean>>>((accumulator, flag) => {
+    if (flag in overrides) {
+      accumulator[flag] = overrides[flag];
+    }
+    return accumulator;
+  }, {});
 }

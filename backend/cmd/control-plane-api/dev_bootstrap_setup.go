@@ -128,12 +128,23 @@ SET role = 'OWNER',
 }
 
 func ensureBootstrapSSHKeyPair(ctx context.Context, deps *apiDependencies, tenantID, userID string) error {
-	var exists bool
-	if err := deps.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "SshKeyPair" WHERE "tenantId" = $1)`, tenantID).Scan(&exists); err != nil {
-		return fmt.Errorf("check tenant ssh key pair: %w", err)
-	}
-	if exists {
+	var stored encryptedValue
+	err := deps.db.QueryRow(ctx, `
+SELECT "encryptedPrivateKey", "privateKeyIV", "privateKeyTag"
+FROM "SshKeyPair"
+WHERE "tenantId" = $1
+`, tenantID).Scan(&stored.Ciphertext, &stored.IV, &stored.Tag)
+	if err == nil {
+		if _, decryptErr := decryptBootstrapValue(deps.gatewayService.ServerEncryptionKey, stored); decryptErr == nil {
+			return nil
+		}
+		if _, rotateErr := deps.gatewayService.RotateSSHKeyPair(ctx, userID, tenantID, devBootstrapIP); rotateErr != nil {
+			return fmt.Errorf("rotate tenant ssh key pair: %w", rotateErr)
+		}
 		return nil
+	}
+	if err != pgx.ErrNoRows {
+		return fmt.Errorf("check tenant ssh key pair: %w", err)
 	}
 	if _, err := deps.gatewayService.GenerateSSHKeyPair(ctx, userID, tenantID, devBootstrapIP); err != nil {
 		return fmt.Errorf("generate tenant ssh key pair: %w", err)

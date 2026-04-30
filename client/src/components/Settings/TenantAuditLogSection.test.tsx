@@ -161,8 +161,8 @@ describe('TenantAuditLogSection', () => {
     expect(screen.getByText('Organization Audit Log')).toBeInTheDocument();
     expect(screen.getByLabelText('Search activity')).toBeInTheDocument();
     expect(screen.getByText('Flagged Only')).toBeInTheDocument();
-    expect(screen.getAllByText('Admin').length).toBeGreaterThan(0);
-    expect(screen.getByText('Flagged')).toBeInTheDocument();
+    expect((await screen.findAllByText('Admin')).length).toBeGreaterThan(0);
+    expect(await screen.findByText('Flagged')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Show Details' }));
     expect(await screen.findByText('Structured details')).toBeInTheDocument();

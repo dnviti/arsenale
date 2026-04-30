@@ -416,14 +416,16 @@ __marimo__/
 recordings/
 
 # Podman/Docker compose file-based secrets
-secrets/
+/secrets/
 
 # Ansible Vault (encrypted secrets) and source env files
 deployment/ansible/inventory/group_vars/all/vault.yml
 deployment/ansible/SECRETS.env
+deployment/ansible/.vault-pass
 
 # Ansible-generated local compose files
 docker-compose.yml
 
 *.csr
-deployment/ansible/.vault-pass
+
+.sisyphus/
