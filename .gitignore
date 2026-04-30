@@ -426,3 +426,4 @@ deployment/ansible/SECRETS.env
 docker-compose.yml
 
 *.csr
+deployment/ansible/.vault-pass
