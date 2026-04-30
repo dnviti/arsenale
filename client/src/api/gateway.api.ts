@@ -406,6 +406,13 @@ export interface TunnelTokenResponse {
   token: string;
   tunnelEnabled: boolean;
   tunnelConnected: boolean;
+  gatewayId: string;
+  gatewayType: string;
+  tunnelLocalHost: string;
+  tunnelLocalPort: number;
+  tunnelClientCert: string;
+  tunnelClientKey: string;
+  tunnelClientCertExp?: string;
 }
 
 export interface TunnelOverviewData {

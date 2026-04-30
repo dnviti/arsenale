@@ -48,18 +48,38 @@ describe('loadConfig', () => {
   });
 
   it('returns a valid config when all required vars are set', () => {
-    process.env.TUNNEL_SERVER_URL = 'wss://example.com/tunnel';
+    process.env.TUNNEL_SERVER_URL = 'wss://example.com/api/tunnel/connect';
     process.env.TUNNEL_TOKEN = 'abc123';
     process.env.TUNNEL_GATEWAY_ID = 'gw-uuid-001';
     process.env.TUNNEL_LOCAL_PORT = '4822';
 
     const cfg = loadConfig();
     expect(cfg).not.toBeNull();
-    expect(cfg!.serverUrl).toBe('wss://example.com/tunnel');
+    expect(cfg!.serverUrl).toBe('wss://example.com/api/tunnel/connect');
     expect(cfg!.token).toBe('abc123');
     expect(cfg!.gatewayId).toBe('gw-uuid-001');
     expect(cfg!.localServicePort).toBe(4822);
     expect(cfg!.localServiceHost).toBe('127.0.0.1');
+  });
+
+  it('normalizes an Arsenale base URL to the tunnel broker websocket path', () => {
+    process.env.TUNNEL_SERVER_URL = 'https://arsenale.example.com';
+    process.env.TUNNEL_TOKEN = 'abc123';
+    process.env.TUNNEL_GATEWAY_ID = 'gw-uuid-001';
+    process.env.TUNNEL_LOCAL_PORT = '4822';
+
+    const cfg = loadConfig();
+    expect(cfg!.serverUrl).toBe('wss://arsenale.example.com/api/tunnel/connect');
+  });
+
+  it('preserves an explicit websocket tunnel broker URL', () => {
+    process.env.TUNNEL_SERVER_URL = 'wss://arsenale.example.com/custom/tunnel';
+    process.env.TUNNEL_TOKEN = 'abc123';
+    process.env.TUNNEL_GATEWAY_ID = 'gw-uuid-001';
+    process.env.TUNNEL_LOCAL_PORT = '4822';
+
+    const cfg = loadConfig();
+    expect(cfg!.serverUrl).toBe('wss://arsenale.example.com/custom/tunnel');
   });
 
   it('uses default values for optional settings', () => {

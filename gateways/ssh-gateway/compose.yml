@@ -1,0 +1,30 @@
+services:
+  ssh-gateway:
+    image: ${SSH_GATEWAY_IMAGE:-ghcr.io/dnviti/arsenale/ssh-gateway:latest}
+    container_name: ${SSH_GATEWAY_CONTAINER_NAME:-arsenale-ssh-gateway}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      SSH_PORT: "${SSH_PORT:-2222}"
+      SSH_AUTHORIZED_KEYS: "${SSH_AUTHORIZED_KEYS:-}"
+      TUNNEL_SERVER_URL: "${TUNNEL_SERVER_URL:?set TUNNEL_SERVER_URL from arsenale-cli bundle output}"
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:?set TUNNEL_TOKEN from arsenale-cli bundle output}"
+      TUNNEL_GATEWAY_ID: "${TUNNEL_GATEWAY_ID:?set TUNNEL_GATEWAY_ID from arsenale-cli bundle output}"
+      TUNNEL_LOCAL_HOST: "${TUNNEL_LOCAL_HOST:-127.0.0.1}"
+      TUNNEL_LOCAL_PORT: "${TUNNEL_LOCAL_PORT:-2222}"
+      TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
+      TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
+    volumes:
+      - ${TUNNEL_CLIENT_CERT_FILE:?set TUNNEL_CLIENT_CERT_FILE from arsenale-cli bundle output}:/tunnel-certs/client-cert.pem:ro
+      - ${TUNNEL_CLIENT_KEY_FILE:?set TUNNEL_CLIENT_KEY_FILE from arsenale-cli bundle output}:/tunnel-certs/client-key.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost ${SSH_PORT:-2222} || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

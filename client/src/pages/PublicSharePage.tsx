@@ -3,7 +3,7 @@ import { LoaderCircle } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import AuthCodeInput from '@/components/auth/AuthCodeInput';
 import AuthLayout from '@/components/auth/AuthLayout';
-import SecretPayloadView from '@/components/secrets/SecretPayloadView';
+import SecretPayloadView from '@/components/Keychain/SecretPayloadView';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {

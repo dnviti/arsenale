@@ -190,6 +190,8 @@ Interactive query protocols currently supported:
 
 DB2 metadata fields exist in the connection schema, but DB2 is not active in the current query protocol switch.
 
+Standalone gateway installs live beside each gateway image under `gateways/*/compose.yml`. Tunnel-backed installs (`ssh-gateway`, `guacd`, `db-proxy`, and standalone `tunnel-agent`) require a CLI-generated bundle from `arsenale gateway tunnel-token create <id> --bundle-dir <dir>`, because the tunnel broker requires both token and gateway client certificate material. `guacenc` and `rdgw` are direct HTTPS services with their own auth tokens and TLS cert/key mounts.
+
 ## ⚙️ Configuration Truth
 
 Authoritative inputs:

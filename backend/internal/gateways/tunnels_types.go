@@ -11,9 +11,16 @@ const (
 )
 
 type tunnelTokenResponse struct {
-	Token           string `json:"token"`
-	TunnelEnabled   bool   `json:"tunnelEnabled"`
-	TunnelConnected bool   `json:"tunnelConnected"`
+	Token            string     `json:"token"`
+	TunnelEnabled    bool       `json:"tunnelEnabled"`
+	TunnelConnected  bool       `json:"tunnelConnected"`
+	GatewayID        string     `json:"gatewayId"`
+	GatewayType      string     `json:"gatewayType"`
+	TunnelLocalHost  string     `json:"tunnelLocalHost"`
+	TunnelLocalPort  int        `json:"tunnelLocalPort"`
+	TunnelClientCert string     `json:"tunnelClientCert"`
+	TunnelClientKey  string     `json:"tunnelClientKey"`
+	TunnelClientExp  *time.Time `json:"tunnelClientCertExp,omitempty"`
 }
 
 type revokeTunnelTokenResponse struct {

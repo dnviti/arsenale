@@ -98,7 +98,7 @@ export default defineConfig({
     // Emit font files instead of inlining them as data: URLs so CSP can stay same-origin only.
     assetsInlineLimit: 0,
     chunkSizeWarningLimit: 700,
-    rolldownOptions: {
+    rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/') || id.includes('node_modules/react-router')) {

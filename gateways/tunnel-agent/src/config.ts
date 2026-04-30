@@ -21,7 +21,7 @@ function getPackageVersion(): string {
 }
 
 export interface TunnelConfig {
-  /** WSS URL of the TunnelBroker server, e.g. wss://my-server.example.com/tunnel */
+  /** Arsenale server URL or WSS URL of the TunnelBroker server */
   serverUrl: string;
   /** Bearer token used in the Authorization header */
   token: string;
@@ -71,6 +71,35 @@ function readOptionalPem(inlineValue: string | undefined, filePathValue: string 
   }
 }
 
+function normalizeTunnelServerUrl(rawValue: string): string {
+  const trimmed = rawValue.trim();
+  if (!trimmed) return trimmed;
+
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `wss://${trimmed}`;
+
+  try {
+    const parsed = new URL(withScheme);
+    const isExplicitWebSocket = parsed.protocol === 'ws:' || parsed.protocol === 'wss:';
+    if (parsed.protocol === 'https:') parsed.protocol = 'wss:';
+    else if (parsed.protocol === 'http:') parsed.protocol = 'ws:';
+    else if (!isExplicitWebSocket) parsed.protocol = 'ws:';
+
+    const path = parsed.pathname.replace(/\/+$/, '');
+    if (isExplicitWebSocket && path !== '') {
+      parsed.pathname = path;
+      parsed.hash = '';
+      return parsed.toString();
+    }
+    parsed.pathname = path.endsWith('/api/tunnel/connect')
+      ? path
+      : `${path}/api/tunnel/connect`;
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return trimmed;
+  }
+}
+
 /** Build config from environment. Returns null if tunnel env vars are absent (dormant mode). */
 export function loadConfig(): TunnelConfig | null {
   const serverUrl = process.env.TUNNEL_SERVER_URL?.trim();
@@ -98,7 +127,7 @@ export function loadConfig(): TunnelConfig | null {
   }
 
   // At this point all required vars are set (missing.length === 0 or we exited)
-  const resolvedServerUrl = serverUrl as string;
+  const resolvedServerUrl = normalizeTunnelServerUrl(serverUrl as string);
   const resolvedToken = token as string;
   const resolvedGatewayId = gatewayId as string;
   const resolvedPortStr = localServicePortStr as string;

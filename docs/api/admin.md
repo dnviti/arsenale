@@ -179,7 +179,14 @@ Generate a new tunnel token for a gateway. The plain token is returned only once
 {
   "token": "tunneltok_abc123...",
   "tunnelEnabled": true,
-  "tunnelConnected": false
+  "tunnelConnected": false,
+  "gatewayId": "gw_123",
+  "gatewayType": "GUACD",
+  "tunnelLocalHost": "127.0.0.1",
+  "tunnelLocalPort": 4822,
+  "tunnelClientCert": "-----BEGIN CERTIFICATE-----...",
+  "tunnelClientKey": "-----BEGIN PRIVATE KEY-----...",
+  "tunnelClientCertExp": "2026-07-29T12:00:00Z"
 }
 ```
 
@@ -188,6 +195,10 @@ Generate a new tunnel token for a gateway. The plain token is returned only once
 | `token` | `string` | Plain-text tunnel token (shown only once) |
 | `tunnelEnabled` | `boolean` | Whether tunnel is now enabled on the gateway |
 | `tunnelConnected` | `boolean` | Whether a tunnel client is currently connected |
+| `gatewayId` / `gatewayType` | `string` | Gateway identity for compose and agent config |
+| `tunnelLocalHost` / `tunnelLocalPort` | `string` / `number` | Local service endpoint the agent should proxy |
+| `tunnelClientCert` / `tunnelClientKey` | `string` | One-time mTLS client material required by the tunnel broker |
+| `tunnelClientCertExp` | `string` | Client certificate expiration timestamp |
 
 #### `DELETE /api/gateways/:id/tunnel-token`
 

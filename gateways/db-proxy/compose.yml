@@ -1,0 +1,30 @@
+services:
+  db-proxy:
+    image: ${DB_PROXY_IMAGE:-ghcr.io/dnviti/arsenale/db-proxy:latest}
+    container_name: ${DB_PROXY_CONTAINER_NAME:-arsenale-db-proxy}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DB_LISTEN_PORT: "${DB_LISTEN_PORT:-5432}"
+      TUNNEL_SERVER_URL: "${TUNNEL_SERVER_URL:?set TUNNEL_SERVER_URL from arsenale-cli bundle output}"
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:?set TUNNEL_TOKEN from arsenale-cli bundle output}"
+      TUNNEL_GATEWAY_ID: "${TUNNEL_GATEWAY_ID:?set TUNNEL_GATEWAY_ID from arsenale-cli bundle output}"
+      TUNNEL_LOCAL_HOST: "${TUNNEL_LOCAL_HOST:-127.0.0.1}"
+      TUNNEL_LOCAL_PORT: "${TUNNEL_LOCAL_PORT:-5432}"
+      TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
+      TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
+    volumes:
+      - ${TUNNEL_CLIENT_CERT_FILE:?set TUNNEL_CLIENT_CERT_FILE from arsenale-cli bundle output}:/tunnel-certs/client-cert.pem:ro
+      - ${TUNNEL_CLIENT_KEY_FILE:?set TUNNEL_CLIENT_KEY_FILE from arsenale-cli bundle output}:/tunnel-certs/client-key.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${DB_LISTEN_PORT:-5432}/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

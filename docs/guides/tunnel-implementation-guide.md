@@ -40,7 +40,7 @@ The tunnel system connects remote gateway agents to the Arsenale server over a s
 
 ### Data Flow for a Tunneled Session
 
-1. **Agent connects** -- The `TunnelAgent` on the remote network opens a WSS connection to `/api/tunnel/connect` with a `Bearer` token and `X-Gateway-Id` header.
+1. **Agent connects** -- The `TunnelAgent` on the remote network opens a WSS connection to `/api/tunnel/connect` with a `Bearer` token, `X-Gateway-Id`, and client certificate header.
 2. **Server authenticates** -- `tunnel.handler.ts` extracts headers, calls `authenticateTunnelRequest()`, completes the WebSocket upgrade, and calls `registerTunnel()`.
 3. **Session request** -- A user opens an SSH/RDP/VNC session. The session controller (or SSH socket handler) detects `gateway.tunnelEnabled` and calls `openStream()` (SSH) or `createTcpProxy()` (RDP/VNC).
 4. **OPEN frame** -- The broker sends an OPEN frame with `host:port` payload through the WebSocket.
@@ -315,17 +315,21 @@ Configuration is entirely environment-driven (`gateways/tunnel-agent/src/config.
 
 | Variable                     | Required | Default     | Description                              |
 |------------------------------|----------|-------------|------------------------------------------|
-| `TUNNEL_SERVER_URL`          | Yes      | --          | WSS URL of the TunnelBroker              |
-| `TUNNEL_TOKEN`               | Yes      | --          | Bearer token for authentication          |
+| `TUNNEL_SERVER_URL`          | Yes      | --          | Arsenale server URL or TunnelBroker WSS URL |
+| `TUNNEL_TOKEN`               | Yes      | --          | Bearer token from the tunnel deployment bundle |
 | `TUNNEL_GATEWAY_ID`          | Yes      | --          | Gateway UUID                             |
 | `TUNNEL_LOCAL_PORT`          | Yes      | --          | Local service port to proxy to           |
 | `TUNNEL_LOCAL_HOST`          | No       | `localhost` | Local service host                       |
 | `TUNNEL_CA_CERT`             | No       | --          | PEM CA cert for server verification      |
-| `TUNNEL_CLIENT_CERT`         | No       | --          | PEM client cert for mTLS                 |
-| `TUNNEL_CLIENT_KEY`          | No       | --          | PEM client key for mTLS                  |
+| `TUNNEL_CLIENT_CERT_FILE`    | Broker auth | --       | Path to CLI-generated client cert        |
+| `TUNNEL_CLIENT_KEY_FILE`     | Broker auth | --       | Path to CLI-generated client key         |
+| `TUNNEL_CLIENT_CERT`         | Broker auth | --       | Inline PEM client cert alternative       |
+| `TUNNEL_CLIENT_KEY`          | Broker auth | --       | Inline PEM client key alternative        |
 | `TUNNEL_PING_INTERVAL_MS`   | No       | `15000`     | Heartbeat interval                       |
 | `TUNNEL_RECONNECT_INITIAL_MS`| No      | `1000`      | Initial reconnect backoff                |
 | `TUNNEL_RECONNECT_MAX_MS`   | No       | `60000`     | Maximum reconnect backoff                |
+
+`loadConfig()` validates the four core runtime variables. The broker authentication path additionally requires client certificate material, either via the `_FILE` variables used by compose installs or the inline PEM variables used by managed runtime injection.
 
 **Dormant mode:** If none of `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, or `TUNNEL_GATEWAY_ID` are set, `loadConfig()` returns `null` and the agent exits cleanly. This allows the same Docker image to be deployed with or without tunnel functionality. However, if some but not all required vars are set, the agent exits with an error code -- partial configuration is treated as a misconfiguration.
 

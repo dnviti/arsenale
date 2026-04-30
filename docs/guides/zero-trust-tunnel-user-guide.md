@@ -26,7 +26,7 @@ Traditional remote-desktop gateways require inbound firewall rules -- exposing s
  |  (local :4822   |     (TLS)         | (WebSocket server)|
  |   or :2222)     |                    |                   |
  |                 |                    +-------------------+
- |  tunnel-agent --+------>------------>|  /tunnel endpoint |
+ |  tunnel-agent --+------>------------>| /api/tunnel/connect |
  +-----------------+                    +-------------------+
        ^                                        |
        |  TCP localhost                         | Proxied
@@ -49,19 +49,20 @@ Get a tunnel-connected gateway running in under 5 minutes:
 
 1. **Create a gateway** in the Arsenale UI: navigate to **Settings > Gateways > Add Gateway**. Choose type `GUACD` or `SSH_BASTION`, fill in a name, and save.
 
-2. **Enable the tunnel**: in the gateway edit dialog, expand the **Zero-Trust Tunnel** accordion and click **Enable Zero-Trust Tunnel**. The UI generates a one-time token.
+2. **Enable the tunnel**: in the gateway edit dialog, expand the **Zero-Trust Tunnel** accordion and click **Enable Zero-Trust Tunnel**.
 
-3. **Copy the Docker command**: the UI presents a ready-to-paste `docker run` command. Copy it.
-
-4. **Run it on the remote host**:
+3. **Generate the compose bundle** with the CLI on the remote gateway host:
 
    ```bash
-   docker run -d --restart=unless-stopped \
-     -e TUNNEL_TOKEN="<token>" \
-     -e TUNNEL_SERVER_URL="https://arsenale.example.com" \
-     -e TUNNEL_GATEWAY_ID="<uuid>" \
-     -e TUNNEL_LOCAL_PORT="4822" \
-     arsenale/tunnel-agent:latest
+   cd gateways/guacd
+   cp .env.example .env
+   arsenale --server https://arsenale.example.com gateway tunnel-token create <gateway-id> --bundle-dir .
+   ```
+
+4. **Start the gateway**:
+
+   ```bash
+   docker compose --env-file .env --env-file tunnel.env up -d
    ```
 
 5. **Verify**: back in the gateway dialog, the status chip turns green with **Connected** and the "since" timestamp appears.
@@ -86,13 +87,21 @@ When a tunnel is enabled, the **Host** field becomes read-only (labeled "Managed
 1. Edit the gateway from the gateway list.
 2. Expand the **Zero-Trust Tunnel** accordion.
 3. Click **Enable Zero-Trust Tunnel**.
-4. Deploy the agent using the generated token (see [Deploying the Tunnel Agent](#deploying-the-tunnel-agent)).
+4. Deploy the agent using the generated tunnel bundle (see [Deploying the Tunnel Agent](#deploying-the-tunnel-agent)).
 
 ### Generating a Tunnel Token
 
-Tokens are generated automatically when you enable a tunnel or rotate credentials. The token is displayed **once** in a read-only text field with a copy button. Store it securely -- it cannot be retrieved again after closing the dialog.
+Tokens are generated automatically when you enable a tunnel or rotate credentials. The token and mTLS client certificate material are displayed or returned **once**. Store them securely -- they cannot be retrieved again after closing the dialog or CLI command.
 
 For managed gateways (containers orchestrated by Arsenale), the token is injected into the container environment automatically and shown in the dialog for reference.
+
+For standalone compose installs, prefer the CLI bundle writer:
+
+```bash
+arsenale --server https://arsenale.example.com gateway tunnel-token create <gateway-id> --bundle-dir <gateway-dir>
+```
+
+This writes `certs/tunnel-client-cert.pem`, `certs/tunnel-client-key.pem`, and `tunnel.env` values suitable for the compose files under `gateways/`.
 
 ### Revoking / Rotating Tokens
 
@@ -107,64 +116,18 @@ Both actions require confirmation and take effect immediately.
 
 The tunnel agent is a lightweight Node.js process. It can run in three deployment modes.
 
-### Docker Run (Single Container)
-
-The simplest approach -- a single standalone container:
-
-```bash
-docker run -d --restart=unless-stopped \
-  --name arsenale-tunnel \
-  -e TUNNEL_SERVER_URL="https://arsenale.example.com" \
-  -e TUNNEL_TOKEN="<your-token>" \
-  -e TUNNEL_GATEWAY_ID="<gateway-uuid>" \
-  -e TUNNEL_LOCAL_PORT="4822" \
-  arsenale/tunnel-agent:latest
-```
-
-For an SSH gateway, change `TUNNEL_LOCAL_PORT` to `2222` and ensure an sshd is reachable on that port from the container's network.
-
-The container runs as a non-root user (`agent`) and requires no volumes or capabilities.
-
 ### Docker Compose
 
-For environments where you run guacd or sshd alongside the tunnel agent:
+Each installable gateway directory includes `compose.yml`, `.env.example`, and a short README. Tunnel-backed examples require a token plus mounted client certificate and key files:
 
-```yaml
-services:
-  guacd:
-    image: guacamole/guacd:1.6.0
-    restart: always
-
-  arsenale-tunnel:
-    image: arsenale/tunnel-agent:latest
-    restart: always
-    environment:
-      TUNNEL_SERVER_URL: "https://arsenale.example.com"
-      TUNNEL_TOKEN: "<your-token>"
-      TUNNEL_GATEWAY_ID: "<gateway-uuid>"
-      TUNNEL_LOCAL_PORT: "4822"
-      TUNNEL_LOCAL_HOST: "guacd"   # service name of the guacd container
-    depends_on:
-      - guacd
+```bash
+cd gateways/ssh-gateway   # or guacd, db-proxy, tunnel-agent
+cp .env.example .env
+arsenale --server https://arsenale.example.com gateway tunnel-token create <gateway-id> --bundle-dir .
+docker compose --env-file .env --env-file tunnel.env up -d
 ```
 
-Alternatively, use the **embedded agent images** which bundle the tunnel agent directly inside the gateway container:
-
-```yaml
-services:
-  guacd:
-    build:
-      context: .
-      dockerfile: gateways/guacd/Dockerfile
-    restart: always
-    environment:
-      TUNNEL_SERVER_URL: "https://arsenale.example.com"
-      TUNNEL_TOKEN: "<your-token>"
-      TUNNEL_GATEWAY_ID: "<gateway-uuid>"
-      # TUNNEL_LOCAL_PORT defaults to 4822 via the entrypoint
-```
-
-The embedded guacd image (`gateways/guacd/Dockerfile`) and SSH gateway image (`gateways/ssh-gateway/Dockerfile`) both include a pre-built copy of the tunnel agent. The entrypoint launches the agent as a background process before starting the main service. If the `TUNNEL_SERVER_URL` variable is not set, the agent remains dormant and the container operates normally.
+The embedded `guacd`, `ssh-gateway`, and `db-proxy` images include a pre-built copy of the tunnel agent. `gateways/tunnel-agent/compose.yml` runs only the standalone sidecar agent for an already-running local service.
 
 ### Systemd Service (Bare-Metal)
 
@@ -178,7 +141,15 @@ For hosts where Docker is not available:
    npm run build
    ```
 
-2. Create a systemd unit file at `/etc/systemd/system/arsenale-tunnel.service`:
+2. Generate the tunnel bundle into the runtime directory:
+
+   ```bash
+   sudo mkdir -p /opt/arsenale-tunnel-agent
+   sudo chown "$USER" /opt/arsenale-tunnel-agent
+   arsenale --server https://arsenale.example.com gateway tunnel-token create <gateway-id> --bundle-dir /opt/arsenale-tunnel-agent
+   ```
+
+3. Create a systemd unit file at `/etc/systemd/system/arsenale-tunnel.service`:
 
    ```ini
    [Unit]
@@ -190,17 +161,15 @@ For hosts where Docker is not available:
    Type=simple
    Restart=always
    RestartSec=5
-   Environment=TUNNEL_SERVER_URL=https://arsenale.example.com
-   Environment=TUNNEL_TOKEN=<your-token>
-   Environment=TUNNEL_GATEWAY_ID=<gateway-uuid>
-   Environment=TUNNEL_LOCAL_PORT=4822
+   WorkingDirectory=/opt/arsenale-tunnel-agent
+   EnvironmentFile=/opt/arsenale-tunnel-agent/tunnel.env
    ExecStart=/usr/local/bin/node /opt/arsenale-tunnel-agent/dist/index.js
 
    [Install]
    WantedBy=multi-user.target
    ```
 
-3. Enable and start the service:
+4. Enable and start the service:
 
    ```bash
    sudo systemctl daemon-reload
@@ -234,7 +203,7 @@ spec:
             - containerPort: 4822
 
         - name: tunnel-agent
-          image: arsenale/tunnel-agent:latest
+          image: ghcr.io/dnviti/arsenale/tunnel-agent:latest
           env:
             - name: TUNNEL_SERVER_URL
               value: "https://arsenale.example.com"
@@ -249,13 +218,27 @@ spec:
                 secretKeyRef:
                   name: arsenale-tunnel-secret
                   key: token
+            - name: TUNNEL_CLIENT_CERT_FILE
+              value: /tunnel-certs/tunnel-client-cert.pem
+            - name: TUNNEL_CLIENT_KEY_FILE
+              value: /tunnel-certs/tunnel-client-key.pem
+          volumeMounts:
+            - name: tunnel-certs
+              mountPath: /tunnel-certs
+              readOnly: true
+      volumes:
+        - name: tunnel-certs
+          secret:
+            secretName: arsenale-tunnel-secret
 ```
 
-Create the secret:
+Create the secret from the CLI-generated bundle:
 
 ```bash
 kubectl create secret generic arsenale-tunnel-secret \
-  --from-literal=token=<your-token>
+  --from-literal=token=<your-token> \
+  --from-file=tunnel-client-cert.pem=certs/tunnel-client-cert.pem \
+  --from-file=tunnel-client-key.pem=certs/tunnel-client-key.pem
 ```
 
 ## Tenant-Level Tunnel Settings
@@ -388,6 +371,7 @@ Use this when:
 |-------|-------|----------|
 | Agent stays "Disconnected" | Firewall blocks outbound WSS (port 443) | Ensure the remote host can reach the server URL over HTTPS |
 | `Missing required environment variables` in agent logs | One or more of the four required env vars is not set | Set all of `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, `TUNNEL_GATEWAY_ID`, and `TUNNEL_LOCAL_PORT` |
+| Agent is rejected during authentication | Token, gateway ID, or client certificate material does not match the gateway | Regenerate the CLI bundle and redeploy both `tunnel.env` and the cert/key files |
 | Agent connects then immediately disconnects | Token was revoked or rotated | Generate a new token and redeploy the agent |
 | High RTT values (>200ms) | Network latency between agent and server | Consider a server instance closer to the remote site, or check for network congestion |
 | `TUNNEL_LOCAL_PORT must be a valid port number` | Port value is outside 1--65535 or not a number | Verify the `TUNNEL_LOCAL_PORT` value is correct (4822 for guacd, 2222 for sshd) |
@@ -402,10 +386,12 @@ All tunnel agent configuration is read from environment variables. If none of th
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `TUNNEL_SERVER_URL` | WSS URL of the Arsenale Tunnel Broker endpoint | `wss://arsenale.example.com/tunnel` |
-| `TUNNEL_TOKEN` | Bearer token for authentication (generated in the UI) | `a1b2c3d4e5f6...` |
+| `TUNNEL_SERVER_URL` | Arsenale server URL, or explicit Tunnel Broker WebSocket URL | `https://arsenale.example.com` |
+| `TUNNEL_TOKEN` | Bearer token from the CLI deployment bundle | `a1b2c3d4e5f6...` |
 | `TUNNEL_GATEWAY_ID` | UUID of the gateway this agent represents | `550e8400-e29b-41d4-a716-446655440000` |
 | `TUNNEL_LOCAL_PORT` | TCP port of the local service to proxy | `4822` (guacd) or `2222` (sshd) |
+| `TUNNEL_CLIENT_CERT_FILE` | Path to the CLI-generated client certificate, or use `TUNNEL_CLIENT_CERT` inline | `./certs/tunnel-client-cert.pem` |
+| `TUNNEL_CLIENT_KEY_FILE` | Path to the CLI-generated client private key, or use `TUNNEL_CLIENT_KEY` inline | `./certs/tunnel-client-key.pem` |
 
 ### Optional Variables
 
@@ -413,8 +399,8 @@ All tunnel agent configuration is read from environment variables. If none of th
 |----------|-------------|---------|
 | `TUNNEL_LOCAL_HOST` | Hostname or IP of the local service to proxy | `localhost` |
 | `TUNNEL_CA_CERT` | PEM-encoded CA certificate to verify the server's TLS certificate | _(system default)_ |
-| `TUNNEL_CLIENT_CERT` | PEM-encoded client certificate for mutual TLS (mTLS) | _(none)_ |
-| `TUNNEL_CLIENT_KEY` | PEM-encoded client private key for mTLS | _(none)_ |
+| `TUNNEL_CLIENT_CERT` | Inline PEM client certificate when not using `TUNNEL_CLIENT_CERT_FILE` | _(none)_ |
+| `TUNNEL_CLIENT_KEY` | Inline PEM client private key when not using `TUNNEL_CLIENT_KEY_FILE` | _(none)_ |
 | `TUNNEL_AGENT_VERSION` | Version string reported to the server in the `X-Agent-Version` header | _(read from package.json)_ |
 | `TUNNEL_PING_INTERVAL_MS` | Interval between WebSocket ping frames (milliseconds) | `15000` (15 seconds) |
 | `TUNNEL_RECONNECT_INITIAL_MS` | Initial backoff delay before reconnecting after a disconnect | `1000` (1 second) |
@@ -440,11 +426,11 @@ If **some but not all** required variables are set, the agent prints an error li
 
 - **Use HTTPS/WSS in production.** The tunnel agent connects to a `wss://` endpoint. Never use unencrypted `ws://` in production.
 - **Restrict agent source IPs.** Use the CIDR allowlist in tenant tunnel settings to limit which networks can establish tunnel connections.
-- **Use mTLS where possible.** Set `TUNNEL_CLIENT_CERT` and `TUNNEL_CLIENT_KEY` on the agent and configure the server to require client certificates for an additional layer of authentication.
+- **Keep client certificate material private.** The tunnel broker requires the token and the gateway client certificate to match; mount the CLI-generated cert/key files as read-only secrets.
 - **Configure a custom CA certificate** (`TUNNEL_CA_CERT`) if your server uses a private or internal CA rather than a publicly trusted certificate.
 - **Apply ABAC policies** to restrict session access by time window, trusted device, and MFA requirements.
 - **Monitor the event log** for unexpected connection patterns (connections from unknown IPs, frequent disconnects, off-hours activity).
 
 ### Certificate Rotation
 
-When mTLS is configured, the gateway dialog displays the client certificate expiration date. Rotating the tunnel token triggers certificate renewal. Plan for rotation before certificates expire -- the UI shows a warning when expiry is within 7 days.
+The gateway dialog displays the client certificate expiration date. Rotating the tunnel token triggers certificate renewal. Plan for rotation before certificates expire -- the UI shows a warning when expiry is within 7 days.

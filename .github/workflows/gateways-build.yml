@@ -78,6 +78,10 @@ jobs:
             dockerfile: ./gateways/db-proxy/Dockerfile
             context: .
             trivy-category: trivy-db-proxy
+          - name: rdgw
+            dockerfile: ./gateways/rdgw/Dockerfile
+            context: ./gateways/rdgw
+            trivy-category: trivy-rdgw
           - name: tunnel-agent
             dockerfile: ./gateways/tunnel-agent/Dockerfile
             context: ./gateways/tunnel-agent

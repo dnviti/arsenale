@@ -2,12 +2,15 @@ package gateways
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/jackc/pgx/v5"
 )
 
 func (s Service) GetTunnelOverview(ctx context.Context, tenantID string) (tunnelOverviewResponse, error) {
@@ -99,15 +102,87 @@ WHERE id = $1
 		return tunnelTokenResponse{}, err
 	}
 
+	bundle, err := s.loadTunnelTokenBundleTx(ctx, tx, claims.TenantID, gatewayID)
+	if err != nil {
+		return tunnelTokenResponse{}, err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return tunnelTokenResponse{}, fmt.Errorf("commit tunnel token transaction: %w", err)
 	}
 
+	bundle.Token = rawToken
+	bundle.TunnelEnabled = true
+	bundle.TunnelConnected = false
+	return bundle, nil
+}
+
+func (s Service) loadTunnelTokenBundleTx(ctx context.Context, tx pgx.Tx, tenantID, gatewayID string) (tunnelTokenResponse, error) {
+	var (
+		gatewayType         string
+		gatewayPort         int
+		tunnelClientCert    *string
+		tunnelClientKey     *string
+		tunnelClientKeyIV   *string
+		tunnelClientKeyTag  *string
+		tunnelClientCertExp sql.NullTime
+	)
+	if err := tx.QueryRow(ctx, `
+SELECT type::text, port, "tunnelClientCert", "tunnelClientKey", "tunnelClientKeyIV", "tunnelClientKeyTag", "tunnelClientCertExp"
+FROM "Gateway"
+WHERE id = $1
+  AND "tenantId" = $2
+`, gatewayID, tenantID).Scan(
+		&gatewayType,
+		&gatewayPort,
+		&tunnelClientCert,
+		&tunnelClientKey,
+		&tunnelClientKeyIV,
+		&tunnelClientKeyTag,
+		&tunnelClientCertExp,
+	); err != nil {
+		return tunnelTokenResponse{}, mapLoadGatewayError(err)
+	}
+
+	clientKey, err := decryptEncryptedField(s.ServerEncryptionKey, encryptedField{
+		Ciphertext: derefString(tunnelClientKey),
+		IV:         derefString(tunnelClientKeyIV),
+		Tag:        derefString(tunnelClientKeyTag),
+	})
+	if err != nil {
+		return tunnelTokenResponse{}, fmt.Errorf("decrypt tunnel client key: %w", err)
+	}
+
+	var certExp *time.Time
+	if tunnelClientCertExp.Valid {
+		certExp = &tunnelClientCertExp.Time
+	}
+
 	return tunnelTokenResponse{
-		Token:           rawToken,
-		TunnelEnabled:   true,
-		TunnelConnected: false,
+		GatewayID:        gatewayID,
+		GatewayType:      gatewayType,
+		TunnelLocalHost:  "127.0.0.1",
+		TunnelLocalPort:  tunnelLocalPortForGateway(gatewayType, gatewayPort),
+		TunnelClientCert: strings.TrimSpace(derefString(tunnelClientCert)),
+		TunnelClientKey:  strings.TrimSpace(clientKey),
+		TunnelClientExp:  certExp,
 	}, nil
+}
+
+func tunnelLocalPortForGateway(gatewayType string, configuredPort int) int {
+	if configuredPort > 0 {
+		return configuredPort
+	}
+	switch strings.ToUpper(strings.TrimSpace(gatewayType)) {
+	case "MANAGED_SSH", "SSH_BASTION":
+		return 2222
+	case "GUACD":
+		return 4822
+	case "DB_PROXY":
+		return 5432
+	default:
+		return 0
+	}
 }
 
 func (s Service) RevokeTunnelToken(ctx context.Context, claims authn.Claims, gatewayID, ipAddress string) (revokeTunnelTokenResponse, error) {

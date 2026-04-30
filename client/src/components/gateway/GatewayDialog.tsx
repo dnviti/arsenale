@@ -117,8 +117,6 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
   const { copied: tokenCopied, copy: copyToken } = useCopyToClipboard();
   const { copied: cmdCopied, copy: copyCmd } = useCopyToClipboard();
-  const { copied: composeCopied, copy: copyCompose } = useCopyToClipboard();
-  const { copied: systemdCopied, copy: copySystemd } = useCopyToClipboard();
 
   const isEditMode = Boolean(gateway);
   const isTunnelEnabled = gateway?.tunnelEnabled ?? false;
@@ -283,20 +281,10 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   }, [gatewayId, runTunnelAction]);
 
   const serverUrl = window.location.origin;
-  const dockerCommand = useMemo(() => {
-    if (!tunnelToken) return '';
-    return `docker run -d --restart=unless-stopped \\\n  -e TUNNEL_TOKEN="${tunnelToken}" \\\n  -e TUNNEL_SERVER_URL="${serverUrl}" \\\n  -e TUNNEL_GATEWAY_ID="${gatewayId ?? ''}" \\\n  arsenale/tunnel-agent:latest`;
-  }, [tunnelToken, serverUrl, gatewayId]);
-
-  const dockerCompose = useMemo(() => {
-    if (!tunnelToken) return '';
-    return `services:\n  arsenale-gateway:\n    image: arsenale/tunnel-agent:latest\n    restart: always\n    environment:\n      TUNNEL_SERVER_URL: "${serverUrl}"\n      TUNNEL_TOKEN: "${tunnelToken}"\n      TUNNEL_GATEWAY_ID: "${gatewayId ?? ''}"\n      TUNNEL_LOCAL_PORT: "4822"`;
-  }, [tunnelToken, serverUrl, gatewayId]);
-
-  const systemdUnit = useMemo(() => {
-    if (!tunnelToken) return '';
-    return `[Unit]\nDescription=Arsenale Tunnel Agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nEnvironment=TUNNEL_SERVER_URL=${serverUrl}\nEnvironment=TUNNEL_TOKEN=${tunnelToken}\nEnvironment=TUNNEL_GATEWAY_ID=${gatewayId ?? ''}\nEnvironment=TUNNEL_LOCAL_PORT=4822\nExecStart=/usr/local/bin/arsenale-tunnel-agent\n\n[Install]\nWantedBy=multi-user.target`;
-  }, [tunnelToken, serverUrl, gatewayId]);
+  const cliBundleCommand = useMemo(() => {
+    if (!gatewayId) return '';
+    return `arsenale --server ${serverUrl} gateway tunnel-token create ${gatewayId} --bundle-dir ./gateway-bundle`;
+  }, [serverUrl, gatewayId]);
 
   const formatUptime = (connectedAt: string): string => {
     const diff = Date.now() - new Date(connectedAt).getTime();
@@ -484,15 +472,15 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
                         {!isGroupMode && (
                           <>
-                            <p className="text-sm text-muted-foreground">Run the following Docker command on the gateway machine:</p>
+                            <p className="text-sm text-muted-foreground">Create a compose-ready tunnel bundle on the gateway machine:</p>
                             {tunnelToken ? (
                               <>
-                                <Textarea value={dockerCommand} readOnly rows={3} className="font-mono text-xs" />
-                                <Button size="sm" onClick={() => copyCmd(dockerCommand)}><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy Docker Command'}</Button>
-                                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-sm text-yellow-400">Copy this command now — the token will not be shown again after closing.</div>
+                                <Textarea value={cliBundleCommand} readOnly rows={2} className="font-mono text-xs" />
+                                <Button size="sm" onClick={() => copyCmd(cliBundleCommand)}><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy CLI Command'}</Button>
+                                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-sm text-yellow-400">Standalone compose requires the generated client certificate and key. Use the CLI bundle output for remote installs.</div>
                               </>
                             ) : (
-                              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Tunnel is enabled. Rotate the token to get a new docker run command.</div>
+                              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Tunnel is enabled. Use the CLI bundle command to rotate credentials and create the compose files locally.</div>
                             )}
                           </>
                         )}
@@ -577,8 +565,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                               <AccordionTrigger><div className="flex items-center gap-2"><Rocket className="h-4 w-4" /><span className="text-sm font-medium">Deployment Guides</span></div></AccordionTrigger>
                               <AccordionContent>
                                 <div className="space-y-4">
-                                  <div><p className="text-xs font-medium mb-1">Docker Compose</p><Textarea value={dockerCompose} readOnly rows={3} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copyCompose(dockerCompose)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{composeCopied ? 'Copied!' : 'Copy'}</Button></div>
-                                  <div><p className="text-xs font-medium mb-1">Systemd Unit</p><Textarea value={systemdUnit} readOnly rows={3} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copySystemd(systemdUnit)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{systemdCopied ? 'Copied!' : 'Copy'}</Button></div>
+                                  <div><p className="text-xs font-medium mb-1">CLI Bundle</p><Textarea value={cliBundleCommand} readOnly rows={2} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copyCmd(cliBundleCommand)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy'}</Button></div>
                                 </div>
                               </AccordionContent>
                             </AccordionItem>

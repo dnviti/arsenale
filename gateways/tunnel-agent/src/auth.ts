@@ -4,7 +4,7 @@
  * Builds the WebSocket connection options including:
  * - Authorization Bearer header
  * - X-Gateway-Id / X-Agent-Version headers
- * - Optional mTLS (client cert + CA cert via TLS options)
+ * - Client certificate header and TLS options when certificate material is provided
  */
 
 import type { ClientOptions } from 'ws';
@@ -12,7 +12,7 @@ import type { TunnelConfig } from './config';
 
 /**
  * Build the `ws` ClientOptions for the TunnelBroker WebSocket connection,
- * incorporating auth headers and optional TLS certificates.
+ * incorporating auth headers and TLS certificates when certificate material is provided.
  *
  * `ClientOptions` extends `SecureContextOptions`, so `ca`, `cert`, and `key`
  * are flat properties — not nested under a `.tls` sub-object.
@@ -30,7 +30,7 @@ export function buildWsOptions(cfg: TunnelConfig): ClientOptions {
     handshakeTimeout: 10_000,
     // CA cert for server verification (optional)
     ...(cfg.caCert ? { ca: cfg.caCert } : {}),
-    // Client certificate + key for mTLS (optional)
+    // Client certificate + key for TLS client auth when both are provided.
     ...(cfg.clientCert && cfg.clientKey
       ? { cert: cfg.clientCert, key: cfg.clientKey }
       : {}),

@@ -378,6 +378,8 @@ Notable gateway subpaths:
 - `/api/gateways/{id}/tunnel-metrics`
 - `/api/gateways/templates`
 
+`POST /api/gateways/{id}/tunnel-token` returns a one-time standalone deployment bundle in addition to the token: gateway ID/type, local tunnel host/port, client certificate, client key, and client certificate expiry. The tunnel broker requires both the token and client certificate material.
+
 ### Audit Endpoints
 
 | Method | Path | Purpose |

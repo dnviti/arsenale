@@ -147,3 +147,27 @@ func TestGenerateTunnelCertificates(t *testing.T) {
 		t.Fatalf("unexpected client cert expiry: %s", expiry)
 	}
 }
+
+func TestTunnelLocalPortForGateway(t *testing.T) {
+	tests := []struct {
+		name           string
+		gatewayType    string
+		configuredPort int
+		want           int
+	}{
+		{name: "uses configured port", gatewayType: "GUACD", configuredPort: 14822, want: 14822},
+		{name: "managed ssh fallback", gatewayType: "MANAGED_SSH", want: 2222},
+		{name: "ssh bastion fallback", gatewayType: "SSH_BASTION", want: 2222},
+		{name: "guacd fallback", gatewayType: "GUACD", want: 4822},
+		{name: "db proxy fallback", gatewayType: "DB_PROXY", want: 5432},
+		{name: "unknown fallback", gatewayType: "OTHER", want: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tunnelLocalPortForGateway(tt.gatewayType, tt.configuredPort); got != tt.want {
+				t.Fatalf("tunnelLocalPortForGateway(%q, %d) = %d, want %d", tt.gatewayType, tt.configuredPort, got, tt.want)
+			}
+		})
+	}
+}

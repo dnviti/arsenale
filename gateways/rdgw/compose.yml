@@ -1,0 +1,31 @@
+services:
+  rdgw:
+    image: ${RDGW_IMAGE:-ghcr.io/dnviti/arsenale/rdgw:latest}
+    container_name: ${RDGW_CONTAINER_NAME:-arsenale-rdgw}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${RDGW_BIND_HOST:-0.0.0.0}:${RDGW_HOST_PORT:-443}:443"
+    environment:
+      RDGW_LISTEN_ADDR: ":443"
+      RDGW_TLS_CERT: /certs/server-cert.pem
+      RDGW_TLS_KEY: /certs/server-key.pem
+      RDGW_ARSENALE_API_URL: "${RDGW_ARSENALE_API_URL:?set RDGW_ARSENALE_API_URL}"
+      RDGW_API_TOKEN: "${RDGW_API_TOKEN:?set RDGW_API_TOKEN}"
+      RDGW_IDLE_TIMEOUT: "${RDGW_IDLE_TIMEOUT:-3600}"
+      RDGW_LOG_LEVEL: "${RDGW_LOG_LEVEL:-info}"
+    volumes:
+      - ${RDGW_TLS_CERT_FILE:?set RDGW_TLS_CERT_FILE}:/certs/server-cert.pem:ro
+      - ${RDGW_TLS_KEY_FILE:?set RDGW_TLS_KEY_FILE}:/certs/server-key.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-check-certificate -q -O /dev/null https://127.0.0.1:443/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

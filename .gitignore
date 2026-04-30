@@ -149,6 +149,8 @@ vite.config.ts.timestamp-*
 .vite/
 client/dist-node/vite.config.d.ts.map
 client/dist-node/vite.config.d.ts
+client/dist-node/pwaWorkbox.d.ts.map
+client/dist-node/pwaWorkbox.d.ts
 client/public/monaco/
 
 # Prisma generated client
