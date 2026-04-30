@@ -7,7 +7,6 @@ import {
   Lock,
   Monitor,
   MoonStar,
-  Network,
   Plus,
   RotateCcw,
   Settings2,

@@ -116,6 +116,21 @@ func TestTunnelTokenEnvContent(t *testing.T) {
 	}
 }
 
+func TestTunnelTokenEnvContentUsesGatewayDefinitionFallback(t *testing.T) {
+	bundle := tunnelTokenBundle{
+		Token:            "tok",
+		GatewayID:        "gw-db",
+		GatewayType:      "DB_PROXY",
+		TunnelClientCert: "cert",
+		TunnelClientKey:  "key",
+	}
+
+	got := tunnelTokenEnvContent(bundle, "https://arsenale.example.com", "./certs/client.pem", "./certs/client.key")
+	if !strings.Contains(got, `TUNNEL_LOCAL_PORT="5432"`) {
+		t.Fatalf("expected DB proxy default port from gateway runtime definition, got:\n%s", got)
+	}
+}
+
 func TestWriteTunnelTokenBundle(t *testing.T) {
 	tempDir := t.TempDir()
 	bundle := tunnelTokenBundle{

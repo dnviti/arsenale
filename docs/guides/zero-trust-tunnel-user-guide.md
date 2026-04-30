@@ -397,14 +397,17 @@ All tunnel agent configuration is read from environment variables. If none of th
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TUNNEL_LOCAL_HOST` | Hostname or IP of the local service to proxy | `localhost` |
+| `TUNNEL_LOCAL_HOST` | Hostname or IP of the local service to proxy | `127.0.0.1` |
 | `TUNNEL_CA_CERT` | PEM-encoded CA certificate to verify the server's TLS certificate | _(system default)_ |
+| `TUNNEL_CA_CERT_FILE` | Path to a PEM-encoded CA certificate when not using `TUNNEL_CA_CERT` inline | _(system default)_ |
 | `TUNNEL_CLIENT_CERT` | Inline PEM client certificate when not using `TUNNEL_CLIENT_CERT_FILE` | _(none)_ |
 | `TUNNEL_CLIENT_KEY` | Inline PEM client private key when not using `TUNNEL_CLIENT_KEY_FILE` | _(none)_ |
 | `TUNNEL_AGENT_VERSION` | Version string reported to the server in the `X-Agent-Version` header | _(read from package.json)_ |
 | `TUNNEL_PING_INTERVAL_MS` | Interval between WebSocket ping frames (milliseconds) | `15000` (15 seconds) |
 | `TUNNEL_RECONNECT_INITIAL_MS` | Initial backoff delay before reconnecting after a disconnect | `1000` (1 second) |
 | `TUNNEL_RECONNECT_MAX_MS` | Maximum backoff delay cap for reconnection attempts | `60000` (60 seconds) |
+
+For `TUNNEL_SERVER_URL`, operators can provide an Arsenale `https://` base URL, a bare host, or an explicit `ws://`/`wss://` broker URL. Base URLs are converted to the tunnel WebSocket endpoint by appending `/api/tunnel/connect`; explicit WebSocket URLs keep their path.
 
 ### Dormant Mode
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  ChevronDown, RefreshCw, CheckCircle, AlertCircle, Clock, Loader2,
+  RefreshCw, CheckCircle, AlertCircle, Clock, Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,6 @@ import { Switch } from '@/components/ui/switch';
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from '@/components/ui/accordion';
-import { cn } from '@/lib/utils';
 import {
   getRotationStatus, enableRotation, disableRotation,
   triggerRotation, getRotationHistory,

@@ -2,6 +2,7 @@ package tunnel
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -25,8 +26,8 @@ func TestLoadConfigFromEnv_AllRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.ServerURL != "wss://broker.example.com" {
-		t.Errorf("ServerURL: got %q, want %q", cfg.ServerURL, "wss://broker.example.com")
+	if cfg.ServerURL != "wss://broker.example.com/api/tunnel/connect" {
+		t.Errorf("ServerURL: got %q, want %q", cfg.ServerURL, "wss://broker.example.com/api/tunnel/connect")
 	}
 	if cfg.Token != "deadbeef" {
 		t.Errorf("Token: got %q, want %q", cfg.Token, "deadbeef")
@@ -121,15 +122,15 @@ func TestLoadConfigFromEnv_Defaults(t *testing.T) {
 
 func TestLoadConfigFromEnv_CustomOptional(t *testing.T) {
 	setEnvs(t, map[string]string{
-		"TUNNEL_SERVER_URL":          "wss://custom.example.com",
-		"TUNNEL_TOKEN":               "custom-tok",
-		"TUNNEL_GATEWAY_ID":          "gw-custom",
-		"TUNNEL_AGENT_VERSION":       "3.5.0",
-		"TUNNEL_LOCAL_HOST":          "0.0.0.0",
-		"TUNNEL_LOCAL_PORT":          "8080",
-		"TUNNEL_PING_INTERVAL_MS":    "5000",
+		"TUNNEL_SERVER_URL":           "wss://custom.example.com",
+		"TUNNEL_TOKEN":                "custom-tok",
+		"TUNNEL_GATEWAY_ID":           "gw-custom",
+		"TUNNEL_AGENT_VERSION":        "3.5.0",
+		"TUNNEL_LOCAL_HOST":           "0.0.0.0",
+		"TUNNEL_LOCAL_PORT":           "8080",
+		"TUNNEL_PING_INTERVAL_MS":     "5000",
 		"TUNNEL_RECONNECT_INITIAL_MS": "2000",
-		"TUNNEL_RECONNECT_MAX_MS":    "30000",
+		"TUNNEL_RECONNECT_MAX_MS":     "30000",
 	})
 
 	cfg, err := LoadConfigFromEnv()
@@ -154,6 +155,110 @@ func TestLoadConfigFromEnv_CustomOptional(t *testing.T) {
 	}
 	if cfg.ReconnectMax != 30*time.Second {
 		t.Errorf("ReconnectMax: got %v, want %v", cfg.ReconnectMax, 30*time.Second)
+	}
+}
+
+func TestLoadConfigFromEnv_NormalizesServerURL(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "https base URL",
+			raw:  "https://arsenale.example.com",
+			want: "wss://arsenale.example.com/api/tunnel/connect",
+		},
+		{
+			name: "host without scheme",
+			raw:  "arsenale.example.com",
+			want: "wss://arsenale.example.com/api/tunnel/connect",
+		},
+		{
+			name: "explicit websocket path",
+			raw:  "wss://arsenale.example.com/custom/tunnel",
+			want: "wss://arsenale.example.com/custom/tunnel",
+		},
+		{
+			name: "http path",
+			raw:  "http://arsenale.example.com/base/",
+			want: "ws://arsenale.example.com/base/api/tunnel/connect",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setEnvs(t, map[string]string{
+				"TUNNEL_SERVER_URL": tt.raw,
+				"TUNNEL_TOKEN":      "tok",
+				"TUNNEL_GATEWAY_ID": "gw",
+			})
+
+			cfg, err := LoadConfigFromEnv()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.ServerURL != tt.want {
+				t.Fatalf("ServerURL = %q, want %q", cfg.ServerURL, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadConfigFromEnv_ReadsPEMFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	caPath := filepath.Join(tempDir, "ca.pem")
+	certPath := filepath.Join(tempDir, "client.pem")
+	keyPath := filepath.Join(tempDir, "client.key")
+	if err := os.WriteFile(caPath, []byte("ca-pem\n"), 0600); err != nil {
+		t.Fatalf("write ca: %v", err)
+	}
+	if err := os.WriteFile(certPath, []byte("client-pem\n"), 0600); err != nil {
+		t.Fatalf("write cert: %v", err)
+	}
+	if err := os.WriteFile(keyPath, []byte("key-pem\n"), 0600); err != nil {
+		t.Fatalf("write key: %v", err)
+	}
+
+	setEnvs(t, map[string]string{
+		"TUNNEL_SERVER_URL":       "https://arsenale.example.com",
+		"TUNNEL_TOKEN":            "tok",
+		"TUNNEL_GATEWAY_ID":       "gw",
+		"TUNNEL_CA_CERT_FILE":     caPath,
+		"TUNNEL_CLIENT_CERT_FILE": certPath,
+		"TUNNEL_CLIENT_KEY_FILE":  keyPath,
+	})
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CACert != "ca-pem" || cfg.ClientCert != "client-pem" || cfg.ClientKey != "key-pem" {
+		t.Fatalf("unexpected PEM values: ca=%q cert=%q key=%q", cfg.CACert, cfg.ClientCert, cfg.ClientKey)
+	}
+}
+
+func TestLoadConfigFromEnv_InlinePEMOverridesFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	caPath := filepath.Join(tempDir, "ca.pem")
+	if err := os.WriteFile(caPath, []byte("file-ca\n"), 0600); err != nil {
+		t.Fatalf("write ca: %v", err)
+	}
+
+	setEnvs(t, map[string]string{
+		"TUNNEL_SERVER_URL":   "https://arsenale.example.com",
+		"TUNNEL_TOKEN":        "tok",
+		"TUNNEL_GATEWAY_ID":   "gw",
+		"TUNNEL_CA_CERT":      "inline-ca",
+		"TUNNEL_CA_CERT_FILE": caPath,
+	})
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.CACert != "inline-ca" {
+		t.Fatalf("CACert = %q, want inline-ca", cfg.CACert)
 	}
 }
 

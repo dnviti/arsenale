@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 func (s Service) buildManagedGatewayTunnelEnv(ctx context.Context, record gatewayRecord) (map[string]string, error) {
@@ -53,7 +55,7 @@ func (s Service) buildManagedGatewayTunnelEnv(ctx context.Context, record gatewa
 		"TUNNEL_SERVER_URL":  buildManagedTunnelConnectURL(s.TunnelBrokerURL),
 		"TUNNEL_TOKEN":       token,
 		"TUNNEL_GATEWAY_ID":  gateway.ID,
-		"TUNNEL_LOCAL_HOST":  "127.0.0.1",
+		"TUNNEL_LOCAL_HOST":  gatewayruntime.TunnelLocalHost(gateway.Type),
 		"TUNNEL_LOCAL_PORT":  strconv.Itoa(s.managedGatewayPrimaryPort(gateway.Type)),
 		"TUNNEL_CLIENT_CERT": derefString(gateway.TunnelClientCert),
 		"TUNNEL_CLIENT_KEY":  clientKey,

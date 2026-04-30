@@ -284,7 +284,7 @@ describe("LoginPage", () => {
   it("remembers passkey preference after successful passkey login", async () => {
     useUiPreferencesStore.setState({ lastLoginMethod: "passkey" });
     startAuthentication.mockResolvedValueOnce({ id: "cred-1" });
-    const view = renderLoginPage();
+    renderLoginPage();
 
     await waitFor(() => {
       expect(verifyPasskeyApi).toHaveBeenCalled();

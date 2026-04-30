@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 const (
@@ -40,12 +42,7 @@ type instanceLogsResponse struct {
 }
 
 func isManagedLifecycleGatewayType(gatewayType string) bool {
-	switch strings.ToUpper(strings.TrimSpace(gatewayType)) {
-	case "MANAGED_SSH", "GUACD", "DB_PROXY":
-		return true
-	default:
-		return false
-	}
+	return gatewayruntime.IsManagedType(gatewayType)
 }
 
 func parseGatewayLogTail(raw string) int {

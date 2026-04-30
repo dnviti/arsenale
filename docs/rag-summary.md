@@ -184,7 +184,7 @@ The `tunnel-agent` is a lightweight Node.js workspace (`gateways/tunnel-agent/`)
 
 When tunnel env vars are present, the agent auto-activates and establishes an outbound WSS connection to the TunnelBroker using the same binary multiplexing protocol (OPEN/DATA/CLOSE/PING/PONG, 4-byte header). On receiving an OPEN frame with a `host:port` payload, it opens a local TCP connection and bridges data bidirectionally through DATA frames. The agent sends 15-second PING heartbeats with JSON health metadata (`{ healthy, latencyMs, activeStreams }`) obtained by probing the local service.
 
-Auto-reconnect uses exponential backoff (1 s → 2 s → … → 60 s). Gateway authentication uses the bearer token plus client certificate material supplied through `TUNNEL_CLIENT_CERT_FILE`/`TUNNEL_CLIENT_KEY_FILE` or the inline PEM equivalents; `TUNNEL_CA_CERT` can pin a private server CA.
+Auto-reconnect uses exponential backoff (1 s → 2 s → … → 60 s). Gateway authentication uses the bearer token plus client certificate material supplied through `TUNNEL_CLIENT_CERT_FILE`/`TUNNEL_CLIENT_KEY_FILE` or the inline PEM equivalents; `TUNNEL_CA_CERT` or `TUNNEL_CA_CERT_FILE` can pin a private server CA. Tunnel runtimes accept an Arsenale HTTP(S) base URL, a bare host, or an explicit WebSocket broker URL and normalize base URLs to `/api/tunnel/connect`.
 
 A standalone `gateways/tunnel-agent/Dockerfile` is provided for deploying the agent alongside non-managed (external) gateways. For managed gateways, the `gateways/ssh-gateway/Dockerfile` and `gateways/guacd/Dockerfile` both embed the agent via a multi-stage build (monorepo root context required) and launch it from their entrypoints as a background process.
 

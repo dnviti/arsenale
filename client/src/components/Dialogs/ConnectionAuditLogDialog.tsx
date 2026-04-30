@@ -154,7 +154,6 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
     setPage(0);
   };
 
-  const selectedUser = auditUsers.find((u) => u.id === connAuditLogUserId) ?? null;
   const colSpan = isAdmin ? 7 : 6;
   const hasActiveFilters = connAuditLogAction || connAuditLogSearch || connAuditLogGatewayId || connAuditLogUserId || ipAddress || geoCountry || startDate || endDate || flaggedOnly;
   const totalPages = Math.ceil(total / rowsPerPage);

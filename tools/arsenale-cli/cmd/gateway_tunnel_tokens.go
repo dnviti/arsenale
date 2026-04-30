@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 	"github.com/spf13/cobra"
 )
 
@@ -82,7 +83,10 @@ func tunnelTokenEnvContent(bundle tunnelTokenBundle, serverURL, certFile, keyFil
 	}
 	localPort := bundle.TunnelLocalPort
 	if localPort <= 0 {
-		localPort = 4822
+		localPort = gatewayruntime.TunnelLocalPort(bundle.GatewayType, 0)
+	}
+	if localPort <= 0 {
+		localPort = gatewayruntime.PrimaryPort(gatewayruntime.TypeGuacd)
 	}
 	lines := []string{
 		envLine("TUNNEL_SERVER_URL", strings.TrimRight(strings.TrimSpace(serverURL), "/")),

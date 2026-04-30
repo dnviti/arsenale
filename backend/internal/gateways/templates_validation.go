@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 	"github.com/google/uuid"
 )
 
@@ -37,14 +38,7 @@ func normalizeCreateTemplatePayload(input createTemplatePayload) (normalizedCrea
 	}
 
 	if deploymentModeIsGroup(deploymentMode) && port == 0 {
-		switch gatewayType {
-		case "MANAGED_SSH":
-			port = 2222
-		case "GUACD":
-			port = 4822
-		case "DB_PROXY":
-			port = 5432
-		}
+		port = gatewayruntime.PrimaryPort(gatewayType)
 	}
 	if gatewayType == "SSH_BASTION" && port == 0 {
 		return normalizedCreateTemplatePayload{}, &requestError{status: http.StatusBadRequest, message: "port is required for SSH_BASTION templates"}
@@ -236,21 +230,11 @@ func normalizeLBStrategyPtr(value *string) *string {
 }
 
 func isAllowedGatewayType(gatewayType string) bool {
-	switch gatewayType {
-	case "GUACD", "SSH_BASTION", "MANAGED_SSH", "DB_PROXY":
-		return true
-	default:
-		return false
-	}
+	return gatewayruntime.IsAllowedType(gatewayType)
 }
 
 func isManagedGatewayType(gatewayType string) bool {
-	switch gatewayType {
-	case "MANAGED_SSH", "GUACD", "DB_PROXY":
-		return true
-	default:
-		return false
-	}
+	return gatewayruntime.IsManagedType(gatewayType)
 }
 
 func buildTemplateDeploymentName(tenantID, templateName string) string {

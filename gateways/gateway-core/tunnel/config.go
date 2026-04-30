@@ -5,8 +5,10 @@ package tunnel
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -49,29 +51,41 @@ type Config struct {
 // LoadConfigFromEnv creates a Config from environment variables.
 // Required: TUNNEL_SERVER_URL, TUNNEL_TOKEN, TUNNEL_GATEWAY_ID.
 func LoadConfigFromEnv() (*Config, error) {
-	serverURL := os.Getenv("TUNNEL_SERVER_URL")
+	serverURL := strings.TrimSpace(os.Getenv("TUNNEL_SERVER_URL"))
 	if serverURL == "" {
 		return nil, fmt.Errorf("TUNNEL_SERVER_URL is required")
 	}
-	token := os.Getenv("TUNNEL_TOKEN")
+	token := strings.TrimSpace(os.Getenv("TUNNEL_TOKEN"))
 	if token == "" {
 		return nil, fmt.Errorf("TUNNEL_TOKEN is required")
 	}
-	gatewayID := os.Getenv("TUNNEL_GATEWAY_ID")
+	gatewayID := strings.TrimSpace(os.Getenv("TUNNEL_GATEWAY_ID"))
 	if gatewayID == "" {
 		return nil, fmt.Errorf("TUNNEL_GATEWAY_ID is required")
 	}
+	caCert, err := envPEM("TUNNEL_CA_CERT", "TUNNEL_CA_CERT_FILE")
+	if err != nil {
+		return nil, err
+	}
+	clientCert, err := envPEM("TUNNEL_CLIENT_CERT", "TUNNEL_CLIENT_CERT_FILE")
+	if err != nil {
+		return nil, err
+	}
+	clientKey, err := envPEM("TUNNEL_CLIENT_KEY", "TUNNEL_CLIENT_KEY_FILE")
+	if err != nil {
+		return nil, err
+	}
 
 	cfg := &Config{
-		ServerURL:        serverURL,
+		ServerURL:        normalizeTunnelServerURL(serverURL),
 		Token:            token,
 		GatewayID:        gatewayID,
 		AgentVersion:     envOrDefault("TUNNEL_AGENT_VERSION", "1.0.0"),
 		LocalHost:        envOrDefault("TUNNEL_LOCAL_HOST", "127.0.0.1"),
 		LocalPort:        envInt("TUNNEL_LOCAL_PORT", 0),
-		CACert:           os.Getenv("TUNNEL_CA_CERT"),
-		ClientCert:       os.Getenv("TUNNEL_CLIENT_CERT"),
-		ClientKey:        os.Getenv("TUNNEL_CLIENT_KEY"),
+		CACert:           caCert,
+		ClientCert:       clientCert,
+		ClientKey:        clientKey,
 		PingInterval:     time.Duration(envInt("TUNNEL_PING_INTERVAL_MS", 15000)) * time.Millisecond,
 		ReconnectInitial: time.Duration(envInt("TUNNEL_RECONNECT_INITIAL_MS", 1000)) * time.Millisecond,
 		ReconnectMax:     time.Duration(envInt("TUNNEL_RECONNECT_MAX_MS", 60000)) * time.Millisecond,
@@ -80,7 +94,7 @@ func LoadConfigFromEnv() (*Config, error) {
 }
 
 func envOrDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v
 	}
 	return def
@@ -93,4 +107,65 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func envPEM(valueKey, fileKey string) (string, error) {
+	if value := strings.TrimSpace(os.Getenv(valueKey)); value != "" {
+		return value, nil
+	}
+	filePath := strings.TrimSpace(os.Getenv(fileKey))
+	if filePath == "" {
+		return "", nil
+	}
+	contents, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", fileKey, err)
+	}
+	return strings.TrimSpace(string(contents)), nil
+}
+
+func normalizeTunnelServerURL(rawValue string) string {
+	trimmed := strings.TrimSpace(rawValue)
+	if trimmed == "" {
+		return trimmed
+	}
+	withScheme := trimmed
+	if !strings.Contains(withScheme, "://") {
+		withScheme = "wss://" + withScheme
+	}
+
+	parsed, err := url.Parse(withScheme)
+	if err != nil || parsed.Host == "" {
+		return trimmed
+	}
+
+	explicitWebSocket := parsed.Scheme == "ws" || parsed.Scheme == "wss"
+	switch parsed.Scheme {
+	case "https":
+		parsed.Scheme = "wss"
+	case "http":
+		parsed.Scheme = "ws"
+	case "ws", "wss":
+	default:
+		parsed.Scheme = "ws"
+	}
+
+	path := strings.TrimRight(parsed.Path, "/")
+	if explicitWebSocket && path != "" {
+		parsed.Path = path
+		parsed.RawPath = ""
+		parsed.Fragment = ""
+		return parsed.String()
+	}
+	if !strings.HasSuffix(path, "/api/tunnel/connect") {
+		if path == "" {
+			path = "/api/tunnel/connect"
+		} else {
+			path += "/api/tunnel/connect"
+		}
+	}
+	parsed.Path = path
+	parsed.RawPath = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }

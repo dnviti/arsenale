@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { RotateCcw, FileText, Loader2 } from 'lucide-react';
+import { RotateCcw, FileText } from 'lucide-react';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { ManagedInstanceData } from '../../api/gateway.api';
 import ContainerLogDialog from './ContainerLogDialog';

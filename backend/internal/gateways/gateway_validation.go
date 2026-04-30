@@ -3,6 +3,8 @@ package gateways
 import (
 	"net/http"
 	"strings"
+
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 func validateCreatePayload(input createPayload) error {
@@ -10,9 +12,7 @@ func validateCreatePayload(input createPayload) error {
 		return &requestError{status: http.StatusBadRequest, message: "name is required"}
 	}
 	gatewayType := strings.ToUpper(strings.TrimSpace(input.Type))
-	switch gatewayType {
-	case "GUACD", "SSH_BASTION", "MANAGED_SSH", "DB_PROXY":
-	default:
+	if !gatewayruntime.IsAllowedType(gatewayType) {
 		return &requestError{status: http.StatusBadRequest, message: "type must be one of GUACD, SSH_BASTION, MANAGED_SSH, DB_PROXY"}
 	}
 	deploymentMode, err := normalizeDeploymentMode(input.DeploymentMode, gatewayType, input.Host)

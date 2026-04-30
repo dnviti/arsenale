@@ -319,8 +319,9 @@ Configuration is entirely environment-driven (`gateways/tunnel-agent/src/config.
 | `TUNNEL_TOKEN`               | Yes      | --          | Bearer token from the tunnel deployment bundle |
 | `TUNNEL_GATEWAY_ID`          | Yes      | --          | Gateway UUID                             |
 | `TUNNEL_LOCAL_PORT`          | Yes      | --          | Local service port to proxy to           |
-| `TUNNEL_LOCAL_HOST`          | No       | `localhost` | Local service host                       |
+| `TUNNEL_LOCAL_HOST`          | No       | `127.0.0.1` | Local service host                       |
 | `TUNNEL_CA_CERT`             | No       | --          | PEM CA cert for server verification      |
+| `TUNNEL_CA_CERT_FILE`        | No       | --          | Path to PEM CA cert for server verification |
 | `TUNNEL_CLIENT_CERT_FILE`    | Broker auth | --       | Path to CLI-generated client cert        |
 | `TUNNEL_CLIENT_KEY_FILE`     | Broker auth | --       | Path to CLI-generated client key         |
 | `TUNNEL_CLIENT_CERT`         | Broker auth | --       | Inline PEM client cert alternative       |
@@ -329,7 +330,9 @@ Configuration is entirely environment-driven (`gateways/tunnel-agent/src/config.
 | `TUNNEL_RECONNECT_INITIAL_MS`| No      | `1000`      | Initial reconnect backoff                |
 | `TUNNEL_RECONNECT_MAX_MS`   | No       | `60000`     | Maximum reconnect backoff                |
 
-`loadConfig()` validates the four core runtime variables. The broker authentication path additionally requires client certificate material, either via the `_FILE` variables used by compose installs or the inline PEM variables used by managed runtime injection.
+`loadConfig()` validates the four core runtime variables. `TUNNEL_SERVER_URL` accepts an Arsenale HTTP(S) base URL, a host without a scheme, or an explicit WebSocket broker URL. HTTP(S) values are normalized to WS(S) and get `/api/tunnel/connect` appended; explicit `ws://` and `wss://` URLs keep their provided path.
+
+The broker authentication path additionally requires client certificate material, either via the `_FILE` variables used by compose installs or the inline PEM variables used by managed runtime injection. Inline PEM values take precedence over matching `_FILE` values.
 
 **Dormant mode:** If none of `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, or `TUNNEL_GATEWAY_ID` are set, `loadConfig()` returns `null` and the agent exits cleanly. This allows the same Docker image to be deployed with or without tunnel functionality. However, if some but not all required vars are set, the agent exits with an error code -- partial configuration is treated as a misconfiguration.
 

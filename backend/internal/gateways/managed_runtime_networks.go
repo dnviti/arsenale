@@ -3,6 +3,8 @@ package gateways
 import (
 	"fmt"
 	"strings"
+
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 func (s Service) managedGatewayNetworks(record gatewayRecord) []string {
@@ -67,16 +69,7 @@ func (s Service) managedGatewayImageCandidates(gatewayType string) []string {
 }
 
 func (s Service) managedGatewayPrimaryPort(gatewayType string) int {
-	switch strings.ToUpper(strings.TrimSpace(gatewayType)) {
-	case "MANAGED_SSH":
-		return 2222
-	case "GUACD":
-		return 4822
-	case "DB_PROXY":
-		return 5432
-	default:
-		return 0
-	}
+	return gatewayruntime.PrimaryPort(gatewayType)
 }
 
 func (s Service) managedGatewayPublishedPorts(record gatewayRecord) ([]managedContainerPortBinding, error) {

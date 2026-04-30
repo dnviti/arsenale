@@ -44,7 +44,6 @@ import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import type {
   GatewayData,
-  GatewayDeploymentMode,
   TunnelEventData,
   TunnelMetricsData,
 } from '../../api/gateway.api';
@@ -57,6 +56,19 @@ import SessionTimeoutConfig from '../orchestration/SessionTimeoutConfig';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { extractApiError } from '../../utils/apiError';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
+import {
+  buildGatewayCreateInput,
+  buildGatewayUpdate,
+  defaultGatewayEditorForm,
+  gatewayToEditorForm,
+  isGatewayGroupMode,
+  nextGatewayTypeForm,
+  nextPublishPortsForm,
+  supportsGatewayGroupMode,
+  validateGatewayEditorForm,
+  type EditableGatewayType,
+  type GatewayEditorForm,
+} from './gatewayEditorWorkflow';
 
 interface GatewayDialogProps {
   open: boolean;
@@ -65,27 +77,7 @@ interface GatewayDialogProps {
 }
 
 export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogProps) {
-  const [name, setName] = useState('');
-  const [type, setType] = useState<'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH' | 'DB_PROXY'>('GUACD');
-  const [deploymentMode, setDeploymentMode] = useState<GatewayDeploymentMode>('SINGLE_INSTANCE');
-  const [host, setHost] = useState('');
-  const [port, setPort] = useState('');
-  const [description, setDescription] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [sshPrivateKey, setSshPrivateKey] = useState('');
-  const [apiPort, setApiPort] = useState('');
-  const [monitoringEnabled, setMonitoringEnabled] = useState(true);
-  const [monitorIntervalMs, setMonitorIntervalMs] = useState('5000');
-  const [inactivityTimeout, setInactivityTimeout] = useState('60');
-  const [autoScaleEnabled, setAutoScaleEnabled] = useState(false);
-  const [minReplicasVal, setMinReplicasVal] = useState('0');
-  const [maxReplicasVal, setMaxReplicasVal] = useState('5');
-  const [sessPerInstance, setSessPerInstance] = useState('10');
-  const [cooldownVal, setCooldownVal] = useState('300');
-  const [publishPorts, setPublishPorts] = useState(false);
-  const [lbStrategy, setLbStrategy] = useState<'ROUND_ROBIN' | 'LEAST_CONNECTIONS'>('ROUND_ROBIN');
+  const [form, setForm] = useState<GatewayEditorForm>(() => defaultGatewayEditorForm());
 
   const [tunnelToken, setTunnelToken] = useState<string | null>(null);
   const [tunnelDeploying, setTunnelDeploying] = useState(false);
@@ -121,31 +113,41 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const isEditMode = Boolean(gateway);
   const isTunnelEnabled = gateway?.tunnelEnabled ?? false;
   const isTunnelConnected = gateway?.tunnelConnected ?? false;
-  const supportsGroupMode = type === 'MANAGED_SSH' || type === 'GUACD' || type === 'DB_PROXY';
-  const isGroupMode = deploymentMode === 'MANAGED_GROUP';
+  const {
+    name,
+    type,
+    deploymentMode,
+    host,
+    port,
+    description,
+    isDefault,
+    username,
+    password,
+    sshPrivateKey,
+    apiPort,
+    monitoringEnabled,
+    monitorIntervalMs,
+    inactivityTimeout,
+    autoScaleEnabled,
+    minReplicasVal,
+    maxReplicasVal,
+    sessPerInstance,
+    cooldownVal,
+    publishPorts,
+    lbStrategy,
+  } = form;
+  const supportsGroupMode = supportsGatewayGroupMode(type);
+  const isGroupMode = isGatewayGroupMode(form);
+
+  const setField = useCallback(<K extends keyof GatewayEditorForm>(key: K, value: GatewayEditorForm[K]) => {
+    setForm((current) => ({ ...current, [key]: value }));
+  }, []);
 
   useEffect(() => {
     if (open && gateway) {
-      setName(gateway.name); setType(gateway.type);
-      setDeploymentMode(gateway.deploymentMode ?? (gateway.isManaged ? 'MANAGED_GROUP' : 'SINGLE_INSTANCE'));
-      setHost(gateway.host); setPort(String(gateway.port));
-      setDescription(gateway.description || ''); setIsDefault(gateway.isDefault);
-      setUsername(''); setPassword(''); setSshPrivateKey('');
-      setApiPort(gateway.apiPort ? String(gateway.apiPort) : '');
-      setMonitoringEnabled(gateway.monitoringEnabled);
-      setMonitorIntervalMs(String(gateway.monitorIntervalMs));
-      setInactivityTimeout(String(Math.floor(gateway.inactivityTimeoutSeconds / 60)));
-      setAutoScaleEnabled(gateway.autoScale); setMinReplicasVal(String(gateway.minReplicas));
-      setMaxReplicasVal(String(gateway.maxReplicas)); setSessPerInstance(String(gateway.sessionsPerInstance));
-      setCooldownVal(String(gateway.scaleDownCooldownSeconds));
-      setPublishPorts(gateway.publishPorts ?? false); setLbStrategy(gateway.lbStrategy ?? 'ROUND_ROBIN');
+      setForm(gatewayToEditorForm(gateway));
     } else if (open) {
-      setName(''); setType('GUACD'); setDeploymentMode('SINGLE_INSTANCE');
-      setHost(''); setPort(''); setDescription(''); setIsDefault(false);
-      setUsername(''); setPassword(''); setSshPrivateKey(''); setApiPort('');
-      setMonitoringEnabled(true); setMonitorIntervalMs('5000'); setInactivityTimeout('60');
-      setAutoScaleEnabled(false); setMinReplicasVal('0'); setMaxReplicasVal('5');
-      setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
+      setForm(defaultGatewayEditorForm());
     }
     setError(''); setTunnelToken(null); setTunnelError(''); setTunnelDeploying(false);
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
@@ -153,65 +155,23 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, gateway]);
 
-  const handleTypeChange = (newType: 'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH' | 'DB_PROXY') => {
-    setType(newType);
-    const defaultPort = newType === 'GUACD' ? '4822' : newType === 'MANAGED_SSH' ? '2222' : newType === 'DB_PROXY' ? '5432' : '22';
-    if (!port || port === '4822' || port === '22' || port === '2222' || port === '5432') setPort(defaultPort);
-    if (newType === 'MANAGED_SSH' && !apiPort) setApiPort('9022');
-    else if (newType !== 'MANAGED_SSH') setApiPort('');
-    if (newType === 'SSH_BASTION') setDeploymentMode('SINGLE_INSTANCE');
+  const handleTypeChange = (newType: EditableGatewayType) => {
+    setForm((current) => nextGatewayTypeForm(current, newType));
   };
 
   const handleSubmit = async () => {
     setError('');
-    if (!name.trim()) { setError('Gateway name is required'); return; }
-    if (!isGroupMode && !host.trim()) { setError('Host is required'); return; }
-    const portNum = parseInt(port, 10);
-    if (!port || isNaN(portNum) || portNum < 1 || portNum > 65535) { setError('Port must be between 1 and 65535'); return; }
+    const validationError = validateGatewayEditorForm(form);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
     const ok = await run(async () => {
       if (isEditMode && gateway) {
-        const data: Record<string, unknown> = {};
-        const normalizedHost = isGroupMode ? '' : host.trim();
-        const existingDeploymentMode = gateway.deploymentMode ?? (gateway.isManaged ? 'MANAGED_GROUP' : 'SINGLE_INSTANCE');
-        if (name.trim() !== gateway.name) data.name = name.trim();
-        if (deploymentMode !== existingDeploymentMode) data.deploymentMode = deploymentMode;
-        if (normalizedHost !== gateway.host) data.host = normalizedHost;
-        if (portNum !== gateway.port) data.port = portNum;
-        if ((description.trim() || null) !== gateway.description) data.description = description.trim() || null;
-        if (isDefault !== gateway.isDefault) data.isDefault = isDefault;
-        if (gateway.type === 'MANAGED_SSH') {
-          const newApiPort = apiPort ? parseInt(apiPort, 10) : null;
-          if (newApiPort !== gateway.apiPort) data.apiPort = newApiPort;
-        }
-        if (type === 'SSH_BASTION') {
-          if (username) data.username = username;
-          if (password) data.password = password;
-          if (sshPrivateKey) data.sshPrivateKey = sshPrivateKey;
-        }
-        if (supportsGroupMode && publishPorts !== (gateway.publishPorts ?? false)) data.publishPorts = publishPorts;
-        if (supportsGroupMode && lbStrategy !== (gateway.lbStrategy ?? 'ROUND_ROBIN')) data.lbStrategy = lbStrategy;
-        if (monitoringEnabled !== gateway.monitoringEnabled) data.monitoringEnabled = monitoringEnabled;
-        const intervalNum = parseInt(monitorIntervalMs, 10);
-        if (intervalNum && intervalNum !== gateway.monitorIntervalMs) data.monitorIntervalMs = intervalNum;
-        const timeoutSec = parseInt(inactivityTimeout, 10) * 60;
-        if (timeoutSec && timeoutSec !== gateway.inactivityTimeoutSeconds) data.inactivityTimeoutSeconds = timeoutSec;
-        await updateGateway(gateway.id, data);
+        await updateGateway(gateway.id, buildGatewayUpdate(gateway, form));
       } else {
-        const apiPortNum = apiPort ? parseInt(apiPort, 10) : undefined;
-        await createGateway({
-          name: name.trim(), type, deploymentMode,
-          host: isGroupMode ? '' : host.trim(), port: portNum,
-          description: description.trim() || undefined, isDefault: isDefault || undefined,
-          monitoringEnabled, monitorIntervalMs: parseInt(monitorIntervalMs, 10) || 5000,
-          inactivityTimeoutSeconds: (parseInt(inactivityTimeout, 10) || 60) * 60,
-          ...(type === 'SSH_BASTION' && username ? { username } : {}),
-          ...(type === 'SSH_BASTION' && password ? { password } : {}),
-          ...(type === 'SSH_BASTION' && sshPrivateKey ? { sshPrivateKey } : {}),
-          ...(type === 'MANAGED_SSH' && apiPortNum ? { apiPort: apiPortNum } : {}),
-          ...(supportsGroupMode && publishPorts ? { publishPorts } : {}),
-          ...(supportsGroupMode ? { lbStrategy } : {}),
-        });
+        await createGateway(buildGatewayCreateInput(form));
       }
     }, isEditMode ? 'Failed to update gateway' : 'Failed to create gateway');
     if (ok) handleClose();
@@ -304,12 +264,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   };
 
   const handleClose = () => {
-    setName(''); setType('GUACD'); setDeploymentMode('SINGLE_INSTANCE');
-    setHost(''); setPort(''); setDescription(''); setIsDefault(false);
-    setUsername(''); setPassword(''); setSshPrivateKey(''); setApiPort('');
-    setMonitoringEnabled(true); setMonitorIntervalMs('5000'); setInactivityTimeout('60');
-    setAutoScaleEnabled(false); setMinReplicasVal('0'); setMaxReplicasVal('5');
-    setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
+    setForm(defaultGatewayEditorForm());
     setError(''); setTunnelToken(null); setTunnelError(''); setTunnelDeploying(false);
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
     setTunnelEvents([]); setTunnelMetrics(null);
@@ -336,10 +291,10 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
         </DialogHeader>
         {error && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>}
         <div className="space-y-4">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus maxLength={100} /></div>
+          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setField('name', e.target.value)} required autoFocus maxLength={100} /></div>
           <div className="space-y-1.5">
             <Label>Type</Label>
-            <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)} disabled={isEditMode}>
+            <Select value={type} onValueChange={(v) => handleTypeChange(v as EditableGatewayType)} disabled={isEditMode}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="GUACD">GUACD (RDP Gateway)</SelectItem>
@@ -352,7 +307,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {supportsGroupMode && (
             <div className="space-y-1.5">
               <Label>Deployment Mode</Label>
-              <Select value={deploymentMode} onValueChange={(v) => setDeploymentMode(v as GatewayDeploymentMode)}>
+              <Select value={deploymentMode} onValueChange={(v) => setField('deploymentMode', v as GatewayEditorForm['deploymentMode'])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="SINGLE_INSTANCE">Single Instance</SelectItem>
@@ -365,16 +320,16 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {type === 'MANAGED_SSH' && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">This gateway uses the server&apos;s SSH key pair for authentication. No credentials needed.</div>}
           {type === 'DB_PROXY' && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">Database proxy gateway. Credentials are injected per-session from the vault.</div>}
           {type === 'MANAGED_SSH' && (
-            <div className="space-y-1.5"><Label>gRPC Port (key management)</Label><Input value={apiPort} onChange={(e) => setApiPort(e.target.value)} type="number" disabled={publishPorts} />{publishPorts ? <p className="text-xs text-muted-foreground">Auto-assigned at deploy</p> : <p className="text-xs text-muted-foreground">gRPC port for key management mTLS (default: 9022)</p>}</div>
+            <div className="space-y-1.5"><Label>gRPC Port (key management)</Label><Input value={apiPort} onChange={(e) => setField('apiPort', e.target.value)} type="number" disabled={publishPorts} />{publishPorts ? <p className="text-xs text-muted-foreground">Auto-assigned at deploy</p> : <p className="text-xs text-muted-foreground">gRPC port for key management mTLS (default: 9022)</p>}</div>
           )}
           {supportsGroupMode && isGroupMode && (
-            <div className="flex items-center gap-3"><Switch checked={publishPorts} onCheckedChange={(v) => { setPublishPorts(v); if (v) { const dp = type === 'GUACD' ? '4822' : type === 'DB_PROXY' ? '5432' : '2222'; setPort(dp); } }} /><Label>Publish Ports (external access)</Label></div>
+            <div className="flex items-center gap-3"><Switch checked={publishPorts} onCheckedChange={(v) => setForm((current) => nextPublishPortsForm(current, v))} /><Label>Publish Ports (external access)</Label></div>
           )}
           {publishPorts && supportsGroupMode && isGroupMode && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Each deployed instance will get a unique randomly-assigned host port for external access.</div>}
           {supportsGroupMode && isGroupMode && (
             <div className="space-y-1.5">
               <Label>Load Balancing Strategy</Label>
-              <Select value={lbStrategy} onValueChange={(v) => setLbStrategy(v as 'ROUND_ROBIN' | 'LEAST_CONNECTIONS')}>
+              <Select value={lbStrategy} onValueChange={(v) => setField('lbStrategy', v as GatewayEditorForm['lbStrategy'])}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="ROUND_ROBIN">Round Robin</SelectItem><SelectItem value="LEAST_CONNECTIONS">Least Connections</SelectItem></SelectContent>
               </Select>
@@ -383,26 +338,26 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {isGroupMode ? (
             <>
               <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">This gateway is a logical group. The port below is the service port used by deployed instances.</div>
-              <div className="space-y-1.5"><Label>Service Port</Label><Input value={port} onChange={(e) => setPort(e.target.value)} type="number" />{publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}</div>
+              <div className="space-y-1.5"><Label>Service Port</Label><Input value={port} onChange={(e) => setField('port', e.target.value)} type="number" />{publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}</div>
             </>
           ) : (
             <div className="flex gap-3">
-              <div className="flex-1 space-y-1.5"><Label>Host</Label><Input value={host} onChange={(e) => setHost(e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
-              <div className="w-[120px] space-y-1.5"><Label>Port</Label><Input value={port} onChange={(e) => setPort(e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
+              <div className="flex-1 space-y-1.5"><Label>Host</Label><Input value={host} onChange={(e) => setField('host', e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
+              <div className="w-[120px] space-y-1.5"><Label>Port</Label><Input value={port} onChange={(e) => setField('port', e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
             </div>
           )}
           {type === 'SSH_BASTION' && (
             <>
-              <div className="space-y-1.5"><Label>Username</Label><Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
-              <div className="space-y-1.5"><Label>Password</Label><Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
-              <div className="space-y-1.5"><Label>SSH Private Key (PEM)</Label><Textarea value={sshPrivateKey} onChange={(e) => setSshPrivateKey(e.target.value)} rows={4} className="font-mono text-xs" placeholder={isEditMode ? (gateway?.hasSshKey ? 'Key configured — leave blank to keep unchanged' : 'Paste PEM-encoded private key') : 'Paste PEM-encoded private key (optional)'} /></div>
+              <div className="space-y-1.5"><Label>Username</Label><Input value={username} onChange={(e) => setField('username', e.target.value)} placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
+              <div className="space-y-1.5"><Label>Password</Label><Input value={password} onChange={(e) => setField('password', e.target.value)} type="password" placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined} /></div>
+              <div className="space-y-1.5"><Label>SSH Private Key (PEM)</Label><Textarea value={sshPrivateKey} onChange={(e) => setField('sshPrivateKey', e.target.value)} rows={4} className="font-mono text-xs" placeholder={isEditMode ? (gateway?.hasSshKey ? 'Key configured — leave blank to keep unchanged' : 'Paste PEM-encoded private key') : 'Paste PEM-encoded private key (optional)'} /></div>
             </>
           )}
-          <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} maxLength={500} /></div>
-          <div className="flex items-center gap-3"><Checkbox checked={isDefault} onCheckedChange={(v) => setIsDefault(v === true)} id="gw-default" /><Label htmlFor="gw-default">Set as default {type === 'GUACD' ? 'GUACD' : type === 'MANAGED_SSH' ? 'Managed SSH' : type === 'DB_PROXY' ? 'DB Proxy' : 'SSH Bastion'} gateway</Label></div>
-          <div className="flex items-center gap-3"><Checkbox checked={monitoringEnabled} onCheckedChange={(v) => setMonitoringEnabled(v === true)} id="gw-monitor" /><Label htmlFor="gw-monitor">Enable health monitoring</Label></div>
-          {monitoringEnabled && <div className="space-y-1.5"><Label>Monitor interval (ms)</Label><Input value={monitorIntervalMs} onChange={(e) => setMonitorIntervalMs(e.target.value)} type="number" /><p className="text-xs text-muted-foreground">How often to check connectivity (1000-3600000ms)</p></div>}
-          <SessionTimeoutConfig value={inactivityTimeout} onChange={setInactivityTimeout} />
+          <div className="space-y-1.5"><Label>Description (optional)</Label><Textarea value={description} onChange={(e) => setField('description', e.target.value)} rows={2} maxLength={500} /></div>
+          <div className="flex items-center gap-3"><Checkbox checked={isDefault} onCheckedChange={(v) => setField('isDefault', v === true)} id="gw-default" /><Label htmlFor="gw-default">Set as default {type === 'GUACD' ? 'GUACD' : type === 'MANAGED_SSH' ? 'Managed SSH' : type === 'DB_PROXY' ? 'DB Proxy' : 'SSH Bastion'} gateway</Label></div>
+          <div className="flex items-center gap-3"><Checkbox checked={monitoringEnabled} onCheckedChange={(v) => setField('monitoringEnabled', v === true)} id="gw-monitor" /><Label htmlFor="gw-monitor">Enable health monitoring</Label></div>
+          {monitoringEnabled && <div className="space-y-1.5"><Label>Monitor interval (ms)</Label><Input value={monitorIntervalMs} onChange={(e) => setField('monitorIntervalMs', e.target.value)} type="number" /><p className="text-xs text-muted-foreground">How often to check connectivity (1000-3600000ms)</p></div>}
+          <SessionTimeoutConfig value={inactivityTimeout} onChange={(value) => setField('inactivityTimeout', value)} />
 
           {/* Auto-Scaling */}
           {isEditMode && isGroupMode && supportsGroupMode && (
@@ -411,13 +366,13 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                 <AccordionTrigger><span className="text-sm font-medium">Auto-Scaling Configuration</span></AccordionTrigger>
                 <AccordionContent>
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3"><Switch checked={autoScaleEnabled} onCheckedChange={setAutoScaleEnabled} /><Label>Enable Auto-Scale</Label></div>
+                    <div className="flex items-center gap-3"><Switch checked={autoScaleEnabled} onCheckedChange={(value) => setField('autoScaleEnabled', value)} /><Label>Enable Auto-Scale</Label></div>
                     {autoScaleEnabled && (
                       <div className="flex flex-wrap gap-3">
-                        <div className="w-[120px] space-y-1"><Label className="text-xs">Min Replicas</Label><Input value={minReplicasVal} onChange={(e) => setMinReplicasVal(e.target.value)} type="number" className="h-8" /></div>
-                        <div className="w-[120px] space-y-1"><Label className="text-xs">Max Replicas</Label><Input value={maxReplicasVal} onChange={(e) => setMaxReplicasVal(e.target.value)} type="number" className="h-8" /></div>
-                        <div className="w-[150px] space-y-1"><Label className="text-xs">Sessions/Instance</Label><Input value={sessPerInstance} onChange={(e) => setSessPerInstance(e.target.value)} type="number" className="h-8" /></div>
-                        <div className="w-[120px] space-y-1"><Label className="text-xs">Cooldown (s)</Label><Input value={cooldownVal} onChange={(e) => setCooldownVal(e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[120px] space-y-1"><Label className="text-xs">Min Replicas</Label><Input value={minReplicasVal} onChange={(e) => setField('minReplicasVal', e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[120px] space-y-1"><Label className="text-xs">Max Replicas</Label><Input value={maxReplicasVal} onChange={(e) => setField('maxReplicasVal', e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[150px] space-y-1"><Label className="text-xs">Sessions/Instance</Label><Input value={sessPerInstance} onChange={(e) => setField('sessPerInstance', e.target.value)} type="number" className="h-8" /></div>
+                        <div className="w-[120px] space-y-1"><Label className="text-xs">Cooldown (s)</Label><Input value={cooldownVal} onChange={(e) => setField('cooldownVal', e.target.value)} type="number" className="h-8" /></div>
                       </div>
                     )}
                     <Button variant="outline" size="sm" disabled={scalingSaving} onClick={() => runScaling(async () => { await updateScalingConfig(gateway?.id ?? '', { autoScale: autoScaleEnabled, minReplicas: Number(minReplicasVal), maxReplicas: Number(maxReplicasVal), sessionsPerInstance: Number(sessPerInstance), scaleDownCooldownSeconds: Number(cooldownVal) }); }, 'Failed to save scaling config')}>

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -161,7 +162,7 @@ WHERE id = $1
 	return tunnelTokenResponse{
 		GatewayID:        gatewayID,
 		GatewayType:      gatewayType,
-		TunnelLocalHost:  "127.0.0.1",
+		TunnelLocalHost:  gatewayruntime.TunnelLocalHost(gatewayType),
 		TunnelLocalPort:  tunnelLocalPortForGateway(gatewayType, gatewayPort),
 		TunnelClientCert: strings.TrimSpace(derefString(tunnelClientCert)),
 		TunnelClientKey:  strings.TrimSpace(clientKey),
@@ -170,19 +171,7 @@ WHERE id = $1
 }
 
 func tunnelLocalPortForGateway(gatewayType string, configuredPort int) int {
-	if configuredPort > 0 {
-		return configuredPort
-	}
-	switch strings.ToUpper(strings.TrimSpace(gatewayType)) {
-	case "MANAGED_SSH", "SSH_BASTION":
-		return 2222
-	case "GUACD":
-		return 4822
-	case "DB_PROXY":
-		return 5432
-	default:
-		return 0
-	}
+	return gatewayruntime.TunnelLocalPort(gatewayType, configuredPort)
 }
 
 func (s Service) RevokeTunnelToken(ctx context.Context, claims authn.Claims, gatewayID, ipAddress string) (revokeTunnelTokenResponse, error) {

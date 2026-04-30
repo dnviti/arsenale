@@ -238,26 +238,24 @@ export default function SettingsDialog({
     filteredConcerns.find((concern) => concern.id === resolvedConcern) ??
     filteredConcerns[0];
 
-  // Auto-expand the active concern in the sidebar
-  useEffect(() => {
+  const visibleExpandedConcerns = useMemo(() => {
+    const next = new Set(expandedConcerns);
     if (resolvedConcern) {
-      setExpandedConcerns((prev) => {
-        if (prev.has(resolvedConcern)) return prev;
-        const next = new Set(prev);
-        next.add(resolvedConcern);
-        return next;
-      });
+      next.add(resolvedConcern);
     }
-  }, [resolvedConcern]);
-
-  // When search is active, expand all matching concerns
-  useEffect(() => {
     if (deferredSearch.trim()) {
-      setExpandedConcerns(
-        new Set(filteredConcerns.map((c) => c.id)),
-      );
+      for (const concern of filteredConcerns) {
+        next.add(concern.id);
+      }
     }
-  }, [deferredSearch, filteredConcerns]);
+    return next;
+  }, [deferredSearch, expandedConcerns, filteredConcerns, resolvedConcern]);
+
+  const effectiveActiveSectionId =
+    activeSectionId &&
+    currentConcern?.sections.some((section) => section.id === activeSectionId)
+      ? activeSectionId
+      : currentConcern?.sections[0]?.id ?? null;
 
   useEffect(() => {
     if (!open) return;
@@ -316,13 +314,8 @@ export default function SettingsDialog({
       observer.observe(el);
     }
 
-    // Set initial active section
-    if (!activeSectionId || !sectionIds.includes(activeSectionId)) {
-      setActiveSectionId(sectionIds[0]);
-    }
-
     return () => observer.disconnect();
-  }, [currentConcern, activeSectionId]);
+  }, [currentConcern]);
 
   // Keyboard shortcut: "/" to focus search
   useEffect(() => {
@@ -400,7 +393,7 @@ export default function SettingsDialog({
 
   // Build the breadcrumb from active section
   const activeSectionLabel = currentConcern?.sections.find(
-    (s) => s.id === activeSectionId,
+    (s) => s.id === effectiveActiveSectionId,
   )?.label;
 
   return (
@@ -461,7 +454,7 @@ export default function SettingsDialog({
               <nav className="p-2" aria-label="Settings navigation">
                 {filteredConcerns.map((concern) => {
                   const isActive = concern.id === resolvedConcern;
-                  const isExpanded = expandedConcerns.has(concern.id);
+                  const isExpanded = visibleExpandedConcerns.has(concern.id);
 
                   return (
                     <div key={concern.id} className="mb-0.5">
@@ -516,7 +509,7 @@ export default function SettingsDialog({
                           {concern.sections.map((section) => {
                             const isSectionActive =
                               isActive &&
-                              activeSectionId === section.id;
+                              effectiveActiveSectionId === section.id;
 
                             return (
                               <button
@@ -628,7 +621,7 @@ export default function SettingsDialog({
                       onClick={() => jumpToSection(section.id)}
                       className={cn(
                         'rounded-md px-2 py-1 text-[11px] font-medium transition-colors',
-                        activeSectionId === section.id
+                        effectiveActiveSectionId === section.id
                           ? 'bg-primary/10 text-primary'
                           : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                       )}
