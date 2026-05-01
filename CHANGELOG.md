@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-05-01
+
+### Added
+- Go tunnel agent as the production tunnel runtime, replacing the legacy TypeScript tunnel agent path.
+- Gateway runtime definitions, validation coverage, and tunnel token CLI support for managed gateway deployments.
+- Standalone compose examples and environment templates for tunnel-agent, db-proxy, guacd, guacenc, rdgw, and ssh-gateway services.
+
+### Changed
+- Release metadata, CLI version output, browser extension manifest, and package manifests now target `1.8.0`.
+- Backend gateway routing was split by concern and expanded with managed runtime network and tunnel support.
+- Tunnel runtime configuration now uses the shared Go gateway-core module for auth headers, framing, and connection settings.
+
+### Fixed
+- RDGW image builds now use the Go toolchain required by the module.
+- Backend service images honor target platform args and use the runtime `PORT` in healthchecks.
+- CodeQL release blockers and backend Go dependency advisories were resolved before publishing.
+
 ## [1.7.1] - 2026-03-25
 
 ### Added
@@ -315,7 +332,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/dnviti/arsenale/compare/v1.7.1...v1.8.0
+[1.7.1]: https://github.com/dnviti/arsenale/compare/v1.7.0...v1.7.1
+[1.7.0]: https://github.com/dnviti/arsenale/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/dnviti/arsenale/compare/v1.5.2...v1.6.0
 [1.5.1]: https://github.com/dnviti/arsenale/compare/v1.5.0...v1.5.1
 [1.5.0]: https://github.com/dnviti/arsenale/compare/v1.4.1...v1.5.0
