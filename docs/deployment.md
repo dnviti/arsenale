@@ -270,6 +270,7 @@ Notable facts from the workflow definitions:
 - gateway verification runs `go vet` and `go test -race` for the Go modules under `gateways/`,
 - docker-build publishes `:latest` from `develop`, `:stable` from `main`, and semver tags only for version tags whose commits are on `origin/main` ancestry,
 - gateways-build follows the same channel split for `develop`, `main`, and main-ancestry semver tags,
+- the canonical runtime broker image package is `ghcr.io/dnviti/arsenale/tunnel-broker`; refactor-era broker package names are not used by deployment,
 - release artifacts currently center on the CLI, not full application bundles.
 
 ## 📦 Compose Project Helper
