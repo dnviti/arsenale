@@ -55,26 +55,28 @@ def _render_compose(**overrides: object) -> dict[str, object]:
     env.filters["basename"] = _basename
     env.filters["realpath"] = _realpath
 
+    image_tag = str(overrides.get("arsenale_image_tag", "stable"))
+    registry = str(overrides.get("arsenale_registry", "ghcr.io/dnviti/arsenale"))
     component_images = {
-        "migrate": "ghcr.io/dnviti/arsenale/control-plane-api:stable",
-        "control-plane-api": "ghcr.io/dnviti/arsenale/control-plane-api:stable",
-        "control-plane-controller": "ghcr.io/dnviti/arsenale/control-plane-controller:stable",
-        "authz-pdp": "ghcr.io/dnviti/arsenale/authz-pdp:stable",
-        "model-gateway": "ghcr.io/dnviti/arsenale/model-gateway:stable",
-        "tool-gateway": "ghcr.io/dnviti/arsenale/tool-gateway:stable",
-        "terminal-broker": "ghcr.io/dnviti/arsenale/terminal-broker:stable",
-        "desktop-broker": "ghcr.io/dnviti/arsenale/desktop-broker:stable",
-        "tunnel-broker": "ghcr.io/dnviti/arsenale/tunnel-broker-go:stable",
-        "query-runner": "ghcr.io/dnviti/arsenale/query-runner:stable",
-        "map-assets": "ghcr.io/dnviti/arsenale/map-assets:stable",
-        "memory-service": "ghcr.io/dnviti/arsenale/memory-service:stable",
-        "agent-orchestrator": "ghcr.io/dnviti/arsenale/agent-orchestrator:stable",
-        "runtime-agent": "ghcr.io/dnviti/arsenale/runtime-agent:stable",
-        "client": "ghcr.io/dnviti/arsenale/client:stable",
-        "guacd": "ghcr.io/dnviti/arsenale/guacd:stable",
-        "guacenc": "ghcr.io/dnviti/arsenale/guacenc:stable",
-        "ssh-gateway": "ghcr.io/dnviti/arsenale/ssh-gateway:stable",
-        "db-proxy": "ghcr.io/dnviti/arsenale/db-proxy:stable",
+        "migrate": f"{registry}/control-plane-api:{image_tag}",
+        "control-plane-api": f"{registry}/control-plane-api:{image_tag}",
+        "control-plane-controller": f"{registry}/control-plane-controller:{image_tag}",
+        "authz-pdp": f"{registry}/authz-pdp:{image_tag}",
+        "model-gateway": f"{registry}/model-gateway:{image_tag}",
+        "tool-gateway": f"{registry}/tool-gateway:{image_tag}",
+        "terminal-broker": f"{registry}/terminal-broker:{image_tag}",
+        "desktop-broker": f"{registry}/desktop-broker:{image_tag}",
+        "tunnel-broker": f"{registry}/tunnel-broker:{image_tag}",
+        "query-runner": f"{registry}/query-runner:{image_tag}",
+        "map-assets": f"{registry}/map-assets:{image_tag}",
+        "memory-service": f"{registry}/memory-service:{image_tag}",
+        "agent-orchestrator": f"{registry}/agent-orchestrator:{image_tag}",
+        "runtime-agent": f"{registry}/runtime-agent:{image_tag}",
+        "client": f"{registry}/client:{image_tag}",
+        "guacd": f"{registry}/guacd:{image_tag}",
+        "guacenc": f"{registry}/guacenc:{image_tag}",
+        "ssh-gateway": f"{registry}/ssh-gateway:{image_tag}",
+        "db-proxy": f"{registry}/db-proxy:{image_tag}",
     }
 
     context: dict[str, object] = {
@@ -85,8 +87,8 @@ def _render_compose(**overrides: object) -> dict[str, object]:
         "_client_bind_host": "0.0.0.0",
         "_public_url": "https://arsenale.example.com",
         "installer_runtime_assets_dir": "/opt/arsenale/config/installer-assets",
-        "arsenale_registry": "ghcr.io/dnviti/arsenale",
-        "arsenale_image_tag": "stable",
+        "arsenale_registry": registry,
+        "arsenale_image_tag": image_tag,
         "arsenale_postgres_image": "quay.io/sclorg/postgresql-16-c10s",
         "arsenale_postgres_data_dir": "/var/lib/pgsql/data",
         "arsenale_db_user": "arsenale",
@@ -170,7 +172,7 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         services = compose["services"]
 
         self.assertEqual(services["control-plane-api"]["image"], "ghcr.io/dnviti/arsenale/control-plane-api:stable")
-        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker-go:stable")
+        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker:stable")
         self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:stable")
         self.assertEqual(services["guacd"]["image"], "ghcr.io/dnviti/arsenale/guacd:stable")
         self.assertEqual(services["ssh-gateway"]["image"], "ghcr.io/dnviti/arsenale/ssh-gateway:stable")
@@ -190,6 +192,15 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
+
+    def test_production_compose_honors_pinned_release_image_tag(self) -> None:
+        compose = _render_compose(arsenale_image_tag="1.8.0")
+        services = compose["services"]
+
+        self.assertEqual(services["control-plane-api"]["image"], "ghcr.io/dnviti/arsenale/control-plane-api:1.8.0")
+        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker:1.8.0")
+        self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:1.8.0")
+        self.assertEqual(services["guacd"]["image"], "ghcr.io/dnviti/arsenale/guacd:1.8.0")
 
     def test_development_compose_keeps_local_builds(self) -> None:
         compose = _render_compose(
@@ -402,7 +413,7 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
                 "memory-service",
                 "terminal-broker",
                 "desktop-broker",
-                "tunnel-broker-go",
+                "tunnel-broker",
                 "query-runner",
                 "map-assets",
                 "runtime-agent",

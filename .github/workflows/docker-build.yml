@@ -169,7 +169,7 @@ jobs:
             context: .
             build_args: |
               SERVICE=desktop-broker
-          - name: tunnel-broker-go
+          - name: tunnel-broker
             dockerfile: ./backend/Dockerfile
             context: .
             build_args: |

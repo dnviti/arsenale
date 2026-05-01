@@ -109,7 +109,7 @@ func NewBroker(config BrokerConfig) *Broker {
 	if strings.TrimSpace(config.ProxyAdvertiseHost) == "" {
 		config.ProxyAdvertiseHost = strings.TrimSpace(os.Getenv("HOSTNAME"))
 		if config.ProxyAdvertiseHost == "" {
-			config.ProxyAdvertiseHost = "tunnel-broker-go"
+			config.ProxyAdvertiseHost = "tunnel-broker"
 		}
 	}
 

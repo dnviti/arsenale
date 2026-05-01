@@ -76,7 +76,7 @@ arsenale_component_images:
   tool-gateway: "{{ arsenale_registry }}/tool-gateway:{{ arsenale_image_tag }}"
   terminal-broker: "{{ arsenale_registry }}/terminal-broker:{{ arsenale_image_tag }}"
   desktop-broker: "{{ arsenale_registry }}/desktop-broker:{{ arsenale_image_tag }}"
-  tunnel-broker: "{{ arsenale_registry }}/tunnel-broker-go:{{ arsenale_image_tag }}"
+  tunnel-broker: "{{ arsenale_registry }}/tunnel-broker:{{ arsenale_image_tag }}"
   query-runner: "{{ arsenale_registry }}/query-runner:{{ arsenale_image_tag }}"
   map-assets: "{{ arsenale_registry }}/map-assets:{{ arsenale_image_tag }}"
   memory-service: "{{ arsenale_registry }}/memory-service:{{ arsenale_image_tag }}"
