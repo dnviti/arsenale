@@ -70,6 +70,7 @@ web_modules/
 .env.*
 !.env.example
 !.env.production.example
+install/password.txt
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -148,6 +149,9 @@ vite.config.ts.timestamp-*
 .vite/
 client/dist-node/vite.config.d.ts.map
 client/dist-node/vite.config.d.ts
+client/dist-node/pwaWorkbox.d.ts.map
+client/dist-node/pwaWorkbox.d.ts
+client/public/monaco/
 
 # Prisma generated client
 server/prisma/generated/
@@ -158,6 +162,9 @@ test_token*.mjs
 
 # Security scan artifacts
 trivy-*.sarif
+
+# Shared local Go build outputs
+build/go/
 
 # CodeQL local scan artifacts
 .codeql/
@@ -190,6 +197,8 @@ eggs/
 .eggs/
 lib/
 !extra-clients/browser-extensions/src/lib/
+!client/src/lib/
+!client/src/lib/*.ts
 lib64/
 parts/
 sdist/
@@ -398,3 +407,25 @@ __marimo__/
 .mcp.json
 
 *.sql
+!backend/migrations/*.sql
+!backend/internal/agents/queries/*.sql
+!backend/internal/memory/queries/*.sql
+!backend/internal/orchestration/queries/*.sql
+!backend/internal/modelgateway/queries/*.sql
+
+recordings/
+
+# Podman/Docker compose file-based secrets
+/secrets/
+
+# Ansible Vault (encrypted secrets) and source env files
+deployment/ansible/inventory/group_vars/all/vault.yml
+deployment/ansible/SECRETS.env
+deployment/ansible/.vault-pass
+
+# Ansible-generated local compose files
+docker-compose.yml
+
+*.csr
+
+.sisyphus/

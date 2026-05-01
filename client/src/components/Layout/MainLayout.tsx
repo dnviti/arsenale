@@ -1,24 +1,57 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import {
-  AppBar, Toolbar, Typography, IconButton, Box, Chip, Menu, MenuItem,
-  Snackbar, Alert, Avatar, Button, Badge,
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
+  History,
+  KeyRound,
+  Lock,
+  LockOpen,
+  MoonStar,
+  Settings2,
+  SunMedium,
+  Video,
+} from 'lucide-react';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Button } from '@/components/ui/button';
 import {
-  Lock as LockIcon,
-  LockOpen as LockOpenIcon,
-  AccountCircle,
-  Settings as SettingsIcon,
-  History as HistoryIcon,
-  DarkMode,
-  LightMode,
-  VpnKey as KeychainIcon,
-  Videocam as VideocamIcon,
-  AccessTime as CheckoutIcon,
-} from '@mui/icons-material';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
+import type { ConnectionData } from '@/api/connections.api';
+import { logoutApi } from '@/api/auth.api';
+import { lockVault } from '@/api/vault.api';
+import { broadcastVaultWindowSync } from '@/utils/vaultWindowSync';
 import ConnectionTree from '../Sidebar/ConnectionTree';
 import TabBar from '../Tabs/TabBar';
 import TabPanel from '../Tabs/TabPanel';
+import NotificationBell from './NotificationBell';
+import TenantSwitcher from './TenantSwitcher';
+import VersionIndicator from './VersionIndicator';
+import {
+  CounterBadge,
+  HeaderIconButton,
+  NotificationToast,
+  StatusPill,
+} from './layoutUi';
+import { useDlpBrowserHardening } from '../../hooks/useDlpBrowserHardening';
+import { useGatewayMonitor } from '../../hooks/useGatewayMonitor';
+import { useLazyMount } from '../../hooks/useLazyMount';
+import { useShareSync } from '../../hooks/useShareSync';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
+import { useAuthStore } from '../../store/authStore';
+import { useConnectionsStore, type Folder } from '../../store/connectionsStore';
+import { useNotificationStore } from '../../store/notificationStore';
+import { useSecretStore } from '../../store/secretStore';
+import { useTabsStore } from '../../store/tabsStore';
+import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
+import { useThemeStore } from '../../store/themeStore';
+import { useVaultStore } from '../../store/vaultStore';
+import type { NavigationActions } from '../../utils/notificationActions';
+
 const ConnectionDialog = lazy(() => import('../Dialogs/ConnectionDialog'));
 const FolderDialog = lazy(() => import('../Dialogs/FolderDialog'));
 const ShareDialog = lazy(() => import('../Dialogs/ShareDialog'));
@@ -35,60 +68,48 @@ const ImportDialog = lazy(() => import('../Dialogs/ImportDialog'));
 const GeoIpDialog = lazy(() => import('../Audit/GeoIpDialog'));
 const CheckoutDialog = lazy(() => import('../Dialogs/CheckoutDialog'));
 
-import TenantSwitcher from './TenantSwitcher';
-import NotificationBell from './NotificationBell';
-import VersionIndicator from './VersionIndicator';
-import { useAuthStore } from '../../store/authStore';
-import { useVaultStore } from '../../store/vaultStore';
-import { logoutApi } from '../../api/auth.api';
-import { lockVault } from '../../api/vault.api';
-import { ConnectionData } from '../../api/connections.api';
-import { useConnectionsStore, type Folder } from '../../store/connectionsStore';
-import { useNotificationStore } from '../../store/notificationStore';
-import { useThemeStore } from '../../store/themeStore';
-import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
-import { useTabsStore } from '../../store/tabsStore';
-import { useGatewayMonitor } from '../../hooks/useGatewayMonitor';
-import { useShareSync } from '../../hooks/useShareSync';
-import { useSecretStore } from '../../store/secretStore';
-import { useLazyMount } from '../../hooks/useLazyMount';
-import { useDlpBrowserHardening } from '../../hooks/useDlpBrowserHardening';
-import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
-import type { NavigationActions } from '../../utils/notificationActions';
-
 const SIDEBAR_WIDTH = 280;
 
+function userInitial(user: { username?: string | null; email?: string | null } | null | undefined) {
+  return (user?.username || user?.email || '?').trim().charAt(0).toUpperCase();
+}
+
 export default function MainLayout() {
-  const user = useAuthStore((s) => s.user);
-  const authLogout = useAuthStore((s) => s.logout);
-  const vaultUnlocked = useVaultStore((s) => s.unlocked);
-  const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
-  const vaultInitialized = useVaultStore((s) => s.initialized);
-  const vaultLocked = vaultInitialized && !vaultUnlocked;
-  const notification = useNotificationStore((s) => s.notification);
-  const clearNotification = useNotificationStore((s) => s.clear);
-  const themeMode = useThemeStore((s) => s.mode);
-  const toggleTheme = useThemeStore((s) => s.toggle);
-  const fetchTerminalDefaults = useTerminalSettingsStore((s) => s.fetchDefaults);
-  const terminalDefaultsLoaded = useTerminalSettingsStore((s) => s.loaded);
-
-  const expiringCount = useSecretStore((s) => s.expiringCount);
-  const pwnedCount = useSecretStore((s) => s.pwnedCount);
-  const fetchCounts = useSecretStore((s) => s.fetchCounts);
-
-  const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
-  const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
-  const keychainEnabled = useFeatureFlagsStore((s) => s.keychainEnabled);
-  const fetchFeatureFlags = useFeatureFlagsStore((s) => s.fetchFeatureFlags);
+  const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
+  const authLogout = useAuthStore((state) => state.logout);
+  const fetchCurrentPermissions = useAuthStore((state) => state.fetchCurrentPermissions);
+  const vaultUnlocked = useVaultStore((state) => state.unlocked);
+  const vaultInitialized = useVaultStore((state) => state.initialized);
+  const setVaultUnlocked = useVaultStore((state) => state.setUnlocked);
+  const checkVaultStatus = useVaultStore((state) => state.checkStatus);
+  const notification = useNotificationStore((state) => state.notification);
+  const clearNotification = useNotificationStore((state) => state.clear);
+  const themeMode = useThemeStore((state) => state.mode);
+  const toggleTheme = useThemeStore((state) => state.toggle);
+  const fetchTerminalDefaults = useTerminalSettingsStore((state) => state.fetchDefaults);
+  const terminalDefaultsLoaded = useTerminalSettingsStore((state) => state.loaded);
+  const expiringCount = useSecretStore((state) => state.expiringCount);
+  const pwnedCount = useSecretStore((state) => state.pwnedCount);
+  const fetchCounts = useSecretStore((state) => state.fetchCounts);
+  const connectionsEnabled = useFeatureFlagsStore((state) => state.connectionsEnabled);
+  const databaseProxyEnabled = useFeatureFlagsStore((state) => state.databaseProxyEnabled);
+  const ipGeolocationEnabled = useFeatureFlagsStore((state) => state.ipGeolocationEnabled);
+  const keychainEnabled = useFeatureFlagsStore((state) => state.keychainEnabled);
+  const multiTenancyEnabled = useFeatureFlagsStore((state) => state.multiTenancyEnabled);
+  const featureFlagsLoaded = useFeatureFlagsStore((state) => state.loaded);
+  const recordingsEnabled = useFeatureFlagsStore((state) => state.recordingsEnabled);
+  const sharingApprovalsEnabled = useFeatureFlagsStore((state) => state.sharingApprovalsEnabled);
+  const fetchFeatureFlags = useFeatureFlagsStore((state) => state.fetchFeatureFlags);
   const anyConnectionFeature = connectionsEnabled || databaseProxyEnabled;
+  const vaultLocked = vaultInitialized && !vaultUnlocked;
 
   useGatewayMonitor();
   useShareSync();
   useDlpBrowserHardening();
 
-  // Suppress native browser context menu globally to enforce DLP controls (CTX-301)
   useEffect(() => {
-    const prevent = (e: MouseEvent) => e.preventDefault();
+    const prevent = (event: MouseEvent) => event.preventDefault();
     document.addEventListener('contextmenu', prevent, { capture: true });
     return () => document.removeEventListener('contextmenu', prevent, { capture: true });
   }, []);
@@ -97,19 +118,42 @@ export default function MainLayout() {
     if (!terminalDefaultsLoaded) {
       fetchTerminalDefaults();
     }
-  }, [terminalDefaultsLoaded, fetchTerminalDefaults]);
+  }, [fetchTerminalDefaults, terminalDefaultsLoaded]);
+
+  useEffect(() => {
+    if (!accessToken) {
+      return;
+    }
+    void fetchCurrentPermissions();
+  }, [accessToken, fetchCurrentPermissions, user?.id, user?.tenantId]);
 
   useEffect(() => {
     if (vaultUnlocked) {
       fetchCounts();
     }
-  }, [vaultUnlocked, fetchCounts]);
+  }, [fetchCounts, vaultUnlocked]);
 
-  // PWA app shortcut deep-link: read ?action= query param to pre-open a dialog on mount (PWA-003)
+  useEffect(() => {
+    if (!featureFlagsLoaded || !keychainEnabled) {
+      return;
+    }
+    void checkVaultStatus();
+  }, [checkVaultStatus, featureFlagsLoaded, keychainEnabled]);
+
+  useEffect(() => {
+    if (!notification) {
+      return undefined;
+    }
+    const timeoutId = window.setTimeout(() => clearNotification(), 5000);
+    return () => window.clearTimeout(timeoutId);
+  }, [clearNotification, notification]);
+
   const [pwaAction] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const action = params.get('action');
-    if (action) window.history.replaceState({}, '', '/');
+    if (action) {
+      window.history.replaceState({}, '', '/');
+    }
     return action;
   });
 
@@ -124,10 +168,6 @@ export default function MainLayout() {
   const [shareTarget, setShareTarget] = useState<ConnectionData | null>(null);
   const [shareFolderTarget, setShareFolderTarget] = useState<{ folderId: string; folderName: string } | null>(null);
   const [connectAsTarget, setConnectAsTarget] = useState<ConnectionData | null>(null);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-
-  // Settings & Audit Log modals
-  // OAuth link redirect: server redirects to /?linked=google after linking
   const [settingsOpen, setSettingsOpen] = useState(
     () => pwaAction === 'open-settings' || Boolean(new URLSearchParams(window.location.search).get('linked')),
   );
@@ -145,11 +185,12 @@ export default function MainLayout() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [linkedProvider, setLinkedProvider] = useState<string | null>(() => {
     const linked = new URLSearchParams(window.location.search).get('linked');
-    if (linked) window.history.replaceState({}, '', '/');
+    if (linked) {
+      window.history.replaceState({}, '', '/');
+    }
     return linked;
   });
 
-  // Lazy-mount guards: keep Suspense wrapper mounted after first open to preserve close animations
   const connectionDialogMounted = useLazyMount(connectionDialogOpen);
   const folderDialogMounted = useLazyMount(folderDialogOpen);
   const shareDialogMounted = useLazyMount(shareTarget);
@@ -165,6 +206,7 @@ export default function MainLayout() {
   const exportDialogMounted = useLazyMount(exportDialogOpen);
   const geoIpDialogMounted = useLazyMount(geoIpTarget);
   const checkoutDialogMounted = useLazyMount(checkoutOpen);
+  const activeGeoIpTarget = ipGeolocationEnabled ? geoIpTarget : null;
 
   const handleOpenSettings = (tab?: string) => {
     setSettingsInitialTab(tab);
@@ -173,21 +215,25 @@ export default function MainLayout() {
 
   const navigationActions: NavigationActions = {
     openKeychain: () => setKeychainOpen(true),
-    openRecordings: () => setRecordingsOpen(true),
+    openRecordings: () => {
+      if (recordingsEnabled) {
+        setRecordingsOpen(true);
+      }
+    },
     openSettings: handleOpenSettings,
     openAuditLog: () => setAuditLogOpen(true),
     selectConnection: (connectionId: string) => {
       const store = useConnectionsStore.getState();
-      const all = [...store.ownConnections, ...store.sharedConnections, ...store.teamConnections];
-      const conn = all.find((c) => c.id === connectionId);
-      if (conn) {
-        useTabsStore.getState().openTab(conn);
+      const allConnections = [...store.ownConnections, ...store.sharedConnections, ...store.teamConnections];
+      const connection = allConnections.find((candidate) => candidate.id === connectionId);
+      if (connection) {
+        useTabsStore.getState().openTab(connection);
       }
     },
   };
 
-  const handleEditConnection = (conn: ConnectionData) => {
-    setEditingConnection(conn);
+  const handleEditConnection = (connection: ConnectionData) => {
+    setEditingConnection(connection);
     setConnectionFolderId(null);
     setConnectionDialogOpen(true);
   };
@@ -212,17 +258,12 @@ export default function MainLayout() {
     setFolderDialogOpen(true);
   };
 
-  const handleShareConnection = (conn: ConnectionData) => {
-    setShareTarget(conn);
-  };
-
-  const handleShareFolder = (folderId: string, folderName: string) => {
-    setShareFolderTarget({ folderId, folderName });
-  };
-
   const handleLogout = async () => {
-    setAnchorEl(null);
-    try { await logoutApi(); } catch {}
+    try {
+      await logoutApi();
+    } catch {
+      // Ignore logout API errors and clear local state anyway.
+    }
     await useTabsStore.getState().clearAll();
     authLogout();
   };
@@ -231,332 +272,326 @@ export default function MainLayout() {
     try {
       await lockVault();
       setVaultUnlocked(false);
-    } catch {}
+      broadcastVaultWindowSync('lock');
+    } catch {
+      // Keep the current vault status if locking fails.
+    }
   };
 
   return (
     <>
-      <Box
-        sx={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          ...(vaultLocked && {
-            filter: 'blur(8px)',
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }),
-          transition: 'filter 0.3s ease',
-        }}
-      >
-      <AppBar position="static" elevation={0} sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: (theme) => theme.palette.mode === 'dark' ? alpha(theme.palette.background.default, 0.8) : alpha(theme.palette.background.default, 0.9), color: 'text.primary', backdropFilter: 'blur(20px)', borderBottom: 1, borderColor: 'divider' }}>
-        <Toolbar variant="dense">
-          <Typography variant="h6" sx={{ flexGrow: 0, mr: 2, fontFamily: (theme) => theme.typography.h5.fontFamily, fontSize: '1.4rem', color: 'text.primary' }}>
-            Arsenale
-          </Typography>
-          <TenantSwitcher onCreateOrg={() => handleOpenSettings('organization')} />
-          <Chip
-            icon={vaultUnlocked ? <LockOpenIcon /> : <LockIcon />}
-            label={vaultUnlocked ? 'Vault Unlocked' : 'Vault Locked'}
-            size="small"
-            variant="outlined"
-            onClick={vaultUnlocked ? handleLockVault : undefined}
-            sx={{
-              mr: 1,
-              ...(vaultUnlocked
-                ? { bgcolor: (theme) => `${theme.palette.primary.main}14`, color: 'primary.main', borderColor: (theme) => `${theme.palette.primary.main}26`, '& .MuiChip-icon': { color: 'primary.main' } }
-                : { bgcolor: (theme) => `${theme.palette.error.main}14`, color: 'error.main', borderColor: (theme) => `${theme.palette.error.main}26`, '& .MuiChip-icon': { color: 'error.main' } }),
-            }}
-          />
-          {keychainEnabled && (
-            <IconButton
-              color="inherit"
-              onClick={() => setKeychainOpen(true)}
-              title="Keychain"
-              sx={{ mr: 1, '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
-            >
-              <Badge badgeContent={expiringCount + pwnedCount} color="error" max={99}>
-                <KeychainIcon />
-              </Badge>
-            </IconButton>
-          )}
-          <Box sx={{ flexGrow: 1 }} />
-          <NotificationBell navigationActions={navigationActions} />
-          <IconButton
-            color="inherit"
-            onClick={toggleTheme}
-            title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            sx={{ '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
-          >
-            {themeMode === 'dark' ? <LightMode /> : <DarkMode />}
-          </IconButton>
-          <IconButton
-            color="inherit"
-            onClick={(e) => setAnchorEl(e.currentTarget)}
-            sx={{ '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}14` } }}
-          >
-            {user?.avatarData ? (
-              <Avatar src={user.avatarData} sx={{ width: 28, height: 28 }} />
-            ) : (
-              <AccountCircle />
-            )}
-          </IconButton>
-          <Menu
-            anchorEl={anchorEl}
-            open={Boolean(anchorEl)}
-            onClose={() => setAnchorEl(null)}
-            slotProps={{ paper: { sx: { bgcolor: 'background.paper', border: 1, borderColor: 'divider' } } }}
-          >
-            <MenuItem disabled sx={{ '&.Mui-disabled': { opacity: 0.7 } }}>
-              <Typography variant="body2" sx={{ color: 'text.secondary' }}>{user?.username || user?.email}</Typography>
-            </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); handleOpenSettings(); }} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-              <SettingsIcon fontSize="small" sx={{ mr: 1 }} />
-              Settings
-            </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); setAuditLogOpen(true); }} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-              <HistoryIcon fontSize="small" sx={{ mr: 1 }} />
-              Activity Log
-            </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); setRecordingsOpen(true); }} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-              <VideocamIcon fontSize="small" sx={{ mr: 1 }} />
-              Recordings
-            </MenuItem>
-            <MenuItem onClick={() => { setAnchorEl(null); setCheckoutOpen(true); }} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>
-              <CheckoutIcon fontSize="small" sx={{ mr: 1 }} />
-              Credential Check-out
-            </MenuItem>
-            <MenuItem onClick={handleLogout} sx={{ '&:hover': { bgcolor: 'action.hover' } }}>Logout</MenuItem>
-          </Menu>
-        </Toolbar>
-      </AppBar>
-
-      <Box sx={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Sidebar */}
-        {anyConnectionFeature && (
-          <Box
-            sx={{
-              width: SIDEBAR_WIDTH,
-              minWidth: SIDEBAR_WIDTH,
-              borderRight: 1, borderColor: 'divider',
-              display: 'flex',
-              flexDirection: 'column',
-              bgcolor: 'background.paper',
-              color: 'text.primary',
-              userSelect: 'none',
-            }}
-          >
-            {!user?.tenantId && (
-              <Alert
-                severity="info"
-                variant="outlined"
-                sx={{ m: 1, '& .MuiAlert-message': { width: '100%' } }}
-                action={
-                  <Button size="small" onClick={() => handleOpenSettings('organization')}>
-                    Get Started
-                  </Button>
-                }
-              >
-                <Typography variant="body2">
-                  Set up an organization to create teams and collaborate.
-                </Typography>
-              </Alert>
-            )}
-            <Box sx={{ flex: 1, overflow: 'auto' }}>
-              <ConnectionTree
-                onEditConnection={handleEditConnection}
-                onShareConnection={handleShareConnection}
-                onConnectAsConnection={setConnectAsTarget}
-                onCreateConnection={handleCreateConnection}
-                onCreateFolder={handleCreateFolder}
-                onEditFolder={handleEditFolder}
-                onShareFolder={handleShareFolder}
-                onViewAuditLog={(conn) => setConnectionAuditTarget({ id: conn.id, name: conn.name })}
-              />
-            </Box>
-            <VersionIndicator />
-          </Box>
+      <div
+        className={cn(
+          'flex h-screen flex-col transition-[filter] duration-200',
+          vaultLocked && 'pointer-events-none select-none blur-md',
         )}
+      >
+        <header className="border-b bg-background/85 backdrop-blur-xl">
+          <div className="flex h-14 items-center gap-2 px-4">
+            <div className="font-heading text-[1.35rem] tracking-tight text-foreground">
+              Arsenale
+            </div>
 
-        {/* Main content */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {featureFlagsLoaded && multiTenancyEnabled ? (
+              <TenantSwitcher onCreateOrg={() => handleOpenSettings('organization')} />
+            ) : null}
+
+            {featureFlagsLoaded && keychainEnabled ? (
+              <StatusPill
+                tone={vaultUnlocked ? 'primary' : 'danger'}
+                onClick={vaultUnlocked ? () => void handleLockVault() : undefined}
+                disabled={!vaultUnlocked}
+              >
+                {vaultUnlocked ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />}
+                {vaultUnlocked ? 'Vault Unlocked' : 'Vault Locked'}
+              </StatusPill>
+            ) : null}
+
+            {featureFlagsLoaded && keychainEnabled ? (
+              <HeaderIconButton
+                aria-label="Keychain"
+                title="Keychain"
+                onClick={() => setKeychainOpen(true)}
+              >
+                <KeyRound className="size-4" />
+                <CounterBadge count={expiringCount + pwnedCount} />
+              </HeaderIconButton>
+            ) : null}
+
+            <div className="ml-auto flex items-center gap-1">
+              <NotificationBell navigationActions={navigationActions} />
+
+              <HeaderIconButton
+                aria-label={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                title={themeMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                onClick={toggleTheme}
+              >
+                {themeMode === 'dark' ? (
+                  <SunMedium className="size-4" />
+                ) : (
+                  <MoonStar className="size-4" />
+                )}
+              </HeaderIconButton>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <HeaderIconButton aria-label="Account menu">
+                    <Avatar className="size-8">
+                      {user?.avatarData ? <AvatarImage src={user.avatarData} alt={user.username || user.email || 'User'} /> : null}
+                      <AvatarFallback>{userInitial(user)}</AvatarFallback>
+                    </Avatar>
+                  </HeaderIconButton>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  <DropdownMenuLabel className="space-y-0.5">
+                    <div className="truncate text-sm font-medium text-foreground">
+                      {user?.username || user?.email}
+                    </div>
+                    {user?.email && user?.username ? (
+                      <div className="truncate text-xs text-muted-foreground">{user.email}</div>
+                    ) : null}
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => handleOpenSettings()}>
+                    <Settings2 className="size-4" />
+                    Settings
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setAuditLogOpen(true)}>
+                    <History className="size-4" />
+                    Activity Log
+                  </DropdownMenuItem>
+                  {recordingsEnabled ? (
+                    <DropdownMenuItem onSelect={() => setRecordingsOpen(true)}>
+                      <Video className="size-4" />
+                      Recordings
+                    </DropdownMenuItem>
+                  ) : null}
+                  {sharingApprovalsEnabled ? (
+                    <DropdownMenuItem onSelect={() => setCheckoutOpen(true)}>
+                      <KeyRound className="size-4" />
+                      Credential Check-out
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => void handleLogout()}>
+                    Logout
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </header>
+
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {anyConnectionFeature ? (
-            <>
-              <TabBar />
-              <TabPanel />
-            </>
-          ) : (
-            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Typography variant="body1" color="text.secondary">
-                Connection management is disabled.
-              </Typography>
-            </Box>
-          )}
-        </Box>
-      </Box>
+            <aside
+              className="flex shrink-0 flex-col border-r bg-card/30"
+              style={{ width: SIDEBAR_WIDTH, minWidth: SIDEBAR_WIDTH }}
+            >
+              {!user?.tenantId ? (
+                <div className="p-3">
+                  <Alert variant="info">
+                    <AlertTitle>Organization setup</AlertTitle>
+                    <AlertDescription className="space-y-3">
+                      <p>Set up an organization to create teams and collaborate.</p>
+                      <Button type="button" size="sm" onClick={() => handleOpenSettings('organization')}>
+                        Get Started
+                      </Button>
+                    </AlertDescription>
+                  </Alert>
+                </div>
+              ) : null}
+              <div className="min-h-0 flex-1 overflow-auto">
+                <ConnectionTree
+                  onEditConnection={handleEditConnection}
+                  onShareConnection={(connection) => setShareTarget(connection)}
+                  onConnectAsConnection={setConnectAsTarget}
+                  onCreateConnection={handleCreateConnection}
+                  onCreateFolder={handleCreateFolder}
+                  onEditFolder={handleEditFolder}
+                  onShareFolder={(folderId, folderName) => setShareFolderTarget({ folderId, folderName })}
+                  onViewAuditLog={(connection) => setConnectionAuditTarget({ id: connection.id, name: connection.name })}
+                />
+              </div>
+              <VersionIndicator />
+            </aside>
+          ) : null}
 
-      {anyConnectionFeature && connectionDialogMounted && (
+          <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            {anyConnectionFeature ? (
+              <>
+                <TabBar />
+                <TabPanel />
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center px-6 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Connection management is disabled.
+                </p>
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+
+      {notification ? (
+        <NotificationToast
+          message={notification.message}
+          severity={notification.severity}
+          onClose={clearNotification}
+        />
+      ) : null}
+
+      {anyConnectionFeature && connectionDialogMounted ? (
         <Suspense fallback={null}>
           <ConnectionDialog
             open={connectionDialogOpen}
-            onClose={() => { setConnectionDialogOpen(false); setEditingConnection(null); setConnectionFolderId(null); setConnectionTeamId(null); }}
+            onClose={() => {
+              setConnectionDialogOpen(false);
+              setEditingConnection(null);
+              setConnectionFolderId(null);
+              setConnectionTeamId(null);
+            }}
             connection={editingConnection}
             folderId={connectionFolderId}
             teamId={connectionTeamId}
           />
         </Suspense>
-      )}
-      {anyConnectionFeature && folderDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && folderDialogMounted ? (
         <Suspense fallback={null}>
           <FolderDialog
             open={folderDialogOpen}
-            onClose={() => { setFolderDialogOpen(false); setEditingFolder(null); setNewFolderParentId(null); setFolderTeamId(null); }}
+            onClose={() => {
+              setFolderDialogOpen(false);
+              setEditingFolder(null);
+              setNewFolderParentId(null);
+              setFolderTeamId(null);
+            }}
             folder={editingFolder}
             parentId={newFolderParentId}
             teamId={folderTeamId}
           />
         </Suspense>
-      )}
-      {anyConnectionFeature && shareDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && shareDialogMounted ? (
         <Suspense fallback={null}>
           <ShareDialog
-            open={!!shareTarget}
+            open={Boolean(shareTarget)}
             onClose={() => setShareTarget(null)}
             connectionId={shareTarget?.id ?? ''}
             connectionName={shareTarget?.name ?? ''}
             teamId={shareTarget?.teamId}
           />
         </Suspense>
-      )}
-      {anyConnectionFeature && shareFolderDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && shareFolderDialogMounted ? (
         <Suspense fallback={null}>
           <ShareFolderDialog
-            open={!!shareFolderTarget}
+            open={Boolean(shareFolderTarget)}
             onClose={() => setShareFolderTarget(null)}
             folderId={shareFolderTarget?.folderId ?? ''}
             folderName={shareFolderTarget?.folderName ?? ''}
           />
         </Suspense>
-      )}
-      {anyConnectionFeature && connectAsDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && connectAsDialogMounted ? (
         <Suspense fallback={null}>
           <ConnectAsDialog
-            open={!!connectAsTarget}
+            open={Boolean(connectAsTarget)}
             onClose={() => setConnectAsTarget(null)}
             connection={connectAsTarget}
           />
         </Suspense>
-      )}
+      ) : null}
 
-      <Snackbar
-        open={notification !== null}
-        autoHideDuration={5000}
-        onClose={clearNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={clearNotification}
-          severity={notification?.severity || 'error'}
-          variant="filled"
-          sx={{ width: '100%' }}
-        >
-          {notification?.message}
-        </Alert>
-      </Snackbar>
-      </Box>
-
-      {settingsDialogMounted && (
+      {settingsDialogMounted ? (
         <Suspense fallback={null}>
           <SettingsDialog
             open={settingsOpen}
-            onClose={() => { setSettingsOpen(false); setLinkedProvider(null); fetchFeatureFlags(); }}
+            onClose={() => {
+              setSettingsOpen(false);
+              setLinkedProvider(null);
+              fetchFeatureFlags();
+            }}
             initialTab={settingsInitialTab}
             linkedProvider={linkedProvider}
-            onViewUserProfile={(uid) => setProfileUserId(uid)}
-            onGeoIpClick={setGeoIpTarget}
+            onViewUserProfile={(userId) => setProfileUserId(userId)}
             onImport={() => setImportDialogOpen(true)}
             onExport={() => setExportDialogOpen(true)}
           />
         </Suspense>
-      )}
-      {auditLogDialogMounted && (
+      ) : null}
+      {auditLogDialogMounted ? (
         <Suspense fallback={null}>
           <AuditLogDialog
             open={auditLogOpen}
             onClose={() => setAuditLogOpen(false)}
-            onGeoIpClick={setGeoIpTarget}
+            onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined}
+            onViewUserProfile={(userId) => setProfileUserId(userId)}
           />
         </Suspense>
-      )}
-      {keychainEnabled && keychainDialogMounted && (
+      ) : null}
+      {keychainEnabled && keychainDialogMounted ? (
         <Suspense fallback={null}>
-          <KeychainDialog
-            open={keychainOpen}
-            onClose={() => setKeychainOpen(false)}
-          />
+          <KeychainDialog open={keychainOpen} onClose={() => setKeychainOpen(false)} />
         </Suspense>
-      )}
-      {anyConnectionFeature && connectionAuditDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && connectionAuditDialogMounted ? (
         <Suspense fallback={null}>
           <ConnectionAuditLogDialog
-            open={!!connectionAuditTarget}
+            open={Boolean(connectionAuditTarget)}
             onClose={() => setConnectionAuditTarget(null)}
             connectionId={connectionAuditTarget?.id ?? ''}
             connectionName={connectionAuditTarget?.name ?? ''}
-            onGeoIpClick={setGeoIpTarget}
+            onGeoIpClick={ipGeolocationEnabled ? setGeoIpTarget : undefined}
           />
         </Suspense>
-      )}
-      {userProfileDialogMounted && (
+      ) : null}
+      {userProfileDialogMounted ? (
         <Suspense fallback={null}>
           <UserProfileDialog
-            open={!!profileUserId}
+            open={Boolean(profileUserId)}
             onClose={() => setProfileUserId(null)}
             userId={profileUserId}
           />
         </Suspense>
-      )}
-      {recordingsDialogMounted && (
+      ) : null}
+      {recordingsEnabled && recordingsDialogMounted ? (
         <Suspense fallback={null}>
-          <RecordingsDialog
-            open={recordingsOpen}
-            onClose={() => setRecordingsOpen(false)}
-          />
+          <RecordingsDialog open={recordingsOpen} onClose={() => setRecordingsOpen(false)} />
         </Suspense>
-      )}
-      {anyConnectionFeature && importDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && importDialogMounted ? (
         <Suspense fallback={null}>
           <ImportDialog
             open={importDialogOpen}
-            onClose={() => { setImportDialogOpen(false); useConnectionsStore.getState().fetchConnections(); }}
+            onClose={() => {
+              setImportDialogOpen(false);
+              useConnectionsStore.getState().fetchConnections();
+            }}
           />
         </Suspense>
-      )}
-      {anyConnectionFeature && exportDialogMounted && (
+      ) : null}
+      {anyConnectionFeature && exportDialogMounted ? (
         <Suspense fallback={null}>
-          <ExportDialog
-            open={exportDialogOpen}
-            onClose={() => setExportDialogOpen(false)}
-          />
+          <ExportDialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} />
         </Suspense>
-      )}
-      {geoIpDialogMounted && (
+      ) : null}
+      {activeGeoIpTarget && geoIpDialogMounted ? (
         <Suspense fallback={null}>
           <GeoIpDialog
-            open={!!geoIpTarget}
+            open={Boolean(activeGeoIpTarget)}
             onClose={() => setGeoIpTarget(null)}
-            ipAddress={geoIpTarget}
+            ipAddress={activeGeoIpTarget}
           />
         </Suspense>
-      )}
-      {checkoutDialogMounted && (
+      ) : null}
+      {sharingApprovalsEnabled && checkoutDialogMounted ? (
         <Suspense fallback={null}>
-          <CheckoutDialog
-            open={checkoutOpen}
-            onClose={() => setCheckoutOpen(false)}
-          />
+          <CheckoutDialog open={checkoutOpen} onClose={() => setCheckoutOpen(false)} />
         </Suspense>
-      )}
+      ) : null}
     </>
   );
 }

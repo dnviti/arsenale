@@ -1,41 +1,172 @@
-# Makefile to replicate .vscode/launch.json and tasks.json configurations
+# ============================================================================
+# Arsenale — Deployment via Ansible
+# ============================================================================
+# Usage:
+#   make setup      — First-time setup: install Ansible collections, generate vault + certs
+#   make install    — Run the interactive installer
+#   make dev        — Start the installer-aware development stack
+#   make dev client — Refresh just the client container from the saved dev profile
+#   make deploy     — Run the installer in production mode
+#   make help       — Show all available targets
+# ============================================================================
 
-.PHONY: help install generate-db server-dev server-debug client-dev migrate-dev prisma-studio full-stack
+SHELL := /bin/bash
+ANSIBLE_DIR := $(abspath deployment/ansible)
+PLAYBOOK := cd $(ANSIBLE_DIR) && ansible-playbook
+VAULT_FILE := $(ANSIBLE_DIR)/inventory/group_vars/all/vault.yml
+LOCAL_VAULT_PASS_FILE := $(ANSIBLE_DIR)/.vault-pass
+ARSENALE_STATE_HOME ?= $(if $(XDG_STATE_HOME),$(XDG_STATE_HOME),$(HOME)/.local/state)
+ARSENALE_DEV_HOME ?= $(ARSENALE_STATE_HOME)/arsenale-dev
+DEFAULT_INSTALL_PASSWORD_FILE := $(abspath $(ARSENALE_DEV_HOME)/install/password.txt)
+DEV_HOME_FLAG := -e arsenale_dev_home=$(ARSENALE_DEV_HOME)
+DEV_STATUS_FILE := $(abspath $(ARSENALE_DEV_HOME)/install/install-status.enc)
+STATUS_FLAG := $(if $(wildcard $(DEV_STATUS_FILE)),-e installer_status_file=$(DEV_STATUS_FILE),)
+VAULT_FLAG ?= $(shell \
+	if [ -n "$$ANSIBLE_VAULT_PASSWORD_FILE" ]; then \
+		printf -- '--vault-password-file %s' "$$ANSIBLE_VAULT_PASSWORD_FILE"; \
+	elif [ -f "$(LOCAL_VAULT_PASS_FILE)" ]; then \
+		printf -- '--vault-password-file %s' "$(LOCAL_VAULT_PASS_FILE)"; \
+	elif [ -f "$(VAULT_FILE)" ] && head -1 "$(VAULT_FILE)" | grep -q '^\$$ANSIBLE_VAULT'; then \
+		printf '%s' '--ask-vault-pass'; \
+	fi)
+INSTALL_PASSWORD_FILE ?= $(if $(wildcard $(DEFAULT_INSTALL_PASSWORD_FILE)),$(DEFAULT_INSTALL_PASSWORD_FILE),)
+INSTALL_PASSWORD_FLAG := $(if $(INSTALL_PASSWORD_FILE),-e install_password_file=$(INSTALL_PASSWORD_FILE),)
+DEV_CAPABILITIES ?=
+DEV_DIRECT_GATEWAY ?=
+DEV_ZERO_TRUST ?=
+DEV_CAPABILITIES_FLAG := $(if $(DEV_CAPABILITIES),-e installer_capabilities_csv=$(DEV_CAPABILITIES),)
+DEV_DIRECT_GATEWAY_FLAG := $(if $(DEV_DIRECT_GATEWAY),-e installer_direct_gateway=$(DEV_DIRECT_GATEWAY),)
+DEV_ZERO_TRUST_FLAG := $(if $(DEV_ZERO_TRUST),-e installer_zero_trust=$(DEV_ZERO_TRUST),)
+empty :=
+space := $(empty) $(empty)
+comma := ,
+DEV_REFRESH_SELECTORS := client gateways control-plane control-plane-api control-plane-controller authz-pdp model-gateway tool-gateway memory-service agent-orchestrator runtime-agent terminal-broker desktop-broker tunnel-broker query-runner map-assets ssh-gateway guacd guacenc dev-tunnel-ssh-gateway dev-tunnel-guacd dev-tunnel-db-proxy postgres redis migrate terminal-target dev-debian-ssh-target dev-demo-postgres dev-demo-mysql dev-demo-mongodb dev-demo-oracle dev-demo-mssql
+DEV_REFRESH_GOALS := $(filter $(DEV_REFRESH_SELECTORS),$(filter-out dev,$(MAKECMDGOALS)))
+DEV_REFRESH_TARGETS_CSV := $(subst $(space),$(comma),$(strip $(DEV_REFRESH_GOALS)))
 
-help:
-	@echo "Available targets (mapped from .vscode/launch.json):"
-	@echo "  make server-dev    - Server: Dev (with watch, generates DB first)"
-	@echo "  make server-debug  - Server: Debug (no watch)"
-	@echo "  make client-dev    - Client: Dev"
-	@echo "  make migrate-dev   - Prisma: Migrate Dev"
-	@echo "  make prisma-studio - Prisma: Studio"
-	@echo "  make full-stack    - Full Stack: Server + Client (installs and runs both)"
-	@echo "  make install       - Task: node:install (npm install)"
-	@echo "  make generate-db   - Task: db:generate (npm run db:generate)"
+.DEFAULT_GOAL := help
 
-# Tasks
-install:
-	npm install
+ifneq ($(filter dev,$(MAKECMDGOALS)),)
+.PHONY: $(DEV_REFRESH_SELECTORS)
+$(DEV_REFRESH_SELECTORS):
+	@:
+endif
 
-generate-db:
-	npm run db:generate
+# ── Dependency check ────────────────────────────────────────────────────────
 
-# Launch Configurations
-server-dev: generate-db
-	cd server && npx tsx watch src/index.ts
+.PHONY: _check-ansible
+_check-ansible:
+	@command -v ansible-playbook >/dev/null 2>&1 || { \
+		printf "\033[1;31mERROR: Ansible is not installed.\033[0m\n\n"; \
+		printf "Install it with one of:\n"; \
+		printf "  pip install ansible          # Any platform (recommended)\n"; \
+		printf "  pipx install ansible          # Isolated install\n"; \
+		printf "  brew install ansible          # macOS (Homebrew)\n"; \
+		printf "  sudo dnf install ansible-core # Fedora / RHEL\n"; \
+		printf "  sudo apt install ansible      # Debian / Ubuntu\n"; \
+		printf "  sudo pacman -S ansible        # Arch Linux\n"; \
+		printf "\nThen run: make setup\n"; \
+		exit 1; \
+	}
 
-server-debug:
-	cd server && npx tsx src/index.ts
+# ── First-time setup ───────────────────────────────────────────────────────
 
-client-dev:
-	cd client && npx vite
+.PHONY: setup
+setup: _check-ansible  ## First-time setup: install collections, generate vault + certs
+	cd $(ANSIBLE_DIR) && ansible-galaxy collection install -r requirements.yml 2>/dev/null || true
+	@if [ ! -f $(ANSIBLE_DIR)/inventory/group_vars/all/vault.yml ]; then \
+		echo "Generating Ansible Vault..."; \
+		cd $(ANSIBLE_DIR) && ./scripts/generate-vault.sh; \
+	else \
+		echo "Vault already exists. To regenerate: make vault"; \
+	fi
+	@echo ""
+	@echo "Setup complete. Next steps:"
+	@echo "  make install   — Run interactive installer"
+	@echo "  make dev       — Start development environment"
+	@echo "  make deploy    — Deploy production stack"
 
-migrate-dev:
-	cd server && npx prisma migrate dev
+# ── Development ─────────────────────────────────────────────────────────────
 
-prisma-studio:
-	cd server && npx prisma studio
+.PHONY: dev
+dev: _check-ansible  ## Deploy dev stack, or refresh selected services via `make dev <selector>`
+ifneq ($(strip $(DEV_REFRESH_GOALS)),)
+	$(PLAYBOOK) playbooks/dev_refresh.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) -e dev_refresh_targets_csv=$(DEV_REFRESH_TARGETS_CSV)
+else
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) $(DEV_CAPABILITIES_FLAG) $(DEV_DIRECT_GATEWAY_FLAG) $(DEV_ZERO_TRUST_FLAG) -e installer_mode=development
+endif
 
-# Compound Configuration
-full-stack: install
-	npx concurrently -n server,client -c blue,green "$(MAKE) server-dev" "$(MAKE) client-dev"
+.PHONY: dev-down
+dev-down: _check-ansible  ## Stop dev stack
+	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(DEV_HOME_FLAG) -e arsenale_env=development -e arsenale_state=absent
+
+# ── Production ──────────────────────────────────────────────────────────────
+
+.PHONY: install
+install: _check-ansible  ## Run interactive installer
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG)
+
+.PHONY: configure
+configure: _check-ansible  ## Reconfigure an existing production install
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e installer_mode=production
+
+.PHONY: deploy
+deploy: _check-ansible  ## Deploy or update production stack via installer
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e installer_mode=production
+
+# ── Operations ──────────────────────────────────────────────────────────────
+
+.PHONY: status
+status: _check-ansible  ## Show encrypted installer status
+	$(PLAYBOOK) playbooks/status.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(STATUS_FLAG)
+
+.PHONY: recover
+recover: _check-ansible  ## Re-run installer recovery flow in production mode
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e installer_mode=production
+
+.PHONY: logs
+logs:  ## Follow service logs (pass SVC= for specific service)
+	podman compose -f $$(find "$(ARSENALE_DEV_HOME)" /opt/arsenale -name docker-compose.yml 2>/dev/null | head -n1 || echo "docker-compose.yml") logs -f $(SVC)
+
+.PHONY: backup
+backup: _check-ansible  ## Create database backup
+	$(PLAYBOOK) playbooks/backup.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG)
+
+.PHONY: rotate
+rotate: _check-ansible  ## Rotate system secrets
+	$(PLAYBOOK) playbooks/rotate-secrets.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG)
+
+# ── Secrets & Certificates ──────────────────────────────────────────────────
+
+.PHONY: vault
+vault: _check-ansible  ## Generate or edit Ansible Vault
+	@if [ -f $(ANSIBLE_DIR)/inventory/group_vars/all/vault.yml ]; then \
+		ansible-vault edit $(ANSIBLE_DIR)/inventory/group_vars/all/vault.yml; \
+	else \
+		cd $(ANSIBLE_DIR) && ./scripts/generate-vault.sh; \
+	fi
+
+.PHONY: certs
+certs: _check-ansible  ## Regenerate TLS certificates
+	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) --tags certificates
+
+# ── Cleanup ─────────────────────────────────────────────────────────────────
+
+.PHONY: clean
+clean: _check-ansible  ## Stop and remove all containers and volumes
+	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e arsenale_state=absent
+
+# ── Help ────────────────────────────────────────────────────────────────────
+
+.PHONY: help
+help:  ## Show available targets
+	@printf "\033[1mArsenale Deployment\033[0m\n\n"
+	@printf "Prerequisites: ansible (make setup will guide you)\n\n"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@printf "\n"
+	@printf "Refresh selectors:\n"
+	@printf "  make dev client\n"
+	@printf "  make dev gateways\n"
+	@printf "  make dev control-plane\n"
+	@printf "  make dev control-plane-api query-runner\n\n"

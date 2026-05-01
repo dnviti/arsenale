@@ -1,14 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
-import {
-  Card, CardContent, Typography, Switch, FormControlLabel, Alert,
-  CircularProgress, Box, TextField, Button, Stack,
-} from '@mui/material';
+import { Loader2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useAuthStore } from '../../store/authStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import { extractApiError } from '../../utils/apiError';
 import { getRdGatewayConfig, updateRdGatewayConfig, getRdGatewayStatus } from '../../api/rdGateway.api';
 import type { RdGatewayConfig, RdGatewayStatus } from '../../api/rdGateway.api';
 import { isAdminOrAbove } from '../../utils/roles';
+import {
+  SettingsButtonRow,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsStatusBadge,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+  SettingsSwitchRow,
+} from './settings-ui';
 
 export default function RdGatewayConfigSection() {
   const user = useAuthStore((s) => s.user);
@@ -33,17 +43,18 @@ export default function RdGatewayConfigSection() {
     if (!user?.tenantId || !isAdmin) return;
 
     Promise.all([
-      getRdGatewayConfig().catch(() => null),
+      getRdGatewayConfig(),
       getRdGatewayStatus().catch(() => null),
     ]).then(([cfg, sts]) => {
-      if (cfg) {
-        setConfig(cfg);
-        setEnabled(cfg.enabled);
-        setExternalHostname(cfg.externalHostname);
-        setPort(cfg.port);
-        setIdleTimeoutSeconds(cfg.idleTimeoutSeconds);
-      }
+      setConfig(cfg);
+      setEnabled(cfg.enabled);
+      setExternalHostname(cfg.externalHostname);
+      setPort(cfg.port);
+      setIdleTimeoutSeconds(cfg.idleTimeoutSeconds);
       if (sts) setStatus(sts);
+      setLoading(false);
+    }).catch((err: unknown) => {
+      setError(extractApiError(err, 'Failed to load RD Gateway configuration'));
       setLoading(false);
     });
   }, [user?.tenantId, isAdmin]);
@@ -59,6 +70,10 @@ export default function RdGatewayConfigSection() {
         idleTimeoutSeconds,
       });
       setConfig(updated);
+      setEnabled(updated.enabled);
+      setExternalHostname(updated.externalHostname);
+      setPort(updated.port);
+      setIdleTimeoutSeconds(updated.idleTimeoutSeconds);
       notify('RD Gateway configuration saved', 'success');
     } catch (err) {
       setError(extractApiError(err, 'Failed to save RD Gateway configuration'));
@@ -71,17 +86,29 @@ export default function RdGatewayConfigSection() {
 
   if (loading) {
     return (
-      <Card variant="outlined">
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="Native RDP Access"
+        description="RD Gateway settings for native Windows and macOS RDP clients."
+      >
+        <SettingsLoadingState message="Loading RD Gateway configuration..." />
+      </SettingsPanel>
     );
   }
 
-  const hasChanges = config && (
+  if (!config) {
+    return (
+      <SettingsPanel
+        title="Native RDP Access"
+        description="RD Gateway settings for native Windows and macOS RDP clients."
+      >
+        <Alert variant="destructive">
+          <AlertDescription>{error || 'RD Gateway configuration is unavailable.'}</AlertDescription>
+        </Alert>
+      </SettingsPanel>
+    );
+  }
+
+  const hasChanges = (
     config.enabled !== enabled ||
     config.externalHostname !== externalHostname ||
     config.port !== port ||
@@ -89,85 +116,100 @@ export default function RdGatewayConfigSection() {
   );
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          Native RDP Access (RD Gateway)
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Enable the MS-TSGU RD Gateway protocol so native Windows and macOS RDP clients
-          (mstsc.exe, Microsoft Remote Desktop) can tunnel RDP connections through Arsenale.
-          Users configure Arsenale as their RD Gateway and connect to authorized targets
-          without any client-side agent.
-        </Typography>
+    <SettingsPanel
+      title="Native RDP Access"
+      description="Enable MS-TSGU RD Gateway so native clients can tunnel RDP sessions through Arsenale."
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        {error && <Alert severity="error" sx={{ my: 1 }}>{error}</Alert>}
+      <SettingsSwitchRow
+        title="Enable RD Gateway"
+        description="Expose the RD Gateway endpoint for native RDP clients like mstsc.exe and Microsoft Remote Desktop."
+        checked={enabled}
+        disabled={saving}
+        onCheckedChange={setEnabled}
+      />
 
-        <Stack spacing={2} sx={{ mt: 2 }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={enabled}
-                onChange={(e) => setEnabled(e.target.checked)}
-              />
-            }
-            label="Enable RD Gateway"
-          />
-
-          <TextField
-            label="External Hostname"
+      <div className="grid gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="space-y-2">
+          <Label htmlFor="rd-gateway-hostname">External Hostname</Label>
+          <Input
+            id="rd-gateway-hostname"
             value={externalHostname}
-            onChange={(e) => setExternalHostname(e.target.value)}
-            helperText="The public hostname clients use to reach the RD Gateway (e.g., rdgw.example.com)"
-            size="small"
-            fullWidth
-            disabled={!enabled}
+            onChange={(event) => setExternalHostname(event.target.value)}
+            placeholder="rdgw.example.com"
+            disabled={!enabled || saving}
           />
+          <p className="text-xs leading-5 text-muted-foreground">
+            The public hostname RDP clients use to reach the gateway.
+          </p>
+        </div>
 
-          <TextField
-            label="Port"
-            type="number"
-            value={port}
-            onChange={(e) => setPort(parseInt(e.target.value, 10) || 443)}
-            helperText="HTTPS port for the RD Gateway endpoint (default: 443)"
-            size="small"
-            sx={{ maxWidth: 200 }}
-            disabled={!enabled}
-            inputProps={{ min: 1, max: 65535 }}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="rd-gateway-port">Port</Label>
+            <Input
+              id="rd-gateway-port"
+              type="number"
+              min={1}
+              max={65535}
+              value={port}
+              onChange={(event) => {
+                const nextPort = Number.parseInt(event.target.value, 10);
+                setPort(Number.isFinite(nextPort) ? nextPort : 443);
+              }}
+              disabled={!enabled || saving}
+            />
+            <p className="text-xs leading-5 text-muted-foreground">HTTPS port for the gateway endpoint.</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="rd-gateway-idle-timeout">Idle Timeout (seconds)</Label>
+            <Input
+              id="rd-gateway-idle-timeout"
+              type="number"
+              min={60}
+              max={86400}
+              value={idleTimeoutSeconds}
+              onChange={(event) => {
+                const nextTimeout = Number.parseInt(event.target.value, 10);
+                setIdleTimeoutSeconds(Number.isFinite(nextTimeout) ? nextTimeout : 3600);
+              }}
+              disabled={!enabled || saving}
+            />
+            <p className="text-xs leading-5 text-muted-foreground">Maximum idle time before tunnel teardown.</p>
+          </div>
+        </div>
+      </div>
+
+      {status && enabled && (
+        <SettingsSummaryGrid className="xl:grid-cols-2">
+          <SettingsSummaryItem
+            label="Gateway Status"
+            value={<SettingsStatusBadge tone="success">Running</SettingsStatusBadge>}
           />
-
-          <TextField
-            label="Idle Timeout (seconds)"
-            type="number"
-            value={idleTimeoutSeconds}
-            onChange={(e) => setIdleTimeoutSeconds(parseInt(e.target.value, 10) || 3600)}
-            helperText="Maximum idle time before tunnel teardown"
-            size="small"
-            sx={{ maxWidth: 200 }}
-            disabled={!enabled}
-            inputProps={{ min: 60, max: 86400 }}
+          <SettingsSummaryItem
+            label="Live Usage"
+            value={`${status.activeTunnels} tunnels / ${status.activeChannels} channels`}
           />
+        </SettingsSummaryGrid>
+      )}
 
-          {status && enabled && (
-            <Box sx={{ mt: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Active tunnels: {status.activeTunnels} | Active channels: {status.activeChannels}
-              </Typography>
-            </Box>
-          )}
-
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="contained"
-              size="small"
-              onClick={handleSave}
-              disabled={saving || !hasChanges}
-            >
-              {saving ? <CircularProgress size={20} /> : 'Save'}
-            </Button>
-          </Box>
-        </Stack>
-      </CardContent>
-    </Card>
+      <SettingsButtonRow>
+        <Button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !hasChanges}
+        >
+          {saving && <Loader2 className="animate-spin" />}
+          Save Changes
+        </Button>
+      </SettingsButtonRow>
+    </SettingsPanel>
   );
 }

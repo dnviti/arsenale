@@ -1,6 +1,6 @@
 # Components Overview
 
-> Auto-generated on 2026-03-15 by /docs create components.
+> Auto-generated on 2026-04-07 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
 ## Overview
@@ -9,14 +9,14 @@ The client is built with:
 
 - **React 19** with TypeScript
 - **Vite** — build tool and dev server
-- **Material-UI (MUI) v7** — component library and theming
-- **Zustand** — state management (14 stores with localStorage persistence for UI preferences)
+- **Tailwind CSS 4 + shadcn/ui + Material-UI (MUI) v7** — hybrid UI layer and theming bridge during migration
+- **Zustand** — state management (17 stores with localStorage persistence for UI preferences)
 - **Axios** — HTTP client with JWT auto-refresh
-- **Socket.IO Client** — real-time SSH terminals, notifications, gateway monitoring
+- **WebSocket / Guacamole clients** — real-time SSH terminals, desktop sessions, and broker transport
 - **XTerm.js** — SSH terminal emulation
 - **guacamole-common-js** — RDP/VNC remote desktop rendering
 
-**Total**: 10 pages, 88 components, 14 stores, 13 hooks, 29 API modules.
+**Total**: 11 pages, 90+ components, 17 stores, 15 hooks, 41 API modules.
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -25,7 +25,7 @@ The client is built with:
 
 | Page | Route | Purpose | Key Stores |
 |------|-------|---------|------------|
-| `LoginPage` | `/login` | Multi-step login: email/password, MFA challenge (TOTP/SMS/WebAuthn), forced MFA setup, tenant selection | authStore, vaultStore |
+| `LoginPage` | `/login` | Passkey-first login with password fallback after user choice or repeated failures, tenant-aware MFA challenge (email/TOTP/SMS/WebAuthn), forced MFA setup, tenant selection | authStore, vaultStore |
 | `RegisterPage` | `/register` | User registration with email verification and recovery key display | authStore |
 | `DashboardPage` | `/` | Main app shell — fetches connections, restores tabs, renders MainLayout | connectionsStore, tabsStore |
 | `ConnectionViewerPage` | `/viewer/:id` | Standalone popup window for a single connection (SSH/RDP/VNC) with auth bootstrap | tabsStore, authStore |
@@ -35,6 +35,7 @@ The client is built with:
 | `VaultSetupPage` | `/vault-setup` | Post-OAuth vault password setup for OAuth-only users | authStore |
 | `ForgotPasswordPage` | `/forgot-password` | Password reset email request form | — |
 | `ResetPasswordPage` | `/reset-password` | Multi-step password reset (token validation, optional SMS, new password) | — |
+| `SetupWizardPage` | `/setup` | First-run setup wizard for initial admin account and tenant configuration | authStore |
 
 <!-- manual-start -->
 <!-- manual-end -->

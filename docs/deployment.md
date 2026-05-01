@@ -1,319 +1,324 @@
 ---
 title: Deployment
-description: Docker containers, CI/CD pipelines, production setup, and infrastructure
-generated-by: ctdf-docs
-generated-at: 2026-03-21T17:00:00Z
+description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
+generated-by: claw-docs
+generated-at: 2026-04-17T17:56:02Z
 source-files:
-  - compose.yml
-  - compose.dev.yml
-  - compose.demo.yml
-  - server/Dockerfile
+  - Makefile
+  - backend/Dockerfile
   - client/Dockerfile
+  - gateways/db-proxy/Dockerfile
+  - gateways/ssh-gateway/Dockerfile
   - gateways/guacd/Dockerfile
   - gateways/guacenc/Dockerfile
-  - gateways/ssh-gateway/Dockerfile
   - gateways/tunnel-agent/Dockerfile
-  - gateways/db-proxy/Dockerfile
-  - gateways/rdgw/Dockerfile
-  - tools/arsenale-cli/main.go
-  - client/nginx.conf
-  - client/nginx.main.conf
-  - .github/workflows/verify.yml
+  - docker-compose.yml
+  - deployment/ansible/README.md
+  - deployment/ansible/install/capabilities.yml
+  - deployment/ansible/playbooks/install.yml
+  - deployment/ansible/playbooks/dev_refresh.yml
+  - deployment/ansible/playbooks/status.yml
+  - deployment/ansible/playbooks/deploy.yml
+  - deployment/ansible/roles/deploy/templates/compose.yml.j2
   - .github/workflows/docker-build.yml
   - .github/workflows/gateways-build.yml
   - .github/workflows/security.yml
+  - .github/workflows/verify.yml
   - .github/workflows/release.yml
+  - .compose-project/install.sh
+  - .compose-project/manage.sh
 ---
 
-# Deployment
+## Deployment Model
 
-## Production Docker Compose
+> **Detailed Ansible documentation**: For a comprehensive guide covering all installation modes, backends, Ansible roles, capabilities, configuration variables, and step-by-step walkthroughs, see [`deployment/ansible/README.md`](../deployment/ansible/README.md). For the installer artifact model and rerun/recovery behavior, see [`docs/installer.md`](installer.md).
 
-The production stack is defined in `compose.yml`:
+Arsenale now has one installer-driven deployment story for both development and production:
+
+- `Makefile` is the human entry point,
+- `deployment/ansible/playbooks/install.yml` is the interactive installer entrypoint,
+- `deployment/ansible/playbooks/dev_refresh.yml` is the targeted dev-service refresh entrypoint,
+- `deployment/ansible/playbooks/status.yml` reads encrypted installer status,
+- `deployment/ansible/playbooks/deploy.yml` is the shared apply engine under the installer,
+- `deployment/ansible/roles/deploy/templates/compose.yml.j2` is the authoritative Podman Compose template.
 
 ```mermaid
 flowchart TD
-    subgraph External["External Access"]
-        Browser["Browser<br/>Port 3000"]
-    end
-
-    subgraph Stack["Docker Compose Stack"]
-        Client["client<br/>(Nginx :8080)"]
-        Server["server<br/>(:3001 + :3002)"]
-        Postgres[(postgres<br/>:5432)]
-        GuacD["guacd<br/>:4822"]
-        GuacEnc["guacenc<br/>:3003"]
-        SSHGw["ssh-gateway<br/>:2222"]
-    end
-
-    Browser --> Client
-    Client -->|/api proxy| Server
-    Client -->|/guacamole proxy| Server
-    Server --> Postgres
-    Server --> GuacD
-    Server --> GuacEnc
-    GuacD --> SSHGw
-
-    subgraph Volumes
-        pgdata["pgdata"]
-        drive["arsenale_drive"]
-        recordings["arsenale_recordings"]
-    end
-
-    Postgres --> pgdata
-    Server --> drive
-    Server --> recordings
-    GuacD --> drive
-    GuacD --> recordings
+    Make["make dev / install / deploy / status"] --> Entry["install.yml or status.yml"]
+    Entry --> Artifacts["encrypted installer artifacts"]
+    Entry --> Apply["deploy.yml shared apply engine"]
+    Apply --> Render["compose.yml.j2 or Helm render"]
+    Render --> Runtime["Podman Compose or Kubernetes"]
+    Runtime --> Bootstrap["dev bootstrap + demo DB seeding"]
 ```
 
-### Services
+The checked-in `docker-compose.yml` mirrors the current generated development stack, but the installer flow and Ansible templates remain the source of truth.
 
-| Service | Image | Ports | Purpose |
-|---------|-------|-------|---------|
-| **postgres** | `postgres:16` | Internal | Database with health check |
-| **guacd** | `${ORCHESTRATOR_GUACD_IMAGE}` | 4822 | RDP/VNC protocol handler |
-| **guacenc** | `./gateways/guacenc` | Internal | Recording → video conversion |
-| **server** | `./server/Dockerfile` | 3001, 3002 | Express API + Guacamole WS |
-| **client** | `./client/Dockerfile` | 8080 → 3000 | Nginx reverse proxy + SPA |
-| **ssh-gateway** | `./gateways/ssh-gateway` | 2222 | SSH bastion (optional) |
+For local code iteration, the root `Makefile` now supports scoped refreshes such as `make dev client`, `make dev gateways`, and `make dev control-plane`. Those commands reuse the saved dev render state and rebuild/restart only the requested services; full `make dev` is still the correct path for installer/profile/cert/secret/compose changes.
 
-### Volumes
+RDP shared-drive staging and SSH browser-mediated file transfers now require S3-compatible object storage. The development installer provisions a local `shared-files-s3` MinIO service and injects the `SHARED_FILES_S3_*` runtime env vars automatically. Production and Kubernetes installs must point those env vars at external object storage before the control plane starts.
 
-| Volume | Mount | Purpose |
-|--------|-------|---------|
-| `pgdata` | PostgreSQL data | Database persistence |
-| `arsenale_drive` | `/guacd-drive` | RDP file drive redirection |
-| `arsenale_recordings` | `/recordings` | Session recordings |
+## 🔐 Installer Artifacts
 
-### Security Hardening
+The installer owns an encrypted artifact set in addition to the Ansible vault. The canonical production location is:
 
-All containers run with:
-- `cap_drop: ALL` + `cap_add: NET_BIND_SERVICE`
-- `security_opt: no-new-privileges:true`
-- `security_opt: label:disable` (Podman/SELinux compatibility)
-- Non-root users where possible
+```text
+/opt/arsenale/install/
+```
 
-### Starting Production
+Artifacts:
+
+- `install-profile.enc`
+- `install-state.enc`
+- `install-status.enc`
+- `install-log.enc`
+- `rendered-artifacts.enc`
+
+Operational consequences:
+
+- `make status` reads `install-status.enc`, not the live app database.
+- reruns and recovery do not depend on a healthy Arsenale instance,
+- the technician password is requested again on every rerun and is never stored on disk.
+
+## 🐳 And ☸ Supported Backends
+
+Supported installer backends:
+
+- Podman Compose
+- Kubernetes via Helm
+
+Docker is not a supported installer backend. Development installs also require Podman locally because `playbooks/install.yml` asserts that `podman` is available before it will apply the stack.
+
+The capability catalog in `deployment/ansible/install/capabilities.yml` lets production profiles toggle:
+
+- keychain
+- connections
+- IP geolocation
+- databases
+- recordings
+- zero trust
+- agentic AI
+- enterprise auth
+- sharing and approvals
+- CLI
+
+Installer-driven development uses the same capability and routing model as production, but always builds images locally and runs on Podman.
+
+## 🐳 Image Build Matrix
+
+| Image | Built from | Notes |
+|-------|------------|-------|
+| `control-plane-api` | `backend/Dockerfile` with `SERVICE=control-plane-api` | Generic Go service image pattern |
+| `map-assets` | `backend/Dockerfile` with `SERVICE=map-assets` | OpenStreetMap tile proxy/cache service for GeoIP-enabled deployments |
+| `client` | `client/Dockerfile` | Multi-stage Node build then nginx runtime |
+| `db-proxy` | `gateways/db-proxy/Dockerfile` | Go `db-proxy` binary plus bundled `tunnel-agent` |
+| `ssh-gateway` | `gateways/ssh-gateway/Dockerfile` | Alpine runtime, SSHD, gRPC key server, tunnel agent |
+| `guacd` | `gateways/guacd/Dockerfile` | Alpine runtime, Guacamole server packages, tunnel agent |
+| `guacenc` | `gateways/guacenc/Dockerfile` | Custom build with `guacenc`, `agg`, and Go wrapper |
+| `tunnel-agent` | `gateways/tunnel-agent/Dockerfile` | Standalone Go tunnel agent |
+| `recording-worker` | `backend/Dockerfile` with `SERVICE=recording-worker` | Recording conversion and retention worker |
+
+Important implementation details:
+
+- `backend/Dockerfile` is service-agnostic: it builds `/usr/local/bin/service` from `backend/cmd/${SERVICE}` and always also builds `/usr/local/bin/migrate`.
+- `client/Dockerfile` serves the built SPA through nginx and exposes `/health`.
+- `gateways/db-proxy/Dockerfile` bundles the Go database middleware plus the Go tunnel agent binary.
+
+## 🖧 Runtime Topology In Development
+
+Key host-to-container mappings from `docker-compose.yml`:
+
+| Host port | Service | Container port |
+|-----------|---------|----------------|
+| `3000` | `client` | `8080` |
+| `18080` | `control-plane-api` | `8080` |
+| `18081` | `control-plane-controller` | `8081` |
+| `18082` | `authz-pdp` | `8082` |
+| `18083` | `model-gateway` | `8083` |
+| `18084` | `tool-gateway` | `8084` |
+| `18085` | `agent-orchestrator` | `8085` |
+| `18086` | `memory-service` | `8086` |
+| `18090` | `terminal-broker` | `8090` |
+| `18091` | `desktop-broker` | `8091` |
+| `18092` | `tunnel-broker` | `8092` |
+| `18093` | `query-runner` | `8093` |
+| `18094` | `recording-worker` | `8094` |
+| `18095` | `runtime-agent` | `8095` |
+| `18096` | `map-assets` | `8096` |
+
+Primary internal networks:
+
+| Network | Use |
+|---------|-----|
+| `net-edge` | Public-facing services and internal service calls |
+| `net-db` | PostgreSQL and database-adjacent services |
+| `net-cache` | Redis-backed coordination |
+| `net-guacd` | Desktop broker and `guacd` |
+| `net-guacenc` | Recording conversion |
+| `net-gateway` | SSH gateway and managed gateway workloads |
+| `net-egress` | Outbound egress network for endpoint-facing services: SSH, RDP/VNC, direct database execution, OSM tile fetches from `map-assets`, AI provider calls from `control-plane-api`, and tunneled gateway fixtures |
+
+## ⚙️ Runtime Env Emitted By The Installer
+
+The compose template now emits more deployment intent into the running services:
+
+- `ARSENALE_INSTALL_MODE`
+- `ARSENALE_INSTALL_BACKEND`
+- `ARSENALE_INSTALL_CAPABILITIES`
+- `FEATURE_*`
+- `CLI_ENABLED`
+- `GATEWAY_ROUTING_MODE`
+- `MAP_ASSETS_UPSTREAM_HOST`
+- `MAP_ASSETS_CACHE_DIR`
+- `MAP_ASSETS_TILE_URL_TEMPLATE`
+- `MAP_ASSETS_USER_AGENT`
+- `ORCHESTRATOR_*`
+- `DEV_BOOTSTRAP_*`
+- `DEV_SAMPLE_*`
+
+That matters because the control plane uses those env vars to register routes, expose public config, and pick routing behavior for gateways and database sessions.
+
+File-transfer specific runtime env emitted by the installer:
+
+- `FILE_THREAT_SCANNER_MODE`
+- `SHARED_FILES_S3_BUCKET`
+- `SHARED_FILES_S3_REGION`
+- `SHARED_FILES_S3_ENDPOINT`
+- `SHARED_FILES_S3_ACCESS_KEY_ID`
+- `SHARED_FILES_S3_PREFIX`
+- `SHARED_FILES_S3_FORCE_PATH_STYLE`
+- `SHARED_FILES_S3_AUTO_CREATE_BUCKET`
+
+## 🔐 TLS, Secrets, And Container Hardening
+
+Arsenale deploys with TLS everywhere practical.
+
+### Certificates
+
+- Dev and production certificate generation are handled by the `certificates` role.
+- Local development writes the generated CA and service certificates under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
+- Generated certs cover client HTTPS, PostgreSQL TLS, `guacd`, `guacenc`, SSH gateway gRPC, and tunnel identities.
+
+### Secrets
+
+Runtime secrets are delivered through secret mounts, not plain environment strings, for:
+
+- database URL
+- JWT secret
+- guacamole secret
+- server encryption key
+- guacenc auth token
+- provider credentials
+
+### Hardening
+
+Most services in the compose template use a consistent hardening profile:
+
+- `read_only: true`
+- `cap_drop: [ALL]`
+- `security_opt: [no-new-privileges:true]`
+- `tmpfs` for writable scratch paths
+- health checks for service readiness
+
+Some containers intentionally run as `0:0` during startup when they must prepare runtime directories before execing the service binary. That behavior is explicit in the template and should not be removed casually.
+
+## 🧪 Development Fixtures And Demo Data
+
+The development installer flow does more than boot the app. It also:
+
+- runs `service dev-bootstrap` inside `arsenale-control-plane-api`,
+- creates development gateway fixtures,
+- provisions tunneled gateway fixtures,
+- seeds five sample database containers with a deterministic ERP-style dataset (customers, products, inventory, sales, purchasing, invoices, and payments),
+- pushes managed tenant SSH keys to all managed gateways after bootstrap.
+
+Demo data containers:
+
+| Container | Protocol |
+|-----------|----------|
+| `arsenale-dev-demo-postgres` | PostgreSQL |
+| `arsenale-dev-demo-mysql` | MySQL / MariaDB |
+| `arsenale-dev-demo-mongodb` | MongoDB |
+| `arsenale-dev-demo-oracle` | Oracle |
+| `arsenale-dev-demo-mssql` | SQL Server |
+
+Tunneled gateway fixtures:
+
+| Container | Purpose |
+|-----------|---------|
+| `arsenale-dev-tunnel-ssh-gateway` | Managed SSH via tunnel broker |
+| `arsenale-dev-tunnel-guacd` | Desktop proxy via tunnel broker |
+| `arsenale-dev-tunnel-db-proxy` | Database proxy via tunnel broker |
+
+Each demo database now exposes the same richer baseline shape with `demo_customers`, `demo_products`, `demo_orders`, `demo_order_items`, `demo_purchase_orders`, `demo_invoices`, and related supporting tables/collections. The seeded counts are intentionally substantial enough for join-heavy SQL, AI query generation, and execution-plan testing.
+
+This makes the dev stack suitable for full-stack session, gateway, and DB proxy testing without touching the application's own PostgreSQL data.
+
+## 🚢 CI/CD Workflows
+
+| Workflow | Purpose |
+|----------|---------|
+| `.github/workflows/verify.yml` | Typecheck, lint, audit, tests, and builds |
+| `.github/workflows/security.yml` | CodeQL and Trivy filesystem scanning |
+| `.github/workflows/docker-build.yml` | Backend and client verify, image build, scan, and push |
+| `.github/workflows/gateways-build.yml` | Gateway Go tests, image build, scan, and push |
+| `.github/workflows/release.yml` | Cross-platform CLI build, checksums, and GitHub release draft |
+
+Notable facts from the workflow definitions:
+
+- backend verification includes `go vet` and `go test -race`,
+- gateway verification runs `go vet` and `go test -race` for the Go modules under `gateways/`,
+- docker-build publishes `:latest` from `develop`, `:stable` from `main`, and semver tags only for version tags whose commits are on `origin/main` ancestry,
+- gateways-build follows the same channel split for `develop`, `main`, and main-ancestry semver tags,
+- release artifacts currently center on the CLI, not full application bundles.
+
+## 📦 Compose Project Helper
+
+The `.compose-project/` directory contains standalone helpers for environments where the full Ansible installer is not needed:
+
+| File | Purpose |
+|------|---------|
+| `install.sh` | Standalone installer script that renders and applies the compose stack |
+| `manage.sh` | Management script for common operations (start, stop, status, logs, backup) |
+| `docker-compose.yml` | Generated compose file for the current profile |
+| `config/ssh-gateway/authorized_keys` | SSH gateway authorized keys |
+
+These helpers provide a lighter-weight alternative to the full Ansible installer for simple deployments.
+
+## 🛠 Common Deployment Operations
 
 ```bash
-# Create production env file
-cp .env.example .env.production
-# Edit .env.production with production values
-
-# Start full stack
-npm run docker:prod
+make setup
+make install
+make deploy
+make configure
+make recover
+make status
+make dev
+make dev-down
+make logs SVC=arsenale-control-plane-api
+make certs
+make backup
+make rotate
 ```
 
-## Container Images
+Useful script-level entry points:
 
-### Server (`server/Dockerfile`)
-
-Multi-stage build on `node:22-alpine`:
-
-1. Install dependencies from `package-lock.json`
-2. Generate Prisma client from schema
-3. Compile TypeScript to `dist/`
-4. Prune to production dependencies
-5. Install `arsenale` CLI shim at `/usr/local/bin/arsenale`
-6. Create non-root `appuser`
-7. Create `/guacd-drive` and `/recordings` directories
-
-**Exposed ports:** 3001 (API), 3002 (Guacamole WS)
-**Health check:** `GET /api/health` (10s interval, 5 retries, 30s start period)
-**Entry:** `node dist/index.js`
-
-### Client (`client/Dockerfile`)
-
-Multi-stage build: Node 22-alpine (build) → Nginx 1.28-alpine (runtime):
-
-1. Install dependencies and build with Vite
-2. Copy built assets to Nginx html directory
-3. Apply custom Nginx configuration
-
-**Exposed port:** 8080
-**Health check:** `GET /health` (10s interval)
-**Entry:** `nginx -g 'daemon off;'`
-
-### Guacd Gateway (`gateways/guacd/Dockerfile`)
-
-Multi-stage: tunnel-agent builder → guacamole/guacd:1.6.0 runtime:
-
-1. Build tunnel-agent from TypeScript
-2. Install Node.js in guacd base image
-3. Copy pre-built tunnel agent
-4. Custom entrypoint starts both guacd and tunnel agent
-
-**Exposed port:** 4822
-**User:** daemon (non-root)
-
-### SSH Gateway (`gateways/ssh-gateway/Dockerfile`)
-
-Multi-stage: tunnel-agent builder → Alpine 3.21 runtime:
-
-1. Build tunnel-agent
-2. Install OpenSSH server
-3. Configure SSH with host keys
-4. Copy tunnel agent + key API script
-
-**Exposed ports:** 2222 (SSH), 8022 (key API)
-**User:** tunnel (non-root)
-
-### Database Proxy Gateway (`gateways/db-proxy/Dockerfile`)
-
-Multi-stage build: tunnel-agent builder (Node 22-alpine) + Node 22-alpine runtime:
-
-1. Build tunnel-agent from TypeScript
-2. Install runtime dependencies (libaio, libnsl, unixODBC, FreeTDS, libxml2)
-3. Embed pre-built tunnel agent
-4. Copy Go protocol adapters
-5. Create non-root `dbproxy` user
-
-Protocol-aware proxy supporting PostgreSQL, MySQL, and MongoDB. Credentials are injected per-session from the Arsenale vault.
-
-**Exposed port:** 5432 (configurable via `DB_LISTEN_PORT`)
-**Health check:** Process-level (`/proc/1/status`, 30s interval, 10s start period)
-**User:** dbproxy (non-root)
-**Entry:** `/entrypoint.sh`
-
-### RD Gateway (`gateways/rdgw/`)
-
-Go-based implementation of the MS-TSGU (Terminal Services Gateway) protocol. Enables native Windows RDP clients (mstsc.exe) to connect through Arsenale with vault credential injection and audit logging.
-
-### Arsenale Connect CLI (`tools/arsenale-cli/`)
-
-Go CLI tool for native client orchestration. Authenticates via RFC 8628 device authorization, retrieves credentials from the vault, generates SSH proxy tokens or .rdp files, and launches native SSH/RDP clients.
-
-### Guacenc (`gateways/guacenc/Dockerfile`)
-
-Multi-stage: guacamole-server builder → agg builder → Alpine runtime:
-
-1. Compile guacamole-server 1.6.0 with guacenc support
-2. Build agg (asciicast-to-GIF converter, multi-arch)
-3. Runtime with Python 3, ffmpeg, guacenc binary, agg binary
-
-**Exposed port:** 3003
-**User:** guacenc (non-root)
-**Entry:** `python3 /opt/guacenc/server.py`
-
-### Tunnel Agent (`gateways/tunnel-agent/Dockerfile`)
-
-Multi-stage: Node 22-alpine builder → Node 22-alpine runtime:
-
-**Required env:** `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, `TUNNEL_GATEWAY_ID`
-**User:** agent (non-root)
-**Entry:** `node dist/index.js`
-
-## Nginx Configuration
-
-### Reverse Proxy Routes
-
-| Location | Target | Features |
-|----------|--------|----------|
-| `/api` | `http://server:3001` | WebSocket upgrade headers |
-| `/socket.io` | `http://server:3001` | WebSocket upgrade |
-| `/guacamole` | `http://server:3002/` | 86400s timeouts (long sessions) |
-| `/health` | 200 JSON | No logging |
-| `/assets/` | Static files | Cache 1 year (immutable, Vite hashes) |
-| `/index.html` | Static file | no-cache, no-store |
-| `/*` | Static files | SPA fallback to index.html |
-
-### Security Headers
-
-- `X-Frame-Options: DENY`
-- `X-Content-Type-Options: nosniff`
-- `Strict-Transport-Security: max-age=31536000`
-- `Referrer-Policy: strict-origin-when-cross-origin`
-- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
-- `Content-Security-Policy`: Restrictive (self, unsafe-inline for styles, ws/wss for connect)
-
-## CI/CD Pipelines
-
-### Verification Workflow
-
-```mermaid
-flowchart LR
-    Push["Push/PR to main"] --> Verify["Verify"]
-    Verify --> TC["TypeCheck"]
-    TC --> Lint["Lint"]
-    Lint --> Audit["npm audit"]
-    Audit --> Build["Build"]
+```bash
+./scripts/db-migrate.sh status
+./scripts/db-migrate.sh up
+./scripts/security-scan.sh --quick
+./scripts/go-test-all.sh
+./scripts/go-build-all.sh
 ```
 
-**verify.yml:** Reusable workflow accepting a `workspace` input (`server` or `client`). Steps: checkout → Node 22 → npm ci → db:generate (server only) → typecheck → lint → audit → build. Called by `docker-build.yml` for both workspaces. Cancels in-progress jobs on new pushes.
+`./scripts/go-build-all.sh` writes local Go application binaries to `./build/go/` so source directories stay clean.
 
-### Docker Build Workflows
+`scripts/db-migrate.sh` now auto-detects a container runtime, supports `ARSENALE_COMPOSE_FILE` and related overrides, and uses `deployment/ansible/scripts/run_compose_service.py` for Podman one-shot migration runs.
 
-```mermaid
-flowchart TD
-    Tag["Version tag (v*)"] --> Verify
-    Tag --> Security["Security Scan"]
-    Verify --> BuildScan["Build & Scan"]
-    Security --> BuildScan
-    BuildScan --> Buildx["Docker Buildx"]
-    Buildx --> Trivy["Trivy Scanner<br/>(CRITICAL, HIGH)"]
-    Trivy --> SARIF["Upload SARIF"]
-    Trivy --> Push["Push to ghcr.io<br/>(tags only)"]
-```
+## 📌 Practical Notes
 
-**docker-build.yml:** Consolidated workflow for server and client images using a matrix strategy. Triggers on pushes to `main` and version tags, or PRs to `main`/`staging` touching `server/` or `client/` paths:
-1. Call `verify.yml` for both server and client workspaces
-2. Call `security.yml` (CodeQL for server, Trivy filesystem for both)
-3. Build Docker images with Buildx (matrix: server, client)
-4. Scan with Trivy (CRITICAL + HIGH severity)
-5. Upload SARIF results to GitHub Security
-6. Push to `ghcr.io/dnviti/arsenale/server` and `ghcr.io/dnviti/arsenale/client` (version tags only)
-
-**gateways-build.yml:** Consolidated gateway workflow using a matrix strategy (guacd, guacenc, ssh-gateway, tunnel-agent). Triggers on `gateways/` path changes. Same build-scan-push pipeline with multi-arch support (linux/amd64, linux/arm64).
-
-### Release Workflow
-
-**release.yml:** Triggers on version tag pushes (`v*`). Creates a draft GitHub Release with auto-generated release notes. Tags containing `-beta` are marked as pre-releases.
-
-### Registry
-
-All images are pushed to **GitHub Container Registry** (`ghcr.io/dnviti/arsenale/`):
-
-| Image | Path |
-|-------|------|
-| Server | `ghcr.io/dnviti/arsenale/server` |
-| Client | `ghcr.io/dnviti/arsenale/client` |
-| Guacd | `ghcr.io/dnviti/arsenale/guacd` |
-| SSH Gateway | `ghcr.io/dnviti/arsenale/ssh-gateway` |
-| Guacenc | `ghcr.io/dnviti/arsenale/guacenc` |
-| Tunnel Agent | `ghcr.io/dnviti/arsenale/tunnel-agent` |
-
-## Development Docker Compose
-
-`compose.dev.yml` provides lightweight containers for local development:
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| postgres | 127.0.0.1:5432 | Local database |
-| guacenc | 3003 | Recording processor (optional) |
-
-Server and client run natively via `npm run dev`.
-
-## Health Checks
-
-| Service | Probe | Interval | Start Period |
-|---------|-------|----------|--------------|
-| PostgreSQL | `pg_isready -U $POSTGRES_USER` | 5s | — |
-| guacd | `nc -z localhost 4822` | 10s | — |
-| Server | `wget /api/health` | 10s | 30s |
-| Client | Nginx `/health` | 10s | 5s |
-| SSH Gateway | `nc -z localhost $SSH_PORT` | 10s | — |
-| DB Proxy | `/proc/1/status` | 30s | 10s |
-
-## Production Checklist
-
-1. Set all required secrets (`JWT_SECRET`, `GUACAMOLE_SECRET`, `SERVER_ENCRYPTION_KEY`)
-2. Use strong PostgreSQL credentials
-3. Configure `CLIENT_URL` to match your domain
-4. Set `TRUST_PROXY` if behind a reverse proxy
-5. Configure email provider for verification and notifications
-6. Set `WEBAUTHN_RP_ID` and `WEBAUTHN_RP_ORIGIN` to match your domain
-7. Optionally configure GeoIP database for impossible travel detection
-8. Review rate limiting defaults
-9. Set `RECORDING_ENABLED=true` if session recording is needed
-10. Configure container orchestration for managed gateways
+- Development and production now share the same installer capability graph; the development-specific difference is local source builds on Podman.
+- `make status` is part of the deployment contract because installer state is encrypted and persistent outside the app database.
+- Podman is mandatory for installer-aware local development, even though the migration helper can target Docker when used outside the installer flow.
+- Legacy demo-database and tunnel-gateway fixtures are no longer force-enabled by `make dev`.

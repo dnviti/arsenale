@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import {
-  Box, TextField, Button, Typography, Alert, Stack, CircularProgress,
-} from '@mui/material';
-import { Key as KeyIcon, Fingerprint as FingerprintIcon } from '@mui/icons-material';
+import { Fingerprint, KeyRound } from 'lucide-react';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { confirmIdentityVerification, type VerificationMethod } from '../../api/user.api';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { extractApiError } from '../../utils/apiError';
+import {
+  confirmIdentityVerification,
+  type VerificationMethod,
+} from '../../api/user.api';
 
 interface IdentityVerificationProps {
   verificationId: string;
@@ -34,6 +37,12 @@ export default function IdentityVerification({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const hint = method === 'email' && metadata?.maskedEmail
+    ? `Code sent to ${metadata.maskedEmail}`
+    : method === 'sms' && metadata?.maskedPhone
+      ? `Code sent to ${metadata.maskedPhone}`
+      : undefined;
 
   const handleSubmit = async () => {
     setError('');
@@ -88,88 +97,69 @@ export default function IdentityVerification({
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !loading) {
-      handleSubmit();
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !loading) {
+      void handleSubmit();
     }
   };
 
-  const hint = method === 'email' && metadata?.maskedEmail
-    ? `Code sent to ${metadata.maskedEmail}`
-    : method === 'sms' && metadata?.maskedPhone
-      ? `Code sent to ${metadata.maskedPhone}`
-      : undefined;
-
   return (
-    <Box>
-      <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-        <FingerprintIcon color="primary" fontSize="small" />
-        <Typography variant="subtitle2">Identity Verification</Typography>
-      </Stack>
+    <div className="space-y-4 rounded-xl border border-border/70 bg-background/60 p-4">
+      <div className="flex items-center gap-2">
+        <Fingerprint className="size-4 text-primary" />
+        <h4 className="text-sm font-semibold text-foreground">Identity Verification</h4>
+      </div>
 
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        {methodLabels[method]}
-      </Typography>
+      <div className="space-y-1">
+        <p className="text-sm text-foreground">{methodLabels[method]}</p>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
 
-      {hint && (
-        <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
-          {hint}
-        </Typography>
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
       {(method === 'email' || method === 'totp' || method === 'sms') && (
-        <TextField
-          label="Verification Code"
+        <Input
           value={code}
-          onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
           onKeyDown={handleKeyDown}
-          inputProps={{ maxLength: 6, inputMode: 'numeric', pattern: '[0-9]*' }}
-          size="small"
-          fullWidth
+          maxLength={6}
+          inputMode="numeric"
+          pattern="[0-9]*"
           autoFocus
-          sx={{ mb: 2 }}
+          placeholder="6-digit code"
         />
       )}
 
       {method === 'password' && (
-        <TextField
-          label="Current Password"
+        <Input
           type="password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(event) => setPassword(event.target.value)}
           onKeyDown={handleKeyDown}
-          size="small"
-          fullWidth
           autoFocus
-          sx={{ mb: 2 }}
+          placeholder="Current password"
         />
       )}
 
-      <Stack direction="row" spacing={1}>
+      <div className="flex flex-wrap gap-2">
         {method === 'webauthn' ? (
-          <Button
-            variant="contained"
-            startIcon={<KeyIcon />}
-            onClick={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={20} /> : 'Verify with Security Key'}
+          <Button type="button" onClick={() => void handleSubmit()} disabled={loading}>
+            <KeyRound className="size-4" />
+            {loading ? 'Verifying...' : 'Verify with Security Key'}
           </Button>
         ) : (
-          <Button
-            variant="contained"
-            onClick={handleSubmit}
-            disabled={loading}
-          >
-            {loading ? <CircularProgress size={20} /> : 'Verify'}
+          <Button type="button" onClick={() => void handleSubmit()} disabled={loading}>
+            {loading ? 'Verifying...' : 'Verify'}
           </Button>
         )}
-        <Button variant="outlined" onClick={onCancel} disabled={loading}>
+        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>
-      </Stack>
-    </Box>
+      </div>
+    </div>
   );
 }

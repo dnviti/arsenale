@@ -1,9 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
+import { ShieldCheck } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Box, Typography, Button, Card, CardContent, Accordion, AccordionSummary, AccordionDetails,
-  Switch, FormControlLabel, Stack, Alert,
-} from '@mui/material';
-import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { useTenantStore } from '../../store/tenantStore';
 import { useNotificationStore } from '../../store/notificationStore';
 import type { EnforcedConnectionSettings } from '../../api/tenant.api';
@@ -13,188 +18,342 @@ import { RDP_DEFAULTS } from '../../constants/rdpDefaults';
 import type { VncSettings } from '../../constants/vncDefaults';
 import { VNC_DEFAULTS } from '../../constants/vncDefaults';
 import { TERMINAL_DEFAULTS } from '../../constants/terminalThemes';
-import TerminalSettingsSection from './TerminalSettingsSection';
-import RdpSettingsSection from './RdpSettingsSection';
-import VncSettingsSection from './VncSettingsSection';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
+import RdpSettingsSection from './RdpSettingsSection';
+import TerminalSettingsSection from './TerminalSettingsSection';
+import VncSettingsSection from './VncSettingsSection';
+import {
+  SettingsButtonRow,
+  SettingsPanel,
+  SettingsSectionBlock,
+  SettingsStatusBadge,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+} from './settings-ui';
+
+type PolicyType = 'ssh' | 'rdp' | 'vnc';
+type PolicySettingsMap = {
+  ssh: Partial<SshTerminalConfig>;
+  rdp: Partial<RdpSettings>;
+  vnc: Partial<VncSettings>;
+};
+
+interface ConnectionPolicyDraft {
+  enabled: Record<PolicyType, boolean>;
+  expandedPolicies: PolicyType[];
+  settings: PolicySettingsMap;
+}
+
+const POLICY_TYPES: PolicyType[] = ['ssh', 'rdp', 'vnc'];
+
+function hasPolicySettings(settings: object) {
+  return Object.keys(settings).length > 0;
+}
+
+function createPolicyDraft(
+  enforcedSettings: EnforcedConnectionSettings | null | undefined,
+): ConnectionPolicyDraft {
+  const settings: PolicySettingsMap = {
+    ssh: { ...(enforcedSettings?.ssh ?? {}) },
+    rdp: { ...(enforcedSettings?.rdp ?? {}) },
+    vnc: { ...(enforcedSettings?.vnc ?? {}) },
+  };
+  const expandedPolicies = POLICY_TYPES.filter((policy) => hasPolicySettings(settings[policy]));
+
+  return {
+    enabled: {
+      ssh: expandedPolicies.includes('ssh'),
+      rdp: expandedPolicies.includes('rdp'),
+      vnc: expandedPolicies.includes('vnc'),
+    },
+    expandedPolicies,
+    settings,
+  };
+}
+
+interface TenantConnectionPolicyEditorProps {
+  error: string;
+  initialDraft: ConnectionPolicyDraft;
+  loading: boolean;
+  onClearPolicy: () => Promise<boolean>;
+  onSavePolicy: (draft: ConnectionPolicyDraft) => Promise<boolean>;
+}
 
 export default function TenantConnectionPolicySection() {
-  const tenant = useTenantStore((s) => s.tenant);
-  const updateTenant = useTenantStore((s) => s.updateTenant);
+  const tenant = useTenantStore((state) => state.tenant);
+  const updateTenant = useTenantStore((state) => state.updateTenant);
+  const notify = useNotificationStore((state) => state.notify);
   const { loading, error, clearError, run } = useAsyncAction();
-  const notify = useNotificationStore((s) => s.notify);
+  const enforcedSettings = tenant?.enforcedConnectionSettings as EnforcedConnectionSettings | null | undefined;
+  const initialDraft = useMemo(
+    () => createPolicyDraft(enforcedSettings),
+    [enforcedSettings],
+  );
+  const draftKey = useMemo(
+    () => JSON.stringify(enforcedSettings ?? null),
+    [enforcedSettings],
+  );
 
-  const [sshEnabled, setSshEnabled] = useState(false);
-  const [rdpEnabled, setRdpEnabled] = useState(false);
-  const [vncEnabled, setVncEnabled] = useState(false);
-  const [sshSettings, setSshSettings] = useState<Partial<SshTerminalConfig>>({});
-  const [rdpSettings, setRdpSettings] = useState<Partial<RdpSettings>>({});
-  const [vncSettings, setVncSettings] = useState<Partial<VncSettings>>({});
+  if (!tenant) {
+    return null;
+  }
 
-  /* eslint-disable react-hooks/set-state-in-effect -- resetting form state when tenant data loads is intentional */
-  useEffect(() => {
-    const enforced = tenant?.enforcedConnectionSettings as EnforcedConnectionSettings | null | undefined;
-    if (enforced) {
-      if (enforced.ssh && Object.keys(enforced.ssh).length > 0) {
-        setSshEnabled(true);
-        setSshSettings(enforced.ssh);
-      } else {
-        setSshEnabled(false);
-        setSshSettings({});
-      }
-      if (enforced.rdp && Object.keys(enforced.rdp).length > 0) {
-        setRdpEnabled(true);
-        setRdpSettings(enforced.rdp);
-      } else {
-        setRdpEnabled(false);
-        setRdpSettings({});
-      }
-      if (enforced.vnc && Object.keys(enforced.vnc).length > 0) {
-        setVncEnabled(true);
-        setVncSettings(enforced.vnc);
-      } else {
-        setVncEnabled(false);
-        setVncSettings({});
-      }
-    } else {
-      setSshEnabled(false);
-      setRdpEnabled(false);
-      setVncEnabled(false);
-      setSshSettings({});
-      setRdpSettings({});
-      setVncSettings({});
-    }
-  }, [tenant?.enforcedConnectionSettings]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  const handleSave = async () => {
+  const savePolicy = async (draft: ConnectionPolicyDraft) => {
     clearError();
-    const payload: EnforcedConnectionSettings = {};
-    if (sshEnabled && Object.keys(sshSettings).length > 0) payload.ssh = sshSettings;
-    if (rdpEnabled && Object.keys(rdpSettings).length > 0) payload.rdp = rdpSettings;
-    if (vncEnabled && Object.keys(vncSettings).length > 0) payload.vnc = vncSettings;
 
-    const hasAny = Object.keys(payload).length > 0;
-    const ok = await run(
-      () => updateTenant({ enforcedConnectionSettings: hasAny ? payload : null }),
+    const nextPayload: EnforcedConnectionSettings = {};
+    if (draft.enabled.ssh && hasPolicySettings(draft.settings.ssh)) {
+      nextPayload.ssh = draft.settings.ssh;
+    }
+    if (draft.enabled.rdp && hasPolicySettings(draft.settings.rdp)) {
+      nextPayload.rdp = draft.settings.rdp;
+    }
+    if (draft.enabled.vnc && hasPolicySettings(draft.settings.vnc)) {
+      nextPayload.vnc = draft.settings.vnc;
+    }
+
+    const hasPolicies = Object.keys(nextPayload).length > 0;
+    const isSuccessful = await run(
+      () => updateTenant({ enforcedConnectionSettings: hasPolicies ? nextPayload : null }),
       'Failed to save connection policy',
     );
-    if (ok) notify('Settings saved successfully.', 'success');
+
+    if (isSuccessful) {
+      notify('Connection policy saved.', 'success');
+    }
+
+    return isSuccessful;
   };
 
-  const handleClear = async () => {
+  const clearPolicy = async () => {
     clearError();
-    const ok = await run(
+
+    const isSuccessful = await run(
       () => updateTenant({ enforcedConnectionSettings: null }),
       'Failed to clear connection policy',
     );
-    if (ok) {
-      setSshEnabled(false);
-      setRdpEnabled(false);
-      setVncEnabled(false);
-      setSshSettings({});
-      setRdpSettings({});
-      setVncSettings({});
-      notify('Settings saved successfully.', 'success');
+
+    if (isSuccessful) {
+      notify('Connection policy cleared.', 'success');
+    }
+
+    return isSuccessful;
+  };
+
+  return (
+    <TenantConnectionPolicyEditor
+      key={draftKey}
+      error={error}
+      initialDraft={initialDraft}
+      loading={loading}
+      onClearPolicy={clearPolicy}
+      onSavePolicy={savePolicy}
+    />
+  );
+}
+
+function TenantConnectionPolicyEditor({
+  error,
+  initialDraft,
+  loading,
+  onClearPolicy,
+  onSavePolicy,
+}: TenantConnectionPolicyEditorProps) {
+  const [draft, setDraft] = useState(initialDraft);
+
+  const updateExpandedPolicies = (nextExpandedPolicies: PolicyType[]) => {
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      expandedPolicies: nextExpandedPolicies,
+    }));
+  };
+
+  const handleToggle = (policy: PolicyType, enabled: boolean) => {
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      enabled: {
+        ...currentDraft.enabled,
+        [policy]: enabled,
+      },
+      expandedPolicies: enabled
+        ? currentDraft.expandedPolicies.includes(policy)
+          ? currentDraft.expandedPolicies
+          : [...currentDraft.expandedPolicies, policy]
+        : currentDraft.expandedPolicies.filter((currentPolicy) => currentPolicy !== policy),
+      settings: enabled
+        ? currentDraft.settings
+        : {
+            ...currentDraft.settings,
+            [policy]: {},
+          },
+    }));
+  };
+
+  const updatePolicySettings = <T extends PolicyType>(policy: T, settings: PolicySettingsMap[T]) => {
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      settings: {
+        ...currentDraft.settings,
+        [policy]: settings,
+      },
+    }));
+  };
+
+  const handleSave = async () => {
+    await onSavePolicy(draft);
+  };
+
+  const handleClear = async () => {
+    const isSuccessful = await onClearPolicy();
+    if (isSuccessful) {
+      setDraft(createPolicyDraft(null));
     }
   };
 
-  if (!tenant) return null;
+  const enabledCount = Object.values(draft.enabled).filter(Boolean).length;
+
+  const renderPolicyHeader = (
+    title: string,
+    description: string,
+  ) => (
+    <div className="space-y-1 text-left">
+      <div className="text-sm font-semibold text-foreground">{title}</div>
+      <p className="text-sm leading-6 text-muted-foreground">{description}</p>
+    </div>
+  );
+
+  const renderPolicyToggle = (
+    policy: PolicyType,
+    title: string,
+    enabled: boolean,
+  ) => (
+    <div className="flex shrink-0 items-center gap-3">
+      <SettingsStatusBadge tone={enabled ? 'success' : 'neutral'}>
+        {enabled ? 'Enforced' : 'Off'}
+      </SettingsStatusBadge>
+      <Switch
+        checked={enabled}
+        onCheckedChange={(nextValue) => handleToggle(policy, nextValue)}
+        aria-label={`Enforce ${title.toLowerCase()}`}
+      />
+    </div>
+  );
+
+  const renderPolicyAccordionItem = (
+    policy: PolicyType,
+    title: string,
+    description: string,
+    enabled: boolean,
+    content: React.ReactNode,
+    emptyState: string,
+  ) => (
+    <AccordionItem value={policy} className="rounded-xl border border-border/70 bg-background/70 px-4">
+      <div className="flex items-start gap-4 py-4">
+        <AccordionTrigger className="flex-1 py-0 hover:no-underline">
+          {renderPolicyHeader(title, description)}
+        </AccordionTrigger>
+        {renderPolicyToggle(policy, title, enabled)}
+      </div>
+      <AccordionContent className="pb-4">
+        {enabled ? content : (
+          <p className="text-sm leading-6 text-muted-foreground">{emptyState}</p>
+        )}
+      </AccordionContent>
+    </AccordionItem>
+  );
 
   return (
-    <Card>
-      <CardContent>
-      <Typography variant="h6" gutterBottom>Connection Policy Enforcement</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        Settings configured here are enforced on all connections in the organization.
-        Users cannot override enforced settings in their connection or personal defaults.
-      </Typography>
+    <SettingsPanel
+      title="Connection Policy"
+      description="Enforce tenant-wide SSH, RDP, and VNC defaults that individual users cannot override."
+      heading={(
+        <SettingsStatusBadge tone={enabledCount > 0 ? 'success' : 'neutral'}>
+          <ShieldCheck className="size-3.5" />
+          {enabledCount === 0 ? 'No policies enforced' : `${enabledCount} ${enabledCount > 1 ? 'policies' : 'policy'} enforced`}
+        </SettingsStatusBadge>
+      )}
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <SettingsSummaryGrid>
+        <SettingsSummaryItem label="SSH" value={draft.enabled.ssh ? 'Enforced' : 'Off'} />
+        <SettingsSummaryItem label="RDP" value={draft.enabled.rdp ? 'Enforced' : 'Off'} />
+        <SettingsSummaryItem label="VNC" value={draft.enabled.vnc ? 'Enforced' : 'Off'} />
+      </SettingsSummaryGrid>
 
-      <Stack spacing={1}>
-        <Accordion variant="outlined" disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <FormControlLabel
-              control={<Switch checked={sshEnabled} onChange={(e) => { setSshEnabled(e.target.checked); if (!e.target.checked) setSshSettings({}); }} onClick={(e) => e.stopPropagation()} />}
-              label={<Typography variant="subtitle2">SSH Terminal Settings</Typography>}
-              sx={{ mr: 0 }}
-            />
-          </AccordionSummary>
-          <AccordionDetails>
-            {sshEnabled ? (
+      <SettingsSectionBlock
+        title="Policy Editors"
+        description="Open a policy to define the exact settings enforced across every matching connection."
+      >
+        <Accordion
+          type="multiple"
+          value={draft.expandedPolicies}
+          onValueChange={(value) => updateExpandedPolicies(value as PolicyType[])}
+          className="space-y-3"
+        >
+          {renderPolicyAccordionItem(
+            'ssh',
+            'SSH Terminal Settings',
+            'Control terminal appearance and behavior for every SSH session.',
+            draft.enabled.ssh,
+            (
               <TerminalSettingsSection
-                value={sshSettings}
-                onChange={setSshSettings}
+                value={draft.settings.ssh}
+                onChange={(value) => updatePolicySettings('ssh', value)}
                 mode="global"
                 resolvedDefaults={TERMINAL_DEFAULTS}
               />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                Enable to enforce SSH terminal settings across all connections.
-              </Typography>
-            )}
-          </AccordionDetails>
-        </Accordion>
+            ),
+            'Enable this policy to enforce SSH terminal settings for everyone in the organization.',
+          )}
 
-        <Accordion variant="outlined" disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <FormControlLabel
-              control={<Switch checked={rdpEnabled} onChange={(e) => { setRdpEnabled(e.target.checked); if (!e.target.checked) setRdpSettings({}); }} onClick={(e) => e.stopPropagation()} />}
-              label={<Typography variant="subtitle2">RDP Settings</Typography>}
-              sx={{ mr: 0 }}
-            />
-          </AccordionSummary>
-          <AccordionDetails>
-            {rdpEnabled ? (
+          {renderPolicyAccordionItem(
+            'rdp',
+            'RDP Settings',
+            'Set session quality, display, and audio rules for remote desktops.',
+            draft.enabled.rdp,
+            (
               <RdpSettingsSection
-                value={rdpSettings}
-                onChange={setRdpSettings}
+                value={draft.settings.rdp}
+                onChange={(value) => updatePolicySettings('rdp', value)}
                 mode="global"
                 resolvedDefaults={RDP_DEFAULTS}
               />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                Enable to enforce RDP settings across all connections.
-              </Typography>
-            )}
-          </AccordionDetails>
-        </Accordion>
+            ),
+            'Enable this policy to enforce RDP session defaults across the tenant.',
+          )}
 
-        <Accordion variant="outlined" disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <FormControlLabel
-              control={<Switch checked={vncEnabled} onChange={(e) => { setVncEnabled(e.target.checked); if (!e.target.checked) setVncSettings({}); }} onClick={(e) => e.stopPropagation()} />}
-              label={<Typography variant="subtitle2">VNC Settings</Typography>}
-              sx={{ mr: 0 }}
-            />
-          </AccordionSummary>
-          <AccordionDetails>
-            {vncEnabled ? (
+          {renderPolicyAccordionItem(
+            'vnc',
+            'VNC Settings',
+            'Define cursor, display, clipboard, and read-only behavior for VNC sessions.',
+            draft.enabled.vnc,
+            (
               <VncSettingsSection
-                value={vncSettings}
-                onChange={setVncSettings}
+                value={draft.settings.vnc}
+                onChange={(value) => updatePolicySettings('vnc', value)}
                 mode="global"
                 resolvedDefaults={VNC_DEFAULTS}
               />
-            ) : (
-              <Typography variant="body2" color="text.secondary">
-                Enable to enforce VNC settings across all connections.
-              </Typography>
-            )}
-          </AccordionDetails>
+            ),
+            'Enable this policy to enforce VNC session settings for all connections.',
+          )}
         </Accordion>
-      </Stack>
+      </SettingsSectionBlock>
 
-      <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-        <Button variant="contained" onClick={handleSave} disabled={loading}>
+      <SettingsButtonRow>
+        <Button type="button" onClick={handleSave} disabled={loading}>
           {loading ? 'Saving...' : 'Save Policy'}
         </Button>
-        <Button variant="outlined" onClick={handleClear} disabled={loading}>
+        <Button type="button" variant="outline" onClick={handleClear} disabled={loading}>
           Clear All
         </Button>
-      </Box>
-      </CardContent>
-    </Card>
+      </SettingsButtonRow>
+    </SettingsPanel>
   );
 }

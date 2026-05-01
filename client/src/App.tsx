@@ -1,22 +1,36 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import ForgotPasswordPage from './pages/ForgotPasswordPage';
-import ResetPasswordPage from './pages/ResetPasswordPage';
-import DashboardPage from './pages/DashboardPage';
-import ConnectionViewerPage from './pages/ConnectionViewerPage';
-import RecordingPlayerPage from './pages/RecordingPlayerPage';
-import OAuthCallbackPage from './pages/OAuthCallbackPage';
-import VaultSetupPage from './pages/VaultSetupPage';
-import PublicSharePage from './pages/PublicSharePage';
-import SetupWizardPage from './pages/SetupWizardPage';
+import { LoaderCircle } from 'lucide-react';
 import VaultLockedOverlay from './components/Overlays/VaultLockedOverlay';
 import PwaUpdateNotification from './components/common/PwaUpdateNotification';
+
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const SessionsPage = lazy(() => import('./pages/SessionsPage'));
+const ConnectionViewerPage = lazy(() => import('./pages/ConnectionViewerPage'));
+const SessionObserverPage = lazy(() => import('./pages/SessionObserverPage'));
+const RecordingPlayerPage = lazy(() => import('./pages/RecordingPlayerPage'));
+const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage'));
+const VaultSetupPage = lazy(() => import('./pages/VaultSetupPage'));
+const PublicSharePage = lazy(() => import('./pages/PublicSharePage'));
+const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
+
+function LazyFallback() {
+  return (
+    <div className="flex min-h-screen w-screen items-center justify-center bg-background">
+      <LoaderCircle className="size-8 animate-spin text-primary" aria-hidden="true" />
+    </div>
+  );
+}
 import { useAuth } from './hooks/useAuth';
 import { useAuthStore } from './store/authStore';
-import { useVaultStore } from './store/vaultStore';
+import { useVaultStatusStream } from './hooks/useVaultStatusStream';
+import { useVaultWindowSync } from './hooks/useVaultWindowSync';
 import { getSetupStatus } from './api/setup.api';
+import { useFeatureFlagsStore } from './store/featureFlagsStore';
 
 function AuthRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
@@ -28,18 +42,9 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, loading } = useAuth();
   const user = useAuthStore((s) => s.user);
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const checkStatus = useVaultStore((s) => s.checkStatus);
-  const startPolling = useVaultStore((s) => s.startPolling);
-  const stopPolling = useVaultStore((s) => s.stopPolling);
   const location = useLocation();
 
-  useEffect(() => {
-    if (!isAuthenticated || !accessToken) return;
-    checkStatus();
-    startPolling();
-    return () => stopPolling();
-  }, [isAuthenticated, accessToken, checkStatus, startPolling, stopPolling]);
+  useVaultStatusStream();
 
   if (loading) return null;
   if (!isAuthenticated) {
@@ -78,8 +83,12 @@ function SetupGuard({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  const recordingsEnabled = useFeatureFlagsStore((s) => s.recordingsEnabled);
+  const sharingApprovalsEnabled = useFeatureFlagsStore((s) => s.sharingApprovalsEnabled);
+  useVaultWindowSync();
+
   return (
-    <>
+    <Suspense fallback={<LazyFallback />}>
       <Routes>
         <Route path="/setup" element={<SetupWizardPage />} />
         <Route path="/login" element={<SetupGuard><LoginPage /></SetupGuard>} />
@@ -96,6 +105,14 @@ export default function App() {
           }
         />
         <Route
+          path="/sessions"
+          element={
+            <ProtectedRoute>
+              <SessionsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/connection/:id"
           element={
             <ProtectedRoute>
@@ -104,14 +121,22 @@ export default function App() {
           }
         />
         <Route
-          path="/recording/:id"
+          path="/session-observer/:protocol/:id"
           element={
             <ProtectedRoute>
-              <RecordingPlayerPage />
+              <SessionObserverPage />
             </ProtectedRoute>
           }
         />
-        <Route path="/share/:token" element={<PublicSharePage />} />
+        <Route
+          path="/recording/:id"
+          element={
+            <ProtectedRoute>
+              {recordingsEnabled ? <RecordingPlayerPage /> : <Navigate to="/" replace />}
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/share/:token" element={sharingApprovalsEnabled ? <PublicSharePage /> : <Navigate to="/" replace />} />
         <Route
           path="/*"
           element={
@@ -122,6 +147,6 @@ export default function App() {
         />
       </Routes>
       <PwaUpdateNotification />
-    </>
+    </Suspense>
   );
 }

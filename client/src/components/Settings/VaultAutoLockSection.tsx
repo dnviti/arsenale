@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
-  Card, CardContent, Typography, Select, MenuItem, Alert, Box,
-  CircularProgress,
-} from '@mui/material';
-import { getVaultAutoLock, setVaultAutoLock, VaultAutoLockResponse } from '../../api/vault.api';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { SettingsPanel } from './settings-ui';
+import {
+  getVaultAutoLock,
+  setVaultAutoLock,
+  type VaultAutoLockResponse,
+} from '../../api/vault.api';
 import { extractApiError } from '../../utils/apiError';
 
 const OPTIONS: { label: string; value: number | null }[] = [
@@ -29,74 +38,87 @@ export default function VaultAutoLockSection() {
       .finally(() => setLoading(false));
   }, []);
 
-  const handleChange = async (value: number | null) => {
-    setError('');
-    setSaving(true);
-    try {
-      const result = await setVaultAutoLock(value);
-      setData(result);
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to update auto-lock preference'));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   if (loading) {
     return (
-      <Card>
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="Vault Auto-Lock"
+        description="Choose how long the keychain stays unlocked."
+      >
+        <p className="text-sm text-muted-foreground">Loading auto-lock preference...</p>
+      </SettingsPanel>
     );
   }
 
   const tenantMax = data?.tenantMaxMinutes;
   const isOptionDisabled = (value: number | null) => {
     if (tenantMax === null || tenantMax === undefined || tenantMax <= 0) return false;
-    if (value === 0) return true; // "Never" blocked by tenant enforcement
-    if (value !== null && value > tenantMax) return true;
-    return false;
+    if (value === 0) return true;
+    return value !== null && value > tenantMax;
   };
 
-  // Serialise select value: null → "default", number → string
-  const selectValue = data?.autoLockMinutes === null ? 'default' : String(data?.autoLockMinutes);
+  const selectValue =
+    data?.autoLockMinutes === null ? 'default' : String(data?.autoLockMinutes);
 
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>Vault Auto-Lock</Typography>
-        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+    <SettingsPanel
+      title="Vault Auto-Lock"
+      description="Choose how long the keychain stays unlocked on this device."
+    >
+      <div className="space-y-4">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
           <Select
             value={selectValue}
-            onChange={(e) => {
-              const v = e.target.value;
-              handleChange(v === 'default' ? null : Number(v));
-            }}
-            size="small"
             disabled={saving}
-            sx={{ minWidth: 200 }}
+            onValueChange={async (value) => {
+              setError('');
+              setSaving(true);
+              try {
+                const result = await setVaultAutoLock(
+                  value === 'default' ? null : Number(value),
+                );
+                setData(result);
+              } catch (err: unknown) {
+                setError(extractApiError(err, 'Failed to update auto-lock preference'));
+              } finally {
+                setSaving(false);
+              }
+            }}
           >
-            {OPTIONS.map((opt) => {
-              const val = opt.value === null ? 'default' : String(opt.value);
-              return (
-                <MenuItem key={val} value={val} disabled={isOptionDisabled(opt.value)}>
-                  {opt.label}
-                </MenuItem>
-              );
-            })}
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Select timeout" />
+            </SelectTrigger>
+            <SelectContent>
+              {OPTIONS.map((option) => {
+                const value = option.value === null ? 'default' : String(option.value);
+                return (
+                  <SelectItem
+                    key={value}
+                    value={value}
+                    disabled={isOptionDisabled(option.value)}
+                  >
+                    {option.label}
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
           </Select>
-          {saving && <CircularProgress size={20} />}
-        </Box>
-        <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
-          Effective timeout: {data?.effectiveMinutes === 0 ? 'Never' : `${data?.effectiveMinutes} minutes`}
+          {saving && <span className="text-sm text-muted-foreground">Saving...</span>}
+        </div>
+
+        <p className="text-xs leading-5 text-muted-foreground">
+          Effective timeout:{' '}
+          {data?.effectiveMinutes === 0 ? 'Never' : `${data?.effectiveMinutes} minutes`}
           {tenantMax != null && tenantMax > 0 && (
-            <> · Organization enforces a maximum of {tenantMax} minutes</>
+            <>. Your organization enforces a maximum of {tenantMax} minutes.</>
           )}
-        </Typography>
-      </CardContent>
-    </Card>
+        </p>
+      </div>
+    </SettingsPanel>
   );
 }

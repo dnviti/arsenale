@@ -7,44 +7,65 @@
 # The tunnel agent is dormant unless TUNNEL_SERVER_URL / TUNNEL_TOKEN /
 # TUNNEL_GATEWAY_ID environment variables are set.
 
+ARG GO_VERSION=1.25.8
+
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:${GO_VERSION}-alpine AS tunnel-builder
 
-WORKDIR /tunnel-agent
+WORKDIR /src
 
-COPY gateways/tunnel-agent/package.json ./
-RUN npm install --ignore-scripts
+COPY gateways/gateway-core/go.mod gateways/gateway-core/
+COPY gateways/tunnel-agent/go.mod gateways/tunnel-agent/go.sum gateways/tunnel-agent/
+WORKDIR /src/gateways/tunnel-agent
+RUN GOWORK=off go mod download
 
-COPY gateways/tunnel-agent/tsconfig.json ./
-COPY gateways/tunnel-agent/src/ ./src/
+WORKDIR /src
+COPY gateways/gateway-core/ gateways/gateway-core/
+COPY gateways/tunnel-agent/ gateways/tunnel-agent/
+WORKDIR /src/gateways/tunnel-agent
 
-RUN npm run build && npm prune --omit=dev
+ARG TARGETOS
+ARG TARGETARCH
+ARG AGENT_VERSION=1.7.1
+RUN GOWORK=off CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags="-s -w -X main.version=${AGENT_VERSION}" \
+    -o /out/tunnel-agent .
 
 # ── guacd runtime + tunnel agent ─────────────────────────────────────────────
-FROM guacamole/guacd:1.6.0
+FROM docker.io/library/alpine:3.21
 
 USER root
-
-RUN apk update && apk upgrade --no-cache
 
 LABEL org.opencontainers.image.title="Arsenale guacd"
 LABEL org.opencontainers.image.description="guacd with embedded zero-trust tunnel agent"
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
 LABEL org.opencontainers.image.licenses="BUSL-1.1"
 
-# Install Node.js runtime (Alpine-based guacd image, so use apk)
-RUN apk add --no-cache nodejs
+RUN apk add --no-cache \
+    guacamole-server \
+    guacamole-server-rdp \
+    guacamole-server-vnc \
+    guacamole-server-ssh \
+    guacamole-server-libs \
+    netcat-openbsd \
+    shadow \
+    && mkdir -p /home/guacd \
+    && chown guacd:guacd /home/guacd \
+    && usermod -d /home/guacd guacd \
+    && ln -sf /usr/lib/libguac-client-rdp.so.0 /usr/lib/libguac-client-rdp.so \
+    && ln -sf /usr/lib/libguac-client-vnc.so.0 /usr/lib/libguac-client-vnc.so \
+    && ln -sf /usr/lib/libguac-client-ssh.so.0 /usr/lib/libguac-client-ssh.so
+
+ENV HOME=/home/guacd
+ENV XDG_CONFIG_HOME=/home/guacd/.config
 
 # Embed pre-built tunnel agent
-COPY --from=tunnel-builder /tunnel-agent/dist /opt/tunnel-agent/dist
-COPY --from=tunnel-builder /tunnel-agent/node_modules /opt/tunnel-agent/node_modules
-COPY --from=tunnel-builder /tunnel-agent/package.json /opt/tunnel-agent/package.json
+COPY --from=tunnel-builder /out/tunnel-agent /usr/local/bin/tunnel-agent
 
 COPY gateways/guacd/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# guacd runs as daemon user (uid 1000 in the official image)
-USER daemon
+USER guacd
 
 EXPOSE 4822
 

@@ -1,0 +1,91 @@
+---
+- name: Define secret mappings
+  set_fact:
+    podman_secrets:
+      # Required secrets
+      - { name: jwt_secret, value: "{{ vault_jwt_secret }}" }
+      - { name: guacamole_secret, value: "{{ vault_guacamole_secret }}" }
+      - { name: server_encryption_key, value: "{{ vault_server_encryption_key }}" }
+      - { name: database_url, value: "{{ vault_database_url }}" }
+      - { name: postgres_password, value: "{{ vault_postgres_password }}" }
+      - { name: guacenc_auth_token, value: "{{ vault_guacenc_auth_token }}" }
+      - { name: shared_files_s3_secret_access_key, value: "{{ (arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev | default(false) | bool) and ((vault_shared_files_s3_secret_access_key | default('')) | length == 0)) else vault_shared_files_s3_secret_access_key) }}" }
+      # Optional secrets (only create if non-empty)
+      - { name: runtime_egress_principal_signing_key, value: "{{ vault_runtime_egress_principal_signing_key | default('') }}" }
+      - { name: smtp_pass, value: "{{ vault_smtp_pass }}" }
+      - { name: sendgrid_api_key, value: "{{ vault_sendgrid_api_key }}" }
+      - { name: ses_secret_access_key, value: "{{ vault_ses_secret_access_key }}" }
+      - { name: resend_api_key, value: "{{ vault_resend_api_key }}" }
+      - { name: mailgun_api_key, value: "{{ vault_mailgun_api_key }}" }
+      - { name: twilio_auth_token, value: "{{ vault_twilio_auth_token }}" }
+      - { name: sns_secret_access_key, value: "{{ vault_sns_secret_access_key }}" }
+      - { name: vonage_api_secret, value: "{{ vault_vonage_api_secret }}" }
+      - { name: google_client_secret, value: "{{ vault_google_client_secret }}" }
+      - { name: microsoft_client_secret, value: "{{ vault_microsoft_client_secret }}" }
+      - { name: github_client_secret, value: "{{ vault_github_client_secret }}" }
+      - { name: oidc_client_secret, value: "{{ vault_oidc_client_secret }}" }
+      - { name: ldap_bind_password, value: "{{ vault_ldap_bind_password }}" }
+      - { name: ai_api_key, value: "{{ vault_ai_api_key }}" }
+
+- name: Normalize desired Podman secret values
+  set_fact:
+    podman_secret_specs: >-
+      {{
+        (podman_secret_specs | default([]))
+        + [
+            {
+              'name': item.name,
+              'rendered_value': (item.value if (item.value | length > 0) else '\n'),
+              'digest': ((item.value if (item.value | length > 0) else '\n') | hash('sha256'))
+            }
+          ]
+      }}
+  loop: "{{ podman_secrets }}"
+  no_log: true
+
+- name: Inspect existing Podman secrets
+  command:
+    argv:
+      - podman
+      - secret
+      - inspect
+      - "{{ item.name }}"
+  loop: "{{ podman_secret_specs }}"
+  register: podman_secret_inspect
+  changed_when: false
+  failed_when: false
+  no_log: true
+
+- name: Index existing Podman secret digests
+  set_fact:
+    podman_secret_state: >-
+      {{
+        (podman_secret_state | default({}))
+        | combine(
+            {
+              item.item.name: (
+                (((item.stdout | default('[]')) | from_json | first).Spec.Labels | default({})).get('arsenale-sha256', '')
+              )
+            }
+          )
+      }}
+  loop: "{{ podman_secret_inspect.results }}"
+  when: item.rc == 0
+  no_log: true
+
+- name: Create Podman secrets
+  command:
+    argv:
+      - podman
+      - secret
+      - create
+      - --replace
+      - --label
+      - "arsenale-sha256={{ item.digest }}"
+      - "{{ item.name }}"
+      - "-"
+    stdin: "{{ item.rendered_value }}"
+  loop: "{{ podman_secret_specs }}"
+  when: (podman_secret_state | default({})).get(item.name, '') != item.digest
+  changed_when: true
+  no_log: true

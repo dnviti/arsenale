@@ -1,0 +1,10 @@
+---
+- name: Render compose artifacts
+  include_tasks: render.yml
+  when: _state == 'present'
+
+- name: Build or pull compose images
+  include_tasks: build.yml
+
+- name: Apply compose runtime state
+  include_tasks: apply.yml

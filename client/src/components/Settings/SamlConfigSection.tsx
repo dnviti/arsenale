@@ -1,14 +1,10 @@
 import { useState, useEffect } from 'react';
-import {
-  Card, CardContent, Typography, Button, Alert, Box, Chip, Stack,
-} from '@mui/material';
-import {
-  CheckCircle as CheckIcon,
-  Security as SecurityIcon,
-  OpenInNew as OpenInNewIcon,
-} from '@mui/icons-material';
+import { CheckCircle2, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { getAuthProviderDetails } from '../../api/admin.api';
 import { extractApiError } from '../../utils/apiError';
+import { SettingsPanel, SettingsStatusBadge } from './settings-ui';
 
 export default function SamlConfigSection() {
   const [enabled, setEnabled] = useState(false);
@@ -35,55 +31,43 @@ export default function SamlConfigSection() {
   if (!enabled && !error) return null;
 
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
-            <SecurityIcon fontSize="small" />
-            SAML Single Sign-On
-          </Box>
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          SAML configuration is managed via environment variables.
-        </Typography>
+    <SettingsPanel
+      title="SAML Single Sign-On"
+      description="Environment-managed trust for enterprise SSO providers."
+      heading={enabled ? (
+        <SettingsStatusBadge tone="success">
+          <CheckCircle2 className="mr-1 size-3.5" />
+          {providerName}
+        </SettingsStatusBadge>
+      ) : undefined}
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        <Stack spacing={2}>
-          {error && <Alert severity="error">{error}</Alert>}
+      {enabled && (
+        <>
+          <div className="rounded-xl border border-border/70 bg-background/70 p-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="mt-0.5 size-4 text-muted-foreground" />
+              <p className="text-sm leading-6 text-muted-foreground">
+                Users can authenticate through the configured SAML identity provider. Provisioning
+                and attribute mapping are controlled by the server&apos;s environment configuration.
+              </p>
+            </div>
+          </div>
 
-          {enabled && (
-            <>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <Chip
-                  icon={<CheckIcon />}
-                  label={providerName}
-                  color="success"
-                  variant="outlined"
-                />
-              </Stack>
-
-              <Box>
-                <Typography variant="body2" color="text.secondary">
-                  Users can authenticate via the configured SAML Identity Provider.
-                  Account provisioning and attribute mapping are handled automatically
-                  based on the server&apos;s environment configuration.
-                </Typography>
-              </Box>
-
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<OpenInNewIcon />}
-                href="/api/saml/metadata"
-                target="_blank"
-                rel="noopener noreferrer"
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                View SP Metadata
-              </Button>
-            </>
-          )}
-        </Stack>
-      </CardContent>
-    </Card>
+          <Button asChild type="button" variant="outline" size="sm">
+            <a href="/api/saml/metadata" target="_blank" rel="noopener noreferrer">
+              <ExternalLink />
+              View SP Metadata
+            </a>
+          </Button>
+        </>
+      )}
+    </SettingsPanel>
   );
 }

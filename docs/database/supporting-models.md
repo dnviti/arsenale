@@ -78,7 +78,7 @@
 
 ## OpenTab, TenantMember, TenantVaultMember, VaultFolder, AppConfig
 
-- **OpenTab**: userId + connectionId (unique), sortOrder, isActive. Index: `[userId]`
+- **OpenTab**: per-user persisted tab instances keyed by `id`, with `connectionId`, sortOrder, and isActive. Same-connection duplicates are allowed. Index: `[userId]`
 - **TenantMember**: tenantId + userId (unique), role (TenantRole), isActive, `expiresAt` (optional expiry). Indexes: `[userId, isActive]`, `[tenantId, isActive]`, `[expiresAt]`
 - **TenantVaultMember**: tenantId + userId (unique), encryptedTenantVaultKey + IV + tag
 - **VaultFolder**: self-referential tree, scoped to personal/team/tenant. Indexes: `[userId, scope]`, `[teamId]`, `[tenantId]`
@@ -145,4 +145,117 @@ Attribute-Based Access Control (ABAC) policies that restrict session access base
 
 **Index**: `[targetType, targetId]`
 
-Source: `server/src/services/abac.service.ts`
+Source: `backend/internal/accesspolicies/service.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Checkout
+
+Temporary credential checkout/check-in with approval workflow for privileged access management (PAM).
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| connectionId | String | FK -> Connection | Target connection |
+| requestedById | String | FK -> User | Requesting user |
+| approvedById | String? | FK -> User | Approving user |
+| status | CheckoutStatus | Enum | PENDING, APPROVED, DENIED, ACTIVE, RETURNED, EXPIRED |
+| reason | String? | Optional | Justification for access request |
+| expiresAt | DateTime | Required | Checkout expiry timestamp |
+| checkedInAt | DateTime? | Optional | When credentials were returned |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Indexes**: `[connectionId]`, `[requestedById]`, `[status]`
+
+## KeystrokePolicy
+
+Real-time SSH keystroke inspection and alerting policies.
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| name | String | Required | Policy name |
+| pattern | String | Required | Regex pattern to match keystrokes |
+| action | KeystrokePolicyAction | Enum | BLOCK_AND_TERMINATE or ALERT_ONLY |
+| enabled | Boolean | Default: true | Policy active state |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Index**: `[tenantId]`
+
+## FirewallRule
+
+SQL firewall rules for database query filtering in the DB proxy.
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| name | String | Required | Rule name |
+| pattern | String | Required | Regex pattern to match SQL queries |
+| action | FirewallAction | Enum | BLOCK or ALLOW |
+| priority | Int | Default: 0 | Rule evaluation order |
+| enabled | Boolean | Default: true | Rule active state |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Index**: `[tenantId, priority]`
+
+## MaskingPolicy
+
+Column-level data masking policies applied after database query execution.
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| connectionId | String? | FK -> Connection | Optional scoped connection |
+| columnPattern | String | Required | Regex pattern for column name matching |
+| maskType | MaskingType | Enum | FULL, PARTIAL, HASH, or REDACT |
+| enabled | Boolean | Default: true | Policy active state |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Index**: `[tenantId]`
+
+## RateLimitPolicy
+
+Per-connection query rate-limit policies enforced by the DB audit subsystem.
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| connectionId | String? | FK -> Connection | Optional scoped connection |
+| maxQueriesPerMinute | Int | Required | Maximum queries allowed per minute |
+| enabled | Boolean | Default: true | Policy active state |
+| createdAt | DateTime | Auto | |
+| updatedAt | DateTime | Auto | |
+
+**Index**: `[tenantId]`
+
+## DbAuditLog
+
+Database query audit log entries tracking all queries executed through the DB proxy.
+
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| id | String | PK, UUID | Unique identifier |
+| tenantId | String | FK -> Tenant | Owning tenant |
+| userId | String | FK -> User | Executing user |
+| connectionId | String | FK -> Connection | Target connection |
+| sessionId | String | FK -> ActiveSession | Parent session |
+| query | String | Required | Executed SQL query |
+| queryHash | String | Required | SHA-256 hash for pattern matching |
+| protocol | String | Required | Database protocol (postgresql, mysql, etc.) |
+| durationMs | Int | Required | Query execution time in milliseconds |
+| rowCount | Int? | Optional | Number of rows returned |
+| blocked | Boolean | Default: false | Whether query was blocked by firewall |
+| blockedBy | String? | Optional | Firewall rule that blocked the query |
+| executionPlan | Json? | Optional | Stored execution plan when persisted |
+| createdAt | DateTime | Auto | |
+
+**Indexes**: `[tenantId, createdAt]`, `[connectionId]`, `[userId]`, `[sessionId]`

@@ -1,114 +1,65 @@
-import { useState, useRef, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ListItemButton, ListItemIcon, ListItemText,
-  Collapse, Menu, MenuItem, Divider, IconButton, List,
-} from '@mui/material';
-import {
-  Computer as RdpIcon,
-  Terminal as SshIcon,
-  DesktopWindows as VncIcon,
-  Folder as FolderIcon,
-  FolderOpen as FolderOpenIcon,
-  ExpandMore,
-  ChevronRight,
-  Share as ShareIcon,
-  PlayArrow as ConnectIcon,
-  OpenInNew as OpenInNewIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  CreateNewFolder as CreateNewFolderIcon,
-  Add as AddIcon,
-  SwitchAccount as SwitchAccountIcon,
-  DriveFileMove as MoveIcon,
-  Star as StarIcon,
-  StarBorder as StarBorderIcon,
-  FolderShared as FolderSharedIcon,
-  PlaylistPlay as PlaylistPlayIcon,
-  History as HistoryIcon,
-  DesktopAccessDisabled as NativeRdpIcon,
-} from '@mui/icons-material';
-import { useTabsStore } from '../../store/tabsStore';
-import { ConnectionData } from '../../api/connections.api';
-import type { Folder } from '../../store/connectionsStore';
-import { openConnectionWindow } from '../../utils/openConnectionWindow';
-import { downloadRdpFile } from '../../api/rdGateway.api';
+  ArrowRightLeft,
+  DatabaseZap,
+  ExternalLink,
+  Folder,
+  FolderOpen,
+  FolderPlus,
+  History,
+  Monitor,
+  Pencil,
+  Play,
+  Plus,
+  Share2,
+  Star,
+  StarOff,
+  TerminalSquare,
+  Trash2,
+  UserRound,
+} from 'lucide-react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { alpha } from '@mui/material/styles';
+import { downloadRdpFile } from '@/api/rdGateway.api';
+import type { ConnectionData } from '@/api/connections.api';
+import type { Folder as FolderData } from '@/store/connectionsStore';
+import { useTabsStore } from '@/store/tabsStore';
+import { openConnectionWindow } from '@/utils/openConnectionWindow';
+import { cn } from '@/lib/utils';
+import {
+  SidebarContextMenu,
+} from './sidebarUi';
+import {
+  buildFolderTree,
+  collectFolderConnections,
+  depthPl,
+  folderHasSubfolders,
+  matchesSearch,
+  pruneFolderTree,
+  type FolderNode,
+} from './treeUtils';
 
-export const BASE_PL = 2;
-export const INDENT = 2;
-// eslint-disable-next-line react-refresh/only-export-components
-export function depthPl(depth: number) { return BASE_PL + depth * INDENT; }
+export {
+  buildFolderTree,
+  collectFolderConnections,
+  depthPl,
+  folderHasSubfolders,
+  matchesSearch,
+  pruneFolderTree,
+  type FolderNode,
+};
 
-export interface FolderNode {
-  folder: Folder;
-  children: FolderNode[];
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function matchesSearch(conn: ConnectionData, query: string): boolean {
-  const q = query.toLowerCase();
-  return conn.name.toLowerCase().includes(q)
-    || conn.host.toLowerCase().includes(q)
-    || conn.type.toLowerCase().includes(q)
-    || (conn.description?.toLowerCase().includes(q) ?? false);
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function pruneFolderTree(nodes: FolderNode[], folderMap: Map<string, ConnectionData[]>): FolderNode[] {
-  return nodes.reduce<FolderNode[]>((acc, node) => {
-    const prunedChildren = pruneFolderTree(node.children, folderMap);
-    const hasConnections = (folderMap.get(node.folder.id) || []).length > 0;
-    if (hasConnections || prunedChildren.length > 0) {
-      acc.push({ ...node, children: prunedChildren });
-    }
-    return acc;
-  }, []);
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function buildFolderTree(folders: Folder[]): FolderNode[] {
-  const map = new Map<string, FolderNode>();
-  for (const f of folders) {
-    map.set(f.id, { folder: f, children: [] });
+function connectionIcon(type: ConnectionData['type']) {
+  if (type === 'SSH') {
+    return <TerminalSquare className="size-4" />;
   }
-  const roots: FolderNode[] = [];
-  for (const node of map.values()) {
-    const pid = node.folder.parentId;
-    if (pid && map.has(pid)) {
-      map.get(pid)?.children.push(node);
-    } else {
-      roots.push(node);
-    }
+  if (type === 'DATABASE') {
+    return <DatabaseZap className="size-4" />;
   }
-  return roots;
+  return <Monitor className="size-4" />;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
-export function collectFolderConnections(
-  folderId: string,
-  folderMap: Map<string, ConnectionData[]>,
-  folders: Folder[],
-  recursive: boolean
-): ConnectionData[] {
-  const direct = folderMap.get(folderId) || [];
-  if (!recursive) return [...direct];
-
-  const result = [...direct];
-  const childFolders = folders.filter((f) => f.parentId === folderId);
-  for (const child of childFolders) {
-    result.push(...collectFolderConnections(child.id, folderMap, folders, true));
-  }
-  return result;
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function folderHasSubfolders(folderId: string, folders: Folder[]): boolean {
-  return folders.some((f) => f.parentId === folderId);
-}
-
-// --- ConnectionItem ---
+type ContextMenuState = { x: number; y: number } | null;
 
 export interface ConnectionItemProps {
   conn: ConnectionData;
@@ -124,9 +75,21 @@ export interface ConnectionItemProps {
   onViewAuditLog?: (conn: ConnectionData) => void;
 }
 
-export function ConnectionItem({ conn, depth, compact, draggable = false, onEdit, onDelete, onMove, onShare, onConnectAs, onToggleFavorite, onViewAuditLog }: ConnectionItemProps) {
-  const openTab = useTabsStore((s) => s.openTab);
-  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
+export function ConnectionItem({
+  conn,
+  depth,
+  compact,
+  draggable = false,
+  onEdit,
+  onDelete,
+  onMove,
+  onShare,
+  onConnectAs,
+  onToggleFavorite,
+  onViewAuditLog,
+}: ConnectionItemProps) {
+  const openTab = useTabsStore((state) => state.openTab);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const {
     attributes,
     listeners,
@@ -139,207 +102,151 @@ export function ConnectionItem({ conn, depth, compact, draggable = false, onEdit
     disabled: !draggable,
   });
 
-  const handleContextMenu = (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
-  };
-
-  const handleCloseMenu = () => setContextMenu(null);
-
   const quickConnect = () => {
     if (conn.defaultCredentialMode === 'domain') {
       openTab(conn, { username: '', password: '', credentialMode: 'domain' });
-    } else if (conn.defaultCredentialMode === 'prompt') {
-      onConnectAs(conn);
-    } else {
-      openTab(conn);
+      return;
     }
+    if (conn.defaultCredentialMode === 'prompt') {
+      onConnectAs(conn);
+      return;
+    }
+    openTab(conn);
   };
 
-  const handleConnect = () => {
-    handleCloseMenu();
-    quickConnect();
-  };
+  const contextMenuActions = [
+    {
+      label: 'Connect',
+      icon: <Play className="size-4" />,
+      onSelect: quickConnect,
+    },
+    {
+      label: 'Connect As...',
+      icon: <UserRound className="size-4" />,
+      onSelect: () => onConnectAs(conn),
+    },
+    {
+      label: 'Open in New Window',
+      icon: <ExternalLink className="size-4" />,
+      onSelect: () => openConnectionWindow(conn.id),
+    },
+    ...(conn.type === 'RDP'
+      ? [{
+          label: 'Open with Native Client',
+          icon: <ExternalLink className="size-4" />,
+          onSelect: () => {
+            void downloadRdpFile(conn.id, conn.name).catch(() => {});
+          },
+        }]
+      : []),
+    ...(conn.isOwner && onToggleFavorite
+      ? [{
+          label: conn.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',
+          icon: conn.isFavorite ? <StarOff className="size-4" /> : <Star className="size-4" />,
+          onSelect: () => onToggleFavorite(conn),
+        }]
+      : []),
+    {
+      label: 'Move to Folder',
+      icon: <ArrowRightLeft className="size-4" />,
+      disabled: !conn.isOwner,
+      separatorBefore: true,
+      onSelect: () => onMove(conn),
+    },
+    {
+      label: 'Edit',
+      icon: <Pencil className="size-4" />,
+      disabled: !conn.isOwner,
+      onSelect: () => onEdit(conn),
+    },
+    {
+      label: 'Share',
+      icon: <Share2 className="size-4" />,
+      disabled: !conn.isOwner,
+      onSelect: () => onShare(conn),
+    },
+    ...(onViewAuditLog
+      ? [{
+          label: 'Activity Log',
+          icon: <History className="size-4" />,
+          onSelect: () => onViewAuditLog(conn),
+        }]
+      : []),
+    {
+      label: 'Delete',
+      icon: <Trash2 className="size-4" />,
+      disabled: !conn.isOwner,
+      destructive: true,
+      onSelect: () => onDelete(conn),
+    },
+  ];
 
-  const handleOpenInNewWindow = () => {
-    handleCloseMenu();
-    openConnectionWindow(conn.id);
-  };
-
-  const handleEdit = () => {
-    handleCloseMenu();
-    onEdit(conn);
-  };
-
-  const handleDelete = () => {
-    handleCloseMenu();
-    onDelete(conn);
-  };
-
-  const handleMove = () => {
-    handleCloseMenu();
-    onMove(conn);
-  };
-
-  const handleShare = () => {
-    handleCloseMenu();
-    onShare(conn);
-  };
-
-  const handleConnectAs = () => {
-    handleCloseMenu();
-    onConnectAs(conn);
-  };
-
-  const handleOpenNativeRdp = () => {
-    handleCloseMenu();
-    downloadRdpFile(conn.id, conn.name).catch(() => {
-      // Silently fail — user will see nothing downloaded
-    });
-  };
-
-  const handleViewAuditLog = () => {
-    handleCloseMenu();
-    onViewAuditLog?.(conn);
-  };
+  const dragHandleProps = draggable ? { ...listeners, ...attributes } : undefined;
 
   return (
     <>
-      <ListItemButton
+      <div
         ref={setNodeRef}
-        dense
-        onDoubleClick={() => quickConnect()}
-        onContextMenu={handleContextMenu}
-        sx={{
-          pl: depthPl(depth),
-          borderLeft: '2px solid transparent',
-          transition: 'all 0.15s ease',
-          '&:hover': {
-            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
-          },
-          '&.Mui-selected, &.Mui-selected:hover': {
-            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-            borderLeftColor: 'primary.main',
-          },
-          ...(compact && { py: 0.125 }),
-          ...(draggable && { cursor: 'grab' }),
-          ...(isDragging && { opacity: 0.4 }),
-          ...(transform && { transform: CSS.Translate.toString(transform) }),
+        className={cn(
+          'group flex w-full items-center gap-1 border-l-2 border-transparent pr-2 transition-colors hover:bg-accent/70',
+          compact ? 'py-1' : 'py-1.5',
+          draggable && 'cursor-grab active:cursor-grabbing',
+          isDragging && 'opacity-40',
+        )}
+        style={{
+          paddingLeft: depthPl(depth),
+          transform: transform ? CSS.Translate.toString(transform) : undefined,
         }}
-        {...(draggable ? { ...listeners, ...attributes } : {})}
       >
-        <ListItemIcon sx={{ minWidth: compact ? 24 : 32 }}>
-          {conn.type === 'SSH' ? (
-            <SshIcon fontSize="small" sx={{ color: 'action.active' }} />
-          ) : conn.type === 'VNC' ? (
-            <VncIcon fontSize="small" sx={{ color: 'action.active' }} />
-          ) : (
-            <RdpIcon fontSize="small" sx={{ color: 'action.active' }} />
-          )}
-        </ListItemIcon>
-        <ListItemText
-          primary={conn.name}
-          secondary={compact ? undefined : `${conn.host}:${conn.port}`}
-          primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { color: 'text.primary' } }}
-          secondaryTypographyProps={{ variant: 'caption', noWrap: true, sx: { color: 'text.secondary' } }}
-        />
-        {conn.isOwner && onToggleFavorite && (
-          <IconButton
-            size="small"
-            onClick={(e) => { e.stopPropagation(); onToggleFavorite(conn); }}
-            sx={{ p: 0.25, '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08) } }}
+        <button
+          type="button"
+          onDoubleClick={quickConnect}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setContextMenu({ x: event.clientX, y: event.clientY });
+          }}
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+          {...dragHandleProps}
+        >
+          <span className="shrink-0 text-muted-foreground">
+            {connectionIcon(conn.type)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm text-foreground">{conn.name}</span>
+            {!compact ? (
+              <span className="block truncate text-xs text-muted-foreground">
+                {conn.host}:{conn.port}
+              </span>
+            ) : null}
+          </span>
+        </button>
+        {conn.isOwner && onToggleFavorite ? (
+          <button
+            type="button"
+            aria-label={conn.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            onClick={() => onToggleFavorite(conn)}
           >
-            {conn.isFavorite
-              ? <StarIcon fontSize="small" sx={{ color: 'primary.main' }} />
-              : <StarBorderIcon fontSize="small" sx={{ color: 'text.disabled', opacity: 0.5 }} />}
-          </IconButton>
-        )}
-      </ListItemButton>
+            {conn.isFavorite ? (
+              <Star className="size-4 fill-current text-primary" />
+            ) : (
+              <Star className="size-4" />
+            )}
+          </button>
+        ) : null}
+      </div>
 
-      <Menu
+      <SidebarContextMenu
         open={contextMenu !== null}
-        onClose={handleCloseMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu !== null
-            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
-            : undefined
-        }
-        slotProps={{
-          paper: {
-            sx: {
-              bgcolor: 'background.paper',
-              border: 1,
-              borderColor: 'divider',
-              '& .MuiMenuItem-root': {
-                color: 'text.primary',
-                fontSize: '0.8125rem',
-                '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06) },
-                '&.Mui-disabled': { color: 'text.disabled' },
-              },
-              '& .MuiDivider-root': { borderColor: 'divider' },
-            },
-          },
-        }}
-      >
-        <MenuItem onClick={handleConnect}>
-          <ListItemIcon><ConnectIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Connect</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleConnectAs}>
-          <ListItemIcon><SwitchAccountIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Connect As...</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleOpenInNewWindow}>
-          <ListItemIcon><OpenInNewIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Open in New Window</ListItemText>
-        </MenuItem>
-        {conn.type === 'RDP' && (
-          <MenuItem onClick={handleOpenNativeRdp}>
-            <ListItemIcon><NativeRdpIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-            <ListItemText>Open with Native Client</ListItemText>
-          </MenuItem>
-        )}
-        {conn.isOwner && onToggleFavorite && (
-          <MenuItem onClick={() => { handleCloseMenu(); onToggleFavorite(conn); }}>
-            <ListItemIcon>
-              {conn.isFavorite
-                ? <StarBorderIcon fontSize="small" sx={{ color: 'action.active' }} />
-                : <StarIcon fontSize="small" sx={{ color: 'primary.main' }} />}
-            </ListItemIcon>
-            <ListItemText>{conn.isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</ListItemText>
-          </MenuItem>
-        )}
-        <Divider />
-        <MenuItem onClick={handleMove} disabled={!conn.isOwner}>
-          <ListItemIcon><MoveIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Move to Folder</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleEdit} disabled={!conn.isOwner}>
-          <ListItemIcon><EditIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Edit</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleShare} disabled={!conn.isOwner}>
-          <ListItemIcon><ShareIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Share</ListItemText>
-        </MenuItem>
-        {onViewAuditLog && (
-          <MenuItem onClick={handleViewAuditLog}>
-            <ListItemIcon><HistoryIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-            <ListItemText>Activity Log</ListItemText>
-          </MenuItem>
-        )}
-        <MenuItem onClick={handleDelete} disabled={!conn.isOwner}>
-          <ListItemIcon><DeleteIcon fontSize="small" sx={{ color: conn.isOwner ? 'error.main' : 'text.disabled' }} /></ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+        position={contextMenu}
+        onClose={() => setContextMenu(null)}
+        label={conn.name}
+        actions={contextMenuActions}
+      />
     </>
   );
 }
-
-// --- FolderItem ---
 
 export interface FolderItemProps {
   node: FolderNode;
@@ -358,134 +265,136 @@ export interface FolderItemProps {
   onViewAuditLog?: (conn: ConnectionData) => void;
   onCreateConnection: (folderId: string, teamId?: string) => void;
   onCreateFolder: (parentId?: string, teamId?: string) => void;
-  onEditFolder: (folder: Folder) => void;
-  onDeleteFolder: (folder: Folder) => void;
+  onEditFolder: (folder: FolderData) => void;
+  onDeleteFolder: (folder: FolderData) => void;
   onBulkOpen?: (folderId: string) => void;
   onShareFolder?: (folderId: string, folderName: string) => void;
 }
 
 export function FolderItem({
-  node, connections, folderMap, depth, compact, isDndEnabled = false, teamId,
-  onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection, onConnectAsConnection, onToggleFavorite,
-  onViewAuditLog, onCreateConnection, onCreateFolder, onEditFolder, onDeleteFolder,
-  onBulkOpen, onShareFolder,
+  node,
+  connections,
+  folderMap,
+  depth,
+  compact,
+  isDndEnabled = false,
+  teamId,
+  onEditConnection,
+  onDeleteConnection,
+  onMoveConnection,
+  onShareConnection,
+  onConnectAsConnection,
+  onToggleFavorite,
+  onViewAuditLog,
+  onCreateConnection,
+  onCreateFolder,
+  onEditFolder,
+  onDeleteFolder,
+  onBulkOpen,
+  onShareFolder,
 }: FolderItemProps) {
   const [open, setOpen] = useState(true);
-  const [contextMenu, setContextMenu] = useState<{ mouseX: number; mouseY: number } | null>(null);
-
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const { setNodeRef, isOver } = useDroppable({
     id: `folder-${node.folder.id}`,
     data: { type: 'folder', folderId: node.folder.id },
+    disabled: !isDndEnabled,
   });
-
-  // Auto-expand collapsed folders on drag hover after 500ms
   const dragOverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (isOver && !open) {
       dragOverTimerRef.current = setTimeout(() => setOpen(true), 500);
     }
     return () => {
-      if (dragOverTimerRef.current) clearTimeout(dragOverTimerRef.current);
+      if (dragOverTimerRef.current) {
+        clearTimeout(dragOverTimerRef.current);
+      }
     };
   }, [isOver, open]);
 
-  const handleContextMenu = (event: React.MouseEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setContextMenu({ mouseX: event.clientX - 2, mouseY: event.clientY - 4 });
-  };
-
-  const handleCloseMenu = () => setContextMenu(null);
+  const contextMenuActions = [
+    {
+      label: 'New Connection',
+      icon: <Plus className="size-4" />,
+      onSelect: () => onCreateConnection(node.folder.id, teamId),
+    },
+    {
+      label: 'New Subfolder',
+      icon: <FolderPlus className="size-4" />,
+      onSelect: () => onCreateFolder(node.folder.id, teamId),
+    },
+    ...(onBulkOpen
+      ? [{
+          label: 'Open All',
+          icon: <Play className="size-4" />,
+          onSelect: () => onBulkOpen(node.folder.id),
+        }]
+      : []),
+    ...(onShareFolder
+      ? [{
+          label: 'Share Folder',
+          icon: <Share2 className="size-4" />,
+          onSelect: () => onShareFolder(node.folder.id, node.folder.name),
+        }]
+      : []),
+    {
+      label: 'Rename',
+      icon: <Pencil className="size-4" />,
+      separatorBefore: true,
+      onSelect: () => onEditFolder(node.folder),
+    },
+    {
+      label: 'Delete',
+      icon: <Trash2 className="size-4" />,
+      destructive: true,
+      onSelect: () => onDeleteFolder(node.folder),
+    },
+  ];
 
   return (
     <>
-      <ListItemButton
+      <button
         ref={setNodeRef}
-        dense
-        onClick={() => setOpen(!open)}
-        onContextMenu={handleContextMenu}
-        sx={{
-          pl: isOver ? depthPl(depth) - 0.375 : depthPl(depth),
-          borderLeft: '2px solid transparent',
-          transition: 'all 0.15s ease',
-          '&:hover': {
-            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
-          },
-          ...(compact && { py: 0.125 }),
-          ...(isOver && {
-            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
-            borderLeftColor: 'primary.main',
-          }),
+        type="button"
+        onClick={() => setOpen((current) => !current)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setContextMenu({ x: event.clientX, y: event.clientY });
+        }}
+        className={cn(
+          'flex w-full items-center gap-3 border-l-2 border-transparent py-2 pr-2 text-left transition-colors hover:bg-accent/70',
+          compact ? 'py-1.5' : 'py-2',
+          isOver && 'border-primary bg-primary/10',
+        )}
+        style={{
+          paddingLeft: depthPl(depth),
         }}
       >
-        <ListItemIcon sx={{ minWidth: compact ? 24 : 32 }}>
-          {open ? <FolderOpenIcon fontSize="small" sx={{ color: 'text.secondary' }} /> : <FolderIcon fontSize="small" sx={{ color: 'text.secondary' }} />}
-        </ListItemIcon>
-        <ListItemText
-          primary={node.folder.name}
-          primaryTypographyProps={{ variant: 'body2', sx: { color: 'text.primary' } }}
-        />
-        {open ? <ExpandMore fontSize="small" sx={{ color: 'text.secondary' }} /> : <ChevronRight fontSize="small" sx={{ color: 'text.secondary' }} />}
-      </ListItemButton>
+        <span className="shrink-0 text-muted-foreground">
+          {open ? <FolderOpen className="size-4" /> : <Folder className="size-4" />}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+          {node.folder.name}
+        </span>
+        {open ? (
+          <ChevronDownIcon className="size-4 text-muted-foreground" />
+        ) : (
+          <ChevronRightIcon className="size-4 text-muted-foreground" />
+        )}
+      </button>
 
-      <Menu
+      <SidebarContextMenu
         open={contextMenu !== null}
-        onClose={handleCloseMenu}
-        anchorReference="anchorPosition"
-        anchorPosition={
-          contextMenu !== null
-            ? { top: contextMenu.mouseY, left: contextMenu.mouseX }
-            : undefined
-        }
-        slotProps={{
-          paper: {
-            sx: {
-              bgcolor: 'background.paper',
-              border: 1,
-              borderColor: 'divider',
-              '& .MuiMenuItem-root': {
-                color: 'text.primary',
-                fontSize: '0.8125rem',
-                '&:hover': { bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06) },
-              },
-              '& .MuiDivider-root': { borderColor: 'divider' },
-            },
-          },
-        }}
-      >
-        <MenuItem onClick={() => { handleCloseMenu(); onCreateConnection(node.folder.id, teamId); }}>
-          <ListItemIcon><AddIcon fontSize="small" sx={{ color: 'primary.main' }} /></ListItemIcon>
-          <ListItemText>New Connection</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => { handleCloseMenu(); onCreateFolder(node.folder.id, teamId); }}>
-          <ListItemIcon><CreateNewFolderIcon fontSize="small" sx={{ color: 'primary.main' }} /></ListItemIcon>
-          <ListItemText>New Subfolder</ListItemText>
-        </MenuItem>
-        {onBulkOpen && (
-          <MenuItem onClick={() => { handleCloseMenu(); onBulkOpen(node.folder.id); }}>
-            <ListItemIcon><PlaylistPlayIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-            <ListItemText>Open All</ListItemText>
-          </MenuItem>
-        )}
-        {onShareFolder && (
-          <MenuItem onClick={() => { handleCloseMenu(); onShareFolder(node.folder.id, node.folder.name); }}>
-            <ListItemIcon><FolderSharedIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-            <ListItemText>Share Folder</ListItemText>
-          </MenuItem>
-        )}
-        <Divider />
-        <MenuItem onClick={() => { handleCloseMenu(); onEditFolder(node.folder); }}>
-          <ListItemIcon><EditIcon fontSize="small" sx={{ color: 'action.active' }} /></ListItemIcon>
-          <ListItemText>Rename</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => { handleCloseMenu(); onDeleteFolder(node.folder); }}>
-          <ListItemIcon><DeleteIcon fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+        position={contextMenu}
+        onClose={() => setContextMenu(null)}
+        label={node.folder.name}
+        actions={contextMenuActions}
+      />
 
-      <Collapse in={open}>
-        <List disablePadding>
+      {open ? (
+        <div>
           {node.children.map((child) => (
             <FolderItem
               key={child.folder.id}
@@ -527,8 +436,16 @@ export function FolderItem({
               onViewAuditLog={onViewAuditLog}
             />
           ))}
-        </List>
-      </Collapse>
+        </div>
+      ) : null}
     </>
   );
+}
+
+function ChevronDownIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true"><path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
+}
+
+function ChevronRightIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true"><path d="m9 6 6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }

@@ -1,13 +1,19 @@
 import { create } from 'zustand';
 import {
+  type ActiveSessionStreamSnapshot,
+  type GatewayStreamSnapshot,
+} from '../api/live.api';
+import {
   GatewayData, GatewayInput, GatewayUpdate, SshKeyPairData,
   listGateways, createGateway as createGatewayApi,
   updateGateway as updateGatewayApi, deleteGateway as deleteGatewayApi,
+  updateGatewayEgressPolicy as updateGatewayEgressPolicyApi,
   getSshKeyPair, generateSshKeyPair as generateSshKeyPairApi,
   rotateSshKeyPair as rotateSshKeyPairApi,
   pushKeyToGateway as pushKeyToGatewayApi,
   type RotateKeyPairResponse,
   type GatewayHealthEvent,
+  type GatewayEgressPolicy,
   type ActiveSessionData,
   type ManagedInstanceData,
   type ScalingStatusData,
@@ -21,7 +27,6 @@ import {
   listActiveSessions as listActiveSessionsApi,
   getSessionCount as getSessionCountApi,
   getSessionCountByGateway as getSessionCountByGatewayApi,
-  terminateSession as terminateSessionApi,
   deployGateway as deployGatewayApi,
   undeployGateway as undeployGatewayApi,
   scaleGateway as scaleGatewayApi,
@@ -37,6 +42,12 @@ import {
   generateTunnelToken as generateTunnelTokenApi,
   revokeTunnelToken as revokeTunnelTokenApi,
 } from '../api/gateway.api';
+import {
+  pauseSession as pauseSessionApi,
+  resumeSession as resumeSessionApi,
+  terminateSession as terminateSessionApi,
+  type SessionProtocol,
+} from '../api/sessions.api';
 
 export interface TunnelStatusEvent {
   gatewayId: string;
@@ -54,6 +65,8 @@ interface GatewayState {
   sshKeyPair: SshKeyPairData | null;
   sshKeyLoading: boolean;
   tunnelStatuses: Record<string, TunnelStatusEvent>;
+  watchedScalingGatewayIds: Record<string, true>;
+  watchedInstanceGatewayIds: Record<string, true>;
 
   // Orchestration state
   activeSessions: ActiveSessionData[];
@@ -67,11 +80,14 @@ interface GatewayState {
   fetchGateways: () => Promise<void>;
   createGateway: (data: GatewayInput) => Promise<GatewayData>;
   updateGateway: (id: string, data: GatewayUpdate) => Promise<void>;
+  updateGatewayEgressPolicy: (id: string, policy: GatewayEgressPolicy) => Promise<void>;
   deleteGateway: (id: string, force?: boolean) => Promise<void>;
   applyHealthUpdate: (event: GatewayHealthEvent) => void;
   applyInstancesUpdate: (gatewayId: string, instances: ManagedInstanceData[]) => void;
   applyScalingUpdate: (gatewayId: string, scalingStatus: ScalingStatusData) => void;
   applyGatewayUpdate: (gatewayId: string, gatewayPartial: Partial<GatewayData>) => void;
+  applyGatewayStreamSnapshot: (snapshot: GatewayStreamSnapshot) => void;
+  applyActiveSessionStreamSnapshot: (snapshot: ActiveSessionStreamSnapshot) => void;
 
   // SSH key actions
   fetchSshKeyPair: () => Promise<void>;
@@ -80,14 +96,20 @@ interface GatewayState {
   pushKeyToGateway: (id: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Session monitoring actions
-  fetchActiveSessions: (filters?: { protocol?: 'SSH' | 'RDP'; gatewayId?: string }) => Promise<void>;
+  fetchActiveSessions: (filters?: { protocol?: SessionProtocol; gatewayId?: string }) => Promise<void>;
   fetchSessionCount: () => Promise<void>;
   fetchSessionCountByGateway: () => Promise<void>;
+  pauseSession: (sessionId: string) => Promise<void>;
+  resumeSession: (sessionId: string) => Promise<void>;
   terminateSession: (sessionId: string) => Promise<void>;
 
   // Managed gateway lifecycle actions
   fetchScalingStatus: (gatewayId: string) => Promise<void>;
   fetchInstances: (gatewayId: string) => Promise<void>;
+  watchScalingStatus: (gatewayId: string) => void;
+  unwatchScalingStatus: (gatewayId: string) => void;
+  watchInstances: (gatewayId: string) => void;
+  unwatchInstances: (gatewayId: string) => void;
   deployGateway: (id: string) => Promise<void>;
   undeployGateway: (id: string) => Promise<void>;
   scaleGateway: (id: string, replicas: number) => Promise<void>;
@@ -126,6 +148,8 @@ const initialOrchestrationState = {
   templates: [] as GatewayTemplateData[],
   templatesLoading: false,
   tunnelStatuses: {} as Record<string, TunnelStatusEvent>,
+  watchedScalingGatewayIds: {} as Record<string, true>,
+  watchedInstanceGatewayIds: {} as Record<string, true>,
   tunnelOverview: null as TunnelOverviewData | null,
   tunnelOverviewLoading: false,
 };
@@ -161,6 +185,13 @@ export const useGatewayStore = create<GatewayState>((set) => ({
     }));
   },
 
+  updateGatewayEgressPolicy: async (id, policy) => {
+    const updated = await updateGatewayEgressPolicyApi(id, policy);
+    set((state) => ({
+      gateways: state.gateways.map((g) => (g.id === id ? { ...g, ...updated } : g)),
+    }));
+  },
+
   deleteGateway: async (id, force) => {
     await deleteGatewayApi(id, force);
     set((state) => ({
@@ -178,6 +209,10 @@ export const useGatewayStore = create<GatewayState>((set) => ({
               lastLatencyMs: event.latencyMs,
               lastError: event.error,
               lastCheckedAt: event.checkedAt,
+              operationalStatus: event.status === 'REACHABLE' ? 'HEALTHY' : event.status === 'UNREACHABLE' ? 'UNHEALTHY' : 'UNKNOWN',
+              operationalReason: event.status === 'REACHABLE'
+                ? (event.latencyMs != null ? `Gateway responded in ${event.latencyMs} ms.` : 'Gateway responded to the latest health check.')
+                : event.error || 'The latest health check failed.',
             }
           : g,
       ),
@@ -202,6 +237,25 @@ export const useGatewayStore = create<GatewayState>((set) => ({
         g.id === gatewayId ? { ...g, ...gatewayPartial } : g,
       ),
     }));
+  },
+
+  applyGatewayStreamSnapshot: (snapshot) => {
+    set((state) => ({
+      gateways: snapshot.gateways,
+      tunnelOverview: snapshot.tunnelOverview ?? state.tunnelOverview,
+      scalingStatus: { ...state.scalingStatus, ...snapshot.scalingStatus },
+      instances: { ...state.instances, ...snapshot.instances },
+      loading: false,
+      tunnelOverviewLoading: false,
+    }));
+  },
+
+  applyActiveSessionStreamSnapshot: (snapshot) => {
+    set({
+      activeSessions: snapshot.activeSessions,
+      sessionCount: snapshot.sessionCount,
+      sessionsLoading: false,
+    });
   },
 
   fetchSshKeyPair: async () => {
@@ -261,6 +315,24 @@ export const useGatewayStore = create<GatewayState>((set) => ({
     }
   },
 
+  pauseSession: async (sessionId) => {
+    const result = await pauseSessionApi(sessionId);
+    set((state) => ({
+      activeSessions: state.activeSessions.map((session) =>
+        session.id === sessionId ? { ...session, status: result.status } : session,
+      ),
+    }));
+  },
+
+  resumeSession: async (sessionId) => {
+    const result = await resumeSessionApi(sessionId);
+    set((state) => ({
+      activeSessions: state.activeSessions.map((session) =>
+        session.id === sessionId ? { ...session, status: result.status } : session,
+      ),
+    }));
+  },
+
   terminateSession: async (sessionId) => {
     await terminateSessionApi(sessionId);
     set((state) => ({
@@ -291,6 +363,38 @@ export const useGatewayStore = create<GatewayState>((set) => ({
     } catch {
       // ignore
     }
+  },
+
+  watchScalingStatus: (gatewayId) => {
+    set((state) => ({
+      watchedScalingGatewayIds: {
+        ...state.watchedScalingGatewayIds,
+        [gatewayId]: true,
+      },
+    }));
+  },
+
+  unwatchScalingStatus: (gatewayId) => {
+    set((state) => {
+      const { [gatewayId]: _, ...rest } = state.watchedScalingGatewayIds;
+      return { watchedScalingGatewayIds: rest };
+    });
+  },
+
+  watchInstances: (gatewayId) => {
+    set((state) => ({
+      watchedInstanceGatewayIds: {
+        ...state.watchedInstanceGatewayIds,
+        [gatewayId]: true,
+      },
+    }));
+  },
+
+  unwatchInstances: (gatewayId) => {
+    set((state) => {
+      const { [gatewayId]: _, ...rest } = state.watchedInstanceGatewayIds;
+      return { watchedInstanceGatewayIds: rest };
+    });
   },
 
   deployGateway: async (id) => {

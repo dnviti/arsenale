@@ -1,21 +1,16 @@
 import { useState, useEffect } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Typography,
-  Alert,
-  FormControlLabel,
-  Checkbox,
-  CircularProgress,
-} from '@mui/material';
-import { CloudDownload as DownloadIcon } from '@mui/icons-material';
+  Dialog, DialogContent, DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Download, Loader2, X } from 'lucide-react';
 import { downloadExport } from '../../api/importExport.api';
 import { getVaultStatus } from '../../api/vault.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
@@ -80,67 +75,89 @@ export default function ExportDialog({ open, onClose, folderId, connectionIds }:
     : 'all connections';
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Export Connections</DialogTitle>
-      <DialogContent>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) handleClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+      >
+        <DialogTitle className="sr-only">Export Connections</DialogTitle>
+        <DialogDescription className="sr-only">Export connections to a file</DialogDescription>
 
-        <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel>Format</InputLabel>
-          <Select
-            value={format}
-            label="Format"
-            onChange={(e) => setFormat(e.target.value as 'CSV' | 'JSON')}
+        {/* Compact header */}
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+          <span className="text-xs font-medium">Export Connections</span>
+          <div className="ml-auto">
+            <Button variant="ghost" size="icon-xs" onClick={handleClose}>
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        <ScrollArea className="flex-1">
+          <div className="mx-auto max-w-2xl px-6 py-4">
+            {error && (
+              <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Format</Label>
+              <Select value={format} onValueChange={(v) => setFormat(v as 'CSV' | 'JSON')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="JSON">JSON (Recommended)</SelectItem>
+                  <SelectItem value="CSV">CSV (Spreadsheet)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <p className="mt-4 text-sm text-muted-foreground">
+              Exporting {scopeText}
+            </p>
+
+            <div className="mt-4 flex items-center gap-2">
+              <Checkbox
+                id="include-credentials"
+                checked={includeCredentials}
+                onCheckedChange={(v) => setIncludeCredentials(v === true)}
+                disabled={!vaultUnlocked}
+              />
+              <Label htmlFor="include-credentials" className="font-normal">
+                Include credentials in export (requires vault unlocked)
+              </Label>
+            </div>
+
+            {includeCredentials && !vaultUnlocked && (
+              <div className="mt-4 rounded-md border border-yellow-600/50 bg-yellow-600/10 px-4 py-3 text-sm text-yellow-500">
+                Vault is locked. Please unlock your vault to export credentials.
+              </div>
+            )}
+
+            {includeCredentials && vaultUnlocked && (
+              <div className="mt-4 rounded-md border border-yellow-600/50 bg-yellow-600/10 px-4 py-3 text-sm text-yellow-500">
+                Credentials will be decrypted and included in plain text. Store this file securely.
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+          <Button variant="outline" onClick={handleClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleExport}
+            disabled={loading || (includeCredentials && !vaultUnlocked)}
+            className="gap-2"
           >
-            <MenuItem value="JSON">JSON (Recommended)</MenuItem>
-            <MenuItem value="CSV">CSV (Spreadsheet)</MenuItem>
-          </Select>
-        </FormControl>
-
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Exporting {scopeText}
-        </Typography>
-
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={includeCredentials}
-              onChange={(e) => setIncludeCredentials(e.target.checked)}
-              disabled={!vaultUnlocked}
-            />
-          }
-          label="Include credentials in export (requires vault unlocked)"
-        />
-
-        {includeCredentials && !vaultUnlocked && (
-          <Alert severity="warning" sx={{ mt: 1 }}>
-            Vault is locked. Please unlock your vault to export credentials.
-          </Alert>
-        )}
-
-        {includeCredentials && vaultUnlocked && (
-          <Alert severity="warning" sx={{ mt: 1 }}>
-            Credentials will be decrypted and included in plain text. Store this file securely.
-          </Alert>
-        )}
+            {loading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            {loading ? 'Exporting...' : 'Export'}
+          </Button>
+        </div>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose} disabled={loading}>
-          Cancel
-        </Button>
-        <Button
-          onClick={handleExport}
-          variant="contained"
-          disabled={loading || (includeCredentials && !vaultUnlocked)}
-          startIcon={loading ? <CircularProgress size={20} /> : <DownloadIcon />}
-        >
-          {loading ? 'Exporting...' : 'Export'}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

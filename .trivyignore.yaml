@@ -4,13 +4,21 @@ vulnerabilities:
   - id: CVE-2026-29045
 
 misconfigurations:
-  # ssh-gateway requires root for sshd (host key gen, chown, privileged ops)
+  # Dev SSH targets intentionally run sshd with privileged defaults for local acceptance testing.
   - id: DS-0002
     paths:
-      - ssh-gateway/Dockerfile
+      - infrastructure/dev/debian-ssh-target/Dockerfile
+      - infrastructure/dev/terminal-target/Dockerfile
+  - id: DS-0004
+    paths:
+      - infrastructure/dev/debian-ssh-target/Dockerfile
+  - id: DS-0026
+    paths:
+      - infrastructure/dev/debian-ssh-target/Dockerfile
+      - infrastructure/dev/terminal-target/Dockerfile
 
 secrets:
   # .env.example contains placeholder values, not real secrets
   - path: .env.example
-  # compose.dev.yml contains development-only database password
-  - path: compose.dev.yml
+  # Ansible dev compose template contains Jinja2 placeholders, not real secrets
+  - path: deployment/ansible/roles/deploy/templates/compose.dev.yml.j2

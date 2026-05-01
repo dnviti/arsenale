@@ -61,10 +61,15 @@ interface UiPreferences {
   sqlEditorFontSize: number;
   sqlEditorFontFamily: string;
   sqlEditorMinimap: boolean;
+  workspaceActiveView: string;
+  workspaceSidebarOpen: boolean;
+  uiZoomLevel: number;
+  lastLoginMethod: 'passkey' | 'credentials';
 }
 
 interface UiPreferencesState extends UiPreferences {
   set: <K extends keyof UiPreferences>(key: K, value: UiPreferences[K]) => void;
+  removeDbTabState: (tabId: string) => void;
   toggle: (key: { [K in keyof UiPreferences]: UiPreferences[K] extends boolean ? K : never }[keyof UiPreferences]) => void;
   toggleTeamSection: (teamId: string) => void;
   toggleKeychainFolder: (folderId: string) => void;
@@ -123,13 +128,19 @@ const defaults: UiPreferences = {
   dbAiPanelOpen: false,
   dbQueryHistoryOpen: false,
   queryVisualizerOpen: false,
+  // Outer key is the persisted Arsenale tab instance id, not connection id.
   dbQuerySubTabs: {},
+  // Outer key is the persisted Arsenale tab instance id, not connection id.
   dbSessionConfigs: {},
   dbEditorSplitRatio: 0.3,
   sqlEditorTheme: 'auto',
   sqlEditorFontSize: 14,
   sqlEditorFontFamily: 'Cascadia Code, Fira Code, JetBrains Mono, monospace',
   sqlEditorMinimap: false,
+  workspaceActiveView: 'remote',
+  workspaceSidebarOpen: true,
+  uiZoomLevel: 100,
+  lastLoginMethod: 'credentials',
 };
 
 export const useUiPreferencesStore = create<UiPreferencesState>()(
@@ -137,6 +148,14 @@ export const useUiPreferencesStore = create<UiPreferencesState>()(
     (set) => ({
       ...defaults,
       set: (key, value) => set({ [key]: value }),
+      removeDbTabState: (tabId) =>
+        set((state) => {
+          const { [tabId]: _subTabs, ...dbQuerySubTabs } = state.dbQuerySubTabs;
+          const { [tabId]: _sessionConfig, ...dbSessionConfigs } = state.dbSessionConfigs;
+          void _subTabs;
+          void _sessionConfig;
+          return { dbQuerySubTabs, dbSessionConfigs };
+        }),
       toggle: (key) =>
         set((state) => ({ [key]: !state[key] })),
       toggleTeamSection: (teamId) =>

@@ -1,15 +1,17 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  FormControl, InputLabel, Select, MenuItem, Box, Alert, List, ListItem,
-  ListItemIcon, ListItemText, Typography,
-  ToggleButton, ToggleButtonGroup, CircularProgress,
-} from '@mui/material';
+  Dialog, DialogContent, DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
-  Computer as RdpIcon,
-  Terminal as SshIcon,
-  DesktopWindows as VncIcon,
-} from '@mui/icons-material';
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Terminal, Monitor, Loader2, X } from 'lucide-react';
 import { batchShareConnections, BatchShareResult } from '../../api/sharing.api';
 import { useAuthStore } from '../../store/authStore';
 import { useConnectionsStore } from '../../store/connectionsStore';
@@ -99,106 +101,127 @@ export default function ShareFolderDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Share Folder: {folderName}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+      >
+        <DialogTitle className="sr-only">Share Folder: {folderName}</DialogTitle>
+        <DialogDescription className="sr-only">Share all connections in this folder</DialogDescription>
 
-        {result && (
-          <Alert severity={result.failed > 0 ? 'warning' : 'success'} sx={{ mb: 2 }}>
-            {result.shared} of {result.shared + result.failed + result.alreadyShared} connection{result.shared + result.failed + result.alreadyShared !== 1 ? 's' : ''} shared successfully
-            {result.alreadyShared > 0 && ` (${result.alreadyShared} already shared)`}
-            {result.failed > 0 && ` (${result.failed} failed)`}
-          </Alert>
-        )}
+        {/* Compact header */}
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+          <span className="text-xs font-medium">Share Folder: {folderName}</span>
+          <div className="ml-auto">
+            <Button variant="ghost" size="icon-xs" onClick={onClose}>
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
 
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 1 }}>
-          {folderConnections.length} connection{folderConnections.length !== 1 ? 's' : ''} will be shared (including subfolders)
-        </Typography>
-
-        <Box sx={{ maxHeight: 160, overflow: 'auto', mb: 2, border: 1, borderColor: 'divider', borderRadius: 1 }}>
-          <List dense disablePadding>
-            {folderConnections.map((conn) => (
-              <ListItem key={conn.id} sx={{ py: 0.25 }}>
-                <ListItemIcon sx={{ minWidth: 28 }}>
-                  {conn.type === 'SSH'
-                    ? <SshIcon fontSize="small" color="secondary" />
-                    : conn.type === 'VNC'
-                    ? <VncIcon fontSize="small" color="info" />
-                    : <RdpIcon fontSize="small" color="primary" />}
-                </ListItemIcon>
-                <ListItemText
-                  primary={conn.name}
-                  primaryTypographyProps={{ variant: 'body2', noWrap: true }}
-                />
-              </ListItem>
-            ))}
-            {folderConnections.length === 0 && (
-              <ListItem>
-                <ListItemText
-                  primary="No owned connections in this folder"
-                  primaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }}
-                />
-              </ListItem>
+        <ScrollArea className="flex-1">
+          <div className="mx-auto max-w-2xl px-6 py-4">
+            {error && (
+              <div className="mb-4 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {error}
+              </div>
             )}
-          </List>
-        </Box>
 
-        {hasTenant && (
-          <ToggleButtonGroup
-            value={scope}
-            exclusive
-            onChange={(_e, val) => { if (val) setScope(val); }}
-            size="small"
-            sx={{ mb: 1 }}
-          >
-            <ToggleButton value="tenant">Organization</ToggleButton>
-            <ToggleButton value="team">My Team</ToggleButton>
-          </ToggleButtonGroup>
-        )}
+            {result && (
+              <div className={`mb-4 rounded-md border px-4 py-3 text-sm ${
+                result.failed > 0
+                  ? 'border-yellow-600/50 bg-yellow-600/10 text-yellow-500'
+                  : 'border-emerald-600/50 bg-emerald-600/10 text-emerald-400'
+              }`}>
+                {result.shared} of {result.shared + result.failed + result.alreadyShared} connection{result.shared + result.failed + result.alreadyShared !== 1 ? 's' : ''} shared successfully
+                {result.alreadyShared > 0 && ` (${result.alreadyShared} already shared)`}
+                {result.failed > 0 && ` (${result.failed} failed)`}
+              </div>
+            )}
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-          {hasTenant ? (
-            <UserPicker
-              onSelect={setSelectedUser}
-              scope={scope}
-              placeholder="Search users by name or email..."
-            />
-          ) : (
-            <TextField
-              label="User email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              size="small"
-              fullWidth
-            />
-          )}
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel>Permission</InputLabel>
-            <Select
-              value={permission}
-              label="Permission"
-              onChange={(e) =>
-                setPermission(e.target.value as 'READ_ONLY' | 'FULL_ACCESS')
-              }
-            >
-              <MenuItem value="READ_ONLY">Read Only</MenuItem>
-              <MenuItem value="FULL_ACCESS">Full Access</MenuItem>
-            </Select>
-          </FormControl>
-          <Button
-            variant="contained"
-            onClick={handleShare}
-            disabled={loading || folderConnections.length === 0}
-            sx={{ whiteSpace: 'nowrap' }}
-          >
-            {loading ? <CircularProgress size={20} /> : 'Share'}
-          </Button>
-        </Box>
+            <p className="text-sm text-muted-foreground">
+              {folderConnections.length} connection{folderConnections.length !== 1 ? 's' : ''} will be shared (including subfolders)
+            </p>
+
+            <div className="mt-4 max-h-40 overflow-auto rounded-lg border">
+              <div className="divide-y">
+                {folderConnections.map((conn) => (
+                  <div key={conn.id} className="flex items-center gap-2 px-3 py-1.5">
+                    {conn.type === 'SSH'
+                      ? <Terminal className="size-4 text-muted-foreground" />
+                      : conn.type === 'VNC'
+                      ? <Monitor className="size-4 text-blue-400" />
+                      : <Monitor className="size-4 text-primary" />}
+                    <span className="text-sm truncate">{conn.name}</span>
+                  </div>
+                ))}
+                {folderConnections.length === 0 && (
+                  <div className="px-3 py-3">
+                    <span className="text-sm text-muted-foreground">No owned connections in this folder</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {hasTenant && (
+              <ToggleGroup
+                type="single"
+                value={scope}
+                onValueChange={(val) => { if (val) setScope(val as 'tenant' | 'team'); }}
+                className="mt-4 self-start"
+              >
+                <ToggleGroupItem value="tenant" size="sm">Organization</ToggleGroupItem>
+                <ToggleGroupItem value="team" size="sm">My Team</ToggleGroupItem>
+              </ToggleGroup>
+            )}
+
+            <div className="mt-4 flex gap-2 items-end">
+              {hasTenant ? (
+                <div className="flex-1">
+                  <UserPicker
+                    value={selectedUser}
+                    onSelect={setSelectedUser}
+                    scope={scope}
+                    placeholder="Search users by name or email..."
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="share-folder-email">User email</Label>
+                  <Input
+                    id="share-folder-email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                  />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label className="sr-only">Permission</Label>
+                <Select value={permission} onValueChange={(v) => setPermission(v as 'READ_ONLY' | 'FULL_ACCESS')}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="READ_ONLY">Read Only</SelectItem>
+                    <SelectItem value="FULL_ACCESS">Full Access</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={handleShare}
+                disabled={loading || folderConnections.length === 0}
+                className="whitespace-nowrap"
+              >
+                {loading ? <Loader2 className="size-4 animate-spin" /> : 'Share'}
+              </Button>
+            </div>
+          </div>
+        </ScrollArea>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </div>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
     </Dialog>
   );
 }

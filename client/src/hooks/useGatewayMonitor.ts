@@ -1,67 +1,46 @@
-import { useEffect, useRef } from 'react';
-import { io, Socket } from 'socket.io-client';
+import { useEffect } from 'react';
+import type { GatewayStreamSnapshot } from '../api/live.api';
+import { connectSSE } from '../api/sse';
 import { useAuthStore } from '../store/authStore';
+import { useFeatureFlagsStore } from '../store/featureFlagsStore';
 import { useGatewayStore } from '../store/gatewayStore';
-import type {
-  GatewayHealthEvent,
-  GatewayData,
-  ManagedInstanceData,
-  ScalingStatusData,
-} from '../api/gateway.api';
-
-interface InstancesUpdatedEvent {
-  gatewayId: string;
-  instances: ManagedInstanceData[];
-}
-
-interface ScalingUpdatedEvent {
-  gatewayId: string;
-  scalingStatus: ScalingStatusData;
-}
-
-interface GatewayUpdatedEvent {
-  gatewayId: string;
-  gateway: Partial<GatewayData>;
-}
 
 export function useGatewayMonitor() {
   const accessToken = useAuthStore((s) => s.accessToken);
   const tenantId = useAuthStore((s) => s.user?.tenantId);
-  const applyHealthUpdate = useGatewayStore((s) => s.applyHealthUpdate);
-  const applyInstancesUpdate = useGatewayStore((s) => s.applyInstancesUpdate);
-  const applyScalingUpdate = useGatewayStore((s) => s.applyScalingUpdate);
-  const applyGatewayUpdate = useGatewayStore((s) => s.applyGatewayUpdate);
-  const socketRef = useRef<Socket | null>(null);
+  const permissionsLoaded = useAuthStore((s) => s.permissionsLoaded);
+  const canManageGateways = useAuthStore((s) => s.permissions.canManageGateways);
+  const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
+  const zeroTrustEnabled = useFeatureFlagsStore((s) => s.zeroTrustEnabled);
+  const fetchGateways = useGatewayStore((s) => s.fetchGateways);
+  const watchedScaling = useGatewayStore((s) => Object.keys(s.watchedScalingGatewayIds).sort().join(','));
+  const watchedInstances = useGatewayStore((s) => Object.keys(s.watchedInstanceGatewayIds).sort().join(','));
+  const applyGatewayStreamSnapshot = useGatewayStore((s) => s.applyGatewayStreamSnapshot);
 
   useEffect(() => {
-    if (!accessToken || !tenantId) return;
+    if (!accessToken || !tenantId || !permissionsLoaded || !canManageGateways) return;
+    void fetchGateways();
+  }, [accessToken, tenantId, permissionsLoaded, canManageGateways, fetchGateways]);
 
-    const socket = io('/gateway-monitor', {
-      auth: { token: accessToken },
-      transports: ['websocket'],
+  useEffect(() => {
+    if (!accessToken || !tenantId || !permissionsLoaded || !canManageGateways || !featureFlagsLoaded || !zeroTrustEnabled) return undefined;
+
+    const params = new URLSearchParams();
+    for (const gatewayId of watchedScaling.split(',').filter(Boolean)) {
+      params.append('watchScaling', gatewayId);
+    }
+    for (const gatewayId of watchedInstances.split(',').filter(Boolean)) {
+      params.append('watchInstances', gatewayId);
+    }
+    const query = params.toString();
+
+    return connectSSE({
+      url: query ? `/api/gateways/stream?${query}` : '/api/gateways/stream',
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        applyGatewayStreamSnapshot(data as GatewayStreamSnapshot);
+      },
     });
-
-    socket.on('gateway:health', (event: GatewayHealthEvent) => {
-      applyHealthUpdate(event);
-    });
-
-    socket.on('instances:updated', (event: InstancesUpdatedEvent) => {
-      applyInstancesUpdate(event.gatewayId, event.instances);
-    });
-
-    socket.on('scaling:updated', (event: ScalingUpdatedEvent) => {
-      applyScalingUpdate(event.gatewayId, event.scalingStatus);
-    });
-
-    socket.on('gateway:updated', (event: GatewayUpdatedEvent) => {
-      applyGatewayUpdate(event.gatewayId, event.gateway);
-    });
-
-    socketRef.current = socket;
-
-    return () => {
-      socket.disconnect();
-      socketRef.current = null;
-    };
-  }, [accessToken, tenantId, applyHealthUpdate, applyInstancesUpdate, applyScalingUpdate, applyGatewayUpdate]);
+  }, [accessToken, tenantId, permissionsLoaded, canManageGateways, featureFlagsLoaded, zeroTrustEnabled, watchedScaling, watchedInstances, applyGatewayStreamSnapshot]);
 }

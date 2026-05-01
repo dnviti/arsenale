@@ -1,20 +1,17 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import {
-  Box, Typography, List, ListItemButton, ListItemIcon, ListItemText,
-  Collapse, Divider, IconButton, Menu, MenuItem,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button,
-} from '@mui/material';
+  Folder, FolderOpen, ChevronDown, ChevronRight, Star,
+  FolderPlus, Pencil, Trash2, Inbox,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import {
-  Folder as FolderIcon,
-  FolderOpen as FolderOpenIcon,
-  ExpandMore,
-  ChevronRight,
-  Star as StarIcon,
-  CreateNewFolder as CreateNewFolderIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  AllInbox as AllInboxIcon,
-} from '@mui/icons-material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { useDroppable } from '@dnd-kit/core';
 import { useSecretStore } from '../../store/secretStore';
 import { useAuthStore } from '../../store/authStore';
@@ -94,61 +91,51 @@ function FolderTreeItem({
 
   return (
     <>
-      <ListItemButton
+      <div
         ref={setNodeRef}
-        dense
-        selected={isSelected}
         onClick={() => onSelect(node.folder.id)}
         onContextMenu={(e) => onContextMenu(e, node.folder)}
-        sx={{
-          pl: 1.5 + depth * 2,
-          py: 0.25,
-          ...(isOver && {
-            bgcolor: 'action.hover',
-            borderLeft: '3px solid',
-            borderColor: 'primary.main',
-          }),
-        }}
+        className={cn(
+          'flex items-center py-1 cursor-pointer rounded-md transition-colors text-sm',
+          isSelected && 'bg-accent',
+          !isSelected && 'hover:bg-accent/50',
+          isOver && 'bg-accent/70 border-l-2 border-primary',
+        )}
+        style={{ paddingLeft: `${6 + depth * 16}px` }}
       >
-        <ListItemIcon sx={{ minWidth: 24 }}>
+        <div className="w-5 shrink-0 flex items-center justify-center">
           {node.children.length > 0 ? (
-            <IconButton
-              size="small"
-              sx={{ p: 0 }}
+            <button
+              className="p-0"
               onClick={(e) => { e.stopPropagation(); toggleFolder(node.folder.id); }}
             >
-              {isOpen ? <ExpandMore sx={{ fontSize: 16 }} /> : <ChevronRight sx={{ fontSize: 16 }} />}
-            </IconButton>
+              {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
           ) : null}
-        </ListItemIcon>
-        <ListItemIcon sx={{ minWidth: 24 }}>
+        </div>
+        <div className="w-5 shrink-0 flex items-center justify-center mr-1">
           {isOpen && node.children.length > 0 ? (
-            <FolderOpenIcon sx={{ fontSize: 18 }} />
+            <FolderOpen className="h-4 w-4" />
           ) : (
-            <FolderIcon sx={{ fontSize: 18 }} />
+            <Folder className="h-4 w-4" />
           )}
-        </ListItemIcon>
-        <ListItemText
-          primary={node.folder.name}
-          primaryTypographyProps={{ variant: 'body2', noWrap: true, fontSize: '0.8rem' }}
-        />
-      </ListItemButton>
+        </div>
+        <span className="truncate text-xs">{node.folder.name}</span>
+      </div>
 
-      {node.children.length > 0 && (
-        <Collapse in={isOpen}>
-          <List disablePadding>
-            {node.children.map((child) => (
-              <FolderTreeItem
-                key={child.folder.id}
-                node={child}
-                depth={depth + 1}
-                selectedFolderId={selectedFolderId}
-                onSelect={onSelect}
-                onContextMenu={onContextMenu}
-              />
-            ))}
-          </List>
-        </Collapse>
+      {node.children.length > 0 && isOpen && (
+        <div>
+          {node.children.map((child) => (
+            <FolderTreeItem
+              key={child.folder.id}
+              node={child}
+              depth={depth + 1}
+              selectedFolderId={selectedFolderId}
+              onSelect={onSelect}
+              onContextMenu={onContextMenu}
+            />
+          ))}
+        </div>
       )}
     </>
   );
@@ -278,79 +265,62 @@ export default function SecretTree({ onCreateFolder, onEditFolder }: SecretTreeP
   const hasFavorites = secrets.some((s) => s.isFavorite);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 1.5, py: 1 }}>
-        <Typography variant="subtitle2" sx={{ fontSize: '0.85rem' }}>Folders</Typography>
-        <IconButton size="small" onClick={() => onCreateFolder('PERSONAL')} title="New Folder">
-          <CreateNewFolderIcon fontSize="small" />
-        </IconButton>
-      </Box>
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-sm font-medium">Folders</span>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onCreateFolder('PERSONAL')} title="New Folder">
+          <FolderPlus className="h-4 w-4" />
+        </Button>
+      </div>
 
       {/* Tree content */}
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
-        <List dense disablePadding>
-          {/* All Secrets */}
-          <ListItemButton
-            ref={rootDropRef}
-            dense
-            selected={selectedFolderId === null && !favoritesSelected && !activeScopeFilter}
-            onClick={handleSelectAll}
-            sx={{
-              pl: 1.5, py: 0.25,
-              ...(isOverRoot && {
-                bgcolor: 'action.hover',
-                borderLeft: '3px solid',
-                borderColor: 'primary.main',
-              }),
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 24 }} />
-            <ListItemIcon sx={{ minWidth: 24 }}>
-              <AllInboxIcon sx={{ fontSize: 18 }} />
-            </ListItemIcon>
-            <ListItemText
-              primary="All Secrets"
-              primaryTypographyProps={{ variant: 'body2', fontSize: '0.8rem' }}
-            />
-          </ListItemButton>
-
-          {/* Favorites */}
-          {hasFavorites && (
-            <ListItemButton
-              dense
-              selected={favoritesSelected}
-              onClick={handleSelectFavorites}
-              sx={{ pl: 1.5, py: 0.25 }}
-            >
-              <ListItemIcon sx={{ minWidth: 24 }} />
-              <ListItemIcon sx={{ minWidth: 24 }}>
-                <StarIcon sx={{ fontSize: 18 }} color="warning" />
-              </ListItemIcon>
-              <ListItemText
-                primary="Favorites"
-                primaryTypographyProps={{ variant: 'body2', fontSize: '0.8rem' }}
-              />
-            </ListItemButton>
+      <div className="flex-1 overflow-auto">
+        {/* All Secrets */}
+        <div
+          ref={rootDropRef}
+          onClick={handleSelectAll}
+          className={cn(
+            'flex items-center py-1 px-3 cursor-pointer rounded-md transition-colors text-sm',
+            selectedFolderId === null && !favoritesSelected && !activeScopeFilter && 'bg-accent',
+            (selectedFolderId !== null || favoritesSelected || activeScopeFilter) && 'hover:bg-accent/50',
+            isOverRoot && 'bg-accent/70 border-l-2 border-primary',
           )}
-        </List>
+        >
+          <div className="w-5 shrink-0" />
+          <Inbox className="h-4 w-4 mr-1 shrink-0" />
+          <span className="text-xs">All Secrets</span>
+        </div>
+
+        {/* Favorites */}
+        {hasFavorites && (
+          <div
+            onClick={handleSelectFavorites}
+            className={cn(
+              'flex items-center py-1 px-3 cursor-pointer rounded-md transition-colors text-sm',
+              favoritesSelected && 'bg-accent',
+              !favoritesSelected && 'hover:bg-accent/50',
+            )}
+          >
+            <div className="w-5 shrink-0" />
+            <Star className="h-4 w-4 mr-1 shrink-0 text-yellow-500" />
+            <span className="text-xs">Favorites</span>
+          </div>
+        )}
 
         {/* Personal folders */}
-        <Divider sx={{ my: 0.5 }} />
-        <Typography
-          variant="caption"
-          color={activeScopeFilter === 'PERSONAL' ? 'primary' : 'text.secondary'}
-          sx={{
-            px: 1.5, py: 0.25, display: 'block', cursor: 'pointer',
-            fontWeight: activeScopeFilter === 'PERSONAL' ? 'bold' : undefined,
-            '&:hover': { color: 'primary.main' },
-          }}
+        <Separator className="my-1" />
+        <span
+          className={cn(
+            'px-3 py-0.5 text-xs block cursor-pointer transition-colors hover:text-primary',
+            activeScopeFilter === 'PERSONAL' ? 'text-primary font-bold' : 'text-muted-foreground',
+          )}
           onClick={() => handleSelectScope('PERSONAL')}
         >
           Personal
-        </Typography>
+        </span>
         {personalTree.length > 0 && (
-          <List dense disablePadding>
+          <div>
             {personalTree.map((node) => (
               <FolderTreeItem
                 key={node.folder.id}
@@ -361,27 +331,24 @@ export default function SecretTree({ onCreateFolder, onEditFolder }: SecretTreeP
                 onContextMenu={handleContextMenu}
               />
             ))}
-          </List>
+          </div>
         )}
 
         {/* Tenant folders */}
         {hasTenant && (
           <>
-            <Divider sx={{ my: 0.5 }} />
-            <Typography
-              variant="caption"
-              color={activeScopeFilter === 'TENANT' ? 'primary' : 'text.secondary'}
-              sx={{
-                px: 1.5, py: 0.25, display: 'block', cursor: 'pointer',
-                fontWeight: activeScopeFilter === 'TENANT' ? 'bold' : undefined,
-                '&:hover': { color: 'primary.main' },
-              }}
+            <Separator className="my-1" />
+            <span
+              className={cn(
+                'px-3 py-0.5 text-xs block cursor-pointer transition-colors hover:text-primary',
+                activeScopeFilter === 'TENANT' ? 'text-primary font-bold' : 'text-muted-foreground',
+              )}
               onClick={() => handleSelectScope('TENANT')}
             >
               Organization
-            </Typography>
+            </span>
             {tenantTree.length > 0 && (
-              <List dense disablePadding>
+              <div>
                 {tenantTree.map((node) => (
                   <FolderTreeItem
                     key={node.folder.id}
@@ -392,23 +359,20 @@ export default function SecretTree({ onCreateFolder, onEditFolder }: SecretTreeP
                     onContextMenu={handleContextMenu}
                   />
                 ))}
-              </List>
+              </div>
             )}
           </>
         )}
 
         {/* Team folders */}
         {teamGroups.map((group) => (
-          <Box key={group.teamId}>
-            <Divider sx={{ my: 0.5 }} />
-            <Typography
-              variant="caption"
-              color={activeScopeFilter === group.teamId ? 'primary' : 'text.secondary'}
-              sx={{
-                px: 1.5, py: 0.25, display: 'block', cursor: 'pointer',
-                fontWeight: activeScopeFilter === group.teamId ? 'bold' : undefined,
-                '&:hover': { color: 'primary.main' },
-              }}
+          <div key={group.teamId}>
+            <Separator className="my-1" />
+            <span
+              className={cn(
+                'px-3 py-0.5 text-xs block cursor-pointer transition-colors hover:text-primary',
+                activeScopeFilter === group.teamId ? 'text-primary font-bold' : 'text-muted-foreground',
+              )}
               onClick={() => {
                 setFavoritesSelected(false);
                 setSelectedFolderId(null);
@@ -417,9 +381,9 @@ export default function SecretTree({ onCreateFolder, onEditFolder }: SecretTreeP
               }}
             >
               {group.teamName}
-            </Typography>
+            </span>
             {group.tree.length > 0 && (
-              <List dense disablePadding>
+              <div>
                 {group.tree.map((node) => (
                   <FolderTreeItem
                     key={node.folder.id}
@@ -430,57 +394,61 @@ export default function SecretTree({ onCreateFolder, onEditFolder }: SecretTreeP
                     onContextMenu={handleContextMenu}
                   />
                 ))}
-              </List>
+              </div>
             )}
-          </Box>
+          </div>
         ))}
-      </Box>
+      </div>
 
       {/* Context menu */}
-      <Menu
-        open={contextMenu !== null}
-        onClose={() => setContextMenu(null)}
-        anchorReference="anchorPosition"
-        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
-      >
-        <MenuItem onClick={() => {
-          if (contextMenu) onCreateFolder(contextMenu.folder.scope, contextMenu.folder.id, contextMenu.folder.teamId ?? undefined);
-          setContextMenu(null);
-        }}>
-          <ListItemIcon><CreateNewFolderIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>New Subfolder</ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={() => {
-          if (contextMenu) onEditFolder(contextMenu.folder);
-          setContextMenu(null);
-        }}>
-          <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>Rename</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => {
-          if (contextMenu) setDeleteFolderTarget(contextMenu.folder);
-          setContextMenu(null);
-        }}>
-          <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
+      {contextMenu && (
+        <DropdownMenu open onOpenChange={() => setContextMenu(null)}>
+          <DropdownMenuTrigger asChild>
+            <div
+              className="fixed"
+              style={{ left: contextMenu.mouseX, top: contextMenu.mouseY, width: 0, height: 0 }}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => {
+              onCreateFolder(contextMenu.folder.scope, contextMenu.folder.id, contextMenu.folder.teamId ?? undefined);
+              setContextMenu(null);
+            }}>
+              <FolderPlus className="h-4 w-4 mr-2" /> New Subfolder
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => {
+              onEditFolder(contextMenu.folder);
+              setContextMenu(null);
+            }}>
+              <Pencil className="h-4 w-4 mr-2" /> Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem className="text-destructive" onClick={() => {
+              setDeleteFolderTarget(contextMenu.folder);
+              setContextMenu(null);
+            }}>
+              <Trash2 className="h-4 w-4 mr-2" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* Delete folder confirmation */}
-      <Dialog open={!!deleteFolderTarget} onClose={() => setDeleteFolderTarget(null)}>
-        <DialogTitle>Delete Folder</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to delete &quot;{deleteFolderTarget?.name}&quot;?
-            Secrets in this folder will be moved to the parent folder.
-          </DialogContentText>
+      <Dialog open={!!deleteFolderTarget} onOpenChange={(v) => { if (!v) setDeleteFolderTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Folder</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{deleteFolderTarget?.name}&quot;?
+              Secrets in this folder will be moved to the parent folder.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteFolderTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteFolder}>Delete</Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteFolderTarget(null)}>Cancel</Button>
-          <Button onClick={handleDeleteFolder} color="error" variant="contained">Delete</Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }

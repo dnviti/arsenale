@@ -1,0 +1,17 @@
+Port 2224
+Protocol 2
+PidFile /run/sshd.pid
+
+HostKey /etc/ssh/ssh_host_rsa_key
+HostKey /etc/ssh/ssh_host_ecdsa_key
+HostKey /etc/ssh/ssh_host_ed25519_key
+
+PermitRootLogin no
+PasswordAuthentication yes
+PubkeyAuthentication no
+ChallengeResponseAuthentication no
+PermitTTY yes
+AllowTcpForwarding no
+X11Forwarding no
+PrintMotd no
+Subsystem sftp internal-sftp

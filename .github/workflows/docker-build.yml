@@ -3,11 +3,22 @@ name: Docker Build
 on:
   push:
     tags: ["v*"]
-    branches: [staging, main]
+    branches: [develop, main]
     paths:
-      - "server/**"
+      - "backend/**"
       - "client/**"
-      - "!server/**/*.md"
+      - "gateways/gateway-core/**"
+      - "gateways/tunnel-agent/**"
+      - "extra-clients/browser-extensions/**"
+      - ".github/workflows/docker-build.yml"
+      - ".github/workflows/verify.yml"
+      - ".github/workflows/security.yml"
+      - ".github/codeql/**"
+      - "backend/Dockerfile"
+      - "backend/go.mod"
+      - "backend/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - "!client/**/*.md"
       - "package.json"
       - "package-lock.json"
@@ -15,11 +26,22 @@ on:
       - "eslint.config.mjs"
       - "tsconfig.json"
   pull_request:
-    branches: [develop, staging, main]
+    branches: [develop, main]
     paths:
-      - "server/**"
+      - "backend/**"
       - "client/**"
-      - "!server/**/*.md"
+      - "gateways/gateway-core/**"
+      - "gateways/tunnel-agent/**"
+      - "extra-clients/browser-extensions/**"
+      - ".github/workflows/docker-build.yml"
+      - ".github/workflows/verify.yml"
+      - ".github/workflows/security.yml"
+      - ".github/codeql/**"
+      - "backend/Dockerfile"
+      - "backend/go.mod"
+      - "backend/go.sum"
+      - "go.work"
+      - "go.work.sum"
       - "!client/**/*.md"
       - "package.json"
       - "package-lock.json"
@@ -34,12 +56,33 @@ env:
 
 jobs:
   # ── Gate: Verify ──────────────────────────────────────────────
-  verify-server:
-    uses: ./.github/workflows/verify.yml
-    with:
-      workspace: server
+  verify-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            go.work.sum
+            backend/go.mod
+            backend/go.sum
+
+      - name: Verify sqlc generation
+        working-directory: backend
+        run: |
+          go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.30.0 generate -f sqlc.yaml
+          git diff --exit-code
+
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
 
   verify-client:
     uses: ./.github/workflows/verify.yml
@@ -49,11 +92,11 @@ jobs:
       contents: read
 
   # ── Gate: Security ────────────────────────────────────────────
-  security-server:
+  security-js:
     uses: ./.github/workflows/security.yml
     with:
       run-codeql: true
-      trivy-category: trivy-filesystem-server
+      trivy-category: trivy-filesystem-javascript
     permissions:
       contents: read
       security-events: write
@@ -69,9 +112,9 @@ jobs:
 
   # ── Build, Scan & Push ───────────────────────────────────────
   build-and-scan:
-    needs: [verify-server, verify-client, security-server, security-client]
+    needs: [verify-backend, verify-client, security-js, security-client]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -81,10 +124,75 @@ jobs:
       fail-fast: false
       matrix:
         service:
-          - name: server
-            dockerfile: ./server/Dockerfile
+          - name: control-plane-api
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=control-plane-api
+          - name: control-plane-controller
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=control-plane-controller
+          - name: authz-pdp
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=authz-pdp
+          - name: model-gateway
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=model-gateway
+          - name: tool-gateway
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=tool-gateway
+          - name: agent-orchestrator
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=agent-orchestrator
+          - name: memory-service
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=memory-service
+          - name: terminal-broker
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=terminal-broker
+          - name: desktop-broker
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=desktop-broker
+          - name: tunnel-broker-go
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=tunnel-broker
+          - name: query-runner
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=query-runner
+          - name: map-assets
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=map-assets
+          - name: runtime-agent
+            dockerfile: ./backend/Dockerfile
+            context: .
+            build_args: |
+              SERVICE=runtime-agent
           - name: client
             dockerfile: ./client/Dockerfile
+            context: .
+            build_args: ""
 
     concurrency:
       group: docker-${{ matrix.service.name }}-${{ github.ref }}
@@ -93,12 +201,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Determine publish profile
+        id: publish_profile
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          semver_allowed=false
+          if git branch -r --contains "${GITHUB_SHA}" | grep -qE '^[[:space:]]*origin/main$'; then
+            semver_allowed=true
+          fi
+          printf 'semver_allowed=%s\n' "$semver_allowed" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to the Container registry
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
+        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
@@ -111,17 +232,18 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service.name }}
           tags: |
-            type=ref,event=branch
             type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/develop' }}
+            type=raw,value=stable,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true' }}
 
       - name: Build image for scanning
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.service.dockerfile }}
+          build-args: ${{ matrix.service.build_args }}
           push: false
           load: true
           tags: arsenale-${{ matrix.service.name }}:scan
@@ -131,6 +253,8 @@ jobs:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.35.0
         with:
+          cache: false
+          version: v0.70.0
           image-ref: arsenale-${{ matrix.service.name }}:scan
           format: sarif
           output: trivy-results.sarif
@@ -144,11 +268,12 @@ jobs:
           category: trivy-${{ matrix.service.name }}
 
       - name: Push to registry
-        if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/main')
+        if: github.event_name == 'push' && ((startsWith(github.ref, 'refs/tags/v') && steps.publish_profile.outputs.semver_allowed == 'true') || github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
+          build-args: ${{ matrix.service.build_args }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

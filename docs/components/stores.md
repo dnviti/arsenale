@@ -1,6 +1,6 @@
 # State Management
 
-> Auto-generated on 2026-03-15 by /docs create components.
+> Auto-generated on 2026-04-05 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
 ### `authStore` (`client/src/store/authStore.ts`)
@@ -11,8 +11,14 @@
 | `csrfToken` | string \| null | CSRF token for auth endpoints |
 | `user` | object \| null | User identity (id, email, username, avatarData, tenantId, tenantRole, domainName) |
 | `isAuthenticated` | boolean | Authentication status |
+| `permissions` | object | Effective permission snapshot for the active tenant |
+| `permissionsLoaded` | boolean | Whether `/api/user/permissions` has been resolved for the current user and tenant |
+| `permissionsLoading` | boolean | Whether the current permission snapshot request is in flight |
+| `permissionsSubject` | string \| null | Cache key for the loaded permission snapshot (`userId:tenantId`) |
 
-**Actions**: `setAuth`, `setAccessToken`, `setCsrfToken`, `updateUser`, `fetchDomainProfile`, `logout`
+`permissions`, `accessToken`, and `csrfToken` are intentionally runtime-only and are not persisted to local storage.
+
+**Actions**: `setAuth`, `applySession`, `setAccessToken`, `setCsrfToken`, `updateUser`, `fetchCurrentPermissions`, `clearPermissions`, `fetchDomainProfile`, `logout`
 
 ### `connectionsStore` (`client/src/store/connectionsStore.ts`)
 
@@ -31,11 +37,11 @@
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `tabs` | Tab[] | Open tabs (id, connection, active, credentials) |
+| `tabs` | Tab[] | Open tab instances (stable id, connection, active, optional credentials) |
 | `activeTabId` | string \| null | Currently active tab |
 | `recentTick` | number | Change counter for re-render triggers |
 
-**Actions**: `openTab`, `closeTab`, `setActiveTab`, `restoreTabs`, `clearAll`. Auto-syncs to server with debounce.
+**Actions**: `openTab`, `closeTab`, `setActiveTab`, `restoreTabs`, `clearAll`. Auto-syncs tab-instance-scoped state to the server with debounce; credential-override tabs stay local-only.
 
 ### `vaultStore` (`client/src/store/vaultStore.ts`)
 
@@ -46,7 +52,7 @@
 | `mfaUnlockAvailable` | boolean | Whether MFA re-unlock is possible |
 | `mfaUnlockMethods` | string[] | Available MFA methods for re-unlock |
 
-**Actions**: `checkStatus`, `setUnlocked`, `startPolling`, `stopPolling`
+**Actions**: `checkStatus`, `applyStatus`, `setUnlocked`, `reset`, `handleSocketEvent`
 
 ### `uiPreferencesStore` (`client/src/store/uiPreferencesStore.ts`)
 
@@ -71,7 +77,7 @@ Key preferences: `rdpFileBrowserOpen`, `sshSftpBrowserOpen`, `sshSftpTransferQue
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `gateways` | Gateway[] | Tenant gateways |
+| `gateways` | Gateway[] | Tenant gateways, including derived `operationalStatus`, `operationalReason`, and `healthyInstances` |
 | `sshKeyPair` | KeyPair \| null | Tenant SSH key pair |
 | `activeSessions` | Session[] | Active sessions |
 | `sessionCount` | number | Total session count |
@@ -107,6 +113,33 @@ Ephemeral toast notifications. **State**: `notification` ({message, severity}). 
 ### `notificationListStore` (`client/src/store/notificationListStore.ts`)
 
 Server-persisted notifications. **State**: `notifications`, `unreadCount`, `total`, `loading`. **Actions**: `fetchNotifications`, `markAsRead`, `markAllAsRead`, `removeNotification`, `addNotification`, `reset`.
+
+### `featureFlagsStore` (`client/src/store/featureFlagsStore.ts`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `connectionsEnabled` | boolean | SSH, RDP, VNC connections and folders |
+| `databaseProxyEnabled` | boolean | Database sessions and DB audit |
+| `keychainEnabled` | boolean | Vault, secrets, files, external vault providers |
+| `recordingsEnabled` | boolean | Session recording APIs and UI |
+| `zeroTrustEnabled` | boolean | Gateways, tunnel broker, managed zero-trust routing |
+| `agenticAIEnabled` | boolean | AI-assisted database tooling |
+| `enterpriseAuthEnabled` | boolean | SAML, OAuth, OIDC, LDAP surfaces |
+| `sharingApprovalsEnabled` | boolean | Public sharing, approvals, and checkouts |
+| `cliEnabled` | boolean | CLI device auth and CLI-specific APIs |
+| `loaded` | boolean | Whether config has been fetched from server |
+
+**Actions**: `loadFromServer`, `reset`. Starts fail-open with all features enabled, then narrows to the server manifest from `GET /api/auth/config`.
+
+### `accessPolicyStore` (`client/src/store/accessPolicyStore.ts`)
+
+**State**: `policies`, `loading`, `error`.
+**Actions**: `fetchPolicies`, `createPolicy`, `updatePolicy`, `deletePolicy`, `reset`.
+
+### `checkoutStore` (`client/src/store/checkoutStore.ts`)
+
+**State**: `checkouts`, `pendingCheckouts`, `loading`, `error`.
+**Actions**: `fetchCheckouts`, `requestCheckout`, `approveCheckout`, `denyCheckout`, `checkinCheckout`, `reset`.
 
 <!-- manual-start -->
 <!-- manual-end -->

@@ -1,11 +1,17 @@
 import { useState, useEffect } from 'react';
+import { Trash2 } from 'lucide-react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  FormControl, InputLabel, Select, MenuItem, Box, Alert, List, ListItem,
-  ListItemText, IconButton, Typography, Chip,
-  ToggleButton, ToggleButtonGroup,
-} from '@mui/material';
-import { Delete as DeleteIcon } from '@mui/icons-material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   shareSecret, unshareSecret, listShares,
 } from '../../api/secrets.api';
@@ -99,98 +105,103 @@ export default function ShareSecretDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Share: {secretName}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Share: {secretName}</DialogTitle>
+          <DialogDescription className="sr-only">Share this secret with other users</DialogDescription>
+        </DialogHeader>
 
-        {hasTenant && teamId && (
-          <ToggleButtonGroup
-            value={scope}
-            exclusive
-            onChange={(_e, val) => { if (val) setScope(val); }}
-            size="small"
-            sx={{ mt: 1, mb: 1 }}
-          >
-            <ToggleButton value="tenant">Organization</ToggleButton>
-            <ToggleButton value="team">My Team</ToggleButton>
-          </ToggleButtonGroup>
-        )}
+        <div className="flex flex-col gap-4">
+          {error && <Alert variant="destructive">{error}</Alert>}
 
-        <Box sx={{ display: 'flex', gap: 1, mt: 1, mb: 2 }}>
-          {hasTenant ? (
-            <UserPicker
-              onSelect={setSelectedUser}
-              scope={scope}
-              teamId={scope === 'team' && teamId ? teamId : undefined}
-              placeholder="Search users by name or email..."
-              excludeUserIds={sharedUserIds}
-            />
-          ) : (
-            <TextField
-              label="User email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              size="small"
-              fullWidth
-            />
-          )}
-          <FormControl size="small" sx={{ minWidth: 140 }}>
-            <InputLabel>Permission</InputLabel>
-            <Select
-              value={permission}
-              label="Permission"
-              onChange={(e) =>
-                setPermission(e.target.value as 'READ_ONLY' | 'FULL_ACCESS')
-              }
+          {hasTenant && teamId && (
+            <ToggleGroup
+              type="single"
+              value={scope}
+              onValueChange={(val) => { if (val) setScope(val as 'tenant' | 'team'); }}
             >
-              <MenuItem value="READ_ONLY">Read Only</MenuItem>
-              <MenuItem value="FULL_ACCESS">Full Access</MenuItem>
-            </Select>
-          </FormControl>
-          <Button
-            variant="contained"
-            onClick={handleShare}
-            disabled={loading}
-            sx={{ whiteSpace: 'nowrap' }}
-          >
-            Share
-          </Button>
-        </Box>
+              <ToggleGroupItem value="tenant" size="sm">Organization</ToggleGroupItem>
+              <ToggleGroupItem value="team" size="sm">My Team</ToggleGroupItem>
+            </ToggleGroup>
+          )}
 
-        {shares.length > 0 ? (
-          <List dense>
-            {shares.map((share) => (
-              <ListItem key={share.id}>
-                <ListItemText
-                  primary={share.email}
-                  secondary={
-                    <Chip
-                      label={share.permission === 'READ_ONLY' ? 'Read Only' : 'Full Access'}
-                      size="small"
-                      color={share.permission === 'FULL_ACCESS' ? 'primary' : 'default'}
-                    />
-                  }
+          <div className="flex gap-2">
+            {hasTenant ? (
+              <div className="flex-1">
+                <UserPicker
+                  value={selectedUser}
+                  onSelect={setSelectedUser}
+                  scope={scope}
+                  teamId={scope === 'team' && teamId ? teamId : undefined}
+                  placeholder="Search users by name or email..."
+                  excludeUserIds={sharedUserIds}
                 />
-                <IconButton
-                  edge="end"
-                  size="small"
-                  onClick={() => handleUnshare(share.userId)}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </ListItem>
-            ))}
-          </List>
-        ) : (
-          <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 2 }}>
-            Not shared with anyone yet
-          </Typography>
-        )}
+              </div>
+            ) : (
+              <div className="flex-1 space-y-1.5">
+                <Label>User email</Label>
+                <Input
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="space-y-1.5 min-w-[140px]">
+              <Label>Permission</Label>
+              <Select
+                value={permission}
+                onValueChange={(v) => setPermission(v as 'READ_ONLY' | 'FULL_ACCESS')}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="READ_ONLY">Read Only</SelectItem>
+                  <SelectItem value="FULL_ACCESS">Full Access</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button onClick={handleShare} disabled={loading} className="whitespace-nowrap">
+                Share
+              </Button>
+            </div>
+          </div>
+
+          {shares.length > 0 ? (
+            <div className="space-y-1">
+              {shares.map((share) => (
+                <div key={share.id} className="flex items-center justify-between py-2 px-1">
+                  <div>
+                    <p className="text-sm">{share.email}</p>
+                    <Badge
+                      variant={share.permission === 'FULL_ACCESS' ? 'default' : 'secondary'}
+                      className="mt-0.5"
+                    >
+                      {share.permission === 'READ_ONLY' ? 'Read Only' : 'Full Access'}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleUnshare(share.userId)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Not shared with anyone yet
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
     </Dialog>
   );
 }

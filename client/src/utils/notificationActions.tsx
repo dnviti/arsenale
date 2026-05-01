@@ -1,22 +1,21 @@
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import {
-  Share as ShareIcon,
-  RemoveCircleOutline,
-  Edit as EditIcon,
-  VpnKey as VpnKeyIcon,
-  VpnKeyOff as VpnKeyOffIcon,
-  Warning as WarningIcon,
-  Error as ErrorIcon,
-  GroupAdd as GroupAddIcon,
-  Videocam as VideocamIcon,
-  AirplanemodeActive as FlightIcon,
-  Notifications as DefaultIcon,
-} from '@mui/icons-material';
-import type { NotificationType, NotificationEntry } from '../api/notifications.api';
+  Bell,
+  BellOff,
+  KeyRound,
+  KeySquare,
+  Pencil,
+  Plane,
+  Share2,
+  TriangleAlert,
+  UserRoundPlus,
+  Video,
+  XCircle,
+} from 'lucide-react';
+import type { NotificationEntry, NotificationType } from '../api/notifications.api';
 import { useConnectionsStore } from '../store/connectionsStore';
 import { useSecretStore } from '../store/secretStore';
 
-// ── Navigation actions provided by MainLayout ────────────────────────
 export interface NavigationActions {
   openKeychain: () => void;
   openRecordings: () => void;
@@ -25,14 +24,12 @@ export interface NavigationActions {
   selectConnection: (connectionId: string) => void;
 }
 
-// ── Registry entry ───────────────────────────────────────────────────
 interface NotificationActionDef {
   icon: ReactNode;
-  onReceive?: (notification: NotificationEntry) => void;
   onNavigate?: (notification: NotificationEntry, actions: NavigationActions) => void;
+  onReceive?: (notification: NotificationEntry) => void;
 }
 
-// ── Store refresh helpers ────────────────────────────────────────────
 function refreshConnections() {
   useConnectionsStore.getState().fetchConnections();
 }
@@ -41,64 +38,82 @@ function refreshSecrets() {
   useSecretStore.getState().fetchSecrets();
 }
 
-// ── Registry ─────────────────────────────────────────────────────────
+function iconBadge(icon: ReactNode, tone: 'destructive' | 'primary' | 'success' | 'warning' | 'muted') {
+  const toneClasses = {
+    primary: 'bg-primary/10 text-primary',
+    success: 'bg-primary/10 text-primary',
+    warning: 'bg-chart-5/15 text-chart-5',
+    destructive: 'bg-destructive/10 text-destructive',
+    muted: 'bg-muted text-muted-foreground',
+  } as const;
+
+  return (
+    <span className={`inline-flex size-7 items-center justify-center rounded-full ${toneClasses[tone]}`}>
+      {icon}
+    </span>
+  );
+}
+
 const NOTIFICATION_ACTIONS: Record<NotificationType, NotificationActionDef> = {
   CONNECTION_SHARED: {
-    icon: <ShareIcon fontSize="small" color="primary" />,
+    icon: iconBadge(<Share2 className="size-4" />, 'primary'),
     onReceive: refreshConnections,
-    onNavigate: (n, actions) => {
-      if (n.relatedId) actions.selectConnection(n.relatedId);
+    onNavigate: (notification, actions) => {
+      if (notification.relatedId) {
+        actions.selectConnection(notification.relatedId);
+      }
     },
   },
   SHARE_PERMISSION_UPDATED: {
-    icon: <EditIcon fontSize="small" color="warning" />,
+    icon: iconBadge(<Pencil className="size-4" />, 'warning'),
     onReceive: refreshConnections,
-    onNavigate: (n, actions) => {
-      if (n.relatedId) actions.selectConnection(n.relatedId);
+    onNavigate: (notification, actions) => {
+      if (notification.relatedId) {
+        actions.selectConnection(notification.relatedId);
+      }
     },
   },
   SHARE_REVOKED: {
-    icon: <RemoveCircleOutline fontSize="small" color="error" />,
+    icon: iconBadge(<XCircle className="size-4" />, 'destructive'),
     onReceive: refreshConnections,
   },
   SECRET_SHARED: {
-    icon: <VpnKeyIcon fontSize="small" color="primary" />,
+    icon: iconBadge(<KeyRound className="size-4" />, 'primary'),
     onReceive: refreshSecrets,
-    onNavigate: (_n, actions) => actions.openKeychain(),
+    onNavigate: (_notification, actions) => actions.openKeychain(),
   },
   SECRET_SHARE_REVOKED: {
-    icon: <VpnKeyOffIcon fontSize="small" color="error" />,
+    icon: iconBadge(<BellOff className="size-4" />, 'destructive'),
     onReceive: refreshSecrets,
   },
   SECRET_EXPIRING: {
-    icon: <WarningIcon fontSize="small" color="warning" />,
-    onNavigate: (_n, actions) => actions.openKeychain(),
+    icon: iconBadge(<TriangleAlert className="size-4" />, 'warning'),
+    onNavigate: (_notification, actions) => actions.openKeychain(),
   },
   SECRET_EXPIRED: {
-    icon: <ErrorIcon fontSize="small" color="error" />,
-    onNavigate: (_n, actions) => actions.openKeychain(),
+    icon: iconBadge(<TriangleAlert className="size-4" />, 'destructive'),
+    onNavigate: (_notification, actions) => actions.openKeychain(),
   },
   TENANT_INVITATION: {
-    icon: <GroupAddIcon fontSize="small" color="primary" />,
-    onNavigate: (_n, actions) => actions.openSettings('organization'),
+    icon: iconBadge(<UserRoundPlus className="size-4" />, 'primary'),
+    onNavigate: (_notification, actions) => actions.openSettings('organization'),
   },
   RECORDING_READY: {
-    icon: <VideocamIcon fontSize="small" color="success" />,
-    onNavigate: (_n, actions) => actions.openRecordings(),
+    icon: iconBadge(<Video className="size-4" />, 'success'),
+    onNavigate: (_notification, actions) => actions.openRecordings(),
   },
   IMPOSSIBLE_TRAVEL_DETECTED: {
-    icon: <FlightIcon fontSize="small" color="error" />,
-    onNavigate: (_n, actions) => actions.openAuditLog(),
+    icon: iconBadge(<Plane className="size-4" />, 'destructive'),
+    onNavigate: (_notification, actions) => actions.openAuditLog(),
   },
   LATERAL_MOVEMENT_ALERT: {
-    icon: <WarningIcon fontSize="small" color="error" />,
-    onNavigate: (_n, actions) => actions.openAuditLog(),
+    icon: iconBadge(<KeySquare className="size-4" />, 'destructive'),
+    onNavigate: (_notification, actions) => actions.openAuditLog(),
   },
 };
 
-// ── Public helpers ───────────────────────────────────────────────────
 export function getNotificationIcon(type: NotificationType): ReactNode {
-  return NOTIFICATION_ACTIONS[type]?.icon ?? <DefaultIcon fontSize="small" />;
+  return NOTIFICATION_ACTIONS[type]?.icon ?? iconBadge(<Bell className="size-4" />, 'muted');
 }
 
 export function getOnReceive(type: NotificationType) {

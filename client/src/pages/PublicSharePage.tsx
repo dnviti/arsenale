@@ -1,125 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { LoaderCircle } from 'lucide-react';
 import { useParams } from 'react-router-dom';
+import AuthCodeInput from '@/components/auth/AuthCodeInput';
+import AuthLayout from '@/components/auth/AuthLayout';
+import SecretPayloadView from '../components/secrets/SecretPayloadView';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
-  Box, Card, CardContent, Typography, TextField, Button,
-  CircularProgress, Alert, IconButton, Tooltip, Divider,
-} from '@mui/material';
-import {
-  ContentCopy as CopyIcon,
-  Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon,
-} from '@mui/icons-material';
-import {
-  getExternalShareInfo, accessExternalShare,
+  accessExternalShare,
+  getExternalShareInfo,
+  type ExternalShareInfo,
+  type SecretPayload,
 } from '../api/secrets.api';
-import type { ExternalShareInfo, SecretPayload } from '../api/secrets.api';
 import { extractApiError } from '../utils/apiError';
-import { useCopyToClipboard } from '../hooks/useCopyToClipboard';
-
-function SensitiveValue({ value }: { value: string }) {
-  const [visible, setVisible] = useState(false);
-  const { copied, copy: handleCopy } = useCopyToClipboard();
-
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-      <Typography
-        variant="body2"
-        sx={{
-          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-          wordBreak: 'break-all',
-          flex: 1,
-          color: visible ? 'text.primary' : 'text.secondary',
-        }}
-      >
-        {visible ? value : '\u2022'.repeat(Math.min(value.length, 24))}
-      </Typography>
-      <Tooltip title={visible ? 'Hide' : 'Reveal'}>
-        <IconButton size="small" onClick={() => setVisible(!visible)} sx={{ color: 'text.secondary' }}>
-          {visible ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
-        </IconButton>
-      </Tooltip>
-      <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-        <IconButton size="small" onClick={() => handleCopy(value)} sx={{ color: 'text.secondary' }}>
-          <CopyIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-    </Box>
-  );
-}
-
-function PlainValue({ value }: { value: string }) {
-  const { copied, copy: handleCopy } = useCopyToClipboard();
-
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-      <Typography variant="body2" sx={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace", wordBreak: 'break-all', flex: 1, color: 'text.primary' }}>
-        {value}
-      </Typography>
-      <Tooltip title={copied ? 'Copied!' : 'Copy'}>
-        <IconButton size="small" onClick={() => handleCopy(value)} sx={{ color: 'text.secondary' }}>
-          <CopyIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-    </Box>
-  );
-}
-
-function SecretField({ label, value, sensitive }: { label: string; value?: string; sensitive?: boolean }) {
-  if (!value) return null;
-  return (
-    <Box sx={{ mb: 1.5 }}>
-      <Typography variant="caption" sx={{ color: 'text.secondary' }}>{label}</Typography>
-      {sensitive ? <SensitiveValue value={value} /> : <PlainValue value={value} />}
-    </Box>
-  );
-}
-
-function SecretData({ data }: { data: SecretPayload }) {
-  switch (data.type) {
-    case 'LOGIN':
-      return (
-        <>
-          <SecretField label="Username" value={data.username} />
-          <SecretField label="Password" value={data.password} sensitive />
-          <SecretField label="URL" value={data.url} />
-          <SecretField label="Notes" value={data.notes} />
-        </>
-      );
-    case 'SSH_KEY':
-      return (
-        <>
-          <SecretField label="Username" value={data.username} />
-          <SecretField label="Private Key" value={data.privateKey} sensitive />
-          <SecretField label="Public Key" value={data.publicKey} />
-          <SecretField label="Passphrase" value={data.passphrase} sensitive />
-          <SecretField label="Algorithm" value={data.algorithm} />
-          <SecretField label="Notes" value={data.notes} />
-        </>
-      );
-    case 'CERTIFICATE':
-      return (
-        <>
-          <SecretField label="Certificate" value={data.certificate} sensitive />
-          <SecretField label="Private Key" value={data.privateKey} sensitive />
-          <SecretField label="Chain" value={data.chain} />
-          <SecretField label="Passphrase" value={data.passphrase} sensitive />
-          <SecretField label="Notes" value={data.notes} />
-        </>
-      );
-    case 'API_KEY':
-      return (
-        <>
-          <SecretField label="API Key" value={data.apiKey} sensitive />
-          <SecretField label="Endpoint" value={data.endpoint} />
-          <SecretField label="Notes" value={data.notes} />
-        </>
-      );
-    case 'SECURE_NOTE':
-      return <SecretField label="Content" value={data.content} />;
-    default:
-      return null;
-  }
-}
 
 export default function PublicSharePage() {
   const { token } = useParams<{ token: string }>();
@@ -132,27 +25,11 @@ export default function PublicSharePage() {
   const [secretName, setSecretName] = useState('');
 
   useEffect(() => {
-    if (!token) return;
-    loadInfo();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
-
-  const loadInfo = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const shareInfo = await getExternalShareInfo(token as string);
-      setInfo(shareInfo);
-      // Auto-access if no PIN required and share is valid
-      if (!shareInfo.hasPin && !shareInfo.isExpired && !shareInfo.isExhausted && !shareInfo.isRevoked) {
-        await accessShare();
-      }
-    } catch (err: unknown) {
-      setError(extractApiError(err, 'Share not found or no longer available'));
-    } finally {
-      setLoading(false);
+    if (!token) {
+      return;
     }
-  };
+    void loadInfo();
+  }, [token]);
 
   const accessShare = async (pinValue?: string) => {
     setAccessing(true);
@@ -169,12 +46,28 @@ export default function PublicSharePage() {
     }
   };
 
+  const loadInfo = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const shareInfo = await getExternalShareInfo(token as string);
+      setInfo(shareInfo);
+      if (!shareInfo.hasPin && !shareInfo.isExpired && !shareInfo.isExhausted && !shareInfo.isRevoked) {
+        await accessShare();
+      }
+    } catch (err: unknown) {
+      setError(extractApiError(err, 'Share not found or no longer available'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handlePinSubmit = () => {
     if (!/^\d{4,8}$/.test(pin)) {
       setError('PIN must be 4-8 digits');
       return;
     }
-    accessShare(pin);
+    void accessShare(pin);
   };
 
   const isUnavailable = info && (info.isExpired || info.isExhausted || info.isRevoked);
@@ -187,94 +80,72 @@ export default function PublicSharePage() {
         : '';
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: (theme) => `radial-gradient(ellipse at 50% 0%, ${theme.palette.background.paper} 0%, ${theme.palette.background.default} 70%)`,
-        p: 2,
-      }}
+    <AuthLayout
+      cardClassName="max-w-xl"
+      title="Arsenale"
+      titleClassName="text-2xl font-semibold"
+      description="Shared secret access"
     >
-      <Card sx={{ maxWidth: 500, width: '100%', bgcolor: 'background.paper', border: 1, borderColor: 'divider', borderRadius: 4 }}>
-        <CardContent sx={{ p: 3 }}>
-          <Typography variant="h6" align="center" sx={{ mb: 2, fontFamily: (theme) => theme.typography.h6.fontFamily, color: 'text.primary', fontWeight: 600 }}>
-            Arsenale
-          </Typography>
-          <Divider sx={{ mb: 2, borderColor: 'divider' }} />
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <LoaderCircle className="size-6 animate-spin text-primary" />
+        </div>
+      ) : error && !data && !info ? (
+        <Alert variant="destructive">
+          <AlertDescription className="text-foreground">{error}</AlertDescription>
+        </Alert>
+      ) : isUnavailable ? (
+        <Alert variant="warning">
+          <AlertDescription className="text-foreground">{unavailableReason}</AlertDescription>
+        </Alert>
+      ) : data ? (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">{secretName}</h2>
+            <p className="text-sm text-muted-foreground">
+              This shared data may expire or become unavailable. Save what you need.
+            </p>
+          </div>
+          <SecretPayloadView data={data} />
+        </div>
+      ) : info?.hasPin ? (
+        <div className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-foreground">{info.secretName}</h2>
+            <p className="text-sm text-muted-foreground">
+              This secret is protected with a PIN. Enter the PIN to access it.
+            </p>
+          </div>
 
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress sx={{ color: 'primary.main' }} />
-            </Box>
-          ) : error && !data && !info ? (
-            <Alert severity="error">{error}</Alert>
-          ) : isUnavailable ? (
-            <Alert severity="warning">{unavailableReason}</Alert>
-          ) : data ? (
-            <>
-              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600, color: 'text.primary' }}>
-                {secretName}
-              </Typography>
-              <SecretData data={data} />
-              <Alert severity="info" sx={{ mt: 2 }}>
-                This shared data may expire or become unavailable. Save what you need.
-              </Alert>
-            </>
-          ) : info?.hasPin ? (
-            <>
-              <Typography variant="subtitle1" sx={{ mb: 1, color: 'text.primary' }}>
-                {info.secretName}
-              </Typography>
-              <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
-                This secret is protected with a PIN. Enter the PIN to access it.
-              </Typography>
-              {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-              <TextField
-                label="PIN"
-                value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))}
-                size="small"
-                fullWidth
-                placeholder="Enter PIN"
-                sx={{
-                  mb: 2,
-                  '& .MuiOutlinedInput-root': {
-                    fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-                    color: 'text.primary',
-                    '& fieldset': { borderColor: 'divider' },
-                    '&:hover fieldset': { borderColor: 'text.secondary' },
-                    '&.Mui-focused fieldset': { borderColor: 'primary.main' },
-                  },
-                  '& .MuiInputLabel-root': { color: 'text.secondary' },
-                  '& .MuiInputLabel-root.Mui-focused': { color: 'primary.main' },
-                }}
-                onKeyDown={(e) => { if (e.key === 'Enter') handlePinSubmit(); }}
-              />
-              <Button
-                variant="contained"
-                fullWidth
-                onClick={handlePinSubmit}
-                disabled={accessing}
-                sx={{
-                  bgcolor: 'primary.main',
-                  color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
-                  fontWeight: 600,
-                  '&:hover': { bgcolor: 'secondary.main' },
-                  '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) },
-                }}
-              >
-                {accessing ? 'Decrypting...' : 'Decrypt'}
-              </Button>
-            </>
-          ) : (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress sx={{ color: 'primary.main' }} />
-            </Box>
-          )}
-        </CardContent>
-      </Card>
-    </Box>
+          {error ? (
+            <Alert variant="destructive">
+              <AlertDescription className="text-foreground">{error}</AlertDescription>
+            </Alert>
+          ) : null}
+
+          <AuthCodeInput
+            label="PIN"
+            maxLength={8}
+            placeholder="Enter PIN"
+            value={pin}
+            onChange={setPin}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                handlePinSubmit();
+              }
+            }}
+          />
+
+          <Button type="button" className="w-full" disabled={accessing} onClick={handlePinSubmit}>
+            {accessing ? 'Decrypting...' : 'Decrypt'}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex justify-center py-6">
+          <LoaderCircle className="size-6 animate-spin text-primary" />
+        </div>
+      )}
+    </AuthLayout>
   );
 }

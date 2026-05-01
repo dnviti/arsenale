@@ -5,11 +5,12 @@
 
 ## Overview
 
-All environment variables are loaded from a single `.env` file at the **monorepo root**. The server's `server/src/config.ts` uses `dotenv` to load from `../../.env` relative to the compiled output. Never create a separate `server/.env`.
+All environment variables are loaded from a single `.env` file at the monorepo root. The active Go services and supporting JS tooling read from that shared root configuration. Never create a separate service-local `.env`.
 
 In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 
 <!-- manual-start -->
+> Runtime note: the active public edge is the Go control plane behind the client on `https://localhost:3000`, with direct local development access on `http://localhost:18080`. Legacy-only variables are still preserved here when historically relevant, but new runtime work should target the Go services.
 <!-- manual-end -->
 
 ## Variable Reference
@@ -19,20 +20,21 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
 | `DATABASE_URL` | string | — | Yes | Both | PostgreSQL connection string |
-| `PORT` | number | `3001` | No | Both | Express server port |
+| `PORT` | number | `8080` | No | Both | Go control-plane API port |
 | `GUACAMOLE_WS_PORT` | number | `3002` | No | Both | Guacamole WebSocket port |
 | `NODE_ENV` | string | `development` | No | Both | Environment mode |
-| `CLIENT_URL` | string | `http://localhost:3000` | No | Both | Client URL (CORS, OAuth redirects, emails) |
+| `CLIENT_URL` | string | `https://localhost:3000` | No | Both | Client URL (CORS, OAuth redirects, emails) |
 | `CLI_ENABLED` | boolean | `false` | No | Both | Enable the `arsenale` CLI inside the container |
 
 ### Authentication
 
 | Variable | Type | Default | Required | Env | Description | Security Notes |
 |----------|------|---------|----------|-----|-------------|---------------|
-| `JWT_SECRET` | string | `dev-secret-change-me` | **Prod** | Both | JWT signing secret | **Must be strong random in production** |
+| `JWT_SECRET` | string | — | **Prod** | Both | JWT signing secret | **Must be provided via `JWT_SECRET` or `JWT_SECRET_FILE` and use a strong random value in production** |
 | `JWT_EXPIRES_IN` | string | `15m` | No | Both | Access token lifetime (e.g., `15m`, `1h`) | |
 | `JWT_REFRESH_EXPIRES_IN` | string | `7d` | No | Both | Refresh token lifetime (e.g., `7d`, `30d`) | |
 | `TOKEN_BINDING_ENABLED` | boolean | `true` | No | Both | Bind JWT tokens to client IP + User-Agent. Set `false` for environments with dynamic IPs. | |
+| `TOKEN_BINDING_ENFORCEMENT_TIMESTAMP` | string | control-plane startup time | No | Both | Reject access tokens without `ipUaHash` when their `iat` is after this cutoff. Accepts Unix seconds or RFC3339. | |
 
 ### Guacamole
 
@@ -40,7 +42,7 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 |----------|------|---------|----------|-----|-------------|---------------|
 | `GUACD_HOST` | string | `localhost` | No | Both | Guacamole daemon hostname | |
 | `GUACD_PORT` | number | `4822` | No | Both | Guacamole daemon port | |
-| `GUACAMOLE_SECRET` | string | `dev-guac-secret` | **Prod** | Both | Token encryption key for guacamole-lite | **Must be strong random in production** |
+| `GUACAMOLE_SECRET` | string | — | **Prod** | Both | Token encryption key for guacamole-lite | **Must be provided via `GUACAMOLE_SECRET` or `GUACAMOLE_SECRET_FILE` and use a strong random value in production** |
 
 ### Vault & Encryption
 
@@ -53,7 +55,7 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
-| `TRUST_PROXY` | boolean/number/string | `false` | No | Prod | Express `trust proxy` setting. `false` = disabled, `true` = trust all, number = hop count, string = trusted subnets |
+| `TRUST_PROXY` | boolean/number/string | `false` | No | Prod | Public-edge proxy trust setting. `false` = disabled, `true` = trust all, number = hop count, string = trusted subnets |
 | `ALLOW_LOCAL_NETWORK` | boolean | `false` | No | Both | Allow connections to private/local network addresses |
 
 ### Logging
@@ -70,11 +72,18 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
-| `DRIVE_BASE_PATH` | string | `./data/drive` | No | Both | Base path for RDP drive files |
-| `FILE_UPLOAD_MAX_SIZE` | number | `10485760` (10MB) | No | Both | Max file upload size in bytes |
+| `DRIVE_BASE_PATH` | string | `./data/drive` | No | Both | Local materialization cache for Guacamole RDP shared drives |
+| `FILE_UPLOAD_MAX_SIZE` | number | `104857600` (100MB) | No | Both | Max file upload size in bytes. Oversized uploads should reach the backend and return a structured 413 JSON error instead of a raw proxy error page. |
 | `USER_DRIVE_QUOTA` | number | `104857600` (100MB) | No | Both | Per-user drive quota in bytes |
-| `SFTP_MAX_FILE_SIZE` | number | `104857600` (100MB) | No | Both | Max SFTP transfer size in bytes |
-| `SFTP_CHUNK_SIZE` | number | `65536` (64KB) | No | Both | SFTP transfer chunk size in bytes |
+| `FILE_THREAT_SCANNER_MODE` | string | `builtin` | No | Both | Threat scanner mode for staged file payloads. `builtin` blocks the EICAR signature; `disabled` or `noop` skips scanning. |
+| `SHARED_FILES_S3_BUCKET` | string | — | No | Both | Bucket for staged RDP and SSH file payloads. This is required for the control plane to enable shared-drive and SSH file-transfer APIs. |
+| `SHARED_FILES_S3_REGION` | string | `us-east-1` | No | Both | Region used for staged-file object storage |
+| `SHARED_FILES_S3_ENDPOINT` | string | — | No | Both | Optional custom S3 endpoint for MinIO or another S3-compatible store |
+| `SHARED_FILES_S3_ACCESS_KEY_ID` | string | — | No | Both | Access key for staged-file object storage. Leave empty when the runtime should use ambient IAM credentials |
+| `SHARED_FILES_S3_SECRET_ACCESS_KEY` | string | — | No | Both | Secret key for staged-file object storage. Supports `_FILE` secret loading in the Go runtime |
+| `SHARED_FILES_S3_PREFIX` | string | — | No | Both | Optional key prefix applied to all staged-file objects |
+| `SHARED_FILES_S3_FORCE_PATH_STYLE` | boolean | `false` | No | Both | Force path-style S3 requests. Required by some MinIO and S3-compatible deployments |
+| `SHARED_FILES_S3_AUTO_CREATE_BUCKET` | boolean | `false` | No | Both | Automatically create the configured staged-file bucket at startup or first use |
 
 ### Email
 
@@ -115,7 +124,7 @@ In production, the Docker Compose stack uses `.env.prod` (via `env_file`).
 
 | Variable | Type | Default | Required | Env | Description |
 |----------|------|---------|----------|-----|-------------|
-| `SELF_SIGNUP_ENABLED` | boolean | `true` | No | Both | Allow new user registration. When `false`, env-level lock that cannot be re-enabled via admin panel. |
+| `SELF_SIGNUP_ENABLED` | boolean | `false` | No | Both | Allow new user registration. When `false`, env-level lock that cannot be re-enabled via admin panel. |
 
 ### OAuth Providers
 
@@ -125,13 +134,13 @@ Leave `CLIENT_ID` empty to disable a provider.
 |----------|---------|-------------|
 | `GOOGLE_CLIENT_ID` | — | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret |
-| `GOOGLE_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/google/callback` | Google OAuth callback URL |
+| `GOOGLE_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/google/callback` | Google OAuth callback URL |
 | `MICROSOFT_CLIENT_ID` | — | Microsoft OAuth client ID |
 | `MICROSOFT_CLIENT_SECRET` | — | Microsoft OAuth client secret |
-| `MICROSOFT_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/microsoft/callback` | Microsoft OAuth callback URL |
+| `MICROSOFT_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/microsoft/callback` | Microsoft OAuth callback URL |
 | `GITHUB_CLIENT_ID` | — | GitHub OAuth client ID |
 | `GITHUB_CLIENT_SECRET` | — | GitHub OAuth client secret |
-| `GITHUB_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/github/callback` | GitHub OAuth callback URL |
+| `GITHUB_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/github/callback` | GitHub OAuth callback URL |
 
 ### Generic OIDC
 
@@ -141,7 +150,7 @@ Leave `CLIENT_ID` empty to disable a provider.
 | `OIDC_ISSUER_URL` | — | OIDC issuer URL (discovery endpoint) |
 | `OIDC_CLIENT_ID` | — | OIDC client ID (leave empty to disable) |
 | `OIDC_CLIENT_SECRET` | — | OIDC client secret |
-| `OIDC_CALLBACK_URL` | `http://localhost:3001/api/auth/oauth/oidc/callback` | OIDC callback URL |
+| `OIDC_CALLBACK_URL` | `http://localhost:3000/api/auth/oauth/oidc/callback` | OIDC callback URL |
 | `OIDC_SCOPES` | `openid profile email` | OIDC scopes to request |
 
 ### SAML 2.0
@@ -151,7 +160,7 @@ Leave `CLIENT_ID` empty to disable a provider.
 | `SAML_PROVIDER_NAME` | `SAML SSO` | Display name |
 | `SAML_ENTRY_POINT` | — | IdP SSO URL (leave empty to disable) |
 | `SAML_ISSUER` | `arsenale` | SP entity ID |
-| `SAML_CALLBACK_URL` | `http://localhost:3001/api/auth/saml/callback` | SAML ACS URL |
+| `SAML_CALLBACK_URL` | `http://localhost:3000/api/auth/saml/callback` | SAML ACS URL |
 | `SAML_CERT` | — | IdP signing certificate (PEM, no headers) |
 | `SAML_METADATA_URL` | — | IdP metadata URL (for auto-config) |
 | `SAML_WANT_AUTHN_RESPONSE_SIGNED` | `true` | Require signed SAML responses |
@@ -201,6 +210,13 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 | `SSH_AUTHORIZED_KEYS` | — | Authorized public keys (newline-separated) |
 | `GATEWAY_API_TOKEN` | — | Shared secret for gateway API sidecar |
 
+### Gateway Runtime Egress
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ARSENALE_EGRESS_POLICY_JSON` | — | Normalized per-gateway ordered egress firewall policy used by managed gateway runtimes. When present, outbound tunnel targets must match protocol, host/CIDR, port, and optional user/team scope before traffic is opened. |
+| `RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY` / `RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY_FILE` | — | Shared secret used by the control plane to sign runtime user/team context for scoped DB proxy egress rules. Managed DB proxy deployments with scoped rules fail closed if no key is configured. |
+
 ### SSH Key Rotation
 
 | Variable | Default | Description |
@@ -218,7 +234,7 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 | `ACCOUNT_LOCKOUT_DURATION_MS` | number | `1800000` (30 min) | Lockout duration |
 | `VAULT_RATE_LIMIT_WINDOW_MS` | number | `60000` (1 min) | Vault unlock rate limit window |
 | `VAULT_RATE_LIMIT_MAX_ATTEMPTS` | number | `5` | Max vault unlock attempts per user per window |
-| `VAULT_MFA_RATE_LIMIT_MAX_ATTEMPTS` | number | `10` | Max vault MFA unlock attempts per user per window |
+| `VAULT_MFA_RATE_LIMIT_MAX_ATTEMPTS` | number | `5` | Max vault MFA unlock attempts per user per window |
 | `SESSION_RATE_LIMIT_WINDOW_MS` | number | `60000` (1 min) | Session endpoint rate limit window |
 | `SESSION_RATE_LIMIT_MAX_ATTEMPTS` | number | `20` | Max session requests per user per window |
 | `OAUTH_FLOW_RATE_LIMIT_WINDOW_MS` | number | `900000` (15 min) | OAuth flow initiation rate limit window |
@@ -248,7 +264,7 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 | `PODMAN_SOCKET_PATH` | string | `$XDG_RUNTIME_DIR/podman/podman.sock` | Podman socket path |
 | `DOCKER_NETWORK` | string | `arsenale-dev` | Container network name |
 | `ORCHESTRATOR_K8S_NAMESPACE` | string | `arsenale` | Kubernetes namespace |
-| `ORCHESTRATOR_SSH_GATEWAY_IMAGE` | string | `ghcr.io/dnviti/arsenale/ssh-gateway:latest` | SSH gateway container image |
+| `ORCHESTRATOR_SSH_GATEWAY_IMAGE` | string | `ghcr.io/dnviti/arsenale/ssh-gateway:stable` | SSH gateway container image |
 | `ORCHESTRATOR_GUACD_IMAGE` | string | `guacamole/guacd:1.6.0` | guacd container image (>= 1.6.0 for recording) |
 
 ### Session Recording
@@ -286,12 +302,35 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 <!-- manual-start -->
 <!-- manual-end -->
 
+## Installer And Feature Flags
+
+These variables are emitted by the Ansible installer and control runtime feature gating.
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `ARSENALE_INSTALL_MODE` | string | `development` | Install mode: `development` or `production` |
+| `ARSENALE_INSTALL_BACKEND` | string | `podman` | Install backend: `podman` or `kubernetes` |
+| `ARSENALE_INSTALL_CAPABILITIES` | string | — | Comma-separated enabled capability set |
+| `FEATURE_CONNECTIONS_ENABLED` | boolean | `true` | Enable SSH, RDP, VNC connections and folders |
+| `FEATURE_IP_GEOLOCATION_ENABLED` | boolean | `true` | Enable GeoIP lookups, audit maps, and the `map-assets` tile service |
+| `FEATURE_DATABASE_PROXY_ENABLED` | boolean | `true` | Enable database sessions and DB audit |
+| `FEATURE_KEYCHAIN_ENABLED` | boolean | `true` | Enable vault, secrets, files, and external vault providers |
+| `FEATURE_MULTI_TENANCY_ENABLED` | boolean | `true` | Enable multiple organizations, tenant switching, and self-service organization creation |
+| `FEATURE_RECORDINGS_ENABLED` | boolean | `true` | Enable recording APIs and UI |
+| `FEATURE_ZERO_TRUST_ENABLED` | boolean | `true` | Enable gateways, tunnel broker, and managed zero-trust routing |
+| `FEATURE_AGENTIC_AI_ENABLED` | boolean | `true` | Enable AI-assisted database tooling |
+| `FEATURE_ENTERPRISE_AUTH_ENABLED` | boolean | `true` | Enable SAML, OAuth, OIDC, LDAP surfaces |
+| `FEATURE_SHARING_APPROVALS_ENABLED` | boolean | `true` | Enable public sharing, approvals, and checkouts |
+| `CLI_ENABLED` | boolean | `false` | Enable CLI device auth and CLI-specific APIs |
+| `GATEWAY_ROUTING_MODE` | string | — | Direct vs gateway-mandatory routing behavior |
+
+These flags are converted to a runtime manifest in `backend/internal/runtimefeatures/manifest.go` and exposed via `GET /api/auth/config`.
+
 ## Development Defaults
 
 In development (`NODE_ENV=development`):
 
-- `JWT_SECRET` defaults to `dev-secret-change-me`
-- `GUACAMOLE_SECRET` defaults to `dev-guac-secret`
+- `JWT_SECRET` and `GUACAMOLE_SECRET` must still be provisioned via `.env` or the corresponding `_FILE` variables; the Go services do not ship built-in development secrets
 - `SERVER_ENCRYPTION_KEY` is auto-generated (not persisted)
 - Email verification links are logged to console (no SMTP required)
 - SMS OTP codes are logged to console (no SMS provider required)

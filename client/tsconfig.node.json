@@ -13,5 +13,5 @@
     "declarationMap": true,
     "outDir": "./dist-node"
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "pwaWorkbox.ts"]
 }

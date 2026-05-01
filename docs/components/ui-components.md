@@ -1,6 +1,6 @@
 # UI Components
 
-> Auto-generated on 2026-03-15 by /docs create components.
+> Auto-generated on 2026-04-15 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
 ## Components
@@ -32,16 +32,16 @@
 
 | Component | Purpose |
 |-----------|---------|
-| `SshTerminal` | XTerm.js-based SSH terminal with Socket.IO connection, resize handling, search addon, and SFTP browser integration |
-| `SftpBrowser` | In-session SFTP file browser panel (navigate, upload, download, delete, rename, mkdir) |
-| `SftpTransferQueue` | SFTP transfer progress queue showing active/completed/failed file transfers |
+| `SshTerminal` | XTerm.js-based SSH terminal with Socket.IO connection, resize handling, search addon, and managed SSH file browser integration |
+| `SftpBrowser` | Managed SSH sandbox browser panel for sandbox-relative upload, download, delete, rename, and mkdir flows with separate retained-history handling |
+| `SftpTransferQueue` | Managed SSH file transfer queue showing active/completed/failed file transfers |
 
 ### RDP (`client/src/components/RDP/`)
 
 | Component | Purpose |
 |-----------|---------|
 | `RdpViewer` | Guacamole-based RDP viewer with clipboard sync, dynamic scaling, toolbar, and drive redirection |
-| `FileBrowser` | In-session RDP file browser for the virtual drive (upload, download, delete, create folder) |
+| `FileBrowser` | Managed RDP shared-drive browser for staged object storage flows (upload, download, delete, create folder) |
 
 ### VNC (`client/src/components/VNC/`)
 
@@ -146,11 +146,29 @@ All full-screen dialogs use the MUI `Dialog` component with `fullScreen` prop an
 | `AuditGeoMap` | Interactive map visualization of audit log geo-locations |
 | `auditConstants` | Audit action label constants mapping action codes to human-readable strings |
 
+### Database Client (`client/src/components/DatabaseClient/`)
+
+| Component | Purpose |
+|-----------|---------|
+| `DbEditor` | Monaco-based database editor with protocol-aware SQL and Mongo query templates plus connection-aware AI query generation controls |
+| `DbSchemaBrowser` | Protocol-aware schema browser that adapts labels, hierarchy, and context-menu actions to SQL and Mongo-style databases |
+| `DbResultsTable` | Paginated query results table with sorting, column resizing, and export |
+| `QueryVisualizer` | Execution plan tree visualization with node cost analysis and connection-aware AI optimization entry points |
+| `AiQueryOptimizer` | Multi-turn AI query optimization flow that respects per-connection optimizer enablement and backend/model defaults |
+| `DbQueryHistory` | Per-session query execution history with replay and timing |
+| `DbConnectionStatus` | Database connection health indicator and protocol info |
+| `DbSessionConfigPopover` | Session configuration popover (schema, search path, read-only mode) |
+| `ExecutionPlanTree` | Interactive execution plan tree with cost breakdown per node |
+| `dbBrowserHelpers` | Shared database-protocol helpers for schema-browser labels, qualified names, and default query/action templates |
+| `sqlCompletionProvider` | Monaco intellisense provider with table/column completions from schema |
+| `sqlValidation` | Real-time SQL validation markers in the editor |
+| `dbQueryHistoryUtils` | Utility functions for query history formatting and filtering |
+
 ### Overlays (`client/src/components/Overlays/`)
 
 | Component | Purpose |
 |-----------|---------|
-| `VaultLockedOverlay` | Overlay when vault is locked — password unlock, MFA unlock options (TOTP, SMS, WebAuthn) |
+| `VaultLockedOverlay` | Overlay when vault is locked — passkey-first re-unlock with password fallback, or TOTP/SMS/password when no passkey is configured |
 
 ### Shared (`client/src/components/shared/`, `client/src/components/common/`)
 
@@ -158,7 +176,7 @@ All full-screen dialogs use the MUI `Dialog` component with `fullScreen` prop an
 |-----------|---------|
 | `DockedToolbar` | Dockable, draggable action toolbar over active RDP/VNC sessions with sub-action popovers (clipboard, screenshot, keys, fullscreen, disconnect) |
 | `ReconnectOverlay` | Reconnection overlay for dropped sessions — shows reconnecting/unstable/failed states with retry |
-| `SessionContextMenu` | Right-click context menu for active sessions (copy, paste, screenshot, send keys, fullscreen, file browser, disconnect) |
+| `SessionContextMenu` | Right-click context menu for active sessions (copy, paste, screenshot, send keys, fullscreen, managed file browser, disconnect) |
 | `IdentityVerification` | Reusable identity verification flow (email OTP, TOTP, SMS, WebAuthn, password) for sensitive operations |
 | `SlideUp` | Shared Slide-up transition component used by all full-screen dialogs |
 | `PasswordStrengthMeter` | Password strength meter using zxcvbn with score callback and visual feedback |

@@ -1,18 +1,29 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, Typography, Button, TextField, Alert, Box, Stack, Chip,
-} from '@mui/material';
-import {
-  setupSmsPhone, verifySmsPhone, enableSmsMfa,
-  sendSmsMfaDisableCode, disableSmsMfa, getSmsMfaStatus,
-} from '../../api/smsMfa.api';
-import { extractApiError } from '../../utils/apiError';
+  SettingsButtonRow,
+  SettingsPanel,
+  SettingsStatusBadge,
+} from './settings-ui';
 import { useNotificationStore } from '../../store/notificationStore';
+import { extractApiError } from '../../utils/apiError';
+import {
+  disableSmsMfa,
+  enableSmsMfa,
+  getSmsMfaStatus,
+  sendSmsMfaDisableCode,
+  setupSmsPhone,
+  verifySmsPhone,
+} from '../../api/smsMfa.api';
 
 type Phase = 'idle' | 'phone-input' | 'verify-phone' | 'disabling';
 
+const PHONE_PATTERN = /^\+[1-9]\d{1,14}$/;
+
 export default function SmsMfaSection() {
-  const notify = useNotificationStore((s) => s.notify);
+  const notify = useNotificationStore((state) => state.notify);
   const [enabled, setEnabled] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -32,6 +43,15 @@ export default function SmsMfaSection() {
       .catch(() => {})
       .finally(() => setStatusLoading(false));
   }, []);
+
+  if (statusLoading) return null;
+
+  const resetSetup = () => {
+    setPhase('idle');
+    setPhoneInput('');
+    setCode('');
+    setError('');
+  };
 
   const handleSubmitPhone = async () => {
     setError('');
@@ -54,9 +74,7 @@ export default function SmsMfaSection() {
       await enableSmsMfa();
       setEnabled(true);
       notify('SMS MFA enabled successfully', 'success');
-      setPhase('idle');
-      setCode('');
-      setPhoneInput('');
+      resetSetup();
     } catch (err: unknown) {
       setError(extractApiError(err, 'Invalid code'));
     } finally {
@@ -94,168 +112,146 @@ export default function SmsMfaSection() {
     }
   };
 
-  const handleCancelSetup = () => {
-    setPhase('idle');
-    setPhoneInput('');
-    setCode('');
-    setError('');
-  };
-
-  if (statusLoading) return null;
-
   return (
-    <Card>
-      <CardContent>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-          <Typography variant="h6">SMS Authentication</Typography>
-          <Chip
-            label={enabled ? 'Enabled' : 'Disabled'}
-            color={enabled ? 'success' : 'default'}
-            size="small"
-          />
-        </Stack>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Receive a verification code via SMS when signing in. Can be used alongside or instead of an authenticator app.
-        </Typography>
+    <SettingsPanel
+      title="SMS Authentication"
+      description="Receive sign-in codes by SMS as a fallback or alternative second factor."
+      heading={
+        <SettingsStatusBadge tone={enabled ? 'success' : 'neutral'}>
+          {enabled ? 'Enabled' : 'Disabled'}
+        </SettingsStatusBadge>
+      }
+    >
+      <div className="space-y-4">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-        {/* State: SMS MFA disabled, idle */}
         {!enabled && phase === 'idle' && (
-          <Button
-            variant="contained"
-            color="success"
-            disabled={loading}
-            onClick={() => { setPhase('phone-input'); setError(''); }}
-          >
+          <Button type="button" onClick={() => setPhase('phone-input')} disabled={loading}>
             {loading ? 'Setting up...' : 'Enable SMS Authentication'}
           </Button>
         )}
 
-        {/* State: Phone number input */}
         {phase === 'phone-input' && (
-          <Box>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Enter your phone number in international format:
-            </Typography>
-            <TextField
-              fullWidth
-              label="Phone Number"
-              value={phoneInput}
-              onChange={(e) => setPhoneInput(e.target.value)}
-              size="small"
-              placeholder="+1234567890"
-              helperText="E.164 format (e.g. +1234567890)"
-              sx={{ mb: 2 }}
-            />
-            <Stack direction="row" spacing={1}>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                Enter your phone number in international format.
+              </p>
+              <Input
+                value={phoneInput}
+                onChange={(event) => setPhoneInput(event.target.value)}
+                placeholder="+1234567890"
+              />
+              <p className="text-xs text-muted-foreground">
+                Use E.164 format, for example `+1234567890`.
+              </p>
+            </div>
+
+            <SettingsButtonRow>
               <Button
-                variant="contained"
-                disabled={loading || !phoneInput.match(/^\+[1-9]\d{1,14}$/)}
-                onClick={handleSubmitPhone}
+                type="button"
+                disabled={loading || !PHONE_PATTERN.test(phoneInput)}
+                onClick={() => void handleSubmitPhone()}
               >
                 {loading ? 'Sending...' : 'Send Verification Code'}
               </Button>
-              <Button variant="outlined" disabled={loading} onClick={handleCancelSetup}>
+              <Button type="button" variant="outline" disabled={loading} onClick={resetSetup}>
                 Cancel
               </Button>
-            </Stack>
-          </Box>
+            </SettingsButtonRow>
+          </div>
         )}
 
-        {/* State: Verify phone with code */}
         {phase === 'verify-phone' && (
-          <Box>
-            <Alert severity="info" sx={{ mb: 2 }}>
-              A verification code has been sent to {phoneInput}
+          <div className="space-y-4">
+            <Alert variant="info">
+              <AlertDescription>
+                A verification code has been sent to {phoneInput}.
+              </AlertDescription>
             </Alert>
-            <TextField
-              fullWidth
-              label="6-digit code"
-              type="text"
-              inputMode="numeric"
+
+            <Input
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              size="small"
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              maxLength={6}
               placeholder="000000"
-              slotProps={{ htmlInput: { maxLength: 6 } }}
-              sx={{ mb: 2 }}
             />
-            <Stack direction="row" spacing={1}>
+
+            <SettingsButtonRow>
               <Button
-                variant="contained"
+                type="button"
                 disabled={loading || code.length !== 6}
-                onClick={handleVerifyAndEnable}
+                onClick={() => void handleVerifyAndEnable()}
               >
                 {loading ? 'Verifying...' : 'Verify & Enable'}
               </Button>
-              <Button variant="outlined" disabled={loading} onClick={handleCancelSetup}>
+              <Button type="button" variant="outline" disabled={loading} onClick={resetSetup}>
                 Cancel
               </Button>
-            </Stack>
-          </Box>
+            </SettingsButtonRow>
+          </div>
         )}
 
-        {/* State: SMS MFA enabled, idle */}
         {enabled && phase === 'idle' && (
-          <Box>
+          <div className="space-y-3">
             {phoneNumber && (
-              <Typography variant="body2" sx={{ mb: 2 }}>
-                Phone: {phoneNumber}
-              </Typography>
+              <p className="text-sm text-foreground">
+                Phone: <span className="font-medium">{phoneNumber}</span>
+              </p>
             )}
-            <Button
-              variant="outlined"
-              color="warning"
-              disabled={loading}
-              onClick={handleStartDisable}
-            >
+            <Button type="button" variant="outline" disabled={loading} onClick={() => void handleStartDisable()}>
               {loading ? 'Sending code...' : 'Disable SMS Authentication'}
             </Button>
-          </Box>
+          </div>
         )}
 
-        {/* State: Disabling */}
         {enabled && phase === 'disabling' && (
-          <Box>
-            <Alert severity="info" sx={{ mb: 2 }}>
-              A verification code has been sent to your phone.
+          <div className="space-y-4">
+            <Alert variant="info">
+              <AlertDescription>
+                A verification code has been sent to your phone.
+              </AlertDescription>
             </Alert>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Enter the code to confirm disabling SMS MFA:
-            </Typography>
-            <TextField
-              fullWidth
-              label="6-digit code"
-              type="text"
-              inputMode="numeric"
+
+            <Input
               value={disableCode}
-              onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              size="small"
+              onChange={(event) =>
+                setDisableCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+              }
+              inputMode="numeric"
+              maxLength={6}
               placeholder="000000"
-              slotProps={{ htmlInput: { maxLength: 6 } }}
-              sx={{ mb: 2 }}
             />
-            <Stack direction="row" spacing={1}>
+
+            <SettingsButtonRow>
               <Button
-                variant="contained"
-                color="warning"
+                type="button"
                 disabled={loading || disableCode.length !== 6}
-                onClick={handleDisable}
+                onClick={() => void handleDisable()}
               >
                 {loading ? 'Verifying...' : 'Disable SMS MFA'}
               </Button>
               <Button
-                variant="outlined"
+                type="button"
+                variant="outline"
                 disabled={loading}
-                onClick={() => { setPhase('idle'); setDisableCode(''); setError(''); }}
+                onClick={() => {
+                  setPhase('idle');
+                  setDisableCode('');
+                  setError('');
+                }}
               >
                 Cancel
               </Button>
-            </Stack>
-          </Box>
+            </SettingsButtonRow>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsPanel>
   );
 }

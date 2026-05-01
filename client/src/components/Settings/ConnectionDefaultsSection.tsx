@@ -1,41 +1,49 @@
-import { useState, useEffect } from 'react';
-import {
-  Typography, Button, Alert, Stack,
-  Card, CardContent,
-} from '@mui/material';
+import { useEffect, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useNotificationStore } from '../../store/notificationStore';
-import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
-import type { SshTerminalConfig } from '../../constants/terminalThemes';
-import TerminalSettingsSection from './TerminalSettingsSection';
 import { useRdpSettingsStore } from '../../store/rdpSettingsStore';
+import { useTerminalSettingsStore } from '../../store/terminalSettingsStore';
 import type { RdpSettings } from '../../constants/rdpDefaults';
+import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import RdpSettingsSection from './RdpSettingsSection';
+import TerminalSettingsSection from './TerminalSettingsSection';
+import { SettingsLoadingState, SettingsPanel } from './settings-ui';
 
 export default function ConnectionDefaultsSection() {
-  const notify = useNotificationStore((s) => s.notify);
-  const { updateDefaults, loading: sshLoading } = useTerminalSettingsStore();
+  const notify = useNotificationStore((state) => state.notify);
+  const updateSshDefaults = useTerminalSettingsStore((state) => state.updateDefaults);
+  const sshLoading = useTerminalSettingsStore((state) => state.loading);
+  const updateRdpDefaults = useRdpSettingsStore((state) => state.updateDefaults);
+  const rdpLoading = useRdpSettingsStore((state) => state.loading);
   const [sshConfig, setSshConfig] = useState<Partial<SshTerminalConfig>>({});
-  const [sshError, setSshError] = useState('');
-
-  const { updateDefaults: updateRdpDefaults, loading: rdpLoading } = useRdpSettingsStore();
   const [rdpConfig, setRdpConfig] = useState<Partial<RdpSettings>>({});
+  const [sshError, setSshError] = useState('');
   const [rdpError, setRdpError] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    useTerminalSettingsStore.getState().fetchDefaults().then(() => {
-      const defaults = useTerminalSettingsStore.getState().userDefaults;
-      if (defaults) setSshConfig(defaults);
-    });
-    useRdpSettingsStore.getState().fetchDefaults().then(() => {
-      const defaults = useRdpSettingsStore.getState().userDefaults;
-      if (defaults) setRdpConfig(defaults);
-    });
+    Promise.all([
+      useTerminalSettingsStore.getState().fetchDefaults().then(() => {
+        const defaults = useTerminalSettingsStore.getState().userDefaults;
+        if (defaults) {
+          setSshConfig(defaults);
+        }
+      }),
+      useRdpSettingsStore.getState().fetchDefaults().then(() => {
+        const defaults = useRdpSettingsStore.getState().userDefaults;
+        if (defaults) {
+          setRdpConfig(defaults);
+        }
+      }),
+    ]).finally(() => setLoading(false));
   }, []);
 
   const handleSaveSshDefaults = async () => {
     setSshError('');
     try {
-      await updateDefaults(sshConfig);
+      await updateSshDefaults(sshConfig);
       notify('SSH terminal defaults saved', 'success');
     } catch {
       setSshError('Failed to save SSH defaults');
@@ -52,53 +60,57 @@ export default function ConnectionDefaultsSection() {
     }
   };
 
+  if (loading) {
+    return (
+      <SettingsPanel
+        title="Connection Defaults"
+        description="Personal defaults for SSH terminal and RDP sessions."
+      >
+        <SettingsLoadingState message="Loading connection defaults..." />
+      </SettingsPanel>
+    );
+  }
+
   return (
-    <Stack spacing={2}>
-      <Card>
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>SSH Terminal Defaults</Typography>
-          <Stack spacing={2}>
-            <Typography variant="body2" color="text.secondary">
-              These settings apply to all SSH sessions unless overridden per connection.
-            </Typography>
+    <SettingsPanel
+      title="Connection Defaults"
+      description="These settings apply to new sessions unless a specific connection overrides them."
+      contentClassName="space-y-4"
+    >
+      <Tabs defaultValue="ssh" className="gap-4">
+        <TabsList className="w-full justify-start">
+          <TabsTrigger value="ssh">SSH Terminal</TabsTrigger>
+          <TabsTrigger value="rdp">RDP</TabsTrigger>
+        </TabsList>
 
-            {sshError && <Alert severity="error">{sshError}</Alert>}
-
-            <TerminalSettingsSection value={sshConfig} onChange={setSshConfig} mode="global" />
-            <Button
-              variant="contained"
-              disabled={sshLoading}
-              onClick={handleSaveSshDefaults}
-              size="small"
-            >
+        <TabsContent value="ssh" className="space-y-4">
+          {sshError && (
+            <Alert variant="destructive">
+              <AlertDescription>{sshError}</AlertDescription>
+            </Alert>
+          )}
+          <TerminalSettingsSection value={sshConfig} onChange={setSshConfig} mode="global" />
+          <div className="flex justify-start">
+            <Button type="button" onClick={handleSaveSshDefaults} disabled={sshLoading}>
               {sshLoading ? 'Saving...' : 'Save SSH Defaults'}
             </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+          </div>
+        </TabsContent>
 
-      <Card>
-        <CardContent>
-          <Typography variant="subtitle1" fontWeight="bold" gutterBottom>RDP Defaults</Typography>
-          <Stack spacing={2}>
-            <Typography variant="body2" color="text.secondary">
-              These settings apply to all RDP sessions unless overridden per connection.
-            </Typography>
-
-            {rdpError && <Alert severity="error">{rdpError}</Alert>}
-
-            <RdpSettingsSection value={rdpConfig} onChange={setRdpConfig} mode="global" />
-            <Button
-              variant="contained"
-              disabled={rdpLoading}
-              onClick={handleSaveRdpDefaults}
-              size="small"
-            >
+        <TabsContent value="rdp" className="space-y-4">
+          {rdpError && (
+            <Alert variant="destructive">
+              <AlertDescription>{rdpError}</AlertDescription>
+            </Alert>
+          )}
+          <RdpSettingsSection value={rdpConfig} onChange={setRdpConfig} mode="global" />
+          <div className="flex justify-start">
+            <Button type="button" onClick={handleSaveRdpDefaults} disabled={rdpLoading}>
               {rdpLoading ? 'Saving...' : 'Save RDP Defaults'}
             </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-    </Stack>
+          </div>
+        </TabsContent>
+      </Tabs>
+    </SettingsPanel>
   );
 }

@@ -1,23 +1,23 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BellRing, Mail, MoonStar } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import {
-  Card, CardContent, Typography, Box, Switch, FormControlLabel,
-  CircularProgress, Alert, Table, TableBody, TableCell, TableHead,
-  TableRow, Tooltip, TextField, Autocomplete, Divider,
-} from '@mui/material';
+  SettingsFieldGroup,
+  SettingsPanel,
+  SettingsSwitchRow,
+} from './settings-ui';
 import {
-  Notifications as NotificationsIcon,
-  Email as EmailIcon,
-  DoNotDisturb as DoNotDisturbIcon,
-} from '@mui/icons-material';
-import {
-  getPreferences,
-  updatePreference,
   getNotificationSchedule,
+  getPreferences,
   updateNotificationSchedule,
-  type NotificationType,
+  updatePreference,
   type NotificationPreference,
   type NotificationSchedule,
+  type NotificationType,
 } from '../../api/notifications.api';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { extractApiError } from '../../utils/apiError';
 
 interface NotificationCategory {
@@ -62,33 +62,85 @@ const TYPE_LABELS: Record<NotificationType, string> = {
   RECORDING_READY: 'Session Recording Ready',
 };
 
-/** Build a sorted list of common IANA timezone names via Intl API. */
 function getTimezoneOptions(): string[] {
   try {
-    // Intl.supportedValuesOf is available in modern browsers
     return (Intl as unknown as { supportedValuesOf(key: string): string[] })
       .supportedValuesOf('timeZone');
   } catch {
-    // Fallback: a curated short list
     return [
       'UTC',
-      'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles',
-      'America/Sao_Paulo', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
-      'Europe/Rome', 'Europe/Moscow', 'Asia/Dubai', 'Asia/Kolkata',
-      'Asia/Shanghai', 'Asia/Tokyo', 'Australia/Sydney', 'Pacific/Auckland',
+      'America/New_York',
+      'America/Chicago',
+      'America/Denver',
+      'America/Los_Angeles',
+      'America/Sao_Paulo',
+      'Europe/London',
+      'Europe/Paris',
+      'Europe/Berlin',
+      'Europe/Rome',
+      'Europe/Moscow',
+      'Asia/Dubai',
+      'Asia/Kolkata',
+      'Asia/Shanghai',
+      'Asia/Tokyo',
+      'Australia/Sydney',
+      'Pacific/Auckland',
     ];
   }
 }
 
 const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+function PreferenceRow({
+  label,
+  inApp,
+  email,
+  disabled,
+  onInAppChange,
+  onEmailChange,
+}: {
+  label: string;
+  inApp: boolean;
+  email: boolean;
+  disabled: boolean;
+  onInAppChange: (checked: boolean) => void;
+  onEmailChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="grid gap-3 rounded-xl border border-border/70 bg-background/60 px-4 py-3 md:grid-cols-[minmax(0,1fr)_140px_140px] md:items-center">
+      <div className="text-sm font-medium text-foreground">{label}</div>
+      <label className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2 md:justify-center md:bg-transparent md:px-0 md:py-0">
+        <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground md:hidden">
+          In-App
+        </span>
+        <Switch
+          checked={inApp}
+          disabled={disabled}
+          onCheckedChange={onInAppChange}
+          aria-label={`${label} in-app notifications`}
+        />
+      </label>
+      <label className="flex items-center justify-between gap-3 rounded-lg bg-background px-3 py-2 md:justify-center md:bg-transparent md:px-0 md:py-0">
+        <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground md:hidden">
+          Email
+        </span>
+        <Switch
+          checked={email}
+          disabled={disabled}
+          onCheckedChange={onEmailChange}
+          aria-label={`${label} email notifications`}
+        />
+      </label>
+    </div>
+  );
+}
+
 export default function NotificationPreferencesSection() {
+  const recordingsEnabled = useFeatureFlagsStore((state) => state.recordingsEnabled);
   const [prefs, setPrefs] = useState<Map<NotificationType, NotificationPreference>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState<Set<NotificationType>>(new Set());
-
-  // Quiet Hours / DND state
   const [schedule, setSchedule] = useState<NotificationSchedule>({
     dndEnabled: false,
     quietHoursStart: null,
@@ -98,266 +150,224 @@ export default function NotificationPreferencesSection() {
   const [scheduleSaving, setScheduleSaving] = useState(false);
 
   const timezoneOptions = useMemo(() => getTimezoneOptions(), []);
+  const categories = useMemo(
+    () =>
+      CATEGORIES.filter(
+        (category) =>
+          recordingsEnabled || !category.types.includes('RECORDING_READY'),
+      ),
+    [recordingsEnabled],
+  );
 
   useEffect(() => {
-    Promise.all([
-      getPreferences(),
-      getNotificationSchedule(),
-    ])
-      .then(([list, sched]) => {
-        const map = new Map(list.map((p) => [p.type, p]));
-        setPrefs(map);
-        setSchedule(sched);
+    Promise.all([getPreferences(), getNotificationSchedule()])
+      .then(([list, notificationSchedule]) => {
+        setPrefs(new Map(list.map((preference) => [preference.type, preference])));
+        setSchedule(notificationSchedule);
       })
-      .catch((err) => setError(extractApiError(err, 'Failed to load preferences')))
+      .catch((err) => {
+        setError(extractApiError(err, 'Failed to load preferences'));
+      })
       .finally(() => setLoading(false));
   }, []);
 
   const handleToggle = useCallback(
     async (type: NotificationType, channel: 'inApp' | 'email', value: boolean) => {
-      // Optimistic update
-      setPrefs((prev) => {
-        const next = new Map(prev);
+      setPrefs((previous) => {
+        const next = new Map(previous);
         const current = next.get(type);
-        if (current) next.set(type, { ...current, [channel]: value });
+        if (current) {
+          next.set(type, { ...current, [channel]: value });
+        }
         return next;
       });
-      setSaving((prev) => new Set([...prev, type]));
+      setSaving((previous) => new Set([...previous, type]));
 
       try {
         const updated = await updatePreference(type, { [channel]: value });
-        setPrefs((prev) => {
-          const next = new Map(prev);
+        setPrefs((previous) => {
+          const next = new Map(previous);
           next.set(type, updated);
           return next;
         });
       } catch (err) {
-        // Revert on error
-        setPrefs((prev) => {
-          const next = new Map(prev);
+        setPrefs((previous) => {
+          const next = new Map(previous);
           const current = next.get(type);
-          if (current) next.set(type, { ...current, [channel]: !value });
+          if (current) {
+            next.set(type, { ...current, [channel]: !value });
+          }
           return next;
         });
         setError(extractApiError(err, 'Failed to update preference'));
       } finally {
-        setSaving((prev) => {
-          const next = new Set(prev);
+        setSaving((previous) => {
+          const next = new Set(previous);
           next.delete(type);
           return next;
         });
       }
     },
-    []
+    [],
   );
 
   const handleScheduleChange = useCallback(
     async (update: Partial<NotificationSchedule>) => {
-      // Capture previous state for rollback on error
       const previous = { ...schedule };
-      // Optimistic update
-      setSchedule((prev) => ({ ...prev, ...update }));
+      setSchedule((current) => ({ ...current, ...update }));
       setScheduleSaving(true);
       try {
         const updated = await updateNotificationSchedule(update);
         setSchedule(updated);
       } catch (err) {
-        // Revert to previous state on failure
         setSchedule(previous);
         setError(extractApiError(err, 'Failed to update notification schedule'));
       } finally {
         setScheduleSaving(false);
       }
     },
-    [schedule]
+    [schedule],
   );
 
   if (loading) {
     return (
-      <Card variant="outlined">
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="Notification Preferences"
+        description="Choose which events reach you in the app or by email."
+      >
+        <p className="text-sm text-muted-foreground">Loading notification preferences...</p>
+      </SettingsPanel>
     );
   }
 
   return (
-    <>
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          Notification Preferences
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Choose which events trigger in-app or email notifications.
-        </Typography>
+    <div className="space-y-4">
+      <SettingsPanel
+        title="Notification Preferences"
+        description="Choose which events reach you in the app or by email."
+      >
+        <SettingsFieldGroup>
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
-            {error}
-          </Alert>
-        )}
+          {categories.map((category) => (
+            <section key={category.label} className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                  {category.label}
+                </h4>
+                <div className="hidden items-center gap-6 text-xs uppercase tracking-[0.2em] text-muted-foreground md:flex">
+                  <span className="inline-flex items-center gap-2">
+                    <BellRing className="size-3.5" />
+                    In-App
+                  </span>
+                  <span className="inline-flex items-center gap-2">
+                    <Mail className="size-3.5" />
+                    Email
+                  </span>
+                </div>
+              </div>
 
-        {CATEGORIES.map((category) => (
-          <Box key={category.label} sx={{ mb: 3 }}>
-            <Typography variant="body2" fontWeight="medium" color="text.secondary" sx={{ mb: 1, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: '0.7rem' }}>
-              {category.label}
-            </Typography>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ pl: 0 }}>Event</TableCell>
-                  <TableCell align="center" sx={{ width: 80 }}>
-                    <Tooltip title="In-app notifications">
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                        <NotificationsIcon sx={{ fontSize: 16 }} />
-                      </Box>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell align="center" sx={{ width: 80 }}>
-                    <Tooltip title="Email notifications">
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                        <EmailIcon sx={{ fontSize: 16 }} />
-                      </Box>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
+              <div className="space-y-2">
                 {category.types.map((type) => {
-                  const pref = prefs.get(type);
+                  const preference = prefs.get(type);
                   const isSaving = saving.has(type);
                   return (
-                    <TableRow key={type} sx={{ '&:last-child td': { border: 0 } }}>
-                      <TableCell sx={{ pl: 0 }}>
-                        <Typography variant="body2">{TYPE_LABELS[type]}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              size="small"
-                              checked={pref?.inApp ?? true}
-                              disabled={isSaving}
-                              onChange={(e) => handleToggle(type, 'inApp', e.target.checked)}
-                            />
-                          }
-                          label=""
-                          sx={{ m: 0 }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <FormControlLabel
-                          control={
-                            <Switch
-                              size="small"
-                              checked={pref?.email ?? false}
-                              disabled={isSaving}
-                              onChange={(e) => handleToggle(type, 'email', e.target.checked)}
-                            />
-                          }
-                          label=""
-                          sx={{ m: 0 }}
-                        />
-                      </TableCell>
-                    </TableRow>
+                    <PreferenceRow
+                      key={type}
+                      label={TYPE_LABELS[type]}
+                      inApp={preference?.inApp ?? true}
+                      email={preference?.email ?? false}
+                      disabled={isSaving}
+                      onInAppChange={(checked) => {
+                        void handleToggle(type, 'inApp', checked);
+                      }}
+                      onEmailChange={(checked) => {
+                        void handleToggle(type, 'email', checked);
+                      }}
+                    />
                   );
                 })}
-              </TableBody>
-            </Table>
-          </Box>
-        ))}
-      </CardContent>
-    </Card>
+              </div>
+            </section>
+          ))}
+        </SettingsFieldGroup>
+      </SettingsPanel>
 
-    {/* Quiet Hours / Do Not Disturb */}
-    <Card variant="outlined" sx={{ mt: 2 }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-          <DoNotDisturbIcon fontSize="small" color="action" />
-          <Typography variant="subtitle1" fontWeight="bold">
-            Quiet Hours
-          </Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Suppress non-critical real-time notifications during specific hours.
-          Notifications are still saved and can be read later.
-          Security-critical alerts always bypass quiet hours.
-        </Typography>
-
-        <Divider sx={{ my: 2 }} />
-
-        {/* DND toggle */}
-        <FormControlLabel
-          control={
-            <Switch
-              checked={schedule.dndEnabled}
-              disabled={scheduleSaving}
-              onChange={(e) => handleScheduleChange({ dndEnabled: e.target.checked })}
-            />
-          }
-          label={
-            <Box>
-              <Typography variant="body2" fontWeight="medium">Do Not Disturb</Typography>
-              <Typography variant="caption" color="text.secondary">
-                Immediately suppress all non-critical real-time notifications
-              </Typography>
-            </Box>
-          }
-          sx={{ mb: 2, alignItems: 'flex-start', ml: 0 }}
-        />
-
-        <Divider sx={{ my: 2 }} />
-
-        {/* Quiet hours time range */}
-        <Typography variant="body2" fontWeight="medium" sx={{ mb: 1.5 }}>
-          Scheduled Quiet Hours
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center', mb: 2 }}>
-          <TextField
-            label="Start time"
-            type="time"
-            size="small"
-            value={schedule.quietHoursStart ?? ''}
+      <SettingsPanel
+        title="Quiet Hours"
+        description="Suppress non-critical real-time notifications during specific hours. Security-critical alerts still break through."
+      >
+        <div className="space-y-4">
+          <SettingsSwitchRow
+            title="Do Not Disturb"
+            description="Immediately suppress all non-critical real-time notifications."
+            checked={schedule.dndEnabled}
             disabled={scheduleSaving}
-            onChange={(e) =>
-              handleScheduleChange({ quietHoursStart: e.target.value || null })
-            }
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={{ width: 150 }}
+            onCheckedChange={(checked) => {
+              void handleScheduleChange({ dndEnabled: checked });
+            }}
           />
-          <Typography variant="body2" color="text.secondary">to</Typography>
-          <TextField
-            label="End time"
-            type="time"
-            size="small"
-            value={schedule.quietHoursEnd ?? ''}
-            disabled={scheduleSaving}
-            onChange={(e) =>
-              handleScheduleChange({ quietHoursEnd: e.target.value || null })
-            }
-            slotProps={{ inputLabel: { shrink: true } }}
-            sx={{ width: 150 }}
-          />
-        </Box>
 
-        {/* Timezone selector */}
-        <Autocomplete
-          size="small"
-          options={timezoneOptions}
-          value={schedule.quietHoursTimezone ?? browserTimezone}
-          disabled={scheduleSaving}
-          onChange={(_e, value) =>
-            handleScheduleChange({ quietHoursTimezone: value ?? browserTimezone })
-          }
-          renderInput={(params) => (
-            <TextField {...params} label="Timezone" />
-          )}
-          sx={{ maxWidth: 350 }}
-        />
-      </CardContent>
-    </Card>
-    </>
+          <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <MoonStar className="size-4 text-muted-foreground" />
+              <h4 className="text-sm font-medium text-foreground">Scheduled Quiet Hours</h4>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-[150px_auto_150px] md:items-center">
+              <Input
+                type="time"
+                value={schedule.quietHoursStart ?? ''}
+                disabled={scheduleSaving}
+                onChange={(event) => {
+                  void handleScheduleChange({
+                    quietHoursStart: event.target.value || null,
+                  });
+                }}
+                aria-label="Quiet hours start time"
+              />
+              <div className="text-center text-sm text-muted-foreground">to</div>
+              <Input
+                type="time"
+                value={schedule.quietHoursEnd ?? ''}
+                disabled={scheduleSaving}
+                onChange={(event) => {
+                  void handleScheduleChange({
+                    quietHoursEnd: event.target.value || null,
+                  });
+                }}
+                aria-label="Quiet hours end time"
+              />
+            </div>
+
+            <div className="mt-4 space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="quiet-hours-timezone">
+                Timezone
+              </label>
+              <Input
+                id="quiet-hours-timezone"
+                list="notification-timezones"
+                value={schedule.quietHoursTimezone ?? browserTimezone}
+                disabled={scheduleSaving}
+                onChange={(event) => {
+                  void handleScheduleChange({
+                    quietHoursTimezone: event.target.value || browserTimezone,
+                  });
+                }}
+              />
+              <datalist id="notification-timezones">
+                {timezoneOptions.map((timezone) => (
+                  <option key={timezone} value={timezone} />
+                ))}
+              </datalist>
+            </div>
+          </div>
+        </div>
+      </SettingsPanel>
+    </div>
   );
 }

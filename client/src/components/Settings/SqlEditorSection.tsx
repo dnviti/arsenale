@@ -1,7 +1,12 @@
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Input } from '@/components/ui/input';
 import {
-  Card, CardContent, Typography, Box, Slider, TextField,
-  FormControlLabel, Switch, Select, MenuItem, InputLabel, FormControl,
-} from '@mui/material';
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsPanel,
+  SettingsSwitchRow,
+} from './settings-ui';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 
 const THEME_OPTIONS = [
@@ -13,85 +18,74 @@ const THEME_OPTIONS = [
 ];
 
 export default function SqlEditorSection() {
-  const sqlEditorTheme = useUiPreferencesStore((s) => s.sqlEditorTheme);
-  const sqlEditorFontSize = useUiPreferencesStore((s) => s.sqlEditorFontSize);
-  const sqlEditorFontFamily = useUiPreferencesStore((s) => s.sqlEditorFontFamily);
-  const sqlEditorMinimap = useUiPreferencesStore((s) => s.sqlEditorMinimap);
-  const setPref = useUiPreferencesStore((s) => s.set);
+  const sqlEditorTheme = useUiPreferencesStore((state) => state.sqlEditorTheme);
+  const sqlEditorFontSize = useUiPreferencesStore((state) => state.sqlEditorFontSize);
+  const sqlEditorFontFamily = useUiPreferencesStore((state) => state.sqlEditorFontFamily);
+  const sqlEditorMinimap = useUiPreferencesStore((state) => state.sqlEditorMinimap);
+  const setPreference = useUiPreferencesStore((state) => state.set);
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          SQL Editor
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Customize the Monaco-based SQL editor appearance and behavior.
-        </Typography>
-
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, mt: 2 }}>
-          {/* Theme selector */}
-          <FormControl size="small" fullWidth>
-            <InputLabel id="sql-editor-theme-label">Theme</InputLabel>
+    <SettingsPanel
+      title="SQL Editor"
+      description="Customize Monaco-based SQL editing without affecting the rest of the interface."
+      contentClassName="space-y-4"
+    >
+      <SettingsFieldGroup>
+        <div className="grid gap-4 xl:grid-cols-2">
+          <SettingsFieldCard
+            label="Theme"
+            description="Use the WebUI theme or pin a dedicated editor palette."
+          >
             <Select
-              labelId="sql-editor-theme-label"
               value={sqlEditorTheme}
-              label="Theme"
-              onChange={(e) => setPref('sqlEditorTheme', e.target.value)}
+              onValueChange={(value) => setPreference('sqlEditorTheme', value)}
             >
-              {THEME_OPTIONS.map((opt) => (
-                <MenuItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </MenuItem>
-              ))}
+              <SelectTrigger aria-label="SQL Editor Theme">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {THEME_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-          </FormControl>
+          </SettingsFieldCard>
 
-          {/* Font size slider */}
-          <Box>
-            <Typography variant="body2" gutterBottom>
-              Font Size: {sqlEditorFontSize}px
-            </Typography>
+          <SettingsFieldCard
+            label="Font Size"
+            description={`Current size: ${sqlEditorFontSize}px.`}
+          >
             <Slider
-              aria-label="Font Size"
-              value={sqlEditorFontSize}
-              onChange={(_, val) => setPref('sqlEditorFontSize', val as number)}
+              value={[sqlEditorFontSize]}
               min={10}
               max={24}
               step={1}
-              marks={[
-                { value: 10, label: '10' },
-                { value: 14, label: '14' },
-                { value: 18, label: '18' },
-                { value: 24, label: '24' },
-              ]}
-              valueLabelDisplay="auto"
-              size="small"
+              onValueChange={([value]) => setPreference('sqlEditorFontSize', value)}
+              aria-label="SQL Editor Font Size"
             />
-          </Box>
+          </SettingsFieldCard>
+        </div>
 
-          {/* Font family */}
-          <TextField
-            label="Font Family"
-            size="small"
-            fullWidth
+        <SettingsFieldCard
+          label="Font Family"
+          description="Comma-separated fallback list for the editor font stack."
+        >
+          <Input
             value={sqlEditorFontFamily}
-            onChange={(e) => setPref('sqlEditorFontFamily', e.target.value)}
-            helperText="Comma-separated list of font families"
+            onChange={(event) => setPreference('sqlEditorFontFamily', event.target.value)}
+            aria-label="SQL Editor Font Family"
           />
+        </SettingsFieldCard>
 
-          {/* Minimap toggle */}
-          <FormControlLabel
-            control={
-              <Switch
-                checked={sqlEditorMinimap}
-                onChange={(_, checked) => setPref('sqlEditorMinimap', checked)}
-              />
-            }
-            label="Show minimap"
-          />
-        </Box>
-      </CardContent>
-    </Card>
+        <SettingsSwitchRow
+          title="Show minimap"
+          description="Display a compact code overview rail beside the editor."
+          checked={sqlEditorMinimap}
+          onCheckedChange={(checked) => setPreference('sqlEditorMinimap', checked)}
+        />
+      </SettingsFieldGroup>
+    </SettingsPanel>
   );
 }

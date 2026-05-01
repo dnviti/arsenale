@@ -1,45 +1,14 @@
 import { useState, useCallback, useMemo } from 'react';
 import {
-  Box,
-  Typography,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Collapse,
-  IconButton,
-  Tooltip,
-  Divider,
-  Menu,
-  MenuItem,
-  ListItemIcon as MenuItemIcon,
-} from '@mui/material';
+  Table2, Columns3, KeyRound, ChevronUp, ChevronDown, RefreshCw, ChevronLeft,
+  Play, List, FunctionSquare, Plus, Pencil, Trash2, Layers, Copy, Filter,
+  ArrowUpDown, CircleDot, Eye, Zap, ListOrdered, SettingsIcon, Package, ShapesIcon,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import {
-  TableChart as TableIcon,
-  ViewColumn as ColumnIcon,
-  Key as KeyIcon,
-  ExpandLess,
-  ExpandMore,
-  Refresh as RefreshIcon,
-  ChevronLeft as CollapseIcon,
-  PlayArrow as SelectIcon,
-  ViewList as SelectAllIcon,
-  Functions as FunctionIcon,
-  Add as InsertIcon,
-  Edit as UpdateIcon,
-  DeleteOutline as DeleteIcon,
-  LayersClear as DropIcon,
-  ContentCopy as CopyIcon,
-  FilterList as WhereIcon,
-  Sort as OrderIcon,
-  GroupWork as GroupIcon,
-  Visibility as ViewIcon,
-  FlashOn as TriggerIcon,
-  FormatListNumbered as SequenceIcon,
-  SettingsEthernet as ProcedureIcon,
-  Inventory2 as PackageIcon,
-  Category as TypeIcon,
-} from '@mui/icons-material';
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import type {
   DbSchemaInfo,
   DbTableInfo,
@@ -51,8 +20,15 @@ import type {
   DbPackageInfo,
   DbTypeInfo,
 } from '../../api/database.api';
-
-type DbProtocolHint = 'postgresql' | 'mysql' | 'mongodb' | 'oracle' | 'mssql' | 'db2' | string;
+import {
+  buildLimitedSelectSql,
+  buildMongoCollectionQuery,
+  buildMongoQuerySpec,
+  getSchemaBrowserTerms,
+  normalizeDbProtocol,
+  qualifyDbObjectName,
+  type DbProtocolHint,
+} from './dbBrowserHelpers';
 
 type BrowsableObjectType = 'table' | 'view' | 'function' | 'procedure' | 'trigger' | 'sequence' | 'package' | 'type';
 
@@ -95,38 +71,41 @@ interface SectionConfig {
   icon: React.ReactNode;
 }
 
-const SECTION_CONFIGS: SectionConfig[] = [
-  { key: 'tables', label: 'Tables', icon: <TableIcon sx={{ fontSize: 16, color: 'primary.main' }} /> },
-  { key: 'views', label: 'Views', icon: <ViewIcon sx={{ fontSize: 16, color: 'info.main' }} /> },
-  { key: 'functions', label: 'Functions', icon: <FunctionIcon sx={{ fontSize: 16, color: 'secondary.main' }} /> },
-  { key: 'procedures', label: 'Procedures', icon: <ProcedureIcon sx={{ fontSize: 16, color: 'secondary.main' }} /> },
-  { key: 'triggers', label: 'Triggers', icon: <TriggerIcon sx={{ fontSize: 16, color: 'warning.main' }} /> },
-  { key: 'sequences', label: 'Sequences', icon: <SequenceIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> },
-  { key: 'packages', label: 'Packages', icon: <PackageIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> },
-  { key: 'types', label: 'Types', icon: <TypeIcon sx={{ fontSize: 16, color: 'text.secondary' }} /> },
-];
+function getSectionConfigs(tableSectionLabel: string): SectionConfig[] {
+  return [
+    { key: 'tables', label: tableSectionLabel, icon: <Table2 className="size-4 text-primary" /> },
+    { key: 'views', label: 'Views', icon: <Eye className="size-4 text-blue-400" /> },
+    { key: 'functions', label: 'Functions', icon: <FunctionSquare className="size-4 text-purple-400" /> },
+    { key: 'procedures', label: 'Procedures', icon: <SettingsIcon className="size-4 text-purple-400" /> },
+    { key: 'triggers', label: 'Triggers', icon: <Zap className="size-4 text-yellow-400" /> },
+    { key: 'sequences', label: 'Sequences', icon: <ListOrdered className="size-4 text-muted-foreground" /> },
+    { key: 'packages', label: 'Packages', icon: <Package className="size-4 text-muted-foreground" /> },
+    { key: 'types', label: 'Types', icon: <ShapesIcon className="size-4 text-muted-foreground" /> },
+  ];
+}
 
 function emptyGroup(): SchemaGroup {
   return { tables: [], views: [], functions: [], procedures: [], triggers: [], sequences: [], packages: [], types: [] };
-}
-
-function qualifiedName(schema: string, name: string): string {
-  return (schema === 'public' || schema === 'dbo') ? name : `${schema}.${name}`;
 }
 
 function copyToClipboard(text: string) {
   try { navigator?.clipboard?.writeText(text); } catch { /* ignore */ }
 }
 
-/** Protocol-aware row limit clause. */
-function rowLimit(protocol: DbProtocolHint | undefined, n = 100): string {
-  switch (protocol) {
-    case 'oracle':
-      return `FETCH FIRST ${n} ROWS ONLY`;
-    case 'mssql':
-      return `-- TOP ${n} (add to SELECT)`;
+function mongoFieldPlaceholder(column: DbColumnInfo): unknown {
+  switch (column.dataType) {
+    case 'number':
+      return 0;
+    case 'bool':
+      return false;
+    case 'array':
+      return [];
+    case 'document':
+      return {};
+    case 'date':
+      return '2026-01-01T00:00:00Z';
     default:
-      return `LIMIT ${n}`;
+      return '';
   }
 }
 
@@ -143,6 +122,21 @@ export default function DbSchemaBrowser({
   const [expandedTables, setExpandedTables] = useState<Record<string, boolean>>({});
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const normalizedProtocol = normalizeDbProtocol(dbProtocol);
+  const terms = useMemo(() => getSchemaBrowserTerms(normalizedProtocol), [normalizedProtocol]);
+  const sectionConfigs = useMemo(() => getSectionConfigs(terms.tableSectionLabel), [terms.tableSectionLabel]);
+  const isMongoProtocol = normalizedProtocol === 'mongodb';
+  const fallbackGroupName = useMemo(() => {
+    switch (normalizedProtocol) {
+      case 'mongodb':
+      case 'mysql':
+        return 'default';
+      case 'oracle':
+        return 'current';
+      default:
+        return 'public';
+    }
+  }, [normalizedProtocol]);
 
   const closeMenu = useCallback(() => setMenu(null), []);
 
@@ -160,17 +154,17 @@ export default function DbSchemaBrowser({
       return groups[s];
     };
 
-    for (const t of schema.tables) ensure(t.schema || 'public').tables.push(t);
-    for (const v of schema.views ?? []) ensure(v.schema || 'public').views.push(v);
-    for (const f of schema.functions ?? []) ensure(f.schema || 'public').functions.push(f);
-    for (const p of schema.procedures ?? []) ensure(p.schema || 'public').procedures.push(p);
-    for (const tr of schema.triggers ?? []) ensure(tr.schema || 'public').triggers.push(tr);
-    for (const sq of schema.sequences ?? []) ensure(sq.schema || 'public').sequences.push(sq);
-    for (const pk of schema.packages ?? []) ensure(pk.schema || 'public').packages.push(pk);
-    for (const tp of schema.types ?? []) ensure(tp.schema || 'public').types.push(tp);
+    for (const t of schema.tables) ensure(t.schema || fallbackGroupName).tables.push(t);
+    for (const v of schema.views ?? []) ensure(v.schema || fallbackGroupName).views.push(v);
+    for (const f of schema.functions ?? []) ensure(f.schema || fallbackGroupName).functions.push(f);
+    for (const p of schema.procedures ?? []) ensure(p.schema || fallbackGroupName).procedures.push(p);
+    for (const tr of schema.triggers ?? []) ensure(tr.schema || fallbackGroupName).triggers.push(tr);
+    for (const sq of schema.sequences ?? []) ensure(sq.schema || fallbackGroupName).sequences.push(sq);
+    for (const pk of schema.packages ?? []) ensure(pk.schema || fallbackGroupName).packages.push(pk);
+    for (const tp of schema.types ?? []) ensure(tp.schema || fallbackGroupName).types.push(tp);
 
     return groups;
-  }, [schema]);
+  }, [fallbackGroupName, schema]);
 
   const totalObjects = useMemo(() => {
     return schema.tables.length
@@ -213,9 +207,13 @@ export default function DbSchemaBrowser({
   };
 
   // --- Context menu helpers ---
-  const menuQn = menu ? qualifiedName(menu.schema, menu.objectName) : '';
-  const limit = rowLimit(dbProtocol);
-  const selectPrefix = dbProtocol === 'mssql' ? 'SELECT TOP 100' : 'SELECT';
+  const menuQn = menu ? qualifyDbObjectName(normalizedProtocol, menu.schema, menu.objectName) : '';
+  const menuMongoQuery = (payload: Record<string, unknown>) => {
+    if (menu?.schema) {
+      return buildMongoQuerySpec({ database: menu.schema, ...payload });
+    }
+    return buildMongoQuerySpec(payload);
+  };
 
   // Table-specific helpers (only valid when menu.table is present)
   const cols = menu?.table?.columns ?? [];
@@ -224,76 +222,239 @@ export default function DbSchemaBrowser({
   const colSetters = cols.map((c) => `${c.name} = ?`).join(', ');
 
   // --- Context menu renderers per object type ---
-  const renderTableMenuItems = () => [
-    <MenuItem key="select-all" onClick={() => insertSql(`${selectPrefix} *\nFROM ${menuQn}\n${limit};`)}>
-      <MenuItemIcon><SelectAllIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>SELECT *</ListItemText>
-    </MenuItem>,
+  const renderSqlTableMenuItems = () => [
+    <DropdownMenuItem key="select-all" onClick={() => insertSql(buildLimitedSelectSql(normalizedProtocol, '*', menuQn))}>
+      <List className="size-4" />
+      SELECT *
+    </DropdownMenuItem>,
     cols.length > 0 && (
-      <MenuItem key="select-cols" onClick={() => insertSql(`${selectPrefix} ${colNames}\nFROM ${menuQn}\n${limit};`)}>
-        <MenuItemIcon><SelectIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>SELECT columns</ListItemText>
-      </MenuItem>
+      <DropdownMenuItem key="select-cols" onClick={() => insertSql(buildLimitedSelectSql(normalizedProtocol, colNames, menuQn))}>
+        <Play className="size-4" />
+        SELECT columns
+      </DropdownMenuItem>
     ),
-    <MenuItem key="count" onClick={() => insertSql(`SELECT COUNT(*)\nFROM ${menuQn};`)}>
-      <MenuItemIcon><FunctionIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>COUNT(*)</ListItemText>
-    </MenuItem>,
-    <Divider key="d1" />,
+    <DropdownMenuItem key="count" onClick={() => insertSql(`SELECT COUNT(*)\nFROM ${menuQn};`)}>
+      <FunctionSquare className="size-4" />
+      COUNT(*)
+    </DropdownMenuItem>,
+    <DropdownMenuSeparator key="d1" />,
     cols.length > 0 && (
-      <MenuItem key="insert" onClick={() => insertSql(`INSERT INTO ${menuQn} (${colNames})\nVALUES (${colPlaceholders});`)}>
-        <MenuItemIcon><InsertIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>INSERT template</ListItemText>
-      </MenuItem>
+      <DropdownMenuItem key="insert" onClick={() => insertSql(`INSERT INTO ${menuQn} (${colNames})\nVALUES (${colPlaceholders});`)}>
+        <Plus className="size-4" />
+        INSERT template
+      </DropdownMenuItem>
     ),
     cols.length > 0 && (
-      <MenuItem key="update" onClick={() => insertSql(`UPDATE ${menuQn}\nSET ${colSetters}\nWHERE ...;`)}>
-        <MenuItemIcon><UpdateIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>UPDATE template</ListItemText>
-      </MenuItem>
+      <DropdownMenuItem key="update" onClick={() => insertSql(`UPDATE ${menuQn}\nSET ${colSetters}\nWHERE ...;`)}>
+        <Pencil className="size-4" />
+        UPDATE template
+      </DropdownMenuItem>
     ),
-    <MenuItem key="delete" onClick={() => insertSql(`DELETE FROM ${menuQn}\nWHERE ...;`)}>
-      <MenuItemIcon><DeleteIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>DELETE template</ListItemText>
-    </MenuItem>,
-    <MenuItem key="drop" onClick={() => insertSql(`DROP TABLE ${menuQn};`)}>
-      <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>DROP TABLE</ListItemText>
-    </MenuItem>,
-    <Divider key="d2" />,
-    <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-      <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>Copy table name</ListItemText>
-    </MenuItem>,
+    <DropdownMenuItem key="delete" onClick={() => insertSql(`DELETE FROM ${menuQn}\nWHERE ...;`)}>
+      <Trash2 className="size-4" />
+      DELETE template
+    </DropdownMenuItem>,
+    <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP TABLE ${menuQn};`)}>
+      <Layers className="size-4" />
+      DROP TABLE
+    </DropdownMenuItem>,
+    <DropdownMenuSeparator key="d2" />,
+    <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+      <Copy className="size-4" />
+      {`Copy ${terms.tableObjectLabel} name`}
+    </DropdownMenuItem>,
   ];
 
-  const renderColumnMenuItems = () => {
+  const renderMongoTableMenuItems = () => {
+    const projection = Object.fromEntries(cols.map((column) => [column.name, 1]));
+    const documentTemplate = Object.fromEntries(
+      cols
+        .filter((column) => column.name !== '_id')
+        .slice(0, 8)
+        .map((column) => [column.name, mongoFieldPlaceholder(column)]),
+    );
+
+    return [
+      <DropdownMenuItem key="find-docs" onClick={() => insertSql(buildMongoCollectionQuery(menu?.objectName ?? '', menu?.schema))}>
+        <List className="size-4" />
+        Find documents
+      </DropdownMenuItem>,
+      cols.length > 0 && (
+        <DropdownMenuItem
+          key="find-projection"
+          onClick={() => insertSql(buildMongoCollectionQuery(menu?.objectName ?? '', menu?.schema, { projection }))}
+        >
+          <Play className="size-4" />
+          Find with projection
+        </DropdownMenuItem>
+      ),
+      <DropdownMenuItem
+        key="count-docs"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'count',
+          collection: menu?.objectName ?? '',
+          filter: {},
+        }))}
+      >
+        <FunctionSquare className="size-4" />
+        Count documents
+      </DropdownMenuItem>,
+      <DropdownMenuItem
+        key="aggregate"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'aggregate',
+          collection: menu?.objectName ?? '',
+          pipeline: [
+            { $match: {} },
+            { $limit: 100 },
+          ],
+        }))}
+      >
+        <CircleDot className="size-4" />
+        Aggregate template
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="d1" />,
+      <DropdownMenuItem
+        key="insert-doc"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'insertOne',
+          collection: menu?.objectName ?? '',
+          document: documentTemplate,
+        }))}
+      >
+        <Plus className="size-4" />
+        Insert document
+      </DropdownMenuItem>,
+      <DropdownMenuItem
+        key="update-docs"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'updateMany',
+          collection: menu?.objectName ?? '',
+          filter: {},
+          update: {
+            $set: documentTemplate,
+          },
+        }))}
+      >
+        <Pencil className="size-4" />
+        Update documents
+      </DropdownMenuItem>,
+      <DropdownMenuItem
+        key="delete-docs"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'deleteMany',
+          collection: menu?.objectName ?? '',
+          filter: {},
+        }))}
+      >
+        <Trash2 className="size-4" />
+        Delete documents
+      </DropdownMenuItem>,
+      <DropdownMenuItem
+        key="drop-collection"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'runCommand',
+          command: { drop: menu?.objectName ?? '' },
+        }))}
+      >
+        <Layers className="size-4" />
+        Drop collection
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="d2" />,
+      <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menu?.objectName ?? ''); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy collection name
+      </DropdownMenuItem>,
+    ];
+  };
+
+  const renderTableMenuItems = () => (
+    isMongoProtocol ? renderMongoTableMenuItems() : renderSqlTableMenuItems()
+  );
+
+  const renderSqlColumnMenuItems = () => {
     if (!menu?.column) return null;
     const colName = menu.column.name;
     return [
-      <MenuItem key="copy-col" onClick={() => { copyToClipboard(colName); closeMenu(); }}>
-        <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy column name</ListItemText>
-      </MenuItem>,
-      <MenuItem key="select-distinct" onClick={() => insertSql(`SELECT DISTINCT ${colName}\nFROM ${menuQn};`)}>
-        <MenuItemIcon><SelectIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>SELECT DISTINCT</ListItemText>
-      </MenuItem>,
-      <MenuItem key="where" onClick={() => { copyToClipboard(`WHERE ${colName} = ?`); closeMenu(); }}>
-        <MenuItemIcon><WhereIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy WHERE clause</ListItemText>
-      </MenuItem>,
-      <MenuItem key="order-by" onClick={() => { copyToClipboard(`ORDER BY ${colName} ASC`); closeMenu(); }}>
-        <MenuItemIcon><OrderIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy ORDER BY</ListItemText>
-      </MenuItem>,
-      <MenuItem key="group-count" onClick={() => insertSql(`SELECT ${colName}, COUNT(*)\nFROM ${menuQn}\nGROUP BY ${colName}\nORDER BY COUNT(*) DESC;`)}>
-        <MenuItemIcon><GroupIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>GROUP BY + COUNT</ListItemText>
-      </MenuItem>,
-      <Divider key="col-divider" />,
+      <DropdownMenuItem key="copy-col" onClick={() => { copyToClipboard(colName); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy column name
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="select-distinct" onClick={() => insertSql(`SELECT DISTINCT ${colName}\nFROM ${menuQn};`)}>
+        <Play className="size-4" />
+        SELECT DISTINCT
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="where" onClick={() => { copyToClipboard(`WHERE ${colName} = ?`); closeMenu(); }}>
+        <Filter className="size-4" />
+        Copy WHERE clause
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="order-by" onClick={() => { copyToClipboard(`ORDER BY ${colName} ASC`); closeMenu(); }}>
+        <ArrowUpDown className="size-4" />
+        Copy ORDER BY
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="group-count" onClick={() => insertSql(`SELECT ${colName}, COUNT(*)\nFROM ${menuQn}\nGROUP BY ${colName}\nORDER BY COUNT(*) DESC;`)}>
+        <CircleDot className="size-4" />
+        GROUP BY + COUNT
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="col-divider" />,
     ];
   };
+
+  const renderMongoColumnMenuItems = () => {
+    if (!menu?.column) return null;
+    const colName = menu.column.name;
+    return [
+      <DropdownMenuItem key="copy-col" onClick={() => { copyToClipboard(colName); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy field name
+      </DropdownMenuItem>,
+      <DropdownMenuItem
+        key="distinct"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'distinct',
+          collection: menu.objectName,
+          field: colName,
+          filter: {},
+        }))}
+      >
+        <Play className="size-4" />
+        Distinct values
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="copy-filter" onClick={() => { copyToClipboard(`{ "${colName}": "" }`); closeMenu(); }}>
+        <Filter className="size-4" />
+        Copy filter
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="copy-sort" onClick={() => { copyToClipboard(`{ "${colName}": 1 }`); closeMenu(); }}>
+        <ArrowUpDown className="size-4" />
+        Copy sort
+      </DropdownMenuItem>,
+      <DropdownMenuItem
+        key="group-count"
+        onClick={() => insertSql(menuMongoQuery({
+          operation: 'aggregate',
+          collection: menu.objectName,
+          pipeline: [
+            {
+              $group: {
+                _id: `$${colName}`,
+                count: { $sum: 1 },
+              },
+            },
+            { $sort: { count: -1 } },
+            { $limit: 100 },
+          ],
+        }))}
+      >
+        <CircleDot className="size-4" />
+        Group by field
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="col-divider" />,
+    ];
+  };
+
+  const renderColumnMenuItems = () => (
+    isMongoProtocol ? renderMongoColumnMenuItems() : renderSqlColumnMenuItems()
+  );
 
   const renderViewMenuItems = () => {
     // Check if view is materialized (look it up from schema data)
@@ -301,29 +462,29 @@ export default function DbSchemaBrowser({
     const isMaterialized = viewObj?.materialized;
 
     return [
-      <MenuItem key="select-all" onClick={() => insertSql(`${selectPrefix} *\nFROM ${menuQn}\n${limit};`)}>
-        <MenuItemIcon><SelectAllIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>SELECT *</ListItemText>
-      </MenuItem>,
-      <MenuItem key="count" onClick={() => insertSql(`SELECT COUNT(*)\nFROM ${menuQn};`)}>
-        <MenuItemIcon><FunctionIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>COUNT(*)</ListItemText>
-      </MenuItem>,
-      isMaterialized && dbProtocol === 'postgresql' && (
-        <MenuItem key="refresh-mat" onClick={() => insertSql(`REFRESH MATERIALIZED VIEW ${menuQn};`)}>
-          <MenuItemIcon><RefreshIcon fontSize="small" /></MenuItemIcon>
-          <ListItemText>REFRESH MATERIALIZED VIEW</ListItemText>
-        </MenuItem>
+      <DropdownMenuItem key="select-all" onClick={() => insertSql(buildLimitedSelectSql(normalizedProtocol, '*', menuQn))}>
+        <List className="size-4" />
+        SELECT *
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="count" onClick={() => insertSql(`SELECT COUNT(*)\nFROM ${menuQn};`)}>
+        <FunctionSquare className="size-4" />
+        COUNT(*)
+      </DropdownMenuItem>,
+      isMaterialized && normalizedProtocol === 'postgresql' && (
+        <DropdownMenuItem key="refresh-mat" onClick={() => insertSql(`REFRESH MATERIALIZED VIEW ${menuQn};`)}>
+          <RefreshCw className="size-4" />
+          REFRESH MATERIALIZED VIEW
+        </DropdownMenuItem>
       ),
-      <MenuItem key="drop" onClick={() => insertSql(`DROP VIEW ${menuQn};`)}>
-        <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>DROP VIEW</ListItemText>
-      </MenuItem>,
-      <Divider key="d1" />,
-      <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-        <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy name</ListItemText>
-      </MenuItem>,
+      <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP VIEW ${menuQn};`)}>
+        <Layers className="size-4" />
+        DROP VIEW
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="d1" />,
+      <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy name
+      </DropdownMenuItem>,
     ];
   };
 
@@ -333,19 +494,19 @@ export default function DbSchemaBrowser({
       : `SELECT ${menuQn}();`;
 
     return [
-      <MenuItem key="call" onClick={() => insertSql(callSyntax)}>
-        <MenuItemIcon><SelectIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Call function</ListItemText>
-      </MenuItem>,
-      <MenuItem key="drop" onClick={() => insertSql(`DROP FUNCTION ${menuQn};`)}>
-        <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>DROP FUNCTION</ListItemText>
-      </MenuItem>,
-      <Divider key="d1" />,
-      <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-        <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy name</ListItemText>
-      </MenuItem>,
+      <DropdownMenuItem key="call" onClick={() => insertSql(callSyntax)}>
+        <Play className="size-4" />
+        Call function
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP FUNCTION ${menuQn};`)}>
+        <Layers className="size-4" />
+        DROP FUNCTION
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="d1" />,
+      <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy name
+      </DropdownMenuItem>,
     ];
   };
 
@@ -355,32 +516,32 @@ export default function DbSchemaBrowser({
       : `CALL ${menuQn}();`;
 
     return [
-      <MenuItem key="call" onClick={() => insertSql(callSyntax)}>
-        <MenuItemIcon><SelectIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Call procedure</ListItemText>
-      </MenuItem>,
-      <MenuItem key="drop" onClick={() => insertSql(`DROP PROCEDURE ${menuQn};`)}>
-        <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>DROP PROCEDURE</ListItemText>
-      </MenuItem>,
-      <Divider key="d1" />,
-      <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-        <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy name</ListItemText>
-      </MenuItem>,
+      <DropdownMenuItem key="call" onClick={() => insertSql(callSyntax)}>
+        <Play className="size-4" />
+        Call procedure
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP PROCEDURE ${menuQn};`)}>
+        <Layers className="size-4" />
+        DROP PROCEDURE
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="d1" />,
+      <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy name
+      </DropdownMenuItem>,
     ];
   };
 
   const renderTriggerMenuItems = () => [
-    <MenuItem key="drop" onClick={() => insertSql(`DROP TRIGGER ${menuQn};`)}>
-      <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>DROP TRIGGER</ListItemText>
-    </MenuItem>,
-    <Divider key="d1" />,
-    <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-      <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>Copy name</ListItemText>
-    </MenuItem>,
+    <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP TRIGGER ${menuQn};`)}>
+      <Layers className="size-4" />
+      DROP TRIGGER
+    </DropdownMenuItem>,
+    <DropdownMenuSeparator key="d1" />,
+    <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+      <Copy className="size-4" />
+      Copy name
+    </DropdownMenuItem>,
   ];
 
   const renderSequenceMenuItems = () => {
@@ -399,44 +560,44 @@ export default function DbSchemaBrowser({
     }
 
     return [
-      <MenuItem key="nextval" onClick={() => insertSql(nextvalSql)}>
-        <MenuItemIcon><SelectIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>NEXTVAL</ListItemText>
-      </MenuItem>,
-      <MenuItem key="drop" onClick={() => insertSql(`DROP SEQUENCE ${menuQn};`)}>
-        <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>DROP SEQUENCE</ListItemText>
-      </MenuItem>,
-      <Divider key="d1" />,
-      <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-        <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-        <ListItemText>Copy name</ListItemText>
-      </MenuItem>,
+      <DropdownMenuItem key="nextval" onClick={() => insertSql(nextvalSql)}>
+        <Play className="size-4" />
+        NEXTVAL
+      </DropdownMenuItem>,
+      <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP SEQUENCE ${menuQn};`)}>
+        <Layers className="size-4" />
+        DROP SEQUENCE
+      </DropdownMenuItem>,
+      <DropdownMenuSeparator key="d1" />,
+      <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+        <Copy className="size-4" />
+        Copy name
+      </DropdownMenuItem>,
     ];
   };
 
   const renderPackageMenuItems = () => [
-    <MenuItem key="drop" onClick={() => insertSql(`DROP PACKAGE ${menuQn};`)}>
-      <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>DROP PACKAGE</ListItemText>
-    </MenuItem>,
-    <Divider key="d1" />,
-    <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-      <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>Copy name</ListItemText>
-    </MenuItem>,
+    <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP PACKAGE ${menuQn};`)}>
+      <Layers className="size-4" />
+      DROP PACKAGE
+    </DropdownMenuItem>,
+    <DropdownMenuSeparator key="d1" />,
+    <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+      <Copy className="size-4" />
+      Copy name
+    </DropdownMenuItem>,
   ];
 
   const renderTypeMenuItems = () => [
-    <MenuItem key="drop" onClick={() => insertSql(`DROP TYPE ${menuQn};`)}>
-      <MenuItemIcon><DropIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>DROP TYPE</ListItemText>
-    </MenuItem>,
-    <Divider key="d1" />,
-    <MenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
-      <MenuItemIcon><CopyIcon fontSize="small" /></MenuItemIcon>
-      <ListItemText>Copy name</ListItemText>
-    </MenuItem>,
+    <DropdownMenuItem key="drop" onClick={() => insertSql(`DROP TYPE ${menuQn};`)}>
+      <Layers className="size-4" />
+      DROP TYPE
+    </DropdownMenuItem>,
+    <DropdownMenuSeparator key="d1" />,
+    <DropdownMenuItem key="copy" onClick={() => { copyToClipboard(menuQn); closeMenu(); }}>
+      <Copy className="size-4" />
+      Copy name
+    </DropdownMenuItem>,
   ];
 
   const renderMenuContent = () => {
@@ -475,173 +636,124 @@ export default function DbSchemaBrowser({
     const isExpanded = expandedTables[tableKey] ?? false;
 
     return (
-      <Box key={tableKey}>
-        <ListItemButton
+      <div key={tableKey}>
+        <button
           onClick={() => toggleTable(tableKey)}
           onDoubleClick={() => onTableClick?.(table.name, schemaName)}
           onContextMenu={(e) => handleContextMenu(e, 'table', table.name, schemaName, table)}
-          sx={{ py: 0.25, pl: 4 }}
+          className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
         >
-          <ListItemIcon sx={{ minWidth: 28 }}>
-            <TableIcon sx={{ fontSize: 14, color: 'primary.main' }} />
-          </ListItemIcon>
-          <ListItemText
-            primary={table.name}
-            primaryTypographyProps={{
-              variant: 'body2',
-              noWrap: true,
-              sx: { fontSize: '0.8rem' },
-            }}
-          />
-          {isExpanded ? (
-            <ExpandLess sx={{ fontSize: 14 }} />
-          ) : (
-            <ExpandMore sx={{ fontSize: 14 }} />
+          <Table2 className="size-3.5 text-primary shrink-0" />
+          <span className="text-sm truncate flex-1">{table.name}</span>
+          {isMongoProtocol && (
+            <span className="text-[0.65rem] text-muted-foreground">{table.columns.length} fields</span>
           )}
-        </ListItemButton>
+          {isExpanded ? (
+            <ChevronUp className="size-3.5 shrink-0" />
+          ) : (
+            <ChevronDown className="size-3.5 shrink-0" />
+          )}
+        </button>
 
-        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-          <List dense disablePadding>
+        {isExpanded && (
+          <div>
             {table.columns.map((col) => (
-              <ListItemButton
+              <button
                 key={col.name}
-                sx={{ py: 0, pl: 7 }}
+                className="w-full flex items-center gap-1.5 py-0 pl-14 pr-2 hover:bg-accent/50 transition-colors text-left"
                 onContextMenu={(e) => handleContextMenu(e, 'table', table.name, schemaName, table, col)}
               >
-                <ListItemIcon sx={{ minWidth: 24 }}>
-                  {col.isPrimaryKey ? (
-                    <KeyIcon sx={{ fontSize: 12, color: 'warning.main' }} />
-                  ) : (
-                    <ColumnIcon sx={{ fontSize: 12, color: 'text.disabled' }} />
-                  )}
-                </ListItemIcon>
-                <ListItemText
-                  primary={col.name}
-                  secondary={`${col.dataType}${col.nullable ? ' (nullable)' : ''}`}
-                  primaryTypographyProps={{
-                    variant: 'caption',
-                    noWrap: true,
-                  }}
-                  secondaryTypographyProps={{
-                    variant: 'caption',
-                    sx: { fontSize: '0.65rem' },
-                  }}
-                />
-              </ListItemButton>
+                {col.isPrimaryKey ? (
+                  <KeyRound className="size-3 text-yellow-400 shrink-0" />
+                ) : (
+                  <Columns3 className="size-3 text-muted-foreground shrink-0" />
+                )}
+                <span className="text-xs truncate">{col.name}</span>
+                <span className="text-[0.65rem] text-muted-foreground ml-auto shrink-0">
+                  {col.dataType}{col.nullable ? ' (nullable)' : ''}
+                </span>
+              </button>
             ))}
-          </List>
-        </Collapse>
-      </Box>
+          </div>
+        )}
+      </div>
     );
   };
 
   const renderViewItem = (view: DbViewInfo, schemaName: string) => (
-    <ListItemButton
+    <button
       key={`${schemaName}.${view.name}`}
-      sx={{ py: 0.25, pl: 4 }}
+      className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
       onContextMenu={(e) => handleContextMenu(e, 'view', view.name, schemaName)}
     >
-      <ListItemIcon sx={{ minWidth: 28 }}>
-        <ViewIcon sx={{ fontSize: 14, color: 'info.main' }} />
-      </ListItemIcon>
-      <ListItemText
-        primary={view.name}
-        secondary={view.materialized ? 'materialized' : undefined}
-        primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { fontSize: '0.8rem' } }}
-        secondaryTypographyProps={{ variant: 'caption', sx: { fontSize: '0.65rem' } }}
-      />
-    </ListItemButton>
+      <Eye className="size-3.5 text-blue-400 shrink-0" />
+      <span className="text-sm truncate flex-1">{view.name}</span>
+      {view.materialized && <span className="text-[0.65rem] text-muted-foreground">materialized</span>}
+    </button>
   );
 
   const renderRoutineItem = (routine: DbRoutineInfo, schemaName: string, type: 'function' | 'procedure') => {
-    const Icon = type === 'function' ? FunctionIcon : ProcedureIcon;
+    const Icon = type === 'function' ? FunctionSquare : SettingsIcon;
     return (
-      <ListItemButton
+      <button
         key={`${schemaName}.${routine.name}`}
-        sx={{ py: 0.25, pl: 4 }}
+        className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
         onContextMenu={(e) => handleContextMenu(e, type, routine.name, schemaName)}
       >
-        <ListItemIcon sx={{ minWidth: 28 }}>
-          <Icon sx={{ fontSize: 14, color: 'secondary.main' }} />
-        </ListItemIcon>
-        <ListItemText
-          primary={routine.name}
-          secondary={type === 'function' && routine.returnType ? `\u2192 ${routine.returnType}` : undefined}
-          primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { fontSize: '0.8rem' } }}
-          secondaryTypographyProps={{ variant: 'caption', sx: { fontSize: '0.65rem' } }}
-        />
-      </ListItemButton>
+        <Icon className="size-3.5 text-purple-400 shrink-0" />
+        <span className="text-sm truncate flex-1">{routine.name}</span>
+        {type === 'function' && routine.returnType && (
+          <span className="text-[0.65rem] text-muted-foreground">{'\u2192'} {routine.returnType}</span>
+        )}
+      </button>
     );
   };
 
   const renderTriggerItem = (trigger: DbTriggerInfo, schemaName: string) => (
-    <ListItemButton
+    <button
       key={`${schemaName}.${trigger.name}`}
-      sx={{ py: 0.25, pl: 4 }}
+      className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
       onContextMenu={(e) => handleContextMenu(e, 'trigger', trigger.name, schemaName)}
     >
-      <ListItemIcon sx={{ minWidth: 28 }}>
-        <TriggerIcon sx={{ fontSize: 14, color: 'warning.main' }} />
-      </ListItemIcon>
-      <ListItemText
-        primary={trigger.name}
-        secondary={`on ${trigger.tableName}`}
-        primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { fontSize: '0.8rem' } }}
-        secondaryTypographyProps={{ variant: 'caption', sx: { fontSize: '0.65rem' } }}
-      />
-    </ListItemButton>
+      <Zap className="size-3.5 text-yellow-400 shrink-0" />
+      <span className="text-sm truncate flex-1">{trigger.name}</span>
+      <span className="text-[0.65rem] text-muted-foreground">on {trigger.tableName}</span>
+    </button>
   );
 
   const renderSequenceItem = (seq: DbSequenceInfo, schemaName: string) => (
-    <ListItemButton
+    <button
       key={`${schemaName}.${seq.name}`}
-      sx={{ py: 0.25, pl: 4 }}
+      className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
       onContextMenu={(e) => handleContextMenu(e, 'sequence', seq.name, schemaName)}
     >
-      <ListItemIcon sx={{ minWidth: 28 }}>
-        <SequenceIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-      </ListItemIcon>
-      <ListItemText
-        primary={seq.name}
-        primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { fontSize: '0.8rem' } }}
-      />
-    </ListItemButton>
+      <ListOrdered className="size-3.5 text-muted-foreground shrink-0" />
+      <span className="text-sm truncate">{seq.name}</span>
+    </button>
   );
 
   const renderPackageItem = (pkg: DbPackageInfo, schemaName: string) => (
-    <ListItemButton
+    <button
       key={`${schemaName}.${pkg.name}`}
-      sx={{ py: 0.25, pl: 4 }}
+      className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
       onContextMenu={(e) => handleContextMenu(e, 'package', pkg.name, schemaName)}
     >
-      <ListItemIcon sx={{ minWidth: 28 }}>
-        <PackageIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-      </ListItemIcon>
-      <ListItemText
-        primary={pkg.name}
-        secondary={pkg.hasBody ? 'body' : undefined}
-        primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { fontSize: '0.8rem' } }}
-        secondaryTypographyProps={{ variant: 'caption', sx: { fontSize: '0.65rem' } }}
-      />
-    </ListItemButton>
+      <Package className="size-3.5 text-muted-foreground shrink-0" />
+      <span className="text-sm truncate flex-1">{pkg.name}</span>
+      {pkg.hasBody && <span className="text-[0.65rem] text-muted-foreground">body</span>}
+    </button>
   );
 
   const renderTypeItem = (typeObj: DbTypeInfo, schemaName: string) => (
-    <ListItemButton
+    <button
       key={`${schemaName}.${typeObj.name}`}
-      sx={{ py: 0.25, pl: 4 }}
+      className="w-full flex items-center gap-1.5 py-0.5 pl-8 pr-2 hover:bg-accent/50 transition-colors text-left"
       onContextMenu={(e) => handleContextMenu(e, 'type', typeObj.name, schemaName)}
     >
-      <ListItemIcon sx={{ minWidth: 28 }}>
-        <TypeIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-      </ListItemIcon>
-      <ListItemText
-        primary={typeObj.name}
-        secondary={typeObj.kind}
-        primaryTypographyProps={{ variant: 'body2', noWrap: true, sx: { fontSize: '0.8rem' } }}
-        secondaryTypographyProps={{ variant: 'caption', sx: { fontSize: '0.65rem' } }}
-      />
-    </ListItemButton>
+      <ShapesIcon className="size-3.5 text-muted-foreground shrink-0" />
+      <span className="text-sm truncate flex-1">{typeObj.name}</span>
+      {typeObj.kind && <span className="text-[0.65rem] text-muted-foreground">{typeObj.kind}</span>}
+    </button>
   );
 
   const renderSectionItems = (sectionKey: SectionType, items: SchemaGroup[SectionType], schemaName: string) => {
@@ -668,69 +780,55 @@ export default function DbSchemaBrowser({
   };
 
   return (
-    <Box
-      sx={{
-        width: 260,
-        minWidth: 260,
-        borderLeft: 1,
-        borderColor: 'divider',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          px: 1,
-          py: 0.5,
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-          Schema
-        </Typography>
-        <Box>
-          <Tooltip title="Refresh schema">
-            <IconButton size="small" onClick={onRefresh} disabled={loading}>
-              <RefreshIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Close schema browser">
-            <IconButton size="small" onClick={onClose}>
-              <CollapseIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      </Box>
+    <div className="w-[260px] min-w-[260px] border-l border-border flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-2 py-1 border-b border-border">
+        <span className="text-sm font-semibold">
+          {terms.title}
+        </span>
+        <div className="flex">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title="Refresh schema"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            title="Close schema browser"
+            onClick={onClose}
+          >
+            <ChevronLeft className="size-4" />
+          </Button>
+        </div>
+      </div>
 
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
+      <div className="flex-1 overflow-auto">
         {totalObjects === 0 && !loading && (
-          <Typography variant="caption" color="text.secondary" sx={{ p: 2, display: 'block' }}>
-            No objects found. Connect to a database to browse its schema.
-          </Typography>
+          <span className="text-xs text-muted-foreground p-4 block">
+            {terms.emptyMessage}
+          </span>
         )}
 
         {loading && (
-          <Typography variant="caption" color="text.secondary" sx={{ p: 2, display: 'block' }}>
+          <span className="text-xs text-muted-foreground p-4 block">
             Loading schema...
-          </Typography>
+          </span>
         )}
 
         {Object.entries(schemaGroups).map(([schemaName, group]) => (
-          <Box key={schemaName}>
-            <Typography
-              variant="overline"
-              sx={{ px: 2, pt: 1, display: 'block', color: 'text.secondary' }}
-            >
-              {schemaName}
-            </Typography>
-            <Divider />
+          <div key={schemaName}>
+            <span className="text-[0.65rem] uppercase tracking-wide text-muted-foreground px-4 pt-2 block">
+              {`${terms.groupLabel}: ${schemaName}`}
+            </span>
+            <Separator />
 
-            {SECTION_CONFIGS.map(({ key, label, icon }) => {
+            {sectionConfigs.map(({ key, label, icon }) => {
               const items = group[key];
               if (items.length === 0) return null;
 
@@ -738,52 +836,50 @@ export default function DbSchemaBrowser({
               const expanded = isSectionExpanded(schemaName, key);
 
               return (
-                <Box key={sectionKey}>
-                  <ListItemButton
+                <div key={sectionKey}>
+                  <button
                     onClick={() => toggleSection(sectionKey)}
-                    sx={{ py: 0.25, pl: 2 }}
+                    className="w-full flex items-center gap-1.5 py-0.5 pl-4 pr-2 hover:bg-accent/50 transition-colors text-left"
                   >
-                    <ListItemIcon sx={{ minWidth: 28 }}>
-                      {icon}
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={`${label} (${items.length})`}
-                      primaryTypographyProps={{
-                        variant: 'body2',
-                        noWrap: true,
-                        sx: { fontSize: '0.8rem', fontWeight: 500 },
-                      }}
-                    />
+                    {icon}
+                    <span className="text-sm font-medium truncate flex-1">
+                      {label} ({items.length})
+                    </span>
                     {expanded ? (
-                      <ExpandLess sx={{ fontSize: 14 }} />
+                      <ChevronUp className="size-3.5" />
                     ) : (
-                      <ExpandMore sx={{ fontSize: 14 }} />
+                      <ChevronDown className="size-3.5" />
                     )}
-                  </ListItemButton>
+                  </button>
 
-                  <Collapse in={expanded} timeout="auto" unmountOnExit>
-                    <List dense disablePadding>
+                  {expanded && (
+                    <div>
                       {renderSectionItems(key, items, schemaName)}
-                    </List>
-                  </Collapse>
-                </Box>
+                    </div>
+                  )}
+                </div>
               );
             })}
-          </Box>
+          </div>
         ))}
-      </Box>
+      </div>
 
       {/* Context menu */}
-      <Menu
-        open={Boolean(menu)}
-        anchorEl={menu?.anchor}
-        onClose={closeMenu}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{ paper: { sx: { minWidth: 220, maxWidth: 320 } } }}
-      >
-        {renderMenuContent()}
-      </Menu>
-    </Box>
+      <DropdownMenu open={Boolean(menu)} onOpenChange={(open) => !open && closeMenu()}>
+        <DropdownMenuTrigger asChild>
+          <span className="hidden" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          className="min-w-[220px] max-w-[320px]"
+          style={menu?.anchor ? {
+            position: 'fixed',
+            left: menu.anchor.getBoundingClientRect().left,
+            top: menu.anchor.getBoundingClientRect().bottom,
+          } : undefined}
+        >
+          {renderMenuContent()}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   );
 }

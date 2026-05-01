@@ -23,7 +23,7 @@ Security scanning for Arsenale.
 ${BOLD}Modes:${NC}
   --quick     npm audit + ESLint security only (fast, no container needed)
   (default)   + Trivy filesystem scan (vuln, misconfig, secret)
-  --docker    + build and scan Docker images (server, client, ssh-gateway)
+  --docker    + build and scan Docker images (control-plane-api, client, ssh-gateway)
 
 ${BOLD}Options:${NC}
   --help, -h  Show this help message
@@ -54,8 +54,14 @@ done
 # ── Container runtime (only needed for default and docker modes) ──────────
 CONTAINER_RT=""
 if [[ "$MODE" != "quick" ]]; then
-  CONTAINER_RT="$("$SCRIPT_DIR/container-runtime.sh")"
-  echo -e "${CYAN}Container runtime:${NC} $CONTAINER_RT"
+  if command -v podman &>/dev/null; then
+    CONTAINER_RT="podman"
+  elif command -v docker &>/dev/null; then
+    CONTAINER_RT="docker"
+  else
+    echo -e "${YELLOW}No container runtime found (podman/docker) — skipping container scans${NC}"
+  fi
+  [[ -n "$CONTAINER_RT" ]] && echo -e "${CYAN}Container runtime:${NC} $CONTAINER_RT"
 fi
 
 # ── Tracking ────────────────────────────────────────────────────────────────
@@ -135,18 +141,23 @@ fi
 # ── Phase 4: Docker image scan (docker mode only) ─────────────────────────
 if [[ "$MODE" == "docker" ]]; then
   IMAGES=(
-    "server:./server/Dockerfile:."
-    "client:./client/Dockerfile:."
-    "ssh-gateway:./ssh-gateway/Dockerfile:./ssh-gateway"
+    "control-plane-api:./backend/Dockerfile:.:SERVICE=control-plane-api"
+    "client:./client/Dockerfile:.:"
+    "ssh-gateway:./gateways/ssh-gateway/Dockerfile:.:"
   )
 
   for image_spec in "${IMAGES[@]}"; do
-    IFS=: read -r name dockerfile context <<< "$image_spec"
+    IFS=: read -r name dockerfile context build_arg <<< "$image_spec"
     print_header "Phase 4: Build & scan $name image"
 
     echo -e "${CYAN}  Building arsenale-$name:scan ...${NC}"
     set +e
-    $CONTAINER_RT build -t "arsenale-$name:scan" -f "$dockerfile" "$context" 2>&1
+    build_cmd=("$CONTAINER_RT" build -t "arsenale-$name:scan" -f "$dockerfile")
+    if [[ -n "$build_arg" ]]; then
+      build_cmd+=(--build-arg "$build_arg")
+    fi
+    build_cmd+=("$context")
+    "${build_cmd[@]}" 2>&1
     BUILD_EXIT=$?
     set -e
 

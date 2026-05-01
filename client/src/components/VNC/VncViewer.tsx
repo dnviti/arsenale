@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Box, CircularProgress, Typography, Alert } from '@mui/material';
+import { Loader2 } from 'lucide-react';
 import * as Guacamole from '@glokon/guacamole-common-js';
-import { io } from 'socket.io-client';
 import api from '../../api/client';
-import { useAuthStore } from '../../store/authStore';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import DockedToolbar from '../shared/DockedToolbar';
@@ -34,7 +32,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
   const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
   useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
 
-  // Reconnection state refs
   const wasConnectedRef = useRef(false);
   const permanentErrorRef = useRef(false);
   const lastGuacErrorRef = useRef('');
@@ -54,7 +51,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
 
     const gen = ++connectionGenRef.current;
 
-    // Clean up previous session
     if (heartbeatRef.current) {
       clearInterval(heartbeatRef.current);
       heartbeatRef.current = null;
@@ -99,7 +95,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     if (resDlp) { setDlpPolicy(resDlp); dlpPolicyRef.current = resDlp; }
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/guacamole/?token=${encodeURIComponent(token)}`;
+    const wsUrl = `${wsProtocol}//${window.location.host}/guacamole/`;
 
     const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
     const client = new Guacamole.Client(tunnel);
@@ -132,7 +128,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     client.onstatechange = (state: number) => {
       if (connectionGenRef.current !== gen) return;
       switch (state) {
-        case 3: // CONNECTED
+        case 3:
           connected = true;
           wasConnectedRef.current = true;
           connectedAtRef.current = Date.now();
@@ -162,12 +158,12 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
             }, 10_000);
           }
           break;
-        case 4: // UNSTABLE
+        case 4:
           if (connected) {
             setStatus('unstable');
           }
           break;
-        case 5: // DISCONNECTED
+        case 5:
           connected = false;
           if (heartbeatRef.current) {
             clearInterval(heartbeatRef.current);
@@ -204,7 +200,14 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     };
 
     const preventContextMenu = (e: Event) => e.preventDefault();
+    const preventMiddleClickDefault = (event: MouseEvent) => {
+      if (event.button !== 1) return;
+      event.preventDefault();
+    };
     display.addEventListener('contextmenu', preventContextMenu);
+    display.addEventListener('auxclick', preventMiddleClickDefault);
+    display.addEventListener('mousedown', preventMiddleClickDefault);
+    display.addEventListener('mouseup', preventMiddleClickDefault);
 
     const mouse = new Guacamole.Mouse(display);
     mouse.onEach(['mousedown', 'mouseup', 'mousemove'], (e) => {
@@ -215,7 +218,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
       }
     });
 
-    // Clipboard: remote → browser
     client.onclipboard = (stream: Guacamole.InputStream, mimetype: string) => {
       if (mimetype !== 'text/plain') return;
       const reader = new Guacamole.StringReader(stream);
@@ -244,10 +246,13 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
       client.sendKeyEvent(0, keysym);
     };
 
-    client.connect('');
+    client.connect(`token=${encodeURIComponent(token)}`);
 
     innerCleanupRef.current = () => {
       display.removeEventListener('contextmenu', preventContextMenu);
+      display.removeEventListener('auxclick', preventMiddleClickDefault);
+      display.removeEventListener('mousedown', preventMiddleClickDefault);
+      display.removeEventListener('mouseup', preventMiddleClickDefault);
       keyboard.onkeydown = null;
       keyboard.onkeyup = null;
     };
@@ -258,10 +263,8 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     connectSession,
   );
 
-  // Keep activeRef in sync with prop (used by Guacamole keyboard/mouse handlers)
   useEffect(() => { activeRef.current = isActive; }, [isActive]);
 
-  // Clipboard: browser → remote
   const isFirefox = /firefox/i.test(navigator.userAgent);
   const syncClipboardToRemote = useCallback(() => {
     if (isFirefox) return;
@@ -280,7 +283,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     });
   }, [isFirefox]);
 
-  // Keyboard capture, focus management, and fullscreen
   const { isFullscreen, toggleFullscreen } = useKeyboardCapture({
     focusRef: displayRef,
     fullscreenRef: containerRef,
@@ -291,10 +293,8 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     suppressBrowserKeys: true,
   });
 
-  // Ref-based bridge so connectSession (defined before the hook) always gets the latest callback
   const onRemoteClipboardRef = useRef<(text: string) => void>(() => {});
 
-  // Build toolbar actions via shared hook
   const { actions: toolbarActions, onRemoteClipboard } = useGuacToolbarActions({
     protocol: 'VNC',
     clientRef,
@@ -305,35 +305,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
   });
   useEffect(() => { onRemoteClipboardRef.current = onRemoteClipboard; }, [onRemoteClipboard]);
 
-  // Listen for admin-initiated session termination
-  useEffect(() => {
-    const accessToken = useAuthStore.getState().accessToken;
-    if (!accessToken) return;
-
-    const socket = io('/notifications', {
-      auth: { token: accessToken },
-      transports: ['websocket'],
-    });
-
-    const handler = (data: { sessionId: string }) => {
-      if (data.sessionId && data.sessionId === sessionIdRef.current) {
-        permanentErrorRef.current = true;
-        cancelReconnect();
-        setStatus('error');
-        setError('Session terminated by administrator');
-        clientRef.current?.disconnect();
-      }
-    };
-
-    socket.on('session:terminated', handler);
-
-    return () => {
-      socket.off('session:terminated', handler);
-      socket.disconnect();
-    };
-  }, [connectionId, cancelReconnect]);
-
-  // Initial connection
   useEffect(() => {
     if (!displayRef.current) return;
 
@@ -342,7 +313,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     lastGuacErrorRef.current = '';
     connectedAtRef.current = 0;
 
-    // Capture ref value for cleanup — React refs may change by the time cleanup runs
     const displayEl = displayRef.current;
 
     connectSession().catch((err: unknown) => {
@@ -353,7 +323,6 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     const mountGen = connectionGenRef.current;
 
     return () => {
-      // Copy ref to local variable — React refs may change by the time cleanup runs.
       const genRef = connectionGenRef;
       ++genRef.current;
       cancelReconnect();
@@ -389,30 +358,21 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
   }, [connectionId]);
 
   return (
-    <Box ref={containerRef} sx={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div ref={containerRef} className="flex flex-1 flex-row relative overflow-hidden">
+      {status === 'connected' && (
+        <DockedToolbar actions={toolbarActions} />
+      )}
+      <div className="flex flex-1 flex-col min-w-0 relative">
       {status === 'connecting' && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1,
-            bgcolor: 'rgba(0,0,0,0.7)',
-          }}
-        >
-          <CircularProgress size={24} sx={{ mr: 1 }} />
-          <Typography>Connecting to VNC session...</Typography>
-        </Box>
+        <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/70">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          <span>Connecting to VNC session...</span>
+        </div>
       )}
       {status === 'error' && reconnectState === 'idle' && (
-        <Alert severity="error" sx={{ m: 1 }}>
+        <div className="m-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
           {error}
-        </Alert>
+        </div>
       )}
       {status === 'unstable' && reconnectState === 'idle' && (
         <ReconnectOverlay state="unstable" attempt={0} maxRetries={maxRetries} protocol="VNC" />
@@ -433,20 +393,12 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
           }}
         />
       )}
-      {status === 'connected' && (
-        <DockedToolbar actions={toolbarActions} containerRef={containerRef} />
-      )}
-      <Box
+      <div
         ref={displayRef}
         tabIndex={-1}
-        sx={{
-          flex: 1,
-          overflow: 'hidden',
-          cursor: status === 'connected' ? 'none' : 'default',
-          outline: 'none',
-          '& > div': { width: '100% !important', height: '100% !important' },
-        }}
+        className={`flex-1 overflow-hidden outline-none ${status === 'connected' ? 'cursor-none' : 'cursor-default'} [&>div]:!w-full [&>div]:!h-full`}
       />
-    </Box>
+      </div>{/* end inner content column */}
+    </div>
   );
 }

@@ -1,5 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { Socket } from 'socket.io-client';
+
+export interface SftpSocket {
+  connected: boolean;
+  on<TArgs extends unknown[]>(event: string, handler: (...args: TArgs) => void): void;
+  off<TArgs extends unknown[]>(event: string, handler: (...args: TArgs) => void): void;
+  emit<TArgs extends unknown[]>(event: string, payload?: unknown, callback?: (...args: TArgs) => void): void;
+}
 
 export interface TransferItem {
   transferId: string;
@@ -23,7 +29,7 @@ function updateTransfer(
   setter((prev) => prev.map((t) => (t.transferId === transferId ? { ...t, ...patch } : t)));
 }
 
-export function useSftpTransfers(socket: Socket | null) {
+export function useSftpTransfers(socket: SftpSocket | null) {
   const [transfers, setTransfers] = useState<TransferItem[]>([]);
   const downloadBuffers = useRef<Map<string, ArrayBuffer[]>>(new Map());
 

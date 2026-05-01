@@ -1,7 +1,128 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --background: #08080a;
+  --foreground: #f4f4f5;
+  --card: #0f0f12;
+  --card-foreground: #f4f4f5;
+  --popover: #0f0f12;
+  --popover-foreground: #f4f4f5;
+  --primary: #00e5a0;
+  --primary-foreground: #07150f;
+  --secondary: #17332b;
+  --secondary-foreground: #f4f4f5;
+  --muted: #17171b;
+  --muted-foreground: #a1a1aa;
+  --accent: #142720;
+  --accent-foreground: #f4f4f5;
+  --destructive: #ef4444;
+  --destructive-foreground: #fff1f1;
+  --border: #232328;
+  --input: #232328;
+  --ring: #00e5a0;
+  --chart-1: #00e5a0;
+  --chart-2: #00cc8e;
+  --chart-3: #00e5a0;
+  --chart-4: #059669;
+  --chart-5: #f59e0b;
+  --sidebar: #0f0f12;
+  --sidebar-foreground: #f4f4f5;
+  --sidebar-primary: #00e5a0;
+  --sidebar-primary-foreground: #07150f;
+  --sidebar-accent: #142720;
+  --sidebar-accent-foreground: #f4f4f5;
+  --sidebar-border: #232328;
+  --sidebar-ring: #00e5a0;
+  --radius: 0.75rem;
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-heading: "Instrument Serif", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --arsenale-accent: var(--primary);
+  --arsenale-bg: var(--background);
+  --arsenale-border: var(--border);
+  --arsenale-muted: #52525b;
+}
+
 /* ─── Arsenale — Global Styles ─── */
 
-html {
-  scroll-behavior: smooth;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    min-height: 100vh;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
 }
 
 /* Grain texture overlay — must stay below MUI popups (≥1000) and Monaco widgets */
@@ -39,4 +160,55 @@ body::after {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--arsenale-muted, #52525b);
+}
+
+/* ─── Settings panel ─── */
+
+.settings-sidebar nav button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.settings-content .settings-section:first-child {
+  margin-top: 0;
+  border-top: none;
+  padding-top: 0;
+}
+
+/* Reduce card visual weight inside settings sections */
+.settings-content [data-slot="card"] {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--card) 60%, transparent);
+}
+
+/* Compact table rows inside settings */
+.settings-content table tbody tr td {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+/* Subtle entry animation for section content */
+.settings-section > :not(:first-child) {
+  animation: settings-fade-in 0.2s ease-out;
+}
+
+@keyframes settings-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dark {
+  --sidebar: hsl(240 5.9% 10%);
+  --sidebar-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-primary: hsl(224.3 76.3% 48%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(240 3.7% 15.9%);
+  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
+  --sidebar-border: hsl(240 3.7% 15.9%);
+  --sidebar-ring: hsl(217.2 91.2% 59.8%);
 }

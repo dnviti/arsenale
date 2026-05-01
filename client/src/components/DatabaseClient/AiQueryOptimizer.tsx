@@ -1,18 +1,15 @@
 import { useState, useCallback } from 'react';
 import {
-  Box, Typography, Button, Card, CardContent, CardActions, Chip,
-  CircularProgress, Alert, Switch, FormControlLabel, Divider, Paper,
-  Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
-} from '@mui/material';
+  Sparkles, Check, X, RefreshCw, Shield, Send, Maximize2, Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import {
-  AutoFixHigh as OptimizeIcon,
-  Check as CheckIcon,
-  Close as DismissIcon,
-  Refresh as RetryIcon,
-  Security as PermissionIcon,
-  Send as SendIcon,
-  OpenInFull as ExpandIcon,
-} from '@mui/icons-material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 import {
   optimizeQuery, continueOptimization,
   type OptimizeQueryResult, type DataRequest,
@@ -131,16 +128,12 @@ export default function AiQueryOptimizer({
 
   if (step === 'idle') {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
-        <Button
-          variant="contained"
-          startIcon={<OptimizeIcon />}
-          onClick={handleOptimize}
-          size="small"
-        >
+      <div className="flex justify-center py-4">
+        <Button onClick={handleOptimize} size="sm">
+          <Sparkles className="size-4" />
           Optimize with AI
         </Button>
-      </Box>
+      </div>
     );
   }
 
@@ -148,10 +141,10 @@ export default function AiQueryOptimizer({
 
   if (step === 'loading') {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5, py: 3 }}>
-        <CircularProgress size={24} />
-        <Typography variant="body2" color="text.secondary">Analyzing query...</Typography>
-      </Box>
+      <div className="flex items-center justify-center gap-3 py-6">
+        <Loader2 className="size-5 animate-spin" />
+        <span className="text-sm text-muted-foreground">Analyzing query...</span>
+      </div>
     );
   }
 
@@ -159,12 +152,15 @@ export default function AiQueryOptimizer({
 
   if (step === 'error') {
     return (
-      <Box sx={{ py: 2 }}>
-        <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>
-        <Button size="small" startIcon={<RetryIcon />} onClick={handleOptimize}>
+      <div className="py-4">
+        <div className="rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 mb-2">
+          {error}
+        </div>
+        <Button variant="ghost" size="sm" onClick={handleOptimize}>
+          <RefreshCw className="size-4" />
           Retry
         </Button>
-      </Box>
+      </div>
     );
   }
 
@@ -174,64 +170,60 @@ export default function AiQueryOptimizer({
     const approvedCount = Object.values(approvals).filter(Boolean).length;
 
     return (
-      <Box sx={{ py: 1 }}>
-        <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <PermissionIcon fontSize="small" color="warning" />
+      <div className="py-2">
+        <h4 className="text-sm font-semibold mb-1 flex items-center gap-1">
+          <Shield className="size-4 text-yellow-400" />
           AI needs additional data ({approvedCount}/{dataRequests.length} approved)
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+        </h4>
+        <p className="text-sm text-muted-foreground mb-3">
           Review and approve the data the AI needs to analyze your query:
-        </Typography>
+        </p>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 2 }}>
+        <div className="flex flex-col gap-2 mb-4">
           {dataRequests.map((req, i) => (
-            <Card key={i} variant="outlined" sx={{ bgcolor: approvals[i] ? 'action.hover' : undefined }}>
-              <CardContent sx={{ py: 1, '&:last-child': { pb: 1 } }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                      <Chip
-                        label={req.type.replace(/_/g, ' ')}
-                        size="small"
-                        color="primary"
-                        variant="outlined"
-                        sx={{ height: 20, textTransform: 'capitalize' }}
-                      />
-                      <Typography variant="body2" fontWeight={600}>{req.target}</Typography>
-                    </Box>
-                    <Typography variant="caption" color="text.secondary">{req.reason}</Typography>
-                  </Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={approvals[i] ?? false}
-                        onChange={(_, checked) => setApprovals((prev) => ({ ...prev, [i]: checked }))}
-                        size="small"
-                      />
-                    }
-                    label={approvals[i] ? 'Allow' : 'Deny'}
-                    labelPlacement="start"
-                    sx={{ ml: 2, mr: 0 }}
+            <div
+              key={i}
+              className={cn(
+                'rounded-lg border border-border p-3',
+                approvals[i] && 'bg-accent/50',
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge variant="outline" className="capitalize h-5">
+                      {req.type.replace(/_/g, ' ')}
+                    </Badge>
+                    <span className="text-sm font-semibold">{req.target}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{req.reason}</span>
+                </div>
+                <div className="flex items-center gap-2 ml-4">
+                  <span className="text-xs text-muted-foreground">
+                    {approvals[i] ? 'Allow' : 'Deny'}
+                  </span>
+                  <Switch
+                    checked={approvals[i] ?? false}
+                    onCheckedChange={(checked) => setApprovals((prev) => ({ ...prev, [i]: checked }))}
                   />
-                </Box>
-              </CardContent>
-            </Card>
+                </div>
+              </div>
+            </div>
           ))}
-        </Box>
+        </div>
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <div className="flex gap-2">
           <Button
-            variant="contained"
-            size="small"
-            startIcon={<SendIcon />}
+            size="sm"
             onClick={handleSubmitApproved}
             disabled={approvedCount === 0}
           >
+            <Send className="size-4" />
             Submit approved ({approvedCount})
           </Button>
-          <Button size="small" color="inherit" onClick={onDismiss}>Cancel</Button>
-        </Box>
-      </Box>
+          <Button variant="ghost" size="sm" onClick={onDismiss}>Cancel</Button>
+        </div>
+      </div>
     );
   }
 
@@ -239,190 +231,131 @@ export default function AiQueryOptimizer({
 
   if (step === 'result' && result) {
     return (
-      <Box sx={{ py: 1 }}>
-        <Typography variant="subtitle2" gutterBottom>AI Optimization Result</Typography>
+      <div className="py-2">
+        <h4 className="text-sm font-semibold mb-2">AI Optimization Result</h4>
 
         {result.explanation && (
-          <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5, bgcolor: 'action.hover' }}>
-            <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+          <div className="border border-border rounded-lg p-3 mb-3 bg-accent/30">
+            <p className="text-sm whitespace-pre-wrap">
               {result.explanation}
-            </Typography>
-          </Paper>
+            </p>
+          </div>
         )}
 
         {result.changes && result.changes.length > 0 && (
-          <Box sx={{ mb: 1.5 }}>
-            <Typography variant="caption" fontWeight={600} color="text.secondary" gutterBottom>
+          <div className="mb-3">
+            <span className="text-xs font-semibold text-muted-foreground">
               Changes:
-            </Typography>
-            {result.changes.map((change, i) => (
-              <Chip key={i} label={change} size="small" sx={{ mr: 0.5, mb: 0.5 }} />
-            ))}
-          </Box>
+            </span>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {result.changes.map((change, i) => (
+                <Badge key={i} variant="secondary">{change}</Badge>
+              ))}
+            </div>
+          </div>
         )}
 
         {result.optimizedSql && result.optimizedSql !== sql && (
           <>
-            <Divider sx={{ my: 1.5 }} />
-            <Box
-              sx={{
-                display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5,
-                cursor: 'pointer', '&:hover': { opacity: 0.9 },
-              }}
+            <Separator className="my-3" />
+            <div
+              className="grid grid-cols-2 gap-3 cursor-pointer hover:opacity-90"
               onClick={() => setReviewOpen(true)}
             >
-              <Box>
-                <Typography variant="caption" fontWeight={600} color="text.secondary">Original</Typography>
-                <Box
-                  sx={{
-                    mt: 0.5, p: 1, bgcolor: 'error.main', color: 'error.contrastText',
-                    borderRadius: 1, fontFamily: 'monospace', fontSize: '0.8rem',
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto',
-                    opacity: 0.85,
-                  }}
-                >
+              <div>
+                <span className="text-xs font-semibold text-muted-foreground">Original</span>
+                <div className="mt-1 p-2 bg-red-900/40 text-red-200 rounded font-mono text-[0.8rem] whitespace-pre-wrap break-all max-h-[200px] overflow-auto opacity-85">
                   {sql}
-                </Box>
-              </Box>
-              <Box>
-                <Typography variant="caption" fontWeight={600} color="text.secondary">Optimized</Typography>
-                <Box
-                  sx={{
-                    mt: 0.5, p: 1, bgcolor: 'success.main', color: 'success.contrastText',
-                    borderRadius: 1, fontFamily: 'monospace', fontSize: '0.8rem',
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto',
-                  }}
-                >
+                </div>
+              </div>
+              <div>
+                <span className="text-xs font-semibold text-muted-foreground">Optimized</span>
+                <div className="mt-1 p-2 bg-green-900/40 text-green-200 rounded font-mono text-[0.8rem] whitespace-pre-wrap break-all max-h-[200px] overflow-auto">
                   {result.optimizedSql}
-                </Box>
-              </Box>
-            </Box>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}
-            >
-              <ExpandIcon sx={{ fontSize: 14 }} /> Click to review and accept changes
-            </Typography>
+                </div>
+              </div>
+            </div>
+            <span className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+              <Maximize2 className="size-3.5" /> Click to review and accept changes
+            </span>
           </>
         )}
 
-        <CardActions sx={{ px: 0, pt: 1.5 }}>
+        <div className="flex gap-2 pt-3">
           {result.optimizedSql && result.optimizedSql !== sql && (
-            <Button
-              size="small"
-              variant="contained"
-              startIcon={<CheckIcon />}
-              onClick={() => setReviewOpen(true)}
-            >
+            <Button size="sm" onClick={() => setReviewOpen(true)}>
+              <Check className="size-4" />
               Review & Apply
             </Button>
           )}
-          <Button
-            size="small"
-            startIcon={<RetryIcon />}
-            onClick={handleOptimize}
-          >
+          <Button variant="ghost" size="sm" onClick={handleOptimize}>
+            <RefreshCw className="size-4" />
             Re-optimize
           </Button>
-          <Button
-            size="small"
-            color="inherit"
-            startIcon={<DismissIcon />}
-            onClick={onDismiss}
-          >
+          <Button variant="ghost" size="sm" onClick={onDismiss}>
+            <X className="size-4" />
             Dismiss
           </Button>
-        </CardActions>
+        </div>
 
         {/* Review & Accept dialog */}
-        <Dialog
-          open={reviewOpen}
-          onClose={() => setReviewOpen(false)}
-          maxWidth="lg"
-          fullWidth
-          PaperProps={{ sx: { bgcolor: 'background.default', maxHeight: '85vh' } }}
-        >
-          <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1.5 }}>
-            <OptimizeIcon color="primary" />
-            Review AI Optimization
-            <Box sx={{ flex: 1 }} />
-            <IconButton size="small" onClick={() => setReviewOpen(false)}>
-              <DismissIcon />
-            </IconButton>
-          </DialogTitle>
+        <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
+          <DialogContent className="max-w-4xl max-h-[85vh] p-0 gap-0">
+            <DialogHeader className="px-6 py-3 flex-row items-center gap-2">
+              <Sparkles className="size-5 text-primary" />
+              <DialogTitle>Review AI Optimization</DialogTitle>
+            </DialogHeader>
 
-          <DialogContent dividers sx={{ p: 0 }}>
             {/* Changes summary */}
             {result.changes && result.changes.length > 0 && (
-              <Box sx={{ px: 3, py: 1.5, bgcolor: 'action.hover' }}>
-                <Typography variant="caption" fontWeight={600} color="text.secondary">Changes:</Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              <div className="px-6 py-3 bg-accent/30">
+                <span className="text-xs font-semibold text-muted-foreground">Changes:</span>
+                <div className="flex flex-wrap gap-1 mt-1">
                   {result.changes.map((change, i) => (
-                    <Chip key={i} label={change} size="small" />
+                    <Badge key={i} variant="secondary">{change}</Badge>
                   ))}
-                </Box>
-              </Box>
+                </div>
+              </div>
             )}
 
             {/* Side-by-side SQL */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 300 }}>
-              <Box sx={{ borderRight: 1, borderColor: 'divider' }}>
-                <Box sx={{ px: 2, py: 1, bgcolor: 'error.dark', color: 'error.contrastText' }}>
-                  <Typography variant="subtitle2">Original Query</Typography>
-                </Box>
-                <Box
-                  sx={{
-                    p: 2, fontFamily: 'monospace', fontSize: '0.85rem',
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                    overflow: 'auto', maxHeight: 'calc(85vh - 250px)',
-                    bgcolor: 'grey.900', color: 'grey.300',
-                    lineHeight: 1.6,
-                  }}
-                >
+            <div className="grid grid-cols-2 min-h-[300px] border-t border-border">
+              <div className="border-r border-border">
+                <div className="px-4 py-2 bg-red-900/60 text-red-200">
+                  <span className="text-sm font-semibold">Original Query</span>
+                </div>
+                <div className="p-4 font-mono text-[0.85rem] whitespace-pre-wrap break-all overflow-auto max-h-[calc(85vh-250px)] bg-[#111] text-gray-300 leading-relaxed">
                   {sql}
-                </Box>
-              </Box>
-              <Box>
-                <Box sx={{ px: 2, py: 1, bgcolor: 'success.dark', color: 'success.contrastText' }}>
-                  <Typography variant="subtitle2">Optimized Query</Typography>
-                </Box>
-                <Box
-                  sx={{
-                    p: 2, fontFamily: 'monospace', fontSize: '0.85rem',
-                    whiteSpace: 'pre-wrap', wordBreak: 'break-all',
-                    overflow: 'auto', maxHeight: 'calc(85vh - 250px)',
-                    bgcolor: 'grey.900', color: 'grey.100',
-                    lineHeight: 1.6,
-                  }}
-                >
+                </div>
+              </div>
+              <div>
+                <div className="px-4 py-2 bg-green-900/60 text-green-200">
+                  <span className="text-sm font-semibold">Optimized Query</span>
+                </div>
+                <div className="p-4 font-mono text-[0.85rem] whitespace-pre-wrap break-all overflow-auto max-h-[calc(85vh-250px)] bg-[#111] text-gray-100 leading-relaxed">
                   {result.optimizedSql}
-                </Box>
-              </Box>
-            </Box>
-          </DialogContent>
+                </div>
+              </div>
+            </div>
 
-          <DialogActions sx={{ px: 3, py: 1.5 }}>
-            <Button
-              color="inherit"
-              onClick={() => setReviewOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              color="success"
-              startIcon={<CheckIcon />}
-              onClick={() => {
-                onApply?.(result.optimizedSql ?? '');
-                setReviewOpen(false);
-              }}
-            >
-              Accept & Apply to Editor
-            </Button>
-          </DialogActions>
+            <DialogFooter className="px-6 py-3 border-t border-border">
+              <Button variant="ghost" onClick={() => setReviewOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={() => {
+                  onApply?.(result.optimizedSql ?? '');
+                  setReviewOpen(false);
+                }}
+              >
+                <Check className="size-4" />
+                Accept & Apply to Editor
+              </Button>
+            </DialogFooter>
+          </DialogContent>
         </Dialog>
-      </Box>
+      </div>
     );
   }
 

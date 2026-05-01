@@ -1,13 +1,8 @@
 import { useState, useMemo, Fragment } from 'react';
-import {
-  Box, Typography, Chip, Tooltip, IconButton, Collapse, Paper,
-} from '@mui/material';
-import {
-  ExpandMore as ExpandMoreIcon,
-  ChevronRight as ChevronRightIcon,
-  TableChart as TableIcon,
-  Speed as SpeedIcon,
-} from '@mui/icons-material';
+import { ChevronDown, ChevronRight, Table2, Gauge } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -239,13 +234,13 @@ function extractExtra(node: Record<string, unknown>): Record<string, unknown> {
  *   |*  1 |  COUNT STOPKEY     |            |       |       |            |          |
  *   |   2 |   TABLE ACCESS FULL| CATEGORIES |     6 |   546 |     3   (0)| 00:00:01 |
  *
- * The indentation of the Operation column encodes parent–child relationships.
+ * The indentation of the Operation column encodes parent-child relationships.
  */
 function parseTextPlan(raw: string): PlanNode {
   const lines = raw.split('\n');
 
   // ---- 1. Find the data rows inside the table ----
-  // Separator lines look like "---…---" (all dashes + pipes)
+  // Separator lines look like "---...---" (all dashes + pipes)
   const separatorIndices: number[] = [];
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*[-]+\s*$/.test(lines[i].replace(/\|/g, '-'))) {
@@ -299,7 +294,7 @@ function parseTextPlan(raw: string): PlanNode {
     const rowsVal = parseInt((cells[3] ?? '').trim(), 10) || 0;
     const bytesVal = parseInt((cells[4] ?? '').trim(), 10) || 0;
 
-    // Cost column may look like "3   (0)" — extract numeric cost and CPU %
+    // Cost column may look like "3   (0)" -- extract numeric cost and CPU %
     const costStr = (cells[5] ?? '').trim();
     const costParts = costStr.split('(');
     const costVal = parseInt(costParts[0], 10) || 0;
@@ -365,7 +360,7 @@ function parseTextPlan(raw: string): PlanNode {
   const nodes = dataRows.map(toNode);
   const depths = dataRows.map((r) => r.depth);
 
-  // Build parent–child by depth: a row's parent is the last preceding row with smaller depth
+  // Build parent-child by depth: a row's parent is the last preceding row with smaller depth
   for (let i = 1; i < nodes.length; i++) {
     for (let j = i - 1; j >= 0; j--) {
       if (depths[j] < depths[i]) {
@@ -399,7 +394,7 @@ function parseXmlPlan(raw: string): PlanNode | null {
   // Check for parse errors
   if (doc.querySelector('parsererror')) return null;
 
-  // MSSQL namespaces the XML — use a local-name() selector helper
+  // MSSQL namespaces the XML -- use a local-name() selector helper
   function allByLocal(parent: Element, localName: string): Element[] {
     return Array.from(parent.querySelectorAll('*')).filter(
       (el) => el.localName === localName,
@@ -456,7 +451,7 @@ function parseXmlPlan(raw: string): PlanNode | null {
           if (nestedRelOp.localName === 'RelOp') {
             children.push(parseRelOp(nestedRelOp));
           }
-          // One more level — some ops nest RelOp two levels deep
+          // One more level -- some ops nest RelOp two levels deep
           for (const deepChild of Array.from(nestedRelOp.children)) {
             if (deepChild.localName === 'RelOp') {
               children.push(parseRelOp(deepChild));
@@ -502,7 +497,7 @@ function parseXmlPlan(raw: string): PlanNode | null {
     return parseRelOp(topRelOps[0]);
   }
 
-  // Multiple top-level RelOps — wrap in a root node
+  // Multiple top-level RelOps -- wrap in a root node
   return {
     operator: 'Query Plan',
     children: topRelOps.map(parseRelOp),
@@ -543,103 +538,82 @@ function PlanTreeNode({ node, maxCost, depth }: { node: PlanNode; maxCost: numbe
   const costColor = getCostColor(cost, maxCost);
 
   return (
-    <Box sx={{ ml: depth > 0 ? 3 : 0 }}>
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          py: 0.5,
-          px: 1,
-          borderRadius: 1,
-          '&:hover': { bgcolor: 'action.hover' },
-          cursor: hasChildren ? 'pointer' : 'default',
-        }}
+    <div className={cn(depth > 0 && 'ml-6')}>
+      <div
+        className={cn(
+          'flex items-center gap-2 py-1 px-2 rounded',
+          'hover:bg-accent/50',
+          hasChildren ? 'cursor-pointer' : 'cursor-default',
+        )}
         onClick={() => hasChildren && setExpanded(!expanded)}
       >
         {hasChildren ? (
-          <IconButton size="small" sx={{ p: 0 }}>
-            {expanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
-          </IconButton>
+          <Button variant="ghost" size="icon" className="size-6 p-0">
+            {expanded ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
+          </Button>
         ) : (
-          <Box sx={{ width: 24 }} />
+          <div className="w-6" />
         )}
 
-        <Tooltip title={`Cost: ${cost.toFixed(2)}`} placement="top">
-          <Box
-            sx={{
-              width: 8,
-              height: 8,
-              borderRadius: '50%',
-              bgcolor: costColor,
-              flexShrink: 0,
-            }}
-          />
-        </Tooltip>
+        <div
+          title={`Cost: ${cost.toFixed(2)}`}
+          className="size-2 rounded-full shrink-0"
+          style={{ backgroundColor: costColor }}
+        />
 
-        <Typography variant="body2" fontWeight={600} sx={{ minWidth: 100 }}>
+        <span className="text-sm font-semibold min-w-[100px]">
           {node.operator}
-        </Typography>
+        </span>
 
         {node.table && (
-          <Chip
-            icon={<TableIcon />}
-            label={node.table}
-            size="small"
-            variant="outlined"
-            sx={{ height: 22 }}
-          />
+          <Badge variant="outline" className="h-[22px] gap-1">
+            <Table2 className="size-3" />
+            {node.table}
+          </Badge>
         )}
 
         {node.rows != null && node.rows > 0 && (
-          <Chip
-            label={`${node.rows.toLocaleString()} rows`}
-            size="small"
-            variant="outlined"
-            color="info"
-            sx={{ height: 22 }}
-          />
+          <Badge variant="outline" className="h-[22px] text-blue-400 border-blue-500/30">
+            {node.rows.toLocaleString()} rows
+          </Badge>
         )}
 
         {cost > 0 && (
-          <Chip
-            icon={<SpeedIcon />}
-            label={cost.toFixed(2)}
-            size="small"
-            variant="outlined"
-            sx={{ height: 22, borderColor: costColor, color: costColor }}
-          />
+          <Badge variant="outline" className="h-[22px] gap-1" style={{ borderColor: costColor, color: costColor }}>
+            <Gauge className="size-3" />
+            {cost.toFixed(2)}
+          </Badge>
         )}
 
         {node.scanType && (
-          <Typography variant="caption" color="text.secondary">
+          <span className="text-xs text-muted-foreground">
             {node.scanType}
-          </Typography>
+          </span>
         )}
 
         {node.indexName && (
-          <Typography variant="caption" color="primary.main" sx={{ fontStyle: 'italic' }}>
+          <span className="text-xs text-primary italic">
             idx: {node.indexName}
-          </Typography>
+          </span>
         )}
-      </Box>
+      </div>
 
       {node.filter && (
-        <Box sx={{ ml: depth > 0 ? 6 : 3, mb: 0.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+        <div className={cn(depth > 0 ? 'ml-12' : 'ml-6', 'mb-1')}>
+          <span className="text-xs text-muted-foreground font-mono">
             Filter: {node.filter}
-          </Typography>
-        </Box>
+          </span>
+        </div>
       )}
 
-      {hasChildren && (
-        <Collapse in={expanded}>
+      {hasChildren && expanded && (
+        <div>
           {(node.children ?? []).map((child, i) => (
             <PlanTreeNode key={i} node={child} maxCost={maxCost} depth={depth + 1} />
           ))}
-        </Collapse>
+        </div>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -659,17 +633,14 @@ export default function ExecutionPlanTree({ plan, format, raw }: ExecutionPlanTr
 
   if (!rootNode) {
     return (
-      <Box sx={{ p: 2 }}>
-        <Typography color="text.secondary">Unable to parse execution plan</Typography>
+      <div className="p-4">
+        <p className="text-muted-foreground">Unable to parse execution plan</p>
         {raw && (
-          <Box
-            component="pre"
-            sx={{ mt: 1, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, fontSize: '0.8rem', overflow: 'auto', maxHeight: 400 }}
-          >
+          <pre className="mt-2 p-3 bg-accent/50 rounded text-[0.8rem] overflow-auto max-h-[400px]">
             {raw}
-          </Box>
+          </pre>
         )}
-      </Box>
+      </div>
     );
   }
 
@@ -677,36 +648,33 @@ export default function ExecutionPlanTree({ plan, format, raw }: ExecutionPlanTr
   const rawContent = rootNode.extra?.rawText ?? rootNode.extra?.rawXml;
   if (rawContent && !rootNode.children) {
     return (
-      <Paper variant="outlined" sx={{ p: 2, overflow: 'auto', maxHeight: 500 }}>
-        <Typography variant="subtitle2" gutterBottom>{rootNode.operator}</Typography>
-        <Box
-          component="pre"
-          sx={{ fontFamily: 'monospace', fontSize: '0.8rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', m: 0 }}
-        >
+      <div className="border border-border rounded p-4 overflow-auto max-h-[500px]">
+        <h4 className="text-sm font-semibold mb-2">{rootNode.operator}</h4>
+        <pre className="font-mono text-[0.8rem] whitespace-pre-wrap break-all m-0">
           {String(rawContent)}
-        </Box>
-      </Paper>
+        </pre>
+      </div>
     );
   }
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5, overflow: 'auto', maxHeight: 500 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-        <Typography variant="subtitle2">Execution Plan Tree</Typography>
-        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', ml: 'auto' }}>
+    <div className="border border-border rounded p-3 overflow-auto max-h-[500px]">
+      <div className="flex items-center gap-2 mb-2">
+        <h4 className="text-sm font-semibold">Execution Plan Tree</h4>
+        <div className="flex gap-1 items-center ml-auto">
           {[
             { color: '#4caf50', label: 'Low' },
             { color: '#ff9800', label: 'Med' },
             { color: '#f44336', label: 'High' },
           ].map(({ color, label }) => (
             <Fragment key={label}>
-              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: color }} />
-              <Typography variant="caption" color="text.secondary">{label}</Typography>
+              <div className="size-2 rounded-full" style={{ backgroundColor: color }} />
+              <span className="text-xs text-muted-foreground">{label}</span>
             </Fragment>
           ))}
-        </Box>
-      </Box>
+        </div>
+      </div>
       <PlanTreeNode node={rootNode} maxCost={maxCost} depth={0} />
-    </Paper>
+    </div>
   );
 }

@@ -1,19 +1,23 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
-  Box, Typography, TextField, FormControl, InputLabel, Select, MenuItem,
-  List, ListItemButton, ListItemIcon, ListItemText, Chip, IconButton,
-  Menu, InputAdornment,
-  Dialog, DialogTitle, DialogContent, DialogActions, Button,
-} from '@mui/material';
+  KeyRound, Key, ShieldCheck, Webhook, StickyNote,
+  Plus, Search, Star, Pencil, Share2, Trash2, Copy,
+  FolderInput, ShieldAlert,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
-  VpnKey, Key, VerifiedUser, Api, Notes,
-  Add as AddIcon, Search as SearchIcon,
-  Star, StarBorder,
-  Edit as EditIcon, Share as ShareIcon, Delete as DeleteIcon,
-  ContentCopy as CopyIcon,
-  DriveFileMove as MoveIcon,
-  GppBad as BreachIcon,
-} from '@mui/icons-material';
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { useSecretStore } from '../../store/secretStore';
@@ -22,11 +26,11 @@ import type { SecretListItem, SecretType, SecretScope } from '../../api/secrets.
 import type { VaultFolderData } from '../../api/vault-folders.api';
 
 const TYPE_ICONS: Record<SecretType, React.ReactNode> = {
-  LOGIN: <VpnKey fontSize="small" />,
-  SSH_KEY: <Key fontSize="small" />,
-  CERTIFICATE: <VerifiedUser fontSize="small" />,
-  API_KEY: <Api fontSize="small" />,
-  SECURE_NOTE: <Notes fontSize="small" />,
+  LOGIN: <KeyRound className="h-4 w-4" />,
+  SSH_KEY: <Key className="h-4 w-4" />,
+  CERTIFICATE: <ShieldCheck className="h-4 w-4" />,
+  API_KEY: <Webhook className="h-4 w-4" />,
+  SECURE_NOTE: <StickyNote className="h-4 w-4" />,
 };
 
 const TYPE_LABELS: Record<SecretType, string> = {
@@ -37,10 +41,10 @@ const TYPE_LABELS: Record<SecretType, string> = {
   SECURE_NOTE: 'Secure Note',
 };
 
-const SCOPE_COLORS: Record<SecretScope, 'default' | 'primary' | 'secondary'> = {
-  PERSONAL: 'default',
-  TEAM: 'primary',
-  TENANT: 'secondary',
+const SCOPE_COLORS: Record<SecretScope, string> = {
+  PERSONAL: 'secondary',
+  TEAM: 'default',
+  TENANT: 'outline',
 };
 
 // --- Draggable secret item ---
@@ -72,70 +76,62 @@ function DraggableSecretItem({
   });
 
   return (
-    <ListItemButton
+    <div
       ref={setNodeRef}
-      selected={isSelected}
       onClick={onSelect}
       onContextMenu={onContextMenu}
-      sx={{
-        px: 1.5,
-        cursor: 'grab',
-        ...(isDragging && { opacity: 0.4 }),
-        ...(transform && { transform: CSS.Translate.toString(transform) }),
-      }}
+      className={cn(
+        'flex items-center gap-2 px-3 py-2 cursor-grab select-none rounded-md transition-colors',
+        isSelected && 'bg-accent',
+        !isSelected && 'hover:bg-accent/50',
+        isDragging && 'opacity-40',
+      )}
+      style={transform ? { transform: CSS.Translate.toString(transform) } : undefined}
       {...listeners}
       {...attributes}
     >
-      <ListItemIcon sx={{ minWidth: 32 }}>
+      <div className="shrink-0">
         {TYPE_ICONS[secret.type]}
-      </ListItemIcon>
-      <ListItemText
-        primary={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography variant="body2" noWrap sx={{ flex: 1 }}>
-              {secret.name}
-            </Typography>
-            <Chip
-              label={secret.scope === 'PERSONAL' ? 'Me' : secret.scope === 'TEAM' ? 'Team' : 'Org'}
-              size="small"
-              color={SCOPE_COLORS[secret.scope]}
-              sx={{ height: 18, fontSize: '0.65rem' }}
-            />
-          </Box>
-        }
-        secondary={
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography variant="caption" color="text.secondary" noWrap>
-              {TYPE_LABELS[secret.type]}
-            </Typography>
-            {secret.pwnedCount > 0 && (
-              <Chip
-                icon={<BreachIcon sx={{ fontSize: '0.7rem' }} />}
-                label="Breached"
-                size="small"
-                color="error"
-                sx={{ height: 16, fontSize: '0.6rem' }}
-              />
-            )}
-            {daysUntilExpiry !== null && daysUntilExpiry <= 30 && (
-              <Chip
-                label={daysUntilExpiry <= 0 ? 'Expired' : `${daysUntilExpiry}d left`}
-                size="small"
-                color={daysUntilExpiry <= 7 ? 'error' : 'warning'}
-                sx={{ height: 16, fontSize: '0.6rem' }}
-              />
-            )}
-          </Box>
-        }
-      />
-      <IconButton
-        size="small"
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          <span className="text-sm truncate flex-1">{secret.name}</span>
+          <Badge
+            variant={SCOPE_COLORS[secret.scope] as 'default' | 'secondary' | 'outline'}
+            className="text-[0.65rem] px-1.5 py-0 h-[18px] shrink-0"
+          >
+            {secret.scope === 'PERSONAL' ? 'Me' : secret.scope === 'TEAM' ? 'Team' : 'Org'}
+          </Badge>
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground truncate">
+            {TYPE_LABELS[secret.type]}
+          </span>
+          {secret.pwnedCount > 0 && (
+            <Badge variant="destructive" className="text-[0.6rem] px-1 py-0 h-4 gap-0.5">
+              <ShieldAlert className="h-2.5 w-2.5" />
+              Breached
+            </Badge>
+          )}
+          {daysUntilExpiry !== null && daysUntilExpiry <= 30 && (
+            <Badge
+              variant={daysUntilExpiry <= 7 ? 'destructive' : 'secondary'}
+              className="text-[0.6rem] px-1 py-0 h-4"
+            >
+              {daysUntilExpiry <= 0 ? 'Expired' : `${daysUntilExpiry}d left`}
+            </Badge>
+          )}
+        </div>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 shrink-0"
         onClick={(e) => { e.stopPropagation(); onToggleFavorite(); }}
-        sx={{ ml: 0.5 }}
       >
-        {secret.isFavorite ? <Star fontSize="small" color="warning" /> : <StarBorder fontSize="small" />}
-      </IconButton>
-    </ListItemButton>
+        <Star className={cn('h-4 w-4', secret.isFavorite && 'fill-yellow-500 text-yellow-500')} />
+      </Button>
+    </div>
   );
 }
 
@@ -250,71 +246,62 @@ export default function SecretListPanel({
   }, [selectedFolderId, allFolders]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div className="flex flex-col h-full">
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, pb: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, overflow: 'hidden' }}>
-          <Typography variant="h6" sx={{ fontSize: '1.1rem' }} noWrap>
-            {currentFolderName ? currentFolderName : 'Secrets'}
-          </Typography>
-        </Box>
-        <IconButton size="small" onClick={onCreateSecret} title="New Secret">
-          <AddIcon />
-        </IconButton>
-      </Box>
+      <div className="flex items-center justify-between p-3 pb-2">
+        <h3 className="text-lg font-semibold truncate">
+          {currentFolderName ? currentFolderName : 'Secrets'}
+        </h3>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCreateSecret} title="New Secret">
+          <Plus className="h-4 w-4" />
+        </Button>
+      </div>
 
       {/* Search */}
-      <Box sx={{ px: 1.5, pb: 1 }}>
-        <TextField
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search secrets..."
-          size="small"
-          fullWidth
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" color="action" />
-                </InputAdornment>
-              ),
-            },
-          }}
-        />
-      </Box>
+      <div className="px-3 pb-2">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search secrets..."
+            className="pl-8"
+          />
+        </div>
+      </div>
 
       {/* Filters */}
-      <Box sx={{ display: 'flex', gap: 1, px: 1.5, pb: 1 }}>
-        <FormControl size="small" sx={{ flex: 1 }}>
-          <InputLabel>Scope</InputLabel>
-          <Select value={scopeFilter} label="Scope" onChange={(e) => handleScopeChange(e.target.value)}>
-            <MenuItem value="ALL">All</MenuItem>
-            <MenuItem value="PERSONAL">Personal</MenuItem>
-            <MenuItem value="TEAM">Team</MenuItem>
-            <MenuItem value="TENANT">Organization</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ flex: 1 }}>
-          <InputLabel>Type</InputLabel>
-          <Select value={typeFilter} label="Type" onChange={(e) => handleTypeChange(e.target.value)}>
-            <MenuItem value="ALL">All</MenuItem>
-            <MenuItem value="LOGIN">Login</MenuItem>
-            <MenuItem value="SSH_KEY">SSH Key</MenuItem>
-            <MenuItem value="CERTIFICATE">Certificate</MenuItem>
-            <MenuItem value="API_KEY">API Key</MenuItem>
-            <MenuItem value="SECURE_NOTE">Secure Note</MenuItem>
-          </Select>
-        </FormControl>
-      </Box>
+      <div className="flex gap-2 px-3 pb-2">
+        <Select value={scopeFilter} onValueChange={handleScopeChange}>
+          <SelectTrigger className="flex-1 h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All</SelectItem>
+            <SelectItem value="PERSONAL">Personal</SelectItem>
+            <SelectItem value="TEAM">Team</SelectItem>
+            <SelectItem value="TENANT">Organization</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={typeFilter} onValueChange={handleTypeChange}>
+          <SelectTrigger className="flex-1 h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="ALL">All</SelectItem>
+            <SelectItem value="LOGIN">Login</SelectItem>
+            <SelectItem value="SSH_KEY">SSH Key</SelectItem>
+            <SelectItem value="CERTIFICATE">Certificate</SelectItem>
+            <SelectItem value="API_KEY">API Key</SelectItem>
+            <SelectItem value="SECURE_NOTE">Secure Note</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
 
       {/* Secret list */}
-      <Box sx={{ flex: 1, overflow: 'auto' }}>
+      <div className="flex-1 overflow-auto">
         {secrets.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
+          <p className="text-sm text-muted-foreground text-center py-8">
             No secrets found
-          </Typography>
+          </p>
         ) : (
-          <List dense disablePadding>
+          <div className="space-y-0.5 px-1">
             {secrets.map((secret) => {
               const daysUntilExpiry = secret.expiresAt ? getDaysUntilExpiry(secret.expiresAt) : null;
               return (
@@ -329,60 +316,68 @@ export default function SecretListPanel({
                 />
               );
             })}
-          </List>
+          </div>
         )}
-      </Box>
+      </div>
 
       {/* Context menu */}
-      <Menu
-        open={contextMenu !== null}
-        onClose={() => setContextMenu(null)}
-        anchorReference="anchorPosition"
-        anchorPosition={contextMenu ? { top: contextMenu.mouseY, left: contextMenu.mouseX } : undefined}
-      >
-        <MenuItem onClick={() => { if (contextMenu) { onEditSecret(contextMenu.secret); } setContextMenu(null); }}>
-          <EditIcon fontSize="small" sx={{ mr: 1 }} /> Edit
-        </MenuItem>
-        <MenuItem onClick={() => { if (contextMenu) { onShareSecret(contextMenu.secret); } setContextMenu(null); }}>
-          <ShareIcon fontSize="small" sx={{ mr: 1 }} /> Share
-        </MenuItem>
-        <MenuItem onClick={() => { if (contextMenu) { handleMoveToFolder(contextMenu.secret); } setContextMenu(null); }}>
-          <MoveIcon fontSize="small" sx={{ mr: 1 }} /> Move to Folder
-        </MenuItem>
-        <MenuItem onClick={() => { if (contextMenu) { toggleFavorite(contextMenu.secret.id); } setContextMenu(null); }}>
-          <StarBorder fontSize="small" sx={{ mr: 1 }} /> Toggle Favorite
-        </MenuItem>
-        <MenuItem onClick={() => { if (contextMenu) { navigator.clipboard.writeText(contextMenu.secret.name); } setContextMenu(null); }}>
-          <CopyIcon fontSize="small" sx={{ mr: 1 }} /> Copy Name
-        </MenuItem>
-        <MenuItem onClick={() => { if (contextMenu) { onDeleteSecret(contextMenu.secret); } setContextMenu(null); }}>
-          <DeleteIcon fontSize="small" sx={{ mr: 1 }} color="error" /> Delete
-        </MenuItem>
-      </Menu>
+      {contextMenu && (
+        <DropdownMenu open onOpenChange={() => setContextMenu(null)}>
+          <DropdownMenuTrigger asChild>
+            <div
+              className="fixed"
+              style={{ left: contextMenu.mouseX, top: contextMenu.mouseY, width: 0, height: 0 }}
+            />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={() => { onEditSecret(contextMenu.secret); setContextMenu(null); }}>
+              <Pencil className="h-4 w-4 mr-2" /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { onShareSecret(contextMenu.secret); setContextMenu(null); }}>
+              <Share2 className="h-4 w-4 mr-2" /> Share
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { handleMoveToFolder(contextMenu.secret); setContextMenu(null); }}>
+              <FolderInput className="h-4 w-4 mr-2" /> Move to Folder
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { toggleFavorite(contextMenu.secret.id); setContextMenu(null); }}>
+              <Star className="h-4 w-4 mr-2" /> Toggle Favorite
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(contextMenu.secret.name); setContextMenu(null); }}>
+              <Copy className="h-4 w-4 mr-2" /> Copy Name
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="text-destructive" onClick={() => { onDeleteSecret(contextMenu.secret); setContextMenu(null); }}>
+              <Trash2 className="h-4 w-4 mr-2" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* Move to Folder dialog */}
-      <Dialog open={!!moveTarget} onClose={() => setMoveTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Move &quot;{moveTarget?.name}&quot;</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mt: 1 }}>
-            <InputLabel>Destination Folder</InputLabel>
-            <Select
-              value={moveDestination}
-              label="Destination Folder"
-              onChange={(e) => setMoveDestination(e.target.value)}
-            >
-              <MenuItem value="">Root (no folder)</MenuItem>
-              {allFolders.map((f) => (
-                <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>
-              ))}
+      <Dialog open={!!moveTarget} onOpenChange={(v) => { if (!v) setMoveTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Move &quot;{moveTarget?.name}&quot;</DialogTitle>
+            <DialogDescription className="sr-only">Select a destination folder</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <Label>Destination Folder</Label>
+            <Select value={moveDestination || '__root__'} onValueChange={(v) => setMoveDestination(v === '__root__' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="Root (no folder)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__root__">Root (no folder)</SelectItem>
+                {allFolders.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-          </FormControl>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMoveTarget(null)}>Cancel</Button>
+            <Button onClick={handleConfirmMove}>Move</Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMoveTarget(null)}>Cancel</Button>
-          <Button onClick={handleConfirmMove} variant="contained">Move</Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 }

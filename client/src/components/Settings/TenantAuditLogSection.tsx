@@ -1,74 +1,52 @@
-import { useState, useEffect, useCallback, Fragment, lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import {
-  Card, CardContent, Typography, Box,
-  Table, TableHead, TableBody, TableRow, TableCell, TablePagination,
-  Select, MenuItem, FormControl, InputLabel, TextField, Stack,
-  CircularProgress, Chip, Alert, Collapse, TableSortLabel, InputAdornment,
-  IconButton, Autocomplete, Button, ToggleButtonGroup, ToggleButton, Tooltip,
-} from '@mui/material';
-import {
-  Search as SearchIcon,
-  KeyboardArrowDown as ExpandIcon,
-  KeyboardArrowUp as CollapseIcon,
-  Download as DownloadIcon,
-  ViewList as ListIcon,
-  Map as MapIcon,
-  Warning as WarningIcon,
-} from '@mui/icons-material';
-import {
-  getTenantAuditLogs, getTenantAuditGateways, getTenantAuditCountries,
-  TenantAuditLogEntry, AuditAction, TenantAuditLogParams, AuditGateway,
+  getTenantAuditLogs,
+  getTenantAuditGateways,
+  getTenantAuditCountries,
+  type AuditAction,
+  type AuditGateway,
+  type TenantAuditLogEntry,
+  type TenantAuditLogParams,
+  type TenantGeoSummaryParams,
 } from '../../api/audit.api';
-import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { useTenantStore } from '../../store/tenantStore';
-import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS, TARGET_TYPES } from '../Audit/auditConstants';
-import IpGeoCell from '../Audit/IpGeoCell';
+import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { SettingsPanel } from './settings-ui';
+import {
+  TenantAuditFiltersCard,
+  TenantAuditPagination,
+  TenantAuditResults,
+  TenantAuditSummary,
+  TenantAuditToolbar,
+  exportTenantAuditCsv,
+} from './tenantAuditLogUi';
+import { countActiveFilters } from './tenantAuditLogUtils';
 
 const AuditGeoMap = lazy(() => import('../Audit/AuditGeoMap'));
-
-function exportCsv(logs: TenantAuditLogEntry[]) {
-  const header = 'Date,User,Email,Action,Target Type,Target ID,IP Address,Country,City,Details';
-  const rows = logs.map((log) => {
-    const date = new Date(log.createdAt).toISOString();
-    const user = (log.userName ?? '').replace(/"/g, '""');
-    const email = (log.userEmail ?? '').replace(/"/g, '""');
-    const action = ACTION_LABELS[log.action] || log.action;
-    const targetType = log.targetType ?? '';
-    const targetId = log.targetId ?? '';
-    const ip = log.ipAddress ?? '';
-    const country = log.geoCountry ?? '';
-    const city = log.geoCity ?? '';
-    const details = formatDetails(log.details as Record<string, unknown> | null).replace(/"/g, '""');
-    return `"${date}","${user}","${email}","${action}","${targetType}","${targetId}","${ip}","${country}","${city}","${details}"`;
-  });
-  const csv = [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `tenant-audit-log-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 interface TenantAuditLogSectionProps {
   onViewUserProfile?: (userId: string) => void;
   onGeoIpClick?: (ip: string) => void;
 }
 
-export default function TenantAuditLogSection({ onViewUserProfile, onGeoIpClick }: TenantAuditLogSectionProps) {
-  const tenantAuditLogAction = useUiPreferencesStore((s) => s.tenantAuditLogAction);
-  const tenantAuditLogSearch = useUiPreferencesStore((s) => s.tenantAuditLogSearch);
-  const tenantAuditLogTargetType = useUiPreferencesStore((s) => s.tenantAuditLogTargetType);
-  const tenantAuditLogGatewayId = useUiPreferencesStore((s) => s.tenantAuditLogGatewayId);
-  const tenantAuditLogUserId = useUiPreferencesStore((s) => s.tenantAuditLogUserId);
-  const tenantAuditLogSortBy = useUiPreferencesStore((s) => s.tenantAuditLogSortBy);
-  const tenantAuditLogSortOrder = useUiPreferencesStore((s) => s.tenantAuditLogSortOrder);
-  const tenantAuditLogViewMode = useUiPreferencesStore((s) => s.tenantAuditLogViewMode);
-  const setUiPref = useUiPreferencesStore((s) => s.set);
-
-  const users = useTenantStore((s) => s.users);
-  const fetchUsers = useTenantStore((s) => s.fetchUsers);
+export default function TenantAuditLogSection({
+  onViewUserProfile,
+  onGeoIpClick,
+}: TenantAuditLogSectionProps) {
+  const tenantAuditLogAction = useUiPreferencesStore((state) => state.tenantAuditLogAction);
+  const tenantAuditLogSearch = useUiPreferencesStore((state) => state.tenantAuditLogSearch);
+  const tenantAuditLogTargetType = useUiPreferencesStore((state) => state.tenantAuditLogTargetType);
+  const tenantAuditLogGatewayId = useUiPreferencesStore((state) => state.tenantAuditLogGatewayId);
+  const tenantAuditLogUserId = useUiPreferencesStore((state) => state.tenantAuditLogUserId);
+  const tenantAuditLogSortBy = useUiPreferencesStore((state) => state.tenantAuditLogSortBy);
+  const tenantAuditLogSortOrder = useUiPreferencesStore((state) => state.tenantAuditLogSortOrder);
+  const tenantAuditLogViewMode = useUiPreferencesStore((state) => state.tenantAuditLogViewMode);
+  const setUiPref = useUiPreferencesStore((state) => state.set);
+  const ipGeolocationEnabled = useFeatureFlagsStore((state) => state.ipGeolocationEnabled);
+  const users = useTenantStore((state) => state.users);
+  const fetchUsers = useTenantStore((state) => state.fetchUsers);
 
   const [logs, setLogs] = useState<TenantAuditLogEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -87,20 +65,34 @@ export default function TenantAuditLogSection({ onViewUserProfile, onGeoIpClick 
   const [flaggedOnly, setFlaggedOnly] = useState(false);
 
   useEffect(() => {
-    if (users.length === 0) fetchUsers();
-  }, [users.length, fetchUsers]);
+    if (users.length === 0) {
+      fetchUsers();
+    }
+  }, [fetchUsers, users.length]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const timeout = setTimeout(() => {
       setUiPref('tenantAuditLogSearch', searchInput);
       setPage(0);
     }, 300);
-    return () => clearTimeout(timer);
+    return () => clearTimeout(timeout);
   }, [searchInput, setUiPref]);
+
+  useEffect(() => {
+    getTenantAuditGateways().then(setGateways).catch(() => {});
+    getTenantAuditCountries().then(setCountries).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!ipGeolocationEnabled && tenantAuditLogViewMode === 'map') {
+      setUiPref('tenantAuditLogViewMode', 'table');
+    }
+  }, [ipGeolocationEnabled, setUiPref, tenantAuditLogViewMode]);
 
   const fetchLogs = useCallback(async () => {
     setLoading(true);
     setError('');
+
     try {
       const params: TenantAuditLogParams = {
         page: page + 1,
@@ -108,6 +100,7 @@ export default function TenantAuditLogSection({ onViewUserProfile, onGeoIpClick 
         sortBy: tenantAuditLogSortBy as 'createdAt' | 'action',
         sortOrder: tenantAuditLogSortOrder as 'asc' | 'desc',
       };
+
       if (tenantAuditLogAction) params.action = tenantAuditLogAction as AuditAction;
       if (tenantAuditLogSearch) params.search = tenantAuditLogSearch;
       if (tenantAuditLogTargetType) params.targetType = tenantAuditLogTargetType;
@@ -119,365 +112,215 @@ export default function TenantAuditLogSection({ onViewUserProfile, onGeoIpClick 
       if (endDate) params.endDate = endDate;
       if (flaggedOnly) params.flaggedOnly = true;
 
-      const result = await getTenantAuditLogs(params);
-      setLogs(result.data);
-      setTotal(result.total);
+      const response = await getTenantAuditLogs(params);
+      setLogs(response.data);
+      setTotal(response.total);
     } catch {
-      setError('Failed to load tenant audit logs');
+      setError('Failed to load the organization audit log.');
     } finally {
       setLoading(false);
     }
-  }, [page, rowsPerPage, tenantAuditLogAction, tenantAuditLogSearch, tenantAuditLogTargetType, tenantAuditLogGatewayId, tenantAuditLogUserId, ipAddress, geoCountry, startDate, endDate, tenantAuditLogSortBy, tenantAuditLogSortOrder, flaggedOnly]);
+  }, [
+    endDate,
+    flaggedOnly,
+    geoCountry,
+    ipAddress,
+    page,
+    rowsPerPage,
+    startDate,
+    tenantAuditLogAction,
+    tenantAuditLogGatewayId,
+    tenantAuditLogSearch,
+    tenantAuditLogSortBy,
+    tenantAuditLogSortOrder,
+    tenantAuditLogTargetType,
+    tenantAuditLogUserId,
+  ]);
 
   useEffect(() => {
-    fetchLogs();
-    getTenantAuditGateways().then(setGateways).catch(() => {});
-    getTenantAuditCountries().then(setCountries).catch(() => {});
+    void fetchLogs();
   }, [fetchLogs]);
 
-  const handleSort = (field: 'createdAt' | 'action') => {
-    if (tenantAuditLogSortBy === field) {
-      setUiPref('tenantAuditLogSortOrder', tenantAuditLogSortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setUiPref('tenantAuditLogSortBy', field);
-      setUiPref('tenantAuditLogSortOrder', field === 'createdAt' ? 'desc' : 'asc');
-    }
+  const effectiveViewMode = ipGeolocationEnabled && tenantAuditLogViewMode === 'map' ? 'map' : 'table';
+  const flaggedEntriesOnPage = logs.filter((log) => log.flags?.length).length;
+  const usersOnPage = new Set(logs.map((log) => log.userId).filter(Boolean)).size;
+  const filtersApplied = countActiveFilters([
+    tenantAuditLogAction,
+    tenantAuditLogSearch,
+    tenantAuditLogTargetType,
+    tenantAuditLogGatewayId,
+    tenantAuditLogUserId,
+    ipAddress,
+    geoCountry,
+    startDate,
+    endDate,
+    flaggedOnly,
+  ]);
+  const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
+  const mapFilters: TenantGeoSummaryParams = {
+    action: tenantAuditLogAction ? tenantAuditLogAction as AuditAction : undefined,
+    search: tenantAuditLogSearch || undefined,
+    targetType: tenantAuditLogTargetType || undefined,
+    gatewayId: tenantAuditLogGatewayId || undefined,
+    userId: tenantAuditLogUserId || undefined,
+    ipAddress: ipAddress || undefined,
+    geoCountry: geoCountry || undefined,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
+    flaggedOnly: flaggedOnly || undefined,
+  };
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setUiPref('tenantAuditLogSearch', '');
+    setUiPref('tenantAuditLogAction', '');
+    setUiPref('tenantAuditLogTargetType', '');
+    setUiPref('tenantAuditLogGatewayId', '');
+    setUiPref('tenantAuditLogUserId', '');
+    setUiPref('tenantAuditLogSortBy', 'createdAt');
+    setUiPref('tenantAuditLogSortOrder', 'desc');
+    setStartDate('');
+    setEndDate('');
+    setIpAddress('');
+    setGeoCountry('');
+    setFlaggedOnly(false);
     setPage(0);
   };
 
-  const selectedUser = users.find((u) => u.id === tenantAuditLogUserId) ?? null;
-
-  const hasActiveFilters = tenantAuditLogAction || tenantAuditLogSearch || tenantAuditLogTargetType || tenantAuditLogGatewayId || tenantAuditLogUserId || ipAddress || geoCountry || startDate || endDate || flaggedOnly;
-
   return (
-    <Card>
-      <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-          <Typography variant="h6">Organization Audit Log</Typography>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <ToggleButtonGroup
-              size="small"
-              value={tenantAuditLogViewMode || 'table'}
-              exclusive
-              onChange={(_, val) => { if (val) setUiPref('tenantAuditLogViewMode', val); }}
-            >
-              <ToggleButton value="table">
-                <Tooltip title="Table view"><ListIcon fontSize="small" /></Tooltip>
-              </ToggleButton>
-              <ToggleButton value="map">
-                <Tooltip title="Map view"><MapIcon fontSize="small" /></Tooltip>
-              </ToggleButton>
-            </ToggleButtonGroup>
-            <Button
-              size="small"
-              startIcon={<DownloadIcon />}
-              onClick={() => exportCsv(logs)}
-              disabled={logs.length === 0}
-            >
-              Export CSV
-            </Button>
-          </Stack>
-        </Stack>
-
-        <TextField
-          size="small"
-          fullWidth
-          placeholder="Search across target, IP address, and details..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
-              ),
-            },
-          }}
-          sx={{ mb: 1.5 }}
+    <SettingsPanel
+      title="Organization Audit Log"
+      description="Review tenant-wide activity with grouped filters, export, and map-based geo inspection."
+      heading={(
+        <TenantAuditToolbar
+          effectiveViewMode={effectiveViewMode}
+          hasLogs={logs.length > 0}
+          ipGeolocationEnabled={ipGeolocationEnabled}
+          onExport={() => exportTenantAuditCsv(logs)}
+          onViewModeChange={(mode) => setUiPref('tenantAuditLogViewMode', mode)}
         />
+      )}
+      contentClassName="space-y-6"
+    >
+      <TenantAuditSummary
+        filtersApplied={filtersApplied}
+        flaggedEntriesOnPage={flaggedEntriesOnPage}
+        total={total}
+        usersOnPage={usersOnPage}
+      />
 
-        <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
-          <Autocomplete
-            size="small"
-            sx={{ minWidth: 220 }}
-            options={users}
-            getOptionLabel={(u) => u.username ?? u.email}
-            value={selectedUser}
-            onChange={(_, val) => {
-              setUiPref('tenantAuditLogUserId', val?.id ?? '');
-              setPage(0);
-            }}
-            renderInput={(params) => <TextField {...params} label="User" />}
-            isOptionEqualToValue={(opt, val) => opt.id === val.id}
-          />
-          <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel>Action</InputLabel>
-            <Select
-              value={tenantAuditLogAction}
-              label="Action"
-              onChange={(e) => {
-                setUiPref('tenantAuditLogAction', e.target.value);
-                setPage(0);
-              }}
-            >
-              <MenuItem value="">All Actions</MenuItem>
-              {ALL_ACTIONS.map((action) => (
-                <MenuItem key={action} value={action}>
-                  {ACTION_LABELS[action]}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 160 }}>
-            <InputLabel>Target Type</InputLabel>
-            <Select
-              value={tenantAuditLogTargetType}
-              label="Target Type"
-              onChange={(e) => {
-                setUiPref('tenantAuditLogTargetType', e.target.value);
-                setPage(0);
-              }}
-            >
-              <MenuItem value="">All Types</MenuItem>
-              {TARGET_TYPES.map((type) => (
-                <MenuItem key={type} value={type}>{type}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          {gateways.length > 0 && (
-            <FormControl size="small" sx={{ minWidth: 160 }}>
-              <InputLabel>Gateway</InputLabel>
-              <Select
-                value={tenantAuditLogGatewayId}
-                label="Gateway"
-                onChange={(e) => {
-                  setUiPref('tenantAuditLogGatewayId', e.target.value);
+      <TenantAuditFiltersCard
+        action={tenantAuditLogAction}
+        countries={countries}
+        endDate={endDate}
+        flaggedOnly={flaggedOnly}
+        gatewayId={tenantAuditLogGatewayId}
+        gateways={gateways}
+        geoCountry={geoCountry}
+        ipAddress={ipAddress}
+        onActionChange={(value) => {
+          setUiPref('tenantAuditLogAction', value);
+          setPage(0);
+        }}
+        onClearFilters={clearFilters}
+        onCountryChange={(value) => {
+          setGeoCountry(value);
+          setPage(0);
+        }}
+        onEndDateChange={(value) => {
+          setEndDate(value);
+          setPage(0);
+        }}
+        onFlaggedToggle={() => {
+          setFlaggedOnly((current) => !current);
+          setPage(0);
+        }}
+        onGatewayChange={(value) => {
+          setUiPref('tenantAuditLogGatewayId', value);
+          setPage(0);
+        }}
+        onIpAddressChange={(value) => {
+          setIpAddress(value);
+          setPage(0);
+        }}
+        onSearchChange={setSearchInput}
+        onSortByChange={(value) => {
+          setUiPref('tenantAuditLogSortBy', value);
+          setPage(0);
+        }}
+        onSortOrderChange={(value) => {
+          setUiPref('tenantAuditLogSortOrder', value);
+          setPage(0);
+        }}
+        onStartDateChange={(value) => {
+          setStartDate(value);
+          setPage(0);
+        }}
+        onTargetTypeChange={(value) => {
+          setUiPref('tenantAuditLogTargetType', value);
+          setPage(0);
+        }}
+        onUserChange={(value) => {
+          setUiPref('tenantAuditLogUserId', value);
+          setPage(0);
+        }}
+        searchInput={searchInput}
+        sortBy={tenantAuditLogSortBy}
+        sortOrder={tenantAuditLogSortOrder}
+        startDate={startDate}
+        targetType={tenantAuditLogTargetType}
+        userId={tenantAuditLogUserId}
+        users={users}
+      />
+
+      {effectiveViewMode === 'map' ? (
+        <Suspense
+          fallback={(
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              Loading geo map.
+            </div>
+          )}
+        >
+          <Card>
+            <CardContent className="p-0">
+              <AuditGeoMap
+                filters={mapFilters}
+                onSelectCountry={(country) => {
+                  setGeoCountry(country);
                   setPage(0);
                 }}
-              >
-                <MenuItem value="">All Gateways</MenuItem>
-                {gateways.map((gw) => (
-                  <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          <TextField
-            size="small"
-            label="IP Address"
-            value={ipAddress}
-            onChange={(e) => { setIpAddress(e.target.value); setPage(0); }}
-            sx={{ width: 160 }}
+              />
+            </CardContent>
+          </Card>
+        </Suspense>
+      ) : (
+        <>
+          <TenantAuditResults
+            emptyMessage={filtersApplied > 0 ? 'No activity matches the current filters.' : 'No activity recorded yet.'}
+            error={error}
+            expandedRowId={expandedRowId}
+            loading={loading}
+            logs={logs}
+            onGeoIpClick={onGeoIpClick}
+            onToggleRow={(logId) => setExpandedRowId((current) => current === logId ? null : logId)}
+            onViewUserProfile={onViewUserProfile}
           />
-          {countries.length > 0 && (
-            <FormControl size="small" sx={{ minWidth: 160 }}>
-              <InputLabel>Country</InputLabel>
-              <Select
-                value={geoCountry}
-                label="Country"
-                onChange={(e) => {
-                  setGeoCountry(e.target.value);
-                  setPage(0);
-                }}
-              >
-                <MenuItem value="">All Countries</MenuItem>
-                {countries.map((c) => (
-                  <MenuItem key={c} value={c}>{c}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          <TextField
-            size="small"
-            type="date"
-            label="From"
-            value={startDate}
-            onChange={(e) => { setStartDate(e.target.value); setPage(0); }}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <TextField
-            size="small"
-            type="date"
-            label="To"
-            value={endDate}
-            onChange={(e) => { setEndDate(e.target.value); setPage(0); }}
-            slotProps={{ inputLabel: { shrink: true } }}
-          />
-          <Tooltip title="Show only flagged entries (e.g. impossible travel)">
-            <Chip
-              icon={<WarningIcon fontSize="small" />}
-              label="Flagged"
-              size="small"
-              color={flaggedOnly ? 'warning' : 'default'}
-              variant={flaggedOnly ? 'filled' : 'outlined'}
-              onClick={() => { setFlaggedOnly(!flaggedOnly); setPage(0); }}
-              sx={{ cursor: 'pointer' }}
-            />
-          </Tooltip>
-        </Stack>
-
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-        {tenantAuditLogViewMode === 'map' && (
-          <Suspense fallback={
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
-          }>
-            <AuditGeoMap onSelectCountry={(country) => {
-              setGeoCountry(country);
-              setUiPref('tenantAuditLogViewMode', 'table');
-              setPage(0);
-            }} />
-          </Suspense>
-        )}
-
-        {tenantAuditLogViewMode !== 'map' && (loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-            <CircularProgress />
-          </Box>
-        ) : logs.length === 0 ? (
-          <Box sx={{ textAlign: 'center', py: 6 }}>
-            <Typography color="text.secondary">
-              {hasActiveFilters
-                ? 'No logs match your filters'
-                : 'No activity recorded yet'}
-            </Typography>
-          </Box>
-        ) : (
-          <>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox" />
-                  <TableCell>
-                    <TableSortLabel
-                      active={tenantAuditLogSortBy === 'createdAt'}
-                      direction={tenantAuditLogSortBy === 'createdAt' ? (tenantAuditLogSortOrder as 'asc' | 'desc') : 'asc'}
-                      onClick={() => handleSort('createdAt')}
-                    >
-                      Date/Time
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell>User</TableCell>
-                  <TableCell>
-                    <TableSortLabel
-                      active={tenantAuditLogSortBy === 'action'}
-                      direction={tenantAuditLogSortBy === 'action' ? (tenantAuditLogSortOrder as 'asc' | 'desc') : 'asc'}
-                      onClick={() => handleSort('action')}
-                    >
-                      Action
-                    </TableSortLabel>
-                  </TableCell>
-                  <TableCell>Target</TableCell>
-                  <TableCell>IP Address</TableCell>
-                  <TableCell>Details</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {logs.map((log) => {
-                  const isExpanded = expandedRowId === log.id;
-                  return (
-                    <Fragment key={log.id}>
-                      <TableRow
-                        hover
-                        onClick={() => setExpandedRowId(isExpanded ? null : log.id)}
-                        sx={{ cursor: 'pointer', '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }}
-                      >
-                        <TableCell padding="checkbox">
-                          <IconButton size="small">
-                            {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
-                          </IconButton>
-                        </TableCell>
-                        <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                          {new Date(log.createdAt).toLocaleString()}
-                        </TableCell>
-                        <TableCell
-                          sx={{
-                            whiteSpace: 'nowrap',
-                            ...(onViewUserProfile && log.userId ? { cursor: 'pointer', '&:hover': { textDecoration: 'underline' } } : {}),
-                          }}
-                          onClick={() => log.userId && onViewUserProfile?.(log.userId)}
-                        >
-                          {log.userName ?? log.userEmail ?? '\u2014'}
-                        </TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                            <Chip
-                              label={ACTION_LABELS[log.action] || log.action}
-                              color={getActionColor(log.action)}
-                              size="small"
-                            />
-                            {log.flags?.includes('IMPOSSIBLE_TRAVEL') && (
-                              <Tooltip title="Impossible travel detected">
-                                <WarningIcon color="warning" fontSize="small" />
-                              </Tooltip>
-                            )}
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          {log.targetType
-                            ? `${log.targetType}${log.targetId ? ` ${log.targetId.slice(0, 8)}...` : ''}`
-                            : '\u2014'}
-                        </TableCell>
-                        <TableCell>
-                          <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} onGeoIpClick={onGeoIpClick} />
-                        </TableCell>
-                        <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {formatDetails(log.details as Record<string, unknown> | null)}
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell colSpan={7} sx={{ py: 0, borderBottom: isExpanded ? undefined : 'none' }}>
-                          <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                            <Box sx={{ py: 2, px: 3 }}>
-                              {log.details && typeof log.details === 'object' && Object.keys(log.details as object).length > 0 ? (
-                                <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 1, maxWidth: 600 }}>
-                                  {Object.entries(log.details as Record<string, unknown>).map(([key, value]) => (
-                                    <Fragment key={key}>
-                                      <Typography variant="body2" fontWeight={600} color="text.secondary">
-                                        {key}
-                                      </Typography>
-                                      <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
-                                        {Array.isArray(value) ? value.join(', ') : String(value)}
-                                      </Typography>
-                                    </Fragment>
-                                  ))}
-                                </Box>
-                              ) : (
-                                <Typography variant="body2" color="text.secondary">No additional details</Typography>
-                              )}
-                              {log.userEmail && (
-                                <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                  Email: {log.userEmail}
-                                </Typography>
-                              )}
-                              {log.targetId && (
-                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                  Full Target ID: {log.targetId}
-                                </Typography>
-                              )}
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
-                    </Fragment>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            <TablePagination
-              component="div"
-              count={total}
+          {logs.length > 0 && !loading && !error ? (
+            <TenantAuditPagination
               page={page}
-              onPageChange={(_, newPage) => setPage(newPage)}
               rowsPerPage={rowsPerPage}
-              onRowsPerPageChange={(e) => {
-                setRowsPerPage(parseInt(e.target.value, 10));
+              total={total}
+              totalPages={totalPages}
+              onNextPage={() => setPage((current) => current + 1)}
+              onPreviousPage={() => setPage((current) => current - 1)}
+              onRowsPerPageChange={(value) => {
+                setRowsPerPage(value);
                 setPage(0);
               }}
-              rowsPerPageOptions={[25, 50, 100]}
             />
-          </>
-        ))}
-      </CardContent>
-    </Card>
+          ) : null}
+        </>
+      )}
+    </SettingsPanel>
   );
 }

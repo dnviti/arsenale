@@ -1,22 +1,51 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
-  Box, Typography, Button, IconButton, Table, TableHead, TableBody, TableRow, TableCell,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Alert, Chip,
-  FormControl, InputLabel, Select, MenuItem, Switch, Tooltip,
-} from '@mui/material';
-import {
-  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
-  CheckCircle as CheckCircleIcon, Cancel as CancelIcon,
-  Science as TestIcon,
-} from '@mui/icons-material';
-import {
-  listVaultProviders, createVaultProvider, updateVaultProvider, deleteVaultProvider,
-  testVaultProvider, VaultProviderData, CreateVaultProviderInput, UpdateVaultProviderInput,
+  createVaultProvider,
+  deleteVaultProvider,
+  listVaultProviders,
+  testVaultProvider,
+  updateVaultProvider,
+  type CreateVaultProviderInput,
+  type ExternalVaultType,
+  type UpdateVaultProviderInput,
+  type VaultProviderData,
 } from '../../api/externalVault.api';
 import { extractApiError } from '../../utils/apiError';
+import { PolicyEmptyState } from './databasePolicyUi';
+import {
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+} from './settings-ui';
+import { VaultProviderRecordCard } from './vaultProviderFields';
+import {
+  createVaultProviderForm,
+  type VaultProviderFormState,
+  VaultProviderDeleteDialog,
+  VaultProviderFormDialog,
+  VaultProviderTestDialog,
+} from './vaultProviderDialogs';
+import { requiresVaultProviderCredentials } from './vaultProviderMeta';
 
 interface VaultProvidersSectionProps {
   tenantId: string;
+}
+
+function buildAuthPayload(values: Record<string, string>) {
+  const payload: Record<string, string> = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (value) {
+      payload[key] = value;
+    }
+  }
+  return JSON.stringify(payload);
+}
+
+function hasAuthCredentials(values: Record<string, string>) {
+  return Object.values(values).some((value) => value.length > 0);
 }
 
 export default function VaultProvidersSection({ tenantId }: VaultProvidersSectionProps) {
@@ -25,32 +54,22 @@ export default function VaultProvidersSection({ tenantId }: VaultProvidersSectio
   const [error, setError] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProvider, setEditingProvider] = useState<VaultProviderData | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VaultProviderData | null>(null);
+  const [form, setForm] = useState<VaultProviderFormState>(() => createVaultProviderForm());
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [testDialogOpen, setTestDialogOpen] = useState(false);
-  const [testProviderId, setTestProviderId] = useState('');
+  const [testProvider, setTestProvider] = useState<{ id: string; type: ExternalVaultType } | null>(null);
   const [testPath, setTestPath] = useState('');
   const [testResult, setTestResult] = useState<{ success: boolean; keys?: string[]; error?: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
 
-  // Form state
-  const [formName, setFormName] = useState('');
-  const [formUrl, setFormUrl] = useState('');
-  const [formAuth, setFormAuth] = useState<'TOKEN' | 'APPROLE'>('TOKEN');
-  const [formNamespace, setFormNamespace] = useState('');
-  const [formMount, setFormMount] = useState('secret');
-  const [formToken, setFormToken] = useState('');
-  const [formRoleId, setFormRoleId] = useState('');
-  const [formSecretId, setFormSecretId] = useState('');
-  const [formCacheTtl, setFormCacheTtl] = useState('300');
-  const [formCaCert, setFormCaCert] = useState('');
-  const [formError, setFormError] = useState('');
-  const [saving, setSaving] = useState(false);
-
   const fetchProviders = useCallback(async () => {
+    setLoading(true);
+    setError('');
     try {
-      setLoading(true);
-      const data = await listVaultProviders();
-      setProviders(data);
-    } catch (err) {
+      setProviders(await listVaultProviders());
+    } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to load vault providers'));
     } finally {
       setLoading(false);
@@ -58,126 +77,150 @@ export default function VaultProvidersSection({ tenantId }: VaultProvidersSectio
   }, []);
 
   useEffect(() => {
-    if (tenantId) fetchProviders();
-  }, [tenantId, fetchProviders]);
+    if (tenantId) {
+      void fetchProviders();
+    }
+  }, [fetchProviders, tenantId]);
+
+  const summary = useMemo(
+    () => ({
+      configured: providers.length,
+      enabled: providers.filter((provider) => provider.enabled).length,
+      disabled: providers.filter((provider) => !provider.enabled).length,
+      providerKinds: new Set(providers.map((provider) => provider.providerType)).size,
+    }),
+    [providers],
+  );
 
   const openCreateDialog = () => {
     setEditingProvider(null);
-    setFormName('');
-    setFormUrl('');
-    setFormAuth('TOKEN');
-    setFormNamespace('');
-    setFormMount('secret');
-    setFormToken('');
-    setFormRoleId('');
-    setFormSecretId('');
-    setFormCacheTtl('300');
-    setFormCaCert('');
+    setForm(createVaultProviderForm());
     setFormError('');
     setDialogOpen(true);
   };
 
-  const openEditDialog = (p: VaultProviderData) => {
-    setEditingProvider(p);
-    setFormName(p.name);
-    setFormUrl(p.serverUrl);
-    setFormAuth(p.authMethod);
-    setFormNamespace(p.namespace ?? '');
-    setFormMount(p.mountPath);
-    setFormToken('');
-    setFormRoleId('');
-    setFormSecretId('');
-    setFormCacheTtl(String(p.cacheTtlSeconds));
-    setFormCaCert('');
+  const openEditDialog = (provider: VaultProviderData) => {
+    setEditingProvider(provider);
+    setForm({
+      authMethod: provider.authMethod,
+      authValues: {},
+      cacheTtlSeconds: String(provider.cacheTtlSeconds),
+      caCertificate: '',
+      mountPath: provider.mountPath,
+      name: provider.name,
+      namespace: provider.namespace ?? '',
+      providerType: provider.providerType,
+      serverUrl: provider.serverUrl,
+    });
     setFormError('');
     setDialogOpen(true);
+  };
+
+  const handleProviderTypeChange = (providerType: ExternalVaultType) => {
+    const nextForm = createVaultProviderForm(providerType);
+    setForm((current) => ({
+      ...current,
+      authMethod: nextForm.authMethod,
+      authValues: {},
+      mountPath: nextForm.mountPath,
+      namespace: '',
+      providerType,
+      serverUrl: '',
+    }));
+    setFormError('');
   };
 
   const handleSave = async () => {
-    if (!formName || !formUrl) {
-      setFormError('Name and Server URL are required');
+    if (!form.name.trim() || !form.serverUrl.trim()) {
+      setFormError('Name and server URL are required');
       return;
     }
 
-    let authPayload: string;
-    if (formAuth === 'TOKEN') {
-      if (!formToken && !editingProvider) { setFormError('Token is required'); return; }
-      authPayload = JSON.stringify({ token: formToken });
-    } else {
-      if ((!formRoleId || !formSecretId) && !editingProvider) { setFormError('Role ID and Secret ID are required'); return; }
-      authPayload = JSON.stringify({ roleId: formRoleId, secretId: formSecretId });
+    if (
+      requiresVaultProviderCredentials(form.authMethod)
+      && !hasAuthCredentials(form.authValues)
+      && !editingProvider
+    ) {
+      setFormError('Authentication credentials are required for this method');
+      return;
     }
 
+    setSaving(true);
+    setFormError('');
     try {
-      setSaving(true);
       if (editingProvider) {
-        const input: UpdateVaultProviderInput = {
-          name: formName,
-          serverUrl: formUrl,
-          authMethod: formAuth,
-          namespace: formNamespace || null,
-          mountPath: formMount,
-          cacheTtlSeconds: parseInt(formCacheTtl, 10) || 300,
-          ...(formCaCert ? { caCertificate: formCaCert } : {}),
+        const payload: UpdateVaultProviderInput = {
+          authMethod: form.authMethod,
+          cacheTtlSeconds: Number.parseInt(form.cacheTtlSeconds, 10) || 300,
+          mountPath: form.mountPath,
+          name: form.name.trim(),
+          namespace: form.namespace.trim() || null,
+          providerType: form.providerType,
+          serverUrl: form.serverUrl.trim(),
+          ...(form.caCertificate.trim() ? { caCertificate: form.caCertificate.trim() } : {}),
+          ...(hasAuthCredentials(form.authValues) ? { authPayload: buildAuthPayload(form.authValues) } : {}),
         };
-        // Only send authPayload if credentials were re-entered
-        if (formAuth === 'TOKEN' && formToken) input.authPayload = authPayload;
-        if (formAuth === 'APPROLE' && formRoleId && formSecretId) input.authPayload = authPayload;
-        await updateVaultProvider(editingProvider.id, input);
+        await updateVaultProvider(editingProvider.id, payload);
       } else {
-        const input: CreateVaultProviderInput = {
-          name: formName,
-          serverUrl: formUrl,
-          authMethod: formAuth,
-          authPayload,
-          ...(formNamespace ? { namespace: formNamespace } : {}),
-          mountPath: formMount,
-          cacheTtlSeconds: parseInt(formCacheTtl, 10) || 300,
-          ...(formCaCert ? { caCertificate: formCaCert } : {}),
+        const payload: CreateVaultProviderInput = {
+          authMethod: form.authMethod,
+          authPayload: buildAuthPayload(form.authValues),
+          cacheTtlSeconds: Number.parseInt(form.cacheTtlSeconds, 10) || 300,
+          mountPath: form.mountPath,
+          name: form.name.trim(),
+          providerType: form.providerType,
+          serverUrl: form.serverUrl.trim(),
+          ...(form.namespace.trim() ? { namespace: form.namespace.trim() } : {}),
+          ...(form.caCertificate.trim() ? { caCertificate: form.caCertificate.trim() } : {}),
         };
-        await createVaultProvider(input);
+        await createVaultProvider(payload);
       }
+
       setDialogOpen(false);
       await fetchProviders();
-    } catch (err) {
+    } catch (err: unknown) {
       setFormError(extractApiError(err, 'Failed to save vault provider'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setError('');
     try {
-      await deleteVaultProvider(id);
+      await deleteVaultProvider(deleteTarget.id);
+      setDeleteTarget(null);
       await fetchProviders();
-    } catch (err) {
+    } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to delete vault provider'));
     }
   };
 
-  const handleToggleEnabled = async (p: VaultProviderData) => {
+  const handleToggleEnabled = async (provider: VaultProviderData) => {
+    setError('');
     try {
-      await updateVaultProvider(p.id, { enabled: !p.enabled });
+      await updateVaultProvider(provider.id, { enabled: !provider.enabled });
       await fetchProviders();
-    } catch (err) {
+    } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to toggle vault provider'));
     }
   };
 
-  const openTestDialog = (providerId: string) => {
-    setTestProviderId(providerId);
+  const openTestDialog = (provider: VaultProviderData) => {
+    setTestProvider({ id: provider.id, type: provider.providerType });
     setTestPath('');
     setTestResult(null);
     setTestDialogOpen(true);
   };
 
   const handleTest = async () => {
+    if (!testProvider) return;
+    setTestLoading(true);
+    setTestResult(null);
     try {
-      setTestLoading(true);
-      setTestResult(null);
-      const result = await testVaultProvider(testProviderId, testPath);
-      setTestResult(result);
-    } catch (err) {
+      setTestResult(await testVaultProvider(testProvider.id, testPath));
+    } catch (err: unknown) {
       setTestResult({ success: false, error: extractApiError(err, 'Test failed') });
     } finally {
       setTestLoading(false);
@@ -185,180 +228,83 @@ export default function VaultProvidersSection({ tenantId }: VaultProvidersSectio
   };
 
   return (
-    <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-        <Typography variant="subtitle1" fontWeight={600}>External Vault Providers</Typography>
-        <Button size="small" startIcon={<AddIcon />} onClick={openCreateDialog}>Add Provider</Button>
-      </Box>
-
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
-
-      {loading ? (
-        <Typography variant="body2" color="text.secondary">Loading...</Typography>
-      ) : providers.length === 0 ? (
-        <Typography variant="body2" color="text.secondary">
-          No external vault providers configured. Add a HashiCorp Vault provider to reference credentials stored externally.
-        </Typography>
-      ) : (
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Server URL</TableCell>
-              <TableCell>Auth</TableCell>
-              <TableCell>Mount</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {providers.map((p) => (
-              <TableRow key={p.id}>
-                <TableCell>{p.name}</TableCell>
-                <TableCell sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {p.serverUrl}
-                </TableCell>
-                <TableCell>
-                  <Chip label={p.authMethod} size="small" variant="outlined" />
-                </TableCell>
-                <TableCell>{p.mountPath}</TableCell>
-                <TableCell>
-                  {p.enabled
-                    ? <Chip icon={<CheckCircleIcon />} label="Enabled" size="small" color="success" variant="outlined" />
-                    : <Chip icon={<CancelIcon />} label="Disabled" size="small" color="default" variant="outlined" />}
-                </TableCell>
-                <TableCell align="right">
-                  <Tooltip title="Test Connection">
-                    <IconButton size="small" onClick={() => openTestDialog(p.id)}>
-                      <TestIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title={p.enabled ? 'Disable' : 'Enable'}>
-                    <Switch size="small" checked={p.enabled} onChange={() => handleToggleEnabled(p)} />
-                  </Tooltip>
-                  <Tooltip title="Edit">
-                    <IconButton size="small" onClick={() => openEditDialog(p)}>
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Delete">
-                    <IconButton size="small" color="error" onClick={() => handleDelete(p.id)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-
-      {/* Create/Edit Dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingProvider ? 'Edit Vault Provider' : 'Add Vault Provider'}</DialogTitle>
-        <DialogContent>
-          {formError && <Alert severity="error" sx={{ mb: 2 }}>{formError}</Alert>}
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <TextField label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} fullWidth required />
-            <TextField label="Server URL" value={formUrl} onChange={(e) => setFormUrl(e.target.value)} fullWidth required placeholder="https://vault.example.com:8200" />
-            <FormControl fullWidth>
-              <InputLabel>Auth Method</InputLabel>
-              <Select value={formAuth} label="Auth Method" onChange={(e) => {
-                const newMethod = e.target.value as 'TOKEN' | 'APPROLE';
-                setFormAuth(newMethod);
-                if (editingProvider) {
-                  // Clear credential fields when switching auth method in edit mode
-                  setFormToken('');
-                  setFormRoleId('');
-                  setFormSecretId('');
-                }
-              }}>
-                <MenuItem value="TOKEN">Static Token</MenuItem>
-                <MenuItem value="APPROLE">AppRole</MenuItem>
-              </Select>
-            </FormControl>
-            {formAuth === 'TOKEN' ? (
-              <TextField
-                label="Vault Token"
-                value={formToken}
-                onChange={(e) => setFormToken(e.target.value)}
-                fullWidth
-                type="password"
-                required={!editingProvider}
-                placeholder={editingProvider ? 'Leave blank to keep unchanged' : undefined}
-              />
-            ) : (
-              <>
-                <TextField
-                  label="Role ID"
-                  value={formRoleId}
-                  onChange={(e) => setFormRoleId(e.target.value)}
-                  fullWidth
-                  required={!editingProvider}
-                  placeholder={editingProvider ? 'Leave blank to keep unchanged' : undefined}
-                />
-                <TextField
-                  label="Secret ID"
-                  value={formSecretId}
-                  onChange={(e) => setFormSecretId(e.target.value)}
-                  fullWidth
-                  type="password"
-                  required={!editingProvider}
-                  placeholder={editingProvider ? 'Leave blank to keep unchanged' : undefined}
-                />
-              </>
-            )}
-            <TextField label="Namespace (optional)" value={formNamespace} onChange={(e) => setFormNamespace(e.target.value)} fullWidth />
-            <TextField label="Mount Path" value={formMount} onChange={(e) => setFormMount(e.target.value)} fullWidth />
-            <TextField label="Cache TTL (seconds)" value={formCacheTtl} onChange={(e) => setFormCacheTtl(e.target.value)} type="number" fullWidth />
-            <TextField
-              label="CA Certificate (optional)"
-              value={formCaCert}
-              onChange={(e) => setFormCaCert(e.target.value)}
-              fullWidth
-              multiline
-              rows={3}
-              placeholder="PEM-encoded CA certificate for custom TLS"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained" disabled={saving}>
-            {saving ? 'Saving...' : (editingProvider ? 'Save' : 'Create')}
+    <>
+      <SettingsPanel
+        title="External vault providers"
+        description="Reference secrets from external vault systems without forcing people through multiple disconnected setup screens."
+        heading={(
+          <Button type="button" onClick={openCreateDialog}>
+            Add Provider
           </Button>
-        </DialogActions>
-      </Dialog>
+        )}
+      >
+        <div className="space-y-5">
+          <SettingsSummaryGrid className="xl:grid-cols-4">
+            <SettingsSummaryItem label="Configured" value={summary.configured} />
+            <SettingsSummaryItem label="Enabled" value={summary.enabled} />
+            <SettingsSummaryItem label="Disabled" value={summary.disabled} />
+            <SettingsSummaryItem label="Provider types" value={summary.providerKinds} />
+          </SettingsSummaryGrid>
 
-      {/* Test Dialog */}
-      <Dialog open={testDialogOpen} onClose={() => setTestDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Test Vault Connection</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <TextField
-              label="Secret Path"
-              value={testPath}
-              onChange={(e) => setTestPath(e.target.value)}
-              fullWidth
-              placeholder="e.g. servers/web1"
-              helperText="Path to the secret within the KV v2 mount"
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          {loading ? (
+            <SettingsLoadingState message="Loading external vault providers..." />
+          ) : providers.length === 0 ? (
+            <PolicyEmptyState
+              title="No vault providers configured"
+              description="Add HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, or CyberArk Conjur when credentials should stay outside the built-in keychain."
             />
-            {testResult && (
-              <Alert severity={testResult.success ? 'success' : 'error'}>
-                {testResult.success
-                  ? `Connection successful. Keys found: ${testResult.keys?.join(', ') ?? 'none'}`
-                  : `Connection failed: ${testResult.error}`}
-              </Alert>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTestDialogOpen(false)}>Close</Button>
-          <Button onClick={handleTest} variant="contained" disabled={testLoading || !testPath}>
-            {testLoading ? 'Testing...' : 'Test'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+          ) : (
+            <div className="space-y-4">
+              {providers.map((provider) => (
+                <VaultProviderRecordCard
+                  key={provider.id}
+                  provider={provider}
+                  onTest={() => openTestDialog(provider)}
+                  onEdit={() => openEditDialog(provider)}
+                  onDelete={() => setDeleteTarget(provider)}
+                  onToggleEnabled={() => { void handleToggleEnabled(provider); }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </SettingsPanel>
+
+      <VaultProviderFormDialog
+        open={dialogOpen}
+        editing={Boolean(editingProvider)}
+        form={form}
+        formError={formError}
+        saving={saving}
+        onClose={() => setDialogOpen(false)}
+        onSave={handleSave}
+        onFormChange={setForm}
+        onProviderTypeChange={handleProviderTypeChange}
+      />
+
+      <VaultProviderTestDialog
+        open={testDialogOpen}
+        pathValue={testPath}
+        result={testResult}
+        testLoading={testLoading}
+        testProviderType={testProvider?.type ?? null}
+        onClose={() => setTestDialogOpen(false)}
+        onPathChange={setTestPath}
+        onTest={handleTest}
+      />
+
+      <VaultProviderDeleteDialog
+        open={Boolean(deleteTarget)}
+        name={deleteTarget?.name}
+        onClose={() => setDeleteTarget(null)}
+        onDelete={handleDelete}
+      />
+    </>
   );
 }

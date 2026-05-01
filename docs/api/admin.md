@@ -79,6 +79,19 @@ All endpoints require authentication and tenant membership. Most require Operato
 | `DELETE` | `/api/gateways/:id` | Operator | Delete gateway |
 | `POST` | `/api/gateways/:id/test` | Tenant | Test gateway connectivity |
 
+`GET /api/gateways` returns both the legacy probe fields (`lastHealthStatus`, `lastCheckedAt`, `lastLatencyMs`, `lastError`) and the derived fleet-facing fields used by the UI and CLI:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `operationalStatus` | `HEALTHY \| DEGRADED \| UNHEALTHY \| UNKNOWN` | Canonical gateway status shown in the client and CLI |
+| `operationalReason` | `string` | Human-readable explanation for the derived status |
+| `healthyInstances` | `number` | Managed instances currently considered healthy |
+| `runningInstances` | `number` | Managed instances currently running |
+| `tunnelConnected` | `boolean` | Live tunnel connectivity when tunnel status is available |
+| `tunnelConnectedAt` | `string \| null` | Tunnel broker connected-at timestamp when connected |
+
+For tunnel-enabled gateways, `operationalStatus` is derived from the live tunnel broker snapshot and heartbeat metadata. For managed groups, it is derived from healthy instance counts instead of the legacy gateway probe status alone.
+
 ### SSH Key Pair Management
 
 | Method | Endpoint | Description |
@@ -166,7 +179,14 @@ Generate a new tunnel token for a gateway. The plain token is returned only once
 {
   "token": "tunneltok_abc123...",
   "tunnelEnabled": true,
-  "tunnelConnected": false
+  "tunnelConnected": false,
+  "gatewayId": "gw_123",
+  "gatewayType": "GUACD",
+  "tunnelLocalHost": "127.0.0.1",
+  "tunnelLocalPort": 4822,
+  "tunnelClientCert": "-----BEGIN CERTIFICATE-----...",
+  "tunnelClientKey": "-----BEGIN PRIVATE KEY-----...",
+  "tunnelClientCertExp": "2026-07-29T12:00:00Z"
 }
 ```
 
@@ -175,6 +195,10 @@ Generate a new tunnel token for a gateway. The plain token is returned only once
 | `token` | `string` | Plain-text tunnel token (shown only once) |
 | `tunnelEnabled` | `boolean` | Whether tunnel is now enabled on the gateway |
 | `tunnelConnected` | `boolean` | Whether a tunnel client is currently connected |
+| `gatewayId` / `gatewayType` | `string` | Gateway identity for compose and agent config |
+| `tunnelLocalHost` / `tunnelLocalPort` | `string` / `number` | Local service endpoint the agent should proxy |
+| `tunnelClientCert` / `tunnelClientKey` | `string` | One-time mTLS client material required by the tunnel broker |
+| `tunnelClientCertExp` | `string` | Client certificate expiration timestamp |
 
 #### `DELETE /api/gateways/:id/tunnel-token`
 

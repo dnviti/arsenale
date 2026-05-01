@@ -1,306 +1,267 @@
 ---
 title: Development
-description: Contributing guide, local development setup, testing, code quality, and branch strategy
-generated-by: ctdf-docs
-generated-at: 2026-03-24T23:40:00Z
+description: Local workflow, quality gates, testing strategy, feature alignment, and contribution conventions for Arsenale
+generated-by: claw-docs
+generated-at: 2026-04-15T05:30:00Z
 source-files:
+  - AGENT.md
+  - CONTRIBUTING.md
   - package.json
-  - server/package.json
   - client/package.json
-  - gateways/tunnel-agent/package.json
-  - extra-clients/browser-extensions/package.json
   - eslint.config.mjs
-  - server/vitest.config.ts
+  - client/vite.config.ts
   - client/vitest.config.ts
-  - CLAUDE.md
   - Makefile
+  - deployment/ansible/playbooks/dev_refresh.yml
+  - backend/internal/runtimefeatures/manifest.go
+  - backend/internal/publicconfig/service.go
+  - client/src/api/auth.api.ts
+  - client/src/store/featureFlagsStore.ts
+  - scripts/go-build-all.sh
+  - scripts/go-test-all.sh
+  - scripts/security-scan.sh
+  - scripts/dev-api-acceptance.sh
+  - scripts/db-migrate.sh
+  - tools/arsenale-cli/cmd/root.go
 ---
 
-# Development
+## 🧱 Monorepo Shape
 
-## Local Development Setup
+Arsenale is a mixed Go and JavaScript monorepo.
 
-### Prerequisites
+| Area | Path | Stack |
+|------|------|-------|
+| Control and runtime services | `backend/` | Go 1.25 |
+| Web client | `client/` | React 19, Vite 8, Vitest, Tailwind CSS 4, shadcn/ui, MUI 7 |
+| Tunnel agent | `gateways/tunnel-agent/` | Go module |
+| Browser extension | `extra-clients/browser-extensions/` | Chrome MV3 workspace |
+| CLI | `tools/arsenale-cli/` | Go |
+| Installer and deploy | `deployment/ansible/`, `deployment/helm/` | Ansible, Helm, Python helpers |
 
-- Node.js 22+, npm 10+
-- Docker or Podman (for PostgreSQL and guacd)
-- Git
+One important correction to older contributor material: the active runtime is not a legacy Express `server/`. The live platform is Go-first and the route surface comes from `backend/cmd/control-plane-api`.
 
-### First Run
-
-```bash
-npm install                    # Install all workspace dependencies
-cp .env.example .env           # Configure environment
-npm run predev && npm run dev  # Start containers + server + client
-```
-
-### Running Services
-
-| Command | What It Does |
-|---------|-------------|
-| `npm run dev` | Runs server (3001) + client (3000) concurrently |
-| `npm run dev:server` | Express with tsx watch, hot reload |
-| `npm run dev:client` | Vite dev server, proxies to server |
-| `npm run dev:client:wait` | Waits for server health check, then starts client |
-| `npm run docker:dev` | Start PostgreSQL + guacenc containers |
-| `npm run docker:dev:down` | Stop dev containers |
-| `npm run dev:docker` | Full Docker dev stack (build + run) |
-| `npm run dev:docker:detach` | Full Docker dev stack (detached mode) |
-
-### Database Operations
-
-| Command | Purpose |
-|---------|---------|
-| `npm run db:generate` | Generate Prisma client types after schema changes |
-| `npm run db:push` | Sync schema to database (no migration file) |
-| `npm run db:migrate` | Create new migration interactively |
-
-Migrations run automatically on server start via `prisma migrate deploy` -- no manual migration step needed for development.
-
-### Makefile Shortcuts
-
-```bash
-make full-stack     # Install + run everything
-make server-dev     # Server with Prisma generate + watch
-make client-dev     # Client dev server
-make prisma-studio  # Open Prisma Studio GUI
-make migrate-dev    # Interactive migration creation
-```
-
-## Code Quality
-
-### Verification Pipeline
-
-```bash
-npm run verify   # Must pass before closing any task
-```
-
-Runs in sequence: **typecheck -> lint -> audit -> test -> build**
-
-### Individual Checks
-
-| Command | Scope |
-|---------|-------|
-| `npm run typecheck` | TypeScript type-check (all workspaces, no emit) |
-| `npm run lint` | ESLint across all workspaces (flat config) |
-| `npm run lint:fix` | ESLint with auto-fix |
-| `npm run sast` | npm audit (critical severity) |
-| `npm run codeql` | Local CodeQL security scan (security-extended) |
-| `npm run codeql:full` | Local CodeQL full scan (security-and-quality) |
-| `npm run security` | Full security scan (npm audit + CodeQL + dependency check) |
-| `npm run security:quick` | Quick security scan |
-| `npm run security:docker` | Docker image security scan |
-| `npm run build` | Build all workspaces |
-
-### ESLint Configuration
-
-The flat ESLint config (`eslint.config.mjs`) applies:
-
-- **TypeScript strict rules** across all workspaces
-- **Security plugin** (eslint-plugin-security)
-- **Server-specific:** Discourages `console` usage (use logger utility instead)
-- **Client/Extensions:** React Hooks + React Refresh rules
-- **Test files:** Relaxed rules (no-explicit-any and non-null-assertion allowed)
-- **Ignored:** `dist/`, `node_modules/`, `generated/`
-
-### TypeScript Configuration
-
-| Workspace | Target | Module | JSX | Strict |
-|-----------|--------|--------|-----|--------|
-| Server | ES2022 | CommonJS | -- | Yes |
-| Client | ES2022 | ESNext | react-jsx | Yes |
-| Tunnel Agent | ES2022 | CommonJS | -- | Yes |
-| Browser Extensions | ES2022 | ESNext | react-jsx | Yes |
-
-## Testing
-
-### Running Tests
-
-```bash
-npm run test:watch           # Watch mode (server + client)
-npm run test -w server       # Server tests only
-npm run test -w client       # Client tests only
-```
-
-Test framework: **Vitest** across all workspaces.
-
-### Test File Locations
-
-Tests follow the convention of placing test files alongside source files or in `__tests__/` directories.
-
-## Branch Strategy
+## 🔁 Daily Development Loop
 
 ```mermaid
-gitgraph
-    commit id: "main"
-    branch develop
-    commit id: "feature work"
-    branch task/TASK-001
-    commit id: "implement feature"
-    checkout develop
-    merge task/TASK-001 id: "PR merge"
-    branch task/TASK-002
-    commit id: "fix bug"
-    checkout develop
-    merge task/TASK-002 id: "PR merge 2"
-    checkout main
-    merge develop id: "release v1.7.1"
+flowchart LR
+    A["npm install"] --> B["npm run dev or make dev"]
+    B --> C["Edit backend / client / gateways / installer"]
+    C --> D["Focused tests"]
+    D --> E["npm run verify"]
+    E --> F["CLI smoke via arsenale-cli"]
 ```
 
-| Branch | Purpose | Merges Into |
-|--------|---------|-------------|
-| `main` | Production releases | -- |
-| `develop` | Integration branch | `main` (via release) |
-| `staging` | Pre-release testing | `main` |
-| `task/<code>` | Feature/fix branches | `develop` (via PR) |
+Recommended day-to-day loop:
 
-**Rules:**
-- All work happens on `task/<code>` branches created from `develop`
-- Every task branch requires a pull request targeting `develop`
-- Never merge directly into `develop` or `main`
-- Never delete the `develop` branch
+1. Use `npm run dev` when you want the repo root to deploy the stack and launch Vite for you.
+2. Use `make dev` plus `npm run dev:client` when you want explicit control over deploy and frontend startup.
+3. After the full stack exists, use `make dev client`, `make dev gateways`, or `make dev control-plane` to rebuild only the changed containers.
+4. Run focused Go or Vitest commands while iterating.
+5. Run `npm run verify` before declaring a change complete.
+6. Use the CLI from `tools/arsenale-cli` as an acceptance client for auth, connection, gateway, and session flows.
 
-## File Naming Conventions
+Podman is required for installer-aware development deploys because `make dev` delegates to `deployment/ansible/playbooks/install.yml`.
 
-| Layer | Pattern | Example |
-|-------|---------|---------|
-| Server routes | `*.routes.ts` | `auth.routes.ts` |
-| Server controllers | `*.controller.ts` | `connection.controller.ts` |
-| Server services | `*.service.ts` | `encryption.service.ts` |
-| Server middleware | `*.middleware.ts` | `auth.middleware.ts` |
-| Client stores | `*Store.ts` | `authStore.ts` |
-| Client API | `*.api.ts` | `connections.api.ts` |
-| Client hooks | `use*.ts` | `useAuth.ts` |
+Service-scoped `make dev <selector>` refreshes reuse the saved dev installer profile and rendered compose/env artifacts, so they are intended for code/image iteration. When you change capability flags, certificates, secrets, or deployment wiring, rerun full `make dev`.
 
-## Key Development Patterns
+For headless local reruns, put the technician password in `install/password.txt`.
+The repo `Makefile` auto-detects that file and passes `-e install_password_file=...`
+to installer-backed targets such as `make dev`, `make install`, `make deploy`,
+and `make status`.
 
-### Layered Architecture (Server)
+## ✅ Quality Gates
 
+Top-level scripts from `package.json`:
+
+| Command | What it does |
+|---------|--------------|
+| `npm run typecheck` | Typecheck active JS workspaces |
+| `npm run lint` | Run ESLint across the repo |
+| `npm run sast` | Run `npm audit --audit-level=critical` |
+| `npm run security` | Run the repo security scan wrapper |
+| `npm run backend:test` | `go test ./...` in `backend/` |
+| `npm run go:test` | Go tests across backend, gateways, and CLI |
+| `npm run go:build` | Go builds across backend, gateways, and CLI |
+| `npm run verify` | Generate SQL, run Go tests, typecheck, lint, audit, JS tests, and build |
+
+Supporting scripts:
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/go-test-all.sh` | Aggregate Go test runner |
+| `scripts/go-build-all.sh` | Aggregate Go build runner |
+| `scripts/security-scan.sh` | npm audit, ESLint security rules, Trivy filesystem scan, optional image scans |
+| `scripts/dev-api-acceptance.sh` | Full API and runtime acceptance against the dev stack |
+| `scripts/dev-managed-file-smoke.sh` | CLI-first managed SSH and RDP sandbox smoke path with discovery, history checks, deny checks, and audit verification |
+| `scripts/db-migrate.sh` | Runtime-aware migration helper with compose overrides |
+
+## 🧪 Testing Surfaces
+
+### Frontend
+
+- `client/package.json` uses `vitest run` for tests.
+- `client/vitest.config.ts` defines the test runtime.
+- `client/vite.config.ts` defines the local proxy behavior and HTTPS setup.
+
+### Go services
+
+The backend, gateway modules, and CLI are all first-class test targets. `scripts/go-test-all.sh` currently covers:
+
+- `backend`
+- `gateways/gateway-core`
+- `gateways/db-proxy`
+- `gateways/guacenc`
+- `gateways/rdgw`
+- `gateways/ssh-gateway/grpc-server`
+- `tools/arsenale-cli`
+
+### Database-specific tests
+
+The backend includes focused test files for critical subsystems:
+
+- `backend/cmd/control-plane-api/config_test.go` — control plane config parsing
+- `backend/cmd/control-plane-api/dev_bootstrap_test.go` — dev bootstrap flow
+- `backend/cmd/control-plane-api/routes_auth_test.go` — auth route registration
+- `backend/cmd/control-plane-api/routes_feature_test.go` — feature flag routing
+- `backend/internal/authservice/ip_allowlist_test.go` — IP allowlist logic
+- `backend/internal/authservice/mfa_test.go` — MFA verification
+- `backend/internal/authz/pdp_test.go` — policy decision point
+- `backend/internal/connections/host_validation_test.go` — connection host validation
+- `backend/internal/connections/list_response_test.go` — connection list response shaping
+
+### End-to-end
+
+`scripts/dev-api-acceptance.sh` is the highest-signal integration check in the repo. It touches:
+
+- auth and tenant flows,
+- sessions,
+- gateways,
+- secrets and vault,
+- recordings,
+- audit,
+- database sessions and policies.
+
+`scripts/dev-managed-file-smoke.sh` is the focused managed-file acceptance path. It uses `arsenale-cli` against the real dev stack to discover usable SSH and RDP connections, verify the managed sandbox banner, exercise sandbox-relative SSH and RDP file flows, confirm cleanup-after-success and retain-history behavior, run a real `file history list/download` proof against the retained-history connection, reject absolute-path attempts, and read back `FILE_*` audit entries.
+
+## 🧩 Capability Alignment Rule
+
+Runtime capabilities now span backend registration, public config, and client UI state. When you change feature availability or installer-owned product shape, update these together:
+
+- `backend/internal/runtimefeatures/manifest.go`
+- `backend/internal/publicconfig/service.go`
+- `backend/cmd/control-plane-api/routes*.go`
+- `client/src/api/auth.api.ts`
+- `client/src/store/featureFlagsStore.ts`
+- any client screens or dialogs gated on those flags
+
+If one layer changes and the others do not, the change is incomplete.
+
+## 🧰 CLI Alignment Rule
+
+`AGENT.md` is explicit: use `tools/arsenale-cli` as the primary operator and smoke-test client whenever you need real end-to-end verification.
+
+That rule has practical consequences:
+
+- if API contracts change, the CLI must be updated in the same change set,
+- CLI smoke tests are part of the acceptance bar,
+- `arsenale health`, `login`, `whoami`, `connection`, `gateway`, `session`, `rdgw`, `vault`, and `connect` are the highest-value commands to keep aligned.
+
+Typical smoke sequence:
+
+```bash
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 login
+./build/go/arsenale-cli --server https://localhost:3000 whoami
+./build/go/arsenale-cli --server https://localhost:3000 connection list
+./build/go/arsenale-cli --server https://localhost:3000 gateway list
 ```
-Routes -> Controllers -> Services -> Prisma ORM
-```
 
-- **Routes:** Define endpoints, apply middleware (auth, validation, rate limiting, feature gates)
-- **Controllers:** Parse requests, extract params, delegate to services
-- **Services:** Business logic, database operations, encryption
-- **Prisma ORM:** Type-safe database queries
+For the local installer stack, the CLI automatically trusts `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/client/ca.pem` when you target `https://localhost:3000`. Set `ARSENALE_CA_CERT` if you need to point the CLI at a different private CA bundle.
 
-### Full-Screen Dialog Pattern (Client)
+## 🖥 Frontend Architecture
 
-Features that overlay the workspace use full-screen MUI `Dialog` components, not routes:
+The React SPA in `client/` follows a layered architecture:
 
-```tsx
-<Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
-  <AppBar position="static" sx={{ position: 'relative' }}>
-    <Toolbar variant="dense">
-      <IconButton onClick={onClose}><CloseIcon /></IconButton>
-      <Typography>Title</Typography>
-    </Toolbar>
-  </AppBar>
-  <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
-    {/* content */}
-  </Box>
-</Dialog>
-```
+| Layer | Location | Count |
+|-------|----------|-------|
+| Pages | `client/src/pages/` | 11 pages |
+| Components | `client/src/components/` | 90+ components across 20+ directories |
+| Stores | `client/src/store/` | 17 Zustand stores |
+| Hooks | `client/src/hooks/` | 15 custom hooks |
+| API modules | `client/src/api/` | 41 Axios-based modules |
 
-State managed in `MainLayout` as `useState<boolean>`.
+Key stores and their purposes:
 
-### Error Handling
+| Store | Purpose |
+|-------|---------|
+| `authStore` | Authentication state, user context, JWT tokens |
+| `connectionsStore` | Connection list, filters, selection |
+| `tabsStore` | Open session tabs, tab state sync |
+| `vaultStore` | Vault lock/unlock state, auto-lock |
+| `secretStore` | Keychain secrets state |
+| `gatewayStore` | Gateway inventory, derived operational status, tunnel state, and orchestration health |
+| `featureFlagsStore` | Runtime feature manifest from server |
+| `tenantStore` | Current tenant context |
+| `teamStore` | Team CRUD and membership |
+| `accessPolicyStore` | ABAC access policy state |
+| `checkoutStore` | Credential checkout/check-in workflow |
+| `notificationStore` | Ephemeral toast notifications |
+| `notificationListStore` | Server-persisted notifications |
+| `uiPreferencesStore` | UI layout and theme (persisted to localStorage) |
+| `themeStore` | Light/dark mode toggle |
+| `terminalSettingsStore` | SSH terminal preferences |
+| `rdpSettingsStore` | RDP-specific settings |
 
-**Server:**
-```typescript
-throw new AppError('Connection not found', 404);
-// Caught by asyncHandler -> global error middleware
-```
+Notable custom hooks:
 
-**Client:**
-```typescript
-import { extractApiError } from '../utils/apiError';
-const message = extractApiError(err, 'Failed to create connection');
-```
+| Hook | Purpose |
+|------|---------|
+| `useAuth` | Authentication state and refresh |
+| `useAutoReconnect` | Auto-reconnect on disconnect |
+| `useGatewayMonitor` | Gateway health polling |
+| `useSftpTransfers` | Managed SSH file-browser tracking |
+| `useDlpBrowserHardening` | DLP policy enforcement in browser |
+| `useVaultStatusStream` | Real-time vault status updates |
+| `useDesktopNotifications` | Web Notifications API for push alerts |
+| `useGuacToolbarActions` | RDP/VNC toolbar actions with DLP awareness |
+| `useKeyboardCapture` | Keyboard capture for session viewers |
+| `useFullscreen` | Fullscreen state tracking per container |
 
-### UI Preferences
+For detailed component inventory, see the [components/](components/) directory.
 
-All layout state persists via `useUiPreferencesStore`:
-```typescript
-const { sidebarCompact, set } = useUiPreferencesStore();
-set('sidebarCompact', !sidebarCompact);
-```
+## 📝 Conventions That Matter
 
-Never use raw `localStorage.getItem/setItem` for UI preferences.
+| Area | Convention |
+|------|------------|
+| Public routes | `backend/cmd/control-plane-api/routes*.go` |
+| Service entrypoints | `backend/cmd/<service>/main.go` |
+| Shared service wrapper | `backend/internal/app/app.go` |
+| Runtime feature manifest | `backend/internal/runtimefeatures/manifest.go` |
+| Public config | `backend/internal/publicconfig/service.go` |
+| Client API modules | `client/src/api/*.ts` |
+| Client stores | `client/src/store/*Store.ts` |
+| Root env | Single `.env` at repo root |
+| Database sessions | `backend/internal/dbsessions/` |
+| Session recording | `backend/internal/sshsessions/`, `backend/internal/desktopsessions/` |
+| Agent capabilities | `backend/internal/catalog/catalog.go` |
+| Service contracts | `backend/pkg/contracts/` |
 
-### Async Actions in Dialogs
+Additional notes:
 
-```typescript
-const { loading, error, run } = useAsyncAction();
-const handleSubmit = () => run(async () => {
-  await api.createConnection(data);
-  onClose();
-});
-```
+- `CONTRIBUTING.md` still contains useful process guidance, but its old Express examples are historical and should not be used as the runtime reference.
+- When changing installer behavior, validate both the interactive playbooks and the emitted compose or Helm artifacts.
+- The docs, route files, feature manifest, and CLI should move together whenever API behavior changes.
 
-## Version Bumping
+## 🔍 Security And Static Analysis During Development
 
-When bumping the version, update all locations:
+`scripts/security-scan.sh` supports three modes:
 
-| File | Field |
-|------|-------|
-| `package.json` (root) | `"version"` |
-| `client/package.json` | `"version"` |
-| `server/package.json` | `"version"` |
-| `gateways/tunnel-agent/package.json` | `"version"` |
-| `extra-clients/browser-extensions/package.json` | `"version"` |
-| `extra-clients/browser-extensions/manifest.json` | `"version"` |
-| `server/src/cli.ts` | `.version('X.Y.Z')` |
-| `LICENSE` | `Licensed Work: Arsenale X.Y.Z` |
-| `docs/index.md` | `Version:` line at bottom |
+| Mode | What it runs |
+|------|---------------|
+| `--quick` | `npm audit` plus ESLint security rules |
+| default | quick checks plus Trivy filesystem scan |
+| `--docker` | default checks plus image builds and image vulnerability scans |
 
-Then run `npm install --package-lock-only` to update the lockfile.
-
-## Workspace Structure
-
-```
-arsenale/
-├── server/                          # Express API + Socket.IO
-│   ├── src/
-│   │   ├── index.ts                 # Entry point
-│   │   ├── app.ts                   # Express app setup
-│   │   ├── config.ts                # Configuration
-│   │   ├── cli.ts                   # CLI tool
-│   │   ├── routes/                  # Route definitions (43 files)
-│   │   ├── controllers/             # Request handlers
-│   │   ├── services/                # Business logic
-│   │   ├── middleware/              # Auth, CSRF, peekAuth, rate limiting, feature gates, validation
-│   │   ├── socket/                  # Socket.IO + WebSocket handlers
-│   │   ├── orchestrator/            # Container orchestration (Docker/Podman/Kubernetes)
-│   │   ├── schemas/                 # Zod validation schemas
-│   │   └── types/                   # Shared TypeScript types
-│   └── prisma/
-│       └── schema.prisma            # Database schema (42 models)
-├── client/                          # React 19 SPA
-│   ├── src/
-│   │   ├── main.tsx                 # Entry point
-│   │   ├── App.tsx                  # Router
-│   │   ├── api/                     # Axios API modules (37 files)
-│   │   ├── store/                   # Zustand stores (17 files)
-│   │   ├── pages/                   # Route components
-│   │   ├── components/              # UI components
-│   │   ├── hooks/                   # Custom React hooks
-│   │   ├── theme/                   # 6 themes x 2 modes
-│   │   └── utils/                   # Utilities
-│   ├── vite.config.ts               # Vite + PWA config
-│   └── nginx.conf                   # Production Nginx config
-├── gateways/
-│   ├── tunnel-agent/                # Zero-trust tunnel agent
-│   ├── guacd/                       # Custom guacd with tunnel
-│   ├── guacenc/                     # Recording processor
-│   └── ssh-gateway/                 # SSH bastion with tunnel
-├── extra-clients/
-│   └── browser-extensions/          # Chrome extension
-├── compose.yml                      # Production Docker Compose
-├── compose.dev.yml                  # Development Docker Compose
-├── .env.example                     # Environment template
-├── eslint.config.mjs                # Shared ESLint config
-├── Makefile                         # Development shortcuts
-└── CLAUDE.md                        # AI assistant instructions
-```
+This is especially useful when changing containers, auth, gateway code, installer wiring, or anything that touches secrets and networking.

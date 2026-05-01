@@ -1,0 +1,35 @@
+services:
+  guacenc:
+    image: ${GUACENC_IMAGE:-ghcr.io/dnviti/arsenale/guacenc:latest}
+    container_name: ${GUACENC_CONTAINER_NAME:-arsenale-guacenc}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${GUACENC_BIND_HOST:-0.0.0.0}:${GUACENC_PORT:-3003}:3003"
+    environment:
+      PORT: "3003"
+      ALLOWED_PREFIX: "${ALLOWED_PREFIX:-/recordings/}"
+      GUACENC_AUTH_TOKEN: "${GUACENC_AUTH_TOKEN:?set GUACENC_AUTH_TOKEN}"
+      GUACENC_TLS_CERT: /certs/server-cert.pem
+      GUACENC_TLS_KEY: /certs/server-key.pem
+      REDIS_URL: "${REDIS_URL:-}"
+      REDIS_TLS_ENABLED: "${REDIS_TLS_ENABLED:-false}"
+    volumes:
+      - guacenc-recordings:/recordings
+      - ${GUACENC_TLS_CERT_FILE:?set GUACENC_TLS_CERT_FILE}:/certs/server-cert.pem:ro
+      - ${GUACENC_TLS_KEY_FILE:?set GUACENC_TLS_KEY_FILE}:/certs/server-key.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://127.0.0.1:3003/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  guacenc-recordings:

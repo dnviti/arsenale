@@ -1,5 +1,7 @@
 {
-  "enabledPlugins": {
-    "claw@dnviti-plugins": true
-  }
+  "env": {
+    "AGENT_TEAMS": "1",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "enabledPlugins": {}
 }

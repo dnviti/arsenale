@@ -1,790 +1,510 @@
 ---
 title: API Reference
-description: Complete REST API endpoint reference, WebSocket namespaces, and client SDK documentation
-generated-by: ctdf-docs
-generated-at: 2026-03-24T23:40:00Z
+description: Public API groups, session flows, live streams, and internal service contracts for Arsenale
+generated-by: claw-docs
+generated-at: 2026-04-17T11:31:45Z
 source-files:
-  - server/src/routes/auth.routes.ts
-  - server/src/routes/oauth.routes.ts
-  - server/src/routes/saml.routes.ts
-  - server/src/routes/connections.routes.ts
-  - server/src/routes/session.routes.ts
-  - server/src/routes/vault.routes.ts
-  - server/src/routes/sharing.routes.ts
-  - server/src/routes/folders.routes.ts
-  - server/src/routes/secret.routes.ts
-  - server/src/routes/vault-folders.routes.ts
-  - server/src/routes/user.routes.ts
-  - server/src/routes/twofa.routes.ts
-  - server/src/routes/smsMfa.routes.ts
-  - server/src/routes/webauthn.routes.ts
-  - server/src/routes/tenant.routes.ts
-  - server/src/routes/team.routes.ts
-  - server/src/routes/gateway.routes.ts
-  - server/src/routes/admin.routes.ts
-  - server/src/routes/audit.routes.ts
-  - server/src/routes/recording.routes.ts
-  - server/src/routes/notification.routes.ts
-  - server/src/routes/files.routes.ts
-  - server/src/routes/tabs.routes.ts
-  - server/src/routes/publicShare.routes.ts
-  - server/src/routes/importExport.routes.ts
-  - server/src/routes/health.routes.ts
-  - server/src/routes/geoip.routes.ts
-  - server/src/routes/ldap.routes.ts
-  - server/src/routes/sync.routes.ts
-  - server/src/routes/externalVault.routes.ts
-  - server/src/routes/accessPolicy.routes.ts
-  - server/src/routes/checkout.routes.ts
-  - server/src/routes/sshProxy.routes.ts
-  - server/src/routes/rdGateway.routes.ts
-  - server/src/routes/cli.routes.ts
-  - server/src/routes/dbProxy.routes.ts
-  - server/src/routes/dbAudit.routes.ts
-  - server/src/routes/passwordRotation.routes.ts
-  - server/src/routes/dbTunnel.routes.ts
-  - server/src/routes/keystrokePolicy.routes.ts
-  - server/src/routes/aiQuery.routes.ts
-  - server/src/routes/systemSettings.routes.ts
-  - server/src/routes/setup.routes.ts
+  - backend/internal/runtimefeatures/manifest.go
+  - backend/internal/publicconfig/service.go
+  - backend/cmd/control-plane-api/routes.go
+  - backend/cmd/control-plane-api/routes_public.go
+  - backend/cmd/control-plane-api/routes_auth.go
+  - backend/cmd/control-plane-api/routes_auth_mfa.go
+  - backend/cmd/control-plane-api/routes_auth_recovery.go
+  - backend/cmd/control-plane-api/routes_auth_saml.go
+  - backend/cmd/control-plane-api/routes_user_account.go
+  - backend/cmd/control-plane-api/routes_user_mfa.go
+  - backend/cmd/control-plane-api/routes_resources.go
+  - backend/cmd/control-plane-api/routes_secrets.go
+  - backend/cmd/control-plane-api/routes_sessions.go
+  - backend/cmd/control-plane-api/routes_tenants.go
+  - backend/cmd/control-plane-api/routes_operations.go
+  - backend/cmd/control-plane-api/routes_live.go
+  - backend/cmd/control-plane-api/routes_internal.go
+  - client/src/api/client.ts
+  - client/src/api/auth.api.ts
+  - client/src/api/user.api.ts
+  - client/src/api/database.api.ts
+  - client/src/api/dbAudit.api.ts
 ---
 
-# API Reference
-
-All REST endpoints are served under `/api`. Authentication uses JWT Bearer tokens. Request bodies use JSON. UUID params are validated as UUIDs.
-
-## Authentication
-
-### Password Authentication (`/api/auth`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `GET` | `/config` | Public | — | Get public auth configuration |
-| `POST` | `/register` | Public | 5/hour | Register new user |
-| `GET` | `/verify-email` | Public | — | Verify email with token |
-| `POST` | `/resend-verification` | Public | — | Resend verification email |
-| `POST` | `/login` | Public | Login limit | Login with email/password |
-| `POST` | `/verify-totp` | Public | Login limit | Verify TOTP code (MFA step) |
-| `POST` | `/request-sms-code` | Public | SMS limit | Request SMS code for login |
-| `POST` | `/verify-sms` | Public | Login limit | Verify SMS code |
-| `POST` | `/request-webauthn-options` | Public | Login limit | Get WebAuthn challenge |
-| `POST` | `/verify-webauthn` | Public | Login limit | Verify WebAuthn credential |
-| `POST` | `/mfa-setup/init` | Public | Login limit | Initialize MFA setup |
-| `POST` | `/mfa-setup/verify` | Public | Login limit | Complete MFA setup |
-| `POST` | `/forgot-password` | Public | Forgot limit | Request password reset email |
-| `POST` | `/reset-password/validate` | Public | Reset limit | Validate reset token |
-| `POST` | `/reset-password/request-sms` | Public | SMS limit | Request SMS for password reset |
-| `POST` | `/reset-password/complete` | Public | Reset limit | Complete password reset |
-| `POST` | `/refresh` | Cookie | — | Refresh access token |
-| `POST` | `/logout` | JWT | — | Logout and invalidate tokens |
-| `POST` | `/switch-tenant` | JWT | — | Switch active tenant |
-
-### OAuth (`/api/auth`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/oauth/providers` | Public | List available OAuth providers |
-| `POST` | `/oauth/link-code` | JWT | Generate OAuth link code |
-| `GET` | `/oauth/link/:provider` | Public | Initiate OAuth account linking |
-| `POST` | `/oauth/exchange-code` | Public (CSRF-exempt) | Exchange OAuth code for tokens |
-| `GET` | `/oauth/accounts` | JWT | List linked OAuth accounts |
-| `DELETE` | `/oauth/link/:provider` | JWT | Unlink OAuth account |
-| `POST` | `/oauth/vault-setup` | JWT | Setup vault via OAuth flow |
-| `GET` | `/oauth/:provider` | Public | Initiate OAuth login |
-| `GET` | `/oauth/:provider/callback` | Public | OAuth callback handler |
-
-### SAML (`/api/auth/saml`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/metadata` | Public | SAML SP metadata (XML) |
-| `GET` | `/` | Public | Initiate SAML login |
-| `GET` | `/link` | JWT (query) | Initiate SAML account linking |
-| `POST` | `/callback` | Public | SAML ACS callback |
-
-## User Management
-
-### Profile & Settings (`/api/user`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/profile` | JWT | Get user profile |
-| `PUT` | `/profile` | JWT | Update profile (username, etc.) |
-| `GET` | `/search` | JWT + Tenant | Search users by email |
-| `PUT` | `/password` | JWT | Change password |
-| `POST` | `/avatar` | JWT | Upload avatar (multipart) |
-| `PUT` | `/ssh-defaults` | JWT | Update SSH terminal defaults |
-| `PUT` | `/rdp-defaults` | JWT | Update RDP session defaults |
-| `GET` | `/domain-profile` | JWT | Get LDAP/OAuth domain profile |
-| `PUT` | `/domain-profile` | JWT | Update domain profile |
-| `DELETE` | `/domain-profile` | JWT | Clear domain profile |
-
-### Identity Verification (`/api/user`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/email-change/initiate` | JWT | Start email change |
-| `POST` | `/email-change/confirm` | JWT | Confirm email change |
-| `POST` | `/password-change/initiate` | JWT | Start password change |
-| `POST` | `/identity/initiate` | JWT | Start identity verification |
-| `POST` | `/identity/confirm` | JWT | Confirm identity verification |
-
-### TOTP 2FA (`/api/user/2fa`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/setup` | JWT | Setup TOTP |
-| `POST` | `/verify` | JWT | Verify and enable TOTP |
-| `POST` | `/disable` | JWT | Disable TOTP |
-| `GET` | `/status` | JWT | Get 2FA status |
-
-### SMS MFA (`/api/user/2fa/sms`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/setup-phone` | JWT | Setup phone number |
-| `POST` | `/verify-phone` | JWT | Verify phone with OTP |
-| `POST` | `/enable` | JWT | Enable SMS MFA |
-| `POST` | `/send-disable-code` | JWT | Send disable confirmation |
-| `POST` | `/disable` | JWT | Disable SMS MFA |
-| `GET` | `/status` | JWT | Get SMS MFA status |
-
-### WebAuthn (`/api/user/2fa/webauthn`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/registration-options` | JWT | Get WebAuthn registration options |
-| `POST` | `/register` | JWT | Register WebAuthn credential |
-| `GET` | `/credentials` | JWT | List WebAuthn credentials |
-| `DELETE` | `/credentials/:id` | JWT | Remove credential |
-| `PATCH` | `/credentials/:id` | JWT | Rename credential |
-| `GET` | `/status` | JWT | Get WebAuthn status |
-
-## Vault
-
-### Vault Access (`/api/vault`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `POST` | `/unlock` | JWT | Vault limit | Unlock vault with password |
-| `POST` | `/lock` | JWT | — | Lock vault |
-| `GET` | `/status` | JWT | — | Get vault status |
-| `POST` | `/reveal-password` | JWT | — | Decrypt and reveal password |
-| `POST` | `/unlock-mfa/totp` | JWT | Vault limit | Unlock with TOTP |
-| `POST` | `/unlock-mfa/webauthn-options` | JWT | Vault limit | Get WebAuthn options |
-| `POST` | `/unlock-mfa/webauthn` | JWT | Vault limit | Unlock with WebAuthn |
-| `POST` | `/unlock-mfa/request-sms` | JWT | SMS limit | Request SMS for vault unlock |
-| `POST` | `/unlock-mfa/sms` | JWT | Vault limit | Unlock with SMS |
-| `GET` | `/auto-lock` | JWT | — | Get auto-lock preference |
-| `PUT` | `/auto-lock` | JWT | — | Set auto-lock TTL |
-
-## Connections
-
-### Connection CRUD (`/api/connections`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List all connections (own + shared + team) |
-| `POST` | `/` | JWT | Create connection |
-| `GET` | `/:id` | JWT | Get single connection |
-| `PUT` | `/:id` | JWT | Update connection |
-| `DELETE` | `/:id` | JWT | Delete connection |
-| `PATCH` | `/:id/favorite` | JWT | Toggle favorite |
-
-### Connection Sharing (`/api/connections`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/batch-share` | JWT | Batch share connections |
-| `POST` | `/:id/share` | JWT | Share connection with user/email |
-| `DELETE` | `/:id/share/:userId` | JWT | Unshare connection |
-| `PUT` | `/:id/share/:userId` | JWT | Update share permission |
-| `GET` | `/:id/shares` | JWT | List shares for connection |
-
-### Import/Export (`/api/connections`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/import` | JWT | Import connections from file |
-| `POST` | `/export` | JWT | Export connections to file |
-
-### Folders (`/api/folders`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List all folders |
-| `POST` | `/` | JWT | Create folder |
-| `PUT` | `/:id` | JWT | Update folder |
-| `DELETE` | `/:id` | JWT | Delete folder |
-
-## Secrets (Keychain)
-
-### Secret CRUD (`/api/secrets`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List secrets with filters |
-| `POST` | `/` | JWT | Create secret |
-| `GET` | `/counts` | JWT | Get lightweight secret counts |
-| `GET` | `/:id` | JWT | Get secret details |
-| `PUT` | `/:id` | JWT | Update secret |
-| `DELETE` | `/:id` | JWT | Delete secret |
-
-### Breach Check
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/breach-check` | JWT | Check all secrets against breach databases |
-| `POST` | `/:id/breach-check` | JWT | Check single secret against breach databases |
-
-### Secret Versions
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/:id/versions` | JWT | List version history |
-| `GET` | `/:id/versions/:version/data` | JWT | Get specific version data |
-| `POST` | `/:id/versions/:version/restore` | JWT | Restore previous version |
-
-### Secret Sharing
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/:id/share` | JWT | Share secret |
-| `DELETE` | `/:id/share/:userId` | JWT | Unshare secret |
-| `PUT` | `/:id/share/:userId` | JWT | Update share permission |
-| `GET` | `/:id/shares` | JWT | List secret shares |
-
-### External Secret Sharing
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/:id/external-shares` | JWT | Create public share link |
-| `GET` | `/:id/external-shares` | JWT | List external shares |
-| `DELETE` | `/external-shares/:shareId` | JWT | Revoke external share |
-
-### Tenant Vault (`/api/secrets`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/tenant-vault/init` | JWT | Initialize tenant vault |
-| `POST` | `/tenant-vault/distribute` | JWT | Distribute key to members |
-| `GET` | `/tenant-vault/status` | JWT | Get tenant vault status |
-
-### Vault Folders (`/api/vault-folders`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List vault folders |
-| `POST` | `/` | JWT | Create vault folder |
-| `PUT` | `/:id` | JWT | Update vault folder |
-| `DELETE` | `/:id` | JWT | Delete vault folder |
-
-### Public Share Access (`/api/share`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `GET` | `/:token/info` | Public | 5/min | Get external share info |
-| `POST` | `/:token` | Public | 5/min | Access share with PIN |
-
-## Sessions
-
-### Session Lifecycle (`/api/sessions`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `POST` | `/rdp` | JWT | Session limit | Create RDP session |
-| `POST` | `/rdp/:sessionId/heartbeat` | JWT | — | RDP session heartbeat |
-| `POST` | `/rdp/:sessionId/end` | JWT | — | End RDP session |
-| `POST` | `/vnc` | JWT | Session limit | Create VNC session |
-| `POST` | `/vnc/:sessionId/heartbeat` | JWT | — | VNC session heartbeat |
-| `POST` | `/vnc/:sessionId/end` | JWT | — | End VNC session |
-| `POST` | `/ssh` | JWT | Session limit | Validate SSH access |
-
-### Session Monitoring (Admin)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/active` | JWT + Tenant | ADMIN/OWNER/AUDITOR/OPERATOR | List active sessions |
-| `GET` | `/count` | JWT + Tenant | ADMIN/OWNER/AUDITOR/OPERATOR | Get session count |
-| `GET` | `/count/gateway` | JWT + Tenant | ADMIN/OWNER/AUDITOR/OPERATOR | Sessions per gateway |
-| `POST` | `/:sessionId/terminate` | JWT + Tenant | ADMIN | Force-terminate session |
-
-## Recordings (`/api/recordings`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List recordings |
-| `GET` | `/:id` | JWT | Get recording metadata |
-| `GET` | `/:id/stream` | JWT | Stream recording data |
-| `GET` | `/:id/analyze` | JWT | Analyze recording |
-| `GET` | `/:id/video` | JWT | Export as video |
-| `DELETE` | `/:id` | JWT | Delete recording |
-
-## Multi-Tenancy
-
-### Tenants (`/api/tenants`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `POST` | `/` | JWT | — | Create tenant |
-| `GET` | `/mine/all` | JWT | — | List user's tenants |
-| `GET` | `/mine` | JWT + Tenant | — | Get active tenant |
-| `PUT` | `/:id` | JWT + Tenant | ADMIN | Update tenant settings |
-| `DELETE` | `/:id` | JWT + Tenant | OWNER | Delete tenant |
-| `GET` | `/:id/mfa-stats` | JWT + Tenant | ADMIN | MFA enrollment stats |
-
-### Tenant User Management
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/:id/users` | JWT + Tenant | ADMIN | List members |
-| `GET` | `/:id/users/:userId/profile` | JWT + Tenant | ADMIN | Get user profile |
-| `POST` | `/:id/users` | JWT + Tenant | ADMIN | Create user |
-| `POST` | `/:id/invite` | JWT + Tenant | ADMIN | Invite user |
-| `PUT` | `/:id/users/:userId` | JWT + Tenant | ADMIN | Update user role |
-| `DELETE` | `/:id/users/:userId` | JWT + Tenant | ADMIN | Remove user |
-| `PATCH` | `/:id/users/:userId/enabled` | JWT + Tenant | ADMIN | Toggle enabled |
-| `PATCH` | `/:id/users/:userId/expiry` | JWT + Tenant | ADMIN | Set membership expiry |
-| `PUT` | `/:id/users/:userId/email` | JWT + Tenant | ADMIN | Change user email |
-| `PUT` | `/:id/users/:userId/password` | JWT + Tenant | ADMIN | Change user password |
-
-### IP Allowlist
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/:id/ip-allowlist` | JWT + Tenant | ADMIN | Get allowlist |
-| `PUT` | `/:id/ip-allowlist` | JWT + Tenant | ADMIN | Update allowlist |
-
-### Teams (`/api/teams`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `POST` | `/` | JWT + Tenant | — | Create team |
-| `GET` | `/` | JWT + Tenant | — | List teams |
-| `GET` | `/:id` | JWT + Tenant | Member | Get team |
-| `PUT` | `/:id` | JWT + Tenant | TEAM_ADMIN | Update team |
-| `DELETE` | `/:id` | JWT + Tenant | TEAM_ADMIN | Delete team |
-| `GET` | `/:id/members` | JWT + Tenant | Member | List members |
-| `POST` | `/:id/members` | JWT + Tenant | TEAM_ADMIN | Add member |
-| `PUT` | `/:id/members/:userId` | JWT + Tenant | TEAM_ADMIN | Update member role |
-| `DELETE` | `/:id/members/:userId` | JWT + Tenant | TEAM_ADMIN | Remove member |
-| `PATCH` | `/:id/members/:userId/expiry` | JWT + Tenant | TEAM_ADMIN | Set member expiry |
-
-## Gateways (`/api/gateways`)
-
-### Gateway CRUD
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/` | JWT + Tenant | — | List gateways |
-| `POST` | `/` | JWT + Tenant | OPERATOR | Create gateway |
-| `PUT` | `/:id` | JWT + Tenant | OPERATOR | Update gateway |
-| `DELETE` | `/:id` | JWT + Tenant | OPERATOR | Delete gateway |
-| `POST` | `/:id/test` | JWT + Tenant | — | Test connectivity |
-
-### SSH Key Management
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `POST` | `/ssh-keypair` | JWT + Tenant | OPERATOR | Generate key pair |
-| `GET` | `/ssh-keypair` | JWT + Tenant | OPERATOR | Get public key |
-| `GET` | `/ssh-keypair/private` | JWT + Tenant | OPERATOR | Download private key |
-| `POST` | `/ssh-keypair/rotate` | JWT + Tenant | OPERATOR | Rotate keys |
-| `PATCH` | `/ssh-keypair/rotation` | JWT + Tenant | OPERATOR | Update rotation policy |
-| `GET` | `/ssh-keypair/rotation` | JWT + Tenant | OPERATOR | Get rotation status |
-| `POST` | `/:id/push-key` | JWT + Tenant | OPERATOR | Push key to gateway |
-
-### Gateway Templates
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/templates` | JWT + Tenant | OPERATOR | List templates |
-| `POST` | `/templates` | JWT + Tenant | OPERATOR | Create template |
-| `PUT` | `/templates/:templateId` | JWT + Tenant | OPERATOR | Update template |
-| `DELETE` | `/templates/:templateId` | JWT + Tenant | OPERATOR | Delete template |
-| `POST` | `/templates/:templateId/deploy` | JWT + Tenant | OPERATOR | Deploy from template |
-
-### Managed Gateway Lifecycle
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `POST` | `/:id/deploy` | JWT + Tenant | OPERATOR | Deploy managed gateway |
-| `DELETE` | `/:id/deploy` | JWT + Tenant | OPERATOR | Undeploy gateway |
-| `POST` | `/:id/scale` | JWT + Tenant | OPERATOR | Scale replicas |
-| `GET` | `/:id/instances` | JWT + Tenant | OPERATOR | List instances |
-| `POST` | `/:id/instances/:instanceId/restart` | JWT + Tenant | OPERATOR | Restart instance |
-| `GET` | `/:id/instances/:instanceId/logs` | JWT + Tenant | OPERATOR | Get instance logs |
-| `GET` | `/:id/scaling` | JWT + Tenant | OPERATOR | Get scaling config |
-| `PUT` | `/:id/scaling` | JWT + Tenant | OPERATOR | Update auto-scaling |
-
-### Zero-Trust Tunnel
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/tunnel-overview` | JWT + Tenant | ADMIN | Fleet-wide tunnel status |
-| `POST` | `/:id/tunnel-token` | JWT + Tenant | OPERATOR | Generate tunnel token |
-| `DELETE` | `/:id/tunnel-token` | JWT + Tenant | OPERATOR | Revoke tunnel token |
-| `POST` | `/:id/tunnel-disconnect` | JWT + Tenant | OPERATOR | Force disconnect |
-| `GET` | `/:id/tunnel-events` | JWT + Tenant | OPERATOR | Get tunnel events |
-| `GET` | `/:id/tunnel-metrics` | JWT + Tenant | OPERATOR | Get tunnel metrics |
-
-## Administration
-
-### Admin (`/api/admin`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/email/status` | JWT | ADMIN | Email config status |
-| `POST` | `/email/test` | JWT | ADMIN | Send test email |
-| `GET` | `/app-config` | JWT | ADMIN | Get app configuration |
-| `PUT` | `/app-config/self-signup` | JWT | ADMIN | Toggle self-signup |
-| `GET` | `/auth-providers` | JWT | ADMIN | Get auth provider details |
-
-### Audit Logs (`/api/audit`)
-
-| Method | Path | Auth | Scope | Description |
-|--------|------|------|-------|-------------|
-| `GET` | `/` | JWT | User | User's audit logs |
-| `GET` | `/gateways` | JWT | User | Gateways in audit |
-| `GET` | `/countries` | JWT | User | Countries in audit |
-| `GET` | `/tenant` | JWT + Tenant | ADMIN/AUDITOR | Tenant audit logs |
-| `GET` | `/tenant/gateways` | JWT + Tenant | ADMIN/AUDITOR | Tenant audit gateways |
-| `GET` | `/tenant/countries` | JWT + Tenant | ADMIN/AUDITOR | Tenant audit countries |
-| `GET` | `/tenant/geo-summary` | JWT + Tenant | ADMIN/AUDITOR | Geographic summary |
-| `GET` | `/connection/:connectionId/users` | JWT | — | Users who accessed connection |
-| `GET` | `/connection/:connectionId` | JWT | — | Connection audit logs |
-
-### Notifications (`/api/notifications`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List notifications |
-| `PUT` | `/read-all` | JWT | Mark all as read |
-| `PUT` | `/:id/read` | JWT | Mark one as read |
-| `DELETE` | `/:id` | JWT | Delete notification |
-
-### Access Policies (`/api/access-policies`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/` | JWT + Tenant | ADMIN | List policies |
-| `POST` | `/` | JWT + Tenant | ADMIN | Create policy |
-| `PUT` | `/:id` | JWT + Tenant | ADMIN | Update policy |
-| `DELETE` | `/:id` | JWT + Tenant | ADMIN | Delete policy |
-
-## External Integrations
-
-### External Vault (`/api/vault-providers`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/` | JWT + Tenant | ADMIN | List providers |
-| `POST` | `/` | JWT + Tenant | ADMIN | Create provider |
-| `GET` | `/:providerId` | JWT + Tenant | ADMIN | Get provider |
-| `PUT` | `/:providerId` | JWT + Tenant | ADMIN | Update provider |
-| `DELETE` | `/:providerId` | JWT + Tenant | ADMIN | Delete provider |
-| `POST` | `/:providerId/test` | JWT + Tenant | ADMIN | Test connectivity |
-
-### Sync Profiles (`/api/sync-profiles`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/` | JWT + Tenant | ADMIN | List sync profiles |
-| `POST` | `/` | JWT + Tenant | ADMIN | Create profile |
-| `GET` | `/:id` | JWT + Tenant | ADMIN | Get profile |
-| `PUT` | `/:id` | JWT + Tenant | ADMIN | Update profile |
-| `DELETE` | `/:id` | JWT + Tenant | ADMIN | Delete profile |
-| `POST` | `/:id/test` | JWT + Tenant | ADMIN | Test connection |
-| `POST` | `/:id/sync` | JWT + Tenant | ADMIN | Trigger sync |
-| `GET` | `/:id/logs` | JWT + Tenant | ADMIN | Get sync logs |
-
-### LDAP (`/api/ldap`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/status` | JWT | ADMIN | LDAP config status |
-| `POST` | `/test` | JWT | ADMIN | Test LDAP connection |
-| `POST` | `/sync` | JWT | ADMIN | Trigger LDAP sync |
-
-## Utility Endpoints
-
-### Files (`/api/files`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List user files |
-| `GET` | `/:name` | JWT | Download file |
-| `POST` | `/` | JWT | Upload file (multipart, quota-checked) |
-| `DELETE` | `/:name` | JWT | Delete file |
-
-### Tabs (`/api/tabs`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | Get user's open tabs |
-| `PUT` | `/` | JWT | Sync tabs |
-| `DELETE` | `/` | JWT | Clear all tabs |
-
-### GeoIP (`/api/geoip`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/:ip` | JWT | Lookup IP geolocation |
-
-### Health (`/api`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/health` | Public | Simple health check (status + version) |
-| `GET` | `/ready` | Public | Readiness probe (DB + guacd) |
-
-## Credential Checkout (PAM) (`/api/checkouts`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `GET` | `/` | JWT | List checkout requests (filter by role/status) |
-| `POST` | `/` | JWT | Request credential checkout |
-| `GET` | `/:id` | JWT | Get checkout request details |
-| `POST` | `/:id/approve` | JWT | Approve pending checkout |
-| `POST` | `/:id/reject` | JWT | Reject pending checkout |
-| `POST` | `/:id/checkin` | JWT | Check in (return) credential |
-
-## Password Rotation (`/api/secrets`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/:id/rotation/enable` | JWT | Enable automatic rotation |
-| `POST` | `/:id/rotation/disable` | JWT | Disable rotation |
-| `POST` | `/:id/rotation/trigger` | JWT | Manually trigger rotation |
-| `POST` | `/rotation/status` | JWT | Get rotation status (batch) |
-| `POST` | `/rotation/history` | JWT | Get rotation history (batch) |
-
-## SSH Proxy (`/api/sessions/ssh-proxy`)
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/token` | JWT | Issue short-lived SSH proxy token |
-| `GET` | `/status` | JWT | Get SSH proxy status |
-
-## RD Gateway (`/api/rdgw`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/config` | JWT + Tenant | ADMIN/OWNER | Get RD Gateway configuration |
-| `PUT` | `/config` | JWT + Tenant | ADMIN/OWNER | Update RD Gateway configuration |
-| `GET` | `/status` | JWT + Tenant | ADMIN/OWNER/OPERATOR | Get gateway status |
-| `GET` | `/connections/:connectionId/rdpfile` | JWT | — | Generate .rdp file for native client |
-
-## CLI Device Authorization (`/api/cli`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `POST` | `/auth/device` | Public | 20/15min | Initiate device authorization (RFC 8628) |
-| `POST` | `/auth/device/token` | Public | 30/60s | Poll for device token |
-| `POST` | `/auth/device/authorize` | JWT | — | Approve device from web UI |
-| `GET` | `/connections` | JWT | — | List connections for CLI |
-
-## Database Proxy (`/api/sessions/database`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `POST` | `/` | JWT | Session limit | Create database proxy session |
-| `POST` | `/:sessionId/end` | JWT | — | End proxy session |
-| `POST` | `/:sessionId/heartbeat` | JWT | — | Session heartbeat |
-| `POST` | `/:sessionId/query` | JWT | — | Execute SQL query |
-| `GET` | `/:sessionId/schema` | JWT | — | Get database schema |
-| `POST` | `/:sessionId/explain` | JWT | — | Get query execution plan |
-| `POST` | `/:sessionId/introspect` | JWT | — | Introspect database structure |
-| `PUT` | `/:sessionId/config` | JWT | — | Update session configuration |
-| `GET` | `/:sessionId/config` | JWT | — | Get session configuration |
-| `GET` | `/:sessionId/history` | JWT | — | Get session query history |
-
-## Database Tunnels (`/api/sessions/db-tunnel`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `POST` | `/` | JWT | Session limit | Open SSH-tunneled database connection |
-| `GET` | `/` | JWT | — | List active tunnels |
-| `POST` | `/:tunnelId/heartbeat` | JWT | — | Tunnel heartbeat |
-| `DELETE` | `/:tunnelId` | JWT | — | Close tunnel |
-
-## Database Audit & Firewall (`/api/db-audit`)
-
-### Audit Logs
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/logs` | JWT + Tenant | ADMIN/OWNER/AUDITOR | List database query audit logs |
-| `GET` | `/logs/connections` | JWT + Tenant | ADMIN/OWNER/AUDITOR | Audit logs by connection |
-| `GET` | `/logs/users` | JWT + Tenant | ADMIN/OWNER/AUDITOR | Audit logs by user |
-
-### SQL Firewall Rules
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/firewall-rules` | JWT + Tenant | ADMIN/OWNER/AUDITOR | List firewall rules |
-| `GET` | `/firewall-rules/:ruleId` | JWT + Tenant | ADMIN/OWNER/AUDITOR | Get firewall rule |
-| `POST` | `/firewall-rules` | JWT + Tenant | ADMIN/OWNER | Create firewall rule |
-| `PUT` | `/firewall-rules/:ruleId` | JWT + Tenant | ADMIN/OWNER | Update firewall rule |
-| `DELETE` | `/firewall-rules/:ruleId` | JWT + Tenant | ADMIN/OWNER | Delete firewall rule |
-
-### Data Masking Policies
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/masking-policies` | JWT + Tenant | ADMIN/OWNER/AUDITOR | List masking policies |
-| `GET` | `/masking-policies/:policyId` | JWT + Tenant | ADMIN/OWNER/AUDITOR | Get masking policy |
-| `POST` | `/masking-policies` | JWT + Tenant | ADMIN/OWNER | Create masking policy |
-| `PUT` | `/masking-policies/:policyId` | JWT + Tenant | ADMIN/OWNER | Update masking policy |
-| `DELETE` | `/masking-policies/:policyId` | JWT + Tenant | ADMIN/OWNER | Delete masking policy |
-
-### Rate Limit Policies
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/rate-limit-policies` | JWT + Tenant | ADMIN/OWNER/AUDITOR | List rate limit policies |
-| `GET` | `/rate-limit-policies/:policyId` | JWT + Tenant | ADMIN/OWNER/AUDITOR | Get rate limit policy |
-| `POST` | `/rate-limit-policies` | JWT + Tenant | ADMIN/OWNER | Create rate limit policy |
-| `PUT` | `/rate-limit-policies/:policyId` | JWT + Tenant | ADMIN/OWNER | Update rate limit policy |
-| `DELETE` | `/rate-limit-policies/:policyId` | JWT + Tenant | ADMIN/OWNER | Delete rate limit policy |
-
-## AI Query Assistant (`/api/ai`)
-
-### Configuration
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/config` | JWT + Tenant | ADMIN/OWNER | Get tenant AI configuration |
-| `PUT` | `/config` | JWT + Tenant | OWNER | Update tenant AI configuration |
-
-### Query Generation
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/generate-query` | JWT + Tenant | Analyze prompt and return tables for approval |
-| `POST` | `/generate-query/confirm` | JWT + Tenant | Generate SQL with user-approved tables |
-
-### Query Optimization
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/optimize-query` | JWT + Tenant | AI query optimization (initial analysis) |
-| `POST` | `/optimize-query/continue` | JWT + Tenant | Continue optimization with approved data |
-
-## System Settings (`/api/admin/system-settings`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/` | JWT + Tenant | AUDITOR/ADMIN/OWNER | List all system settings |
-| `GET` | `/db-status` | JWT + Tenant | ADMIN/OWNER | Get database connection status |
-| `PUT` | `/:key` | JWT + Tenant | ADMIN/OWNER | Update a single setting |
-| `PUT` | `/` | JWT + Tenant | ADMIN/OWNER | Bulk update settings |
-
-## Setup Wizard (`/api/setup`)
-
-| Method | Path | Auth | Rate Limit | Description |
-|--------|------|------|------------|-------------|
-| `GET` | `/status` | Public | — | Check if initial setup is required |
-| `GET` | `/db-status` | Public | — | Get database connection status |
-| `POST` | `/complete` | Public | 5/min | Complete first-time platform setup |
-
-## Keystroke Policies (`/api/keystroke-policies`)
-
-| Method | Path | Auth | Role | Description |
-|--------|------|------|------|-------------|
-| `GET` | `/` | JWT + Tenant | ADMIN | List keystroke policies |
-| `GET` | `/:id` | JWT + Tenant | ADMIN | Get keystroke policy |
-| `POST` | `/` | JWT + Tenant | ADMIN | Create keystroke policy |
-| `PUT` | `/:id` | JWT + Tenant | ADMIN | Update keystroke policy |
-| `DELETE` | `/:id` | JWT + Tenant | ADMIN | Delete keystroke policy |
-
-## WebSocket Namespaces
-
-### SSH Terminal (`/ssh`)
-
-Socket.IO namespace for SSH terminal sessions.
-
-**Authentication:** JWT token in handshake auth.
-
-**Client Events:**
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `start` | `{ connectionId, cols, rows, credentials? }` | Start SSH session |
-| `data` | `string` | Terminal input (keystrokes) |
-| `resize` | `{ cols, rows }` | Terminal resize |
-| `sftp:list` | `{ path }` | List directory contents |
-| `sftp:upload` | `{ path, data }` | Upload file via SFTP |
-| `sftp:download` | `{ path }` | Download file via SFTP |
-| `sftp:delete` | `{ path }` | Delete file via SFTP |
-| `sftp:mkdir` | `{ path }` | Create directory via SFTP |
-| `sftp:rename` | `{ oldPath, newPath }` | Rename file/directory |
-
-**Server Events:**
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `data` | `string` | Terminal output |
-| `ready` | `{ sessionId }` | SSH session established |
-| `error` | `{ message }` | Connection error |
-| `close` | — | Session ended |
-| `sftp:list` | `FileEntry[]` | Directory listing |
-| `sftp:data` | `Buffer` | Downloaded file data |
-| `sftp:error` | `{ message }` | SFTP operation error |
-
-### Notifications (`/notifications`)
-
-Socket.IO namespace for real-time notifications.
-
-**Server Events:**
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `CONNECTION_SHARED` | `{ connectionId, sharedBy }` | Connection shared with user |
-| `SHARE_PERMISSION_UPDATED` | `{ connectionId, permission }` | Share permission changed |
-| `SHARE_REVOKED` | `{ connectionId }` | Share revoked |
-| `SECRET_SHARED` | `{ secretId, sharedBy }` | Secret shared with user |
-| `SECRET_SHARE_REVOKED` | `{ secretId }` | Secret share revoked |
-| `SECRET_EXPIRING` | `{ secretId, expiresAt }` | Secret expiring soon |
-| `SECRET_EXPIRED` | `{ secretId }` | Secret expired |
-| `TENANT_INVITATION` | `{ tenantId, role }` | Tenant invitation received |
-| `RECORDING_READY` | `{ recordingId }` | Recording available |
-| `IMPOSSIBLE_TRAVEL_DETECTED` | `{ auditLogId }` | Suspicious login detected |
-| `SECRET_CHECKOUT_REQUESTED` | `{ checkoutId, secretId }` | Credential checkout requested |
-| `SECRET_CHECKOUT_APPROVED` | `{ checkoutId }` | Checkout approved |
-| `SECRET_CHECKOUT_DENIED` | `{ checkoutId }` | Checkout denied |
-| `SECRET_CHECKOUT_EXPIRED` | `{ checkoutId }` | Checkout expired |
-| `LATERAL_MOVEMENT_ALERT` | `{ userId, targets }` | Lateral movement anomaly detected |
-| `SESSION_TERMINATED_POLICY_VIOLATION` | `{ policyName }` | SSH session terminated by keystroke policy |
-
-### Gateway Monitor (`/gateways`)
-
-Socket.IO namespace for real-time gateway status.
-
-**Server Events:**
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `health-update` | `{ gatewayId, status, latency }` | Gateway health change |
-| `instances-update` | `{ gatewayId, instances[] }` | Instance state change |
-| `scaling-update` | `{ gatewayId, current, desired }` | Scaling event |
-| `tunnel-status` | `{ gatewayId, connected, agent }` | Tunnel connection change |
-
-### Tunnel Broker (`/api/tunnel/connect`)
-
-Raw WebSocket endpoint for gateway tunnel agents.
-
-**Authentication Headers:**
-- `Authorization: Bearer <tunnel-token>`
-- `X-Gateway-Id: <gateway-uuid>`
-- `X-Agent-Version: <semver>` (optional)
-
-**Binary Frame Protocol:**
-
-| Frame Type | Value | Direction | Description |
-|-----------|-------|-----------|-------------|
-| OPEN | `0x01` | Server → Agent | Open TCP stream to target |
-| DATA | `0x02` | Bidirectional | Stream data payload |
-| CLOSE | `0x03` | Bidirectional | Close stream |
-| PING | `0x04` | Agent → Server | Heartbeat with health data |
-| PONG | `0x05` | Server → Agent | Heartbeat response |
+## 🌐 Surface Overview
+
+The public edge is the Go control plane under `https://localhost:3000/api` in development. The route inventory is defined in `backend/cmd/control-plane-api/routes*.go`.
+
+Authentication behavior is implemented in `client/src/api/client.ts`:
+
+- bearer token in `Authorization: Bearer <token>`
+- browser CSRF cookie in `X-CSRF-Token` for state-changing requests
+- browser-session restore via `GET /api/auth/session` after authenticated 401s
+- activity touches through `POST /api/auth/activity` and `POST /api/vault/touch`
+
+One architectural change matters more than any raw endpoint count: the surface is now feature-gated. `backend/internal/runtimefeatures/manifest.go` decides which route families are registered, and `GET /api/auth/config` exposes that same manifest, including the ordered `enabledCapabilities` list, to the client.
+
+## 🧩 Runtime Capability Switches
+
+| Capability | Public effect |
+|------------|---------------|
+| `connectionsEnabled` | Enables connection CRUD, folders, SSH/RDP/VNC sessions, RDGW, and active-session streaming |
+| `databaseProxyEnabled` | Enables database sessions, DB tunnels, DB audit, and AI SQL helpers |
+| `keychainEnabled` | Enables vault, secrets, files, vault folders, and external vault providers |
+| `recordingsEnabled` | Enables recording list, playback, analysis, and export |
+| `zeroTrustEnabled` | Enables tunnel-specific controls and managed zero-trust gateway paths |
+| `enterpriseAuthEnabled` | Enables SAML, OAuth, OIDC, LDAP, and auth-provider admin APIs |
+| `sharingApprovalsEnabled` | Enables public sharing, approvals, checkouts, and connection sharing APIs |
+| `cliEnabled` | Enables CLI device auth and CLI connection list surfaces |
+| `agenticAIEnabled` | Enables AI provider configuration, natural-language-to-SQL generation, and query optimization |
+
+The practical source of truth is:
+
+- `backend/cmd/control-plane-api/routes.go`
+- the feature-gated route files under the same directory
+- `GET /api/auth/config`
+
+## 📚 Route Groups
+
+| Group | Primary files | Notes |
+|-------|---------------|-------|
+| Public bootstrap | `routes_public.go` | Health, setup, public share access, CLI device auth |
+| Auth and SSO | `routes_auth*.go` | Local auth, OAuth, OIDC, SAML, MFA login, recovery |
+| User account and MFA | `routes_user_account.go`, `routes_user_mfa.go` | Profile, password, avatar, MFA lifecycle |
+| Resources | `routes_resources.go` | Connections, folders, files, external vaults, teams, sync profiles |
+| Vault and secrets | `routes_secrets.go` | Personal vault, keychain, tenant vault, rotation |
+| Sessions | `routes_sessions.go` | SSH, RDP, VNC, database, DB tunnel, proxy grants |
+| Tenants | `routes_tenants.go` | Tenant CRUD, users, invite, membership controls |
+| Operations | `routes_operations.go` | Admin, gateways, recordings, audit, DB audit, AI |
+| Live streams | `routes_live.go` | SSE endpoints for gateways, notifications, sessions, and audit |
+| Internal contracts | `routes_internal.go` | `/v1` contracts used by runtime services |
+
+## 🔐 Authentication, Setup, And Public Endpoints
+
+Representative public endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/health` | Public health check through the API edge |
+| `GET` | `/api/ready` | Public readiness check with structured dependency status |
+| `GET` | `/api/setup/status` | First-run setup state |
+| `GET` | `/api/setup/db-status` | Database readiness for initial setup |
+| `POST` | `/api/setup/complete` | Finish first-run bootstrap |
+| `GET` | `/api/auth/config` | Read self-signup state and runtime feature manifest |
+| `POST` | `/api/cli/auth/device` | Start CLI device auth when `cliEnabled` is true |
+| `POST` | `/api/cli/auth/device/token` | Poll device auth token |
+| `POST` | `/api/cli/auth/device/authorize` | Approve device auth from a signed-in user |
+| `GET` | `/api/share/{token}/info` | Inspect public share metadata when sharing and keychain are enabled |
+| `POST` | `/api/share/{token}` | Access a public share |
+
+Authentication and SSO endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/auth/register` | Local registration |
+| `POST` | `/api/auth/passkey/options` | Start passwordless passkey login |
+| `POST` | `/api/auth/passkey/verify` | Complete passwordless passkey login |
+| `POST` | `/api/auth/login` | Email/password fallback login |
+| `POST` | `/api/auth/request-email-code` | Request email MFA code |
+| `POST` | `/api/auth/verify-email-code` | Complete email MFA |
+| `POST` | `/api/auth/verify-totp` | Complete TOTP step |
+| `POST` | `/api/auth/request-sms-code` | Request MFA SMS |
+| `POST` | `/api/auth/verify-sms` | Complete SMS MFA |
+| `POST` | `/api/auth/request-webauthn-options` | Start WebAuthn secondary MFA |
+| `POST` | `/api/auth/verify-webauthn` | Complete WebAuthn secondary MFA |
+| `POST` | `/api/auth/refresh` | Refresh access token |
+| `GET` | `/api/auth/session` | Inspect current auth session |
+| `POST` | `/api/auth/activity` | Extend the current browser session after user activity |
+| `POST` | `/api/auth/logout` | Revoke current login |
+| `POST` | `/api/auth/switch-tenant` | Change active tenant |
+
+Enterprise-auth-only paths remain under `/api/auth/*` as well:
+
+- `/api/auth/saml/*`
+- `/api/auth/oauth/providers`
+- `/api/auth/oauth/{provider}`
+- `/api/auth/oauth/accounts`
+- `/api/auth/oauth/link-code`
+- `/api/auth/oauth/link/{provider}`
+- `/api/auth/oauth/vault-setup`
+
+Recovery endpoints stay under `/api/auth/*`:
+
+- `/api/auth/verify-email`
+- `/api/auth/resend-verification`
+- `/api/auth/forgot-password`
+- `/api/auth/reset-password/validate`
+- `/api/auth/reset-password/request-sms`
+- `/api/auth/reset-password/complete`
+
+## 👤 User, Tenant, Team, And Resource APIs
+
+### User and MFA
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/user/profile` | Current profile |
+| `GET` | `/api/user/permissions` | Current user's effective permissions for the active tenant |
+| `PUT` | `/api/user/profile` | Update profile |
+| `PUT` | `/api/user/password` | Change password |
+| `POST` | `/api/user/avatar` | Upload avatar |
+| `GET` | `/api/user/search` | Tenant-scoped user search |
+| `GET` | `/api/user/domain-profile` | Read directory profile |
+| `PUT` | `/api/user/domain-profile` | Update directory profile |
+| `GET` | `/api/user/2fa/status` | MFA status |
+| `POST` | `/api/user/2fa/setup` | Start TOTP setup |
+| `POST` | `/api/user/2fa/webauthn/register` | Register WebAuthn credential |
+| `PUT` | `/api/user/ssh-defaults` | Update SSH connection defaults |
+| `PUT` | `/api/user/rdp-defaults` | Update RDP connection defaults |
+| `DELETE` | `/api/user/domain-profile` | Clear directory profile |
+| `GET` | `/api/user/notification-schedule` | Read notification schedule |
+| `PUT` | `/api/user/notification-schedule` | Update notification schedule |
+| `POST` | `/api/user/password-change/initiate` | Initiate password change with verification |
+| `POST` | `/api/user/identity/initiate` | Initiate identity verification |
+| `POST` | `/api/user/identity/confirm` | Confirm identity verification |
+| `POST` | `/api/user/email-change/initiate` | Initiate email change |
+| `POST` | `/api/user/email-change/confirm` | Confirm email change |
+
+### Tenant administration
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/tenants` | Create tenant |
+| `GET` | `/api/tenants/mine` | Current tenant summary |
+| `GET` | `/api/tenants/mine/all` | All accessible tenants |
+| `PUT` | `/api/tenants/{id}` | Update tenant |
+| `DELETE` | `/api/tenants/{id}` | Delete tenant |
+| `GET` | `/api/tenants/{id}/users` | List tenant users |
+| `POST` | `/api/tenants/{id}/invite` | Invite user |
+| `PUT` | `/api/tenants/{id}/users/{userId}` | Update user role |
+| `PATCH` | `/api/tenants/{id}/users/{userId}/expiry` | Set membership expiry |
+| `PUT` | `/api/tenants/{id}/ip-allowlist` | Update tenant IP allowlist |
+| `POST` | `/api/tenants/{id}/users` | Create user directly in tenant |
+| `GET` | `/api/tenants/{id}/users/{userId}/profile` | Get user profile details |
+| `PATCH` | `/api/tenants/{id}/users/{userId}/enabled` | Toggle user enabled state |
+| `PUT` | `/api/tenants/{id}/users/{userId}/email` | Admin change user email |
+| `PUT` | `/api/tenants/{id}/users/{userId}/password` | Admin change user password |
+| `GET` | `/api/tenants/{id}/users/{userId}/permissions` | Get user permissions |
+| `PUT` | `/api/tenants/{id}/users/{userId}/permissions` | Update user permissions |
+| `GET` | `/api/tenants/{id}/mfa-stats` | Get tenant MFA adoption stats |
+
+### Connections, folders, files, teams, and sync profiles
+
+| Path prefix | Purpose |
+|-------------|---------|
+| `/api/connections` | CRUD, sharing, import/export, favorites, CLI listing |
+| `/api/folders` | Connection folder CRUD |
+| `/api/vault-folders` | Secret folder CRUD via manual method dispatch |
+| `/api/files` | Connection-scoped managed transfer sandbox for RDP workspace staging and cleanup (`connectionId` required) |
+| `/api/files/history` | Connection-scoped retained-upload history list/download/restore/delete for the generic CLI and RDP surfaces |
+| `/api/files/ssh/*` | SSH sandbox workspace list/mkdir/delete/rename/upload/download APIs, sandbox-relative only |
+| `/api/files/ssh/history/*` | SSH retained-upload history list/download/restore/delete APIs used by the SSH browser |
+| `/api/checkouts` | Approval-style credential checkout flow |
+| `/api/teams` | Team CRUD and membership management |
+| `/api/vault-providers` | External vault integration CRUD and test |
+| `/api/sync-profiles` | Directory or provider sync profile CRUD, test, run, and logs |
+
+`/api/connections/*` and `/api/folders/*` require at least one connection-capable feature. `/api/vault-folders`, `/api/files`, `/api/files/ssh/*`, and `/api/vault-providers/*` additionally require `keychainEnabled`.
+
+`GET /api/teams` returns the teams visible to the current member. `GET /api/teams?scope=tenant` is available to tenant managers and returns every team in the tenant for policy editors that need tenant-wide team selectors.
+
+`/api/files` now requires `connectionId` on every request. `GET` and `DELETE` take it as a query parameter. `POST` takes it as a multipart form field. The RDP shared-drive view is staged through the object store and then materialized into the Guacamole drive cache. SSH file browsing uses the `/api/files/ssh/*` REST surface instead of terminal WebSocket file-transfer events, and the CLI and UI only accept sandbox-relative paths inside `workspace/current/`. Retained uploads are exposed through the generic `/api/files/history` routes for the CLI and RDP surfaces, while the SSH browser uses the protocol-specific `/api/files/ssh/history/*` handlers for the same retained-upload namespace. SSH session responses keep the legacy browser flag false while `fileBrowserSupported: true` so the client can hide outdated affordances.
+
+## 🔒 Vault, Secrets, And Tenant Vault
+
+The secrets surface uses plural `/api/secrets` paths. That is the current authoritative path family.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/vault/unlock` | Unlock personal vault |
+| `POST` | `/api/vault/lock` | Lock personal vault |
+| `GET` | `/api/vault/status` | Current vault state |
+| `POST` | `/api/vault/touch` | Extend active vault-session TTL after user activity |
+| `GET` | `/api/vault/auto-lock` | Current auto-lock timeout |
+| `PUT` | `/api/vault/auto-lock` | Update auto-lock timeout |
+| `POST` | `/api/vault/recover-with-key` | Recovery-key unlock |
+| `POST` | `/api/vault/explicit-reset` | Reset locked vault intentionally |
+| `GET` | `/api/secrets` | List secrets |
+| `POST` | `/api/secrets` | Create secret |
+| `GET` | `/api/secrets/counts` | Lightweight secret counts |
+| `POST` | `/api/secrets/breach-check` | Bulk breach scan |
+| `GET` | `/api/secrets/tenant-vault/status` | Tenant vault state |
+| `POST` | `/api/secrets/tenant-vault/init` | Initialize tenant vault |
+| `POST` | `/api/secrets/tenant-vault/distribute` | Distribute tenant vault shares |
+| `POST` | `/api/vault/unlock-mfa/totp` | Unlock vault with TOTP verification |
+| `POST` | `/api/vault/unlock-mfa/webauthn-options` | Request WebAuthn unlock options |
+| `POST` | `/api/vault/unlock-mfa/webauthn` | Unlock vault with WebAuthn |
+| `POST` | `/api/vault/unlock-mfa/request-sms` | Request SMS code for vault unlock |
+| `POST` | `/api/vault/unlock-mfa/sms` | Unlock vault with SMS code |
+| `POST` | `/api/vault/reveal-password` | Reveal stored password from vault |
+| `GET` | `/api/vault/recovery-status` | Check vault recovery key status |
+| `GET` | `/api/secrets/{id}` | Get secret details |
+| `PUT` | `/api/secrets/{id}` | Update secret |
+| `DELETE` | `/api/secrets/{id}` | Delete secret |
+| `POST` | `/api/secrets/{id}/breach-check` | Check single secret for breaches |
+| `GET` | `/api/secrets/{id}/versions` | List secret versions |
+| `GET` | `/api/secrets/{id}/versions/{version}/data` | Get version data |
+| `POST` | `/api/secrets/{id}/versions/{version}/restore` | Restore a version |
+| `POST` | `/api/secrets/{id}/share` | Share secret with user |
+| `DELETE` | `/api/secrets/{id}/share/{userId}` | Revoke secret share |
+| `PUT` | `/api/secrets/{id}/share/{userId}` | Update share permission |
+| `GET` | `/api/secrets/{id}/shares` | List secret shares |
+| `POST` | `/api/secrets/{id}/external-shares` | Create external share link |
+| `GET` | `/api/secrets/{id}/external-shares` | List external shares |
+| `DELETE` | `/api/secrets/external-shares/{shareId}` | Revoke external share |
+
+Password rotation endpoints remain nested under `/api/secrets`:
+
+- `/api/secrets/{id}/rotation/enable`
+- `/api/secrets/{id}/rotation/disable`
+- `/api/secrets/{id}/rotation/trigger`
+- `/api/secrets/rotation/status`
+- `/api/secrets/rotation/history`
+
+## 🖥 Session APIs
+
+Session creation endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/sessions/ssh` | Start SSH session when `connectionsEnabled` is true. Response returns a terminal-broker token, keeps the legacy browser flag false, and sets `fileBrowserSupported: true` |
+| `POST` | `/api/sessions/rdp` | Start RDP session |
+| `POST` | `/api/sessions/vnc` | Start VNC session |
+| `POST` | `/api/sessions/database` | Start database session when `databaseProxyEnabled` is true |
+| `POST` | `/api/sessions/db-tunnel` | Start database tunnel session when both connections and DB proxy are enabled |
+
+`POST /api/sessions/rdp` returns `resolvedUsername` and `resolvedDomain` alongside the desktop token so the SPA can deduplicate RDP tabs by the actual remote identity, not only the requested credentials.
+
+Operational session endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/sessions/active` | List active sessions |
+| `GET` | `/api/sessions/console` | List unified session-console rows keyed by session id, including recording summary fields |
+| `GET` | `/api/sessions/count` | Count active sessions |
+| `GET` | `/api/sessions/count/gateway` | Session counts by gateway |
+| `POST` | `/api/sessions/{sessionId}/pause` | Persist `PAUSED` session state and freeze SSH or desktop transport until resumed |
+| `POST` | `/api/sessions/{sessionId}/resume` | Clear `PAUSED` state and resume SSH or desktop transport |
+| `POST` | `/api/sessions/{sessionId}/terminate` | Terminate a session centrally |
+| `POST` | `/api/sessions/ssh/{sessionId}/observe` | Issue a read-only observer terminal token for an active tenant-scoped SSH session when the caller has `canObserveSessions` |
+| `POST` | `/api/sessions/rdp/{sessionId}/observe` | Issue a read-only desktop observer token that joins an active tenant-scoped RDP session when the caller has `canObserveSessions` |
+| `POST` | `/api/sessions/vnc/{sessionId}/observe` | Issue a read-only desktop observer token that joins an active tenant-scoped VNC session when the caller has `canObserveSessions` |
+| `POST` | `/api/sessions/ssh-proxy/token` | Mint SSH proxy token |
+| `GET` | `/api/sessions/ssh-proxy/status` | SSH proxy health and status |
+| `GET` | `/api/sessions/db-tunnel` | List active DB tunnels |
+| `POST` | `/api/sessions/db-tunnel/{tunnelId}/heartbeat` | Keep DB tunnel alive |
+| `DELETE` | `/api/sessions/db-tunnel/{tunnelId}` | Close a DB tunnel |
+
+Active-session list, count, and stream payloads surface the persisted `status` field directly. Session states now include `PAUSED` alongside `ACTIVE`, `IDLE`, and `CLOSED`. Tenant members with `canViewSessions` still see tenant-wide activity. Tenant members without `canViewSessions` now fall back to their own active sessions for `GET /api/sessions/active`, `GET /api/sessions/count`, and `GET /api/sessions/active/stream` instead of being hard-blocked. `GET /api/sessions/console` is the broader unified console feed: tenant-wide viewers get tenant-scoped rows, own-scope members are limited to their own active rows, and every row includes recording summary metadata (`exists`, `id`, `status`, `format`, `completedAt`, `fileSize`, `duration`) keyed by session id. `POST /api/sessions/ssh/{sessionId}/observe` returns a short-lived read-only observer grant for the existing `/ws/terminal` runtime instead of starting a second SSH connection. `POST /api/sessions/{rdp|vnc}/{sessionId}/observe` returns short-lived read-only desktop observer grants that join the existing Guacamole connection instead of opening a second remote desktop session. The stable client contract is the relative `webSocketPath`; browsers compose same-origin WebSocket URLs locally.
+
+## 🗄 Database Query And Audit APIs
+
+Database sessions are the most gateway-sensitive part of the platform. The public control plane handles auth, tenancy, and audit, but the actual query work is forwarded to a DB proxy gateway.
+
+```mermaid
+sequenceDiagram
+    participant UI as Database UI
+    participant API as /api/sessions/database
+    participant Proxy as db-proxy
+    participant DB as target database
+
+    UI->>API: create session
+    API-->>UI: sessionId + proxy metadata
+    UI->>API: POST /query
+    API->>Proxy: POST /v1/query-runs:execute-any
+    Proxy->>DB: execute native driver query
+    DB-->>Proxy: results
+    Proxy-->>API: rows, columns, duration
+    API-->>UI: masked and audited response
+```
+
+Database session endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `PUT` | `/api/sessions/database/{sessionId}/config` | Apply session config |
+| `GET` | `/api/sessions/database/{sessionId}/config` | Read active session config |
+| `POST` | `/api/sessions/database/{sessionId}/query` | Execute query |
+| `GET` | `/api/sessions/database/{sessionId}/schema` | Fetch schema |
+| `POST` | `/api/sessions/database/{sessionId}/explain` | Request execution plan |
+| `POST` | `/api/sessions/database/{sessionId}/introspect` | Fetch indexes, row counts, version, and other metadata |
+| `GET` | `/api/sessions/database/{sessionId}/history` | Read per-session query history |
+| `POST` | `/api/sessions/database/{sessionId}/heartbeat` | Keep session alive |
+| `POST` | `/api/sessions/database/{sessionId}/end` | End session |
+
+Current protocol support for interactive querying:
+
+- PostgreSQL
+- MySQL / MariaDB
+- MongoDB
+- Oracle
+- SQL Server
+
+DB audit endpoints:
+
+| Path prefix | Purpose |
+|-------------|---------|
+| `/api/db-audit/logs` | Query audit search and filters |
+| `/api/db-audit/logs/connections` | Distinct audited connections |
+| `/api/db-audit/logs/users` | Distinct audited users |
+| `/api/db-audit/firewall-rules` | SQL firewall rule CRUD |
+| `/api/db-audit/masking-policies` | Masking policy CRUD |
+| `/api/db-audit/rate-limit-policies` | Query rate-limit policy CRUD |
+| `/api/db-audit/logs/stream` | Live audit SSE feed |
+
+The persisted execution-plan feature is controlled per connection through `dbSettings.persistExecutionPlan`. When enabled for a supported SQL protocol, the plan is stored in the DB audit log and remains visible after the session closes.
+
+Connection-level DB controls also live under `dbSettings`:
+
+- `firewallEnabled`, `maskingEnabled`, and `rateLimitEnabled` decide whether firewall, masking, and query rate limiting are active at all for that connection.
+- `firewallPolicyMode`, `maskingPolicyMode`, and `rateLimitPolicyMode` choose whether the connection inherits tenant defaults, merges local policies with tenant-wide policies, or uses connection-only policy sets.
+- `firewallRules`, `maskingPolicies`, and `rateLimitPolicies` hold full connection-scoped policy objects so the DB proxy can enforce per-connection overrides instead of only tenant-wide rules.
+- `aiQueryGenerationEnabled`, `aiQueryGenerationBackend`, `aiQueryGenerationModel`, `aiQueryOptimizerEnabled`, `aiQueryOptimizerBackend`, and `aiQueryOptimizerModel` let a database connection override the tenant AI defaults for generation and optimization.
+
+## ⚙️ Gateways, Recordings, Admin, AI, And Misc Operations
+
+Operational domains under `routes_operations.go` include:
+
+| Path prefix | Purpose |
+|-------------|---------|
+| `/api/admin/*` | Email status, app config, and system settings |
+| `/api/ai/*` | Named AI backend config, per-feature defaults, SQL generation, and optimization |
+| `/api/access-policies` | Access policy CRUD |
+| `/api/keystroke-policies` | Keystroke policy CRUD |
+| `/api/gateways` | Gateway CRUD, tunnel overview, templates, scaling, deploy, tunnel controls, and gateway egress policy |
+| `/api/rdgw/*` | RD Gateway config and RDP file generation |
+| `/api/recordings/*` | Recording list, metadata, stream, audit trail, and video export with session-visibility RBAC |
+| `/api/ldap/*` | LDAP status, test, and sync |
+| `/api/notifications` | Notification list, preference management, and read state |
+| `/api/audit/*` | Tenant and connection audit search |
+| `/api/tabs` | UI tab state sync |
+
+Notable gateway subpaths:
+
+- `GET /api/gateways` now returns derived `operationalStatus`, `operationalReason`, `healthyInstances`, and `egressPolicy` fields alongside the legacy probe fields so clients can render managed and tunnel-backed gateway health consistently.
+- `/api/gateways/{id}/deploy`
+- `/api/gateways/{id}/scale`
+- `/api/gateways/{id}/scaling`
+- `/api/gateways/{id}/instances`
+- `/api/gateways/{id}/instances/{instanceId}/restart`
+- `/api/gateways/{id}/instances/{instanceId}/logs`
+- `GET /api/gateways/{id}/egress` returns the normalized gateway egress policy.
+- `PUT /api/gateways/{id}/egress` replaces the gateway egress policy. The body is `{"rules":[...]}`; an empty rule list denies all tunneled egress. Rules are evaluated in order like firewall rules. Each enabled rule supports `action` (`ALLOW` or `DISALLOW`, default `ALLOW`), `enabled` (default `true`), `protocols`, `hosts`, `cidrs`, `ports`, `userIds`, and `teamIds`. Empty `userIds` and `teamIds` means the rule applies to everyone.
+- `POST /api/gateways/{id}/egress/test` evaluates a saved or draft egress policy for `{protocol, host, port, userId, policy?}`. The response includes `allowed`, `reason`, `ruleIndex`, `ruleAction`, `rule`, and `defaultDeny`.
+- `/api/gateways/{id}/tunnel-token`
+- `/api/gateways/{id}/tunnel-disconnect`
+- `/api/gateways/{id}/tunnel-events`
+- `/api/gateways/{id}/tunnel-metrics`
+- `/api/gateways/templates`
+
+`POST /api/gateways/{id}/tunnel-token` returns a one-time standalone deployment bundle in addition to the token: gateway ID/type, local tunnel host/port, client certificate, client key, and client certificate expiry. The tunnel broker requires both the token and client certificate material.
+
+### Audit Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/audit` | Search audit logs |
+| `GET` | `/api/audit/tenant` | Tenant-scoped audit logs |
+| `GET` | `/api/audit/connection/{connectionId}` | Connection-specific audit logs |
+| `GET` | `/api/audit/connection/{connectionId}/users` | Users who accessed a connection |
+| `GET` | `/api/audit/session/{sessionId}/recording` | Get the recording linked to a visible session using the same tenant/own scope rules as `/api/recordings/*` |
+| `GET` | `/api/audit/gateways` | List gateways in audit context |
+| `GET` | `/api/audit/countries` | List countries in audit data |
+| `GET` | `/api/audit/tenant/gateways` | Tenant-scoped gateway audit |
+| `GET` | `/api/audit/tenant/countries` | Tenant-scoped country audit |
+| `GET` | `/api/audit/tenant/geo-summary` | Geographic summary of tenant audit |
+| `GET` | `/api/geoip/{ip}` | GeoIP lookup for IP address |
+
+### Notification Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/notifications` | List notifications |
+| `GET` | `/api/notifications/preferences` | Get notification preferences |
+| `PUT` | `/api/notifications/preferences` | Bulk update preferences |
+| `PUT` | `/api/notifications/preferences/{type}` | Update single preference |
+| `PUT` | `/api/notifications/read-all` | Mark all read |
+| `PUT` | `/api/notifications/{id}/read` | Mark one read |
+| `DELETE` | `/api/notifications/{id}` | Delete notification |
+
+### Tabs Sync
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/tabs` | List saved tab state |
+| `PUT` | `/api/tabs` | Sync tab state |
+| `DELETE` | `/api/tabs` | Clear tab state |
+
+Saved tab entries are tab-instance scoped. The `GET`/`PUT` payload uses `{ id, connectionId, sortOrder, isActive }`, which lets the client restore multiple simultaneous tabs for the same connection without collapsing them together.
+
+## 📡 Live Streams
+
+Server-sent event endpoints in `routes_live.go`:
+
+- `GET /api/gateways/stream`
+- `GET /api/gateways/{id}/instances/{instanceId}/logs/stream`
+- `GET /api/notifications/stream`
+- `GET /api/vault/status/stream`
+- `GET /api/sessions/active/stream`
+- `GET /api/audit/stream`
+- `GET /api/db-audit/logs/stream`
+
+These are feature-gated in the same way as their non-stream route families.
+Vault status streams also subscribe to Redis `vault:status` updates so lock/unlock changes are pushed immediately instead of waiting for the polling tick.
+
+## 🔌 WebSocket and Real-Time Protocols
+
+In addition to the REST API, Arsenale exposes real-time WebSocket endpoints for terminal, desktop, and notification services.
+
+### SSH Terminal WebSocket
+
+The terminal broker exposes a WebSocket endpoint at `/ws/terminal` (port 8090 in dev). The protocol uses JSON text frames and supports one control client plus multiple live read-only observers on the same SSH runtime:
+
+| Event | Direction | Purpose |
+|-------|-----------|---------|
+| `input` | Client → Server | Terminal keystrokes from the controlling SSH client only |
+| `data` | Server → Client | Terminal output data fan-out to the owner and any observers |
+| `resize` | Client → Server | Terminal dimensions change from the controlling SSH client only |
+| `ping` | Client → Server | Keep terminal session alive or keep the observer socket open |
+| `close` | Client → Server | Close the controlling terminal session, or disconnect one observer socket without ending the shared SSH runtime |
+
+Observer-mode grants receive the same `ready`, `data`, `error`, and `closed` events as the controlling client, but `input` and `resize` messages are rejected with `READ_ONLY` and do not touch SSH stdin or the PTY. SSH file browsing is no longer multiplexed over `/ws/terminal`. The browser uses authenticated REST endpoints under `/api/files/ssh/*` for remote listing and staged upload/download, while `/ws/terminal` carries terminal I/O only.
+
+### Desktop WebSocket (Guacamole)
+
+RDP and VNC sessions use the Guacamole WebSocket protocol at `/guacamole` (port 8091 in dev). The desktop broker translates between the Guacamole wire protocol and the browser client.
+
+### Server-Sent Events (SSE)
+
+Live streaming endpoints (listed in the Live Streams section above) use standard SSE. The client subscribes with `EventSource` and receives JSON-encoded event payloads.
+
+For detailed WebSocket event specifications, see [api/websocket.md](api/websocket.md).
+
+## 🧪 Internal `/v1` Contracts
+
+The control plane also exposes internal contracts used by runtime and agent services:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/v1/services` | Discover services |
+| `GET` | `/v1/capabilities` | Discover capability catalog |
+| `POST` | `/v1/orchestrators:validate` | Validate orchestrator request |
+| `GET` | `/v1/orchestrators` | List orchestrators |
+| `PUT` | `/v1/orchestrators/{name}` | Upsert orchestrator |
+| `POST` | `/v1/desktop/session-grants:issue` | Desktop grant issuance |
+| `POST` | `/v1/database/sessions:issue` | Database session issuance |
+| `POST` | `/v1/database/sessions/{sessionId}/config` | Internal DB session config update |
+
+The DB proxy and query-runner binaries expose the shared query middleware contract from `backend/internal/queryrunnerapi/service.go`:
+
+- `POST /v1/connectivity:validate`
+- `POST /v1/query-runs:execute`
+- `POST /v1/query-runs:execute-any`
+- `POST /v1/schema:fetch`
+- `POST /v1/query-plans:explain`
+- `POST /v1/introspection:run`
+
+## 📌 Source Of Truth Reminder
+
+If documentation and runtime ever disagree, trust these in order:
+
+1. `backend/internal/runtimefeatures/manifest.go`
+2. `backend/cmd/control-plane-api/routes.go`
+3. the specific `routes_*.go` file for the route family in question

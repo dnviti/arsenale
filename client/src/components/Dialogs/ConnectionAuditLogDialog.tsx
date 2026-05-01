@@ -1,19 +1,19 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import {
-  Dialog, AppBar, Toolbar, Typography, Box, IconButton, Card, CardContent,
-  Table, TableHead, TableBody, TableRow, TableCell, TablePagination,
-  Select, MenuItem, FormControl, InputLabel, TextField, Stack,
-  CircularProgress, Chip, Alert, Collapse, TableSortLabel, InputAdornment,
-  Autocomplete, Button, Tooltip,
-} from '@mui/material';
+  Dialog, DialogContent, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import {
-  Close as CloseIcon,
-  Search as SearchIcon,
-  KeyboardArrowDown as ExpandIcon,
-  KeyboardArrowUp as CollapseIcon,
-  Download as DownloadIcon,
-  Warning as WarningIcon,
-} from '@mui/icons-material';
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
+import {
+  X, Search, ChevronDown, ChevronUp, Download, AlertTriangle,
+} from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import {
   getConnectionAuditLogs, getConnectionAuditUsers, getAuditGateways, getAuditCountries,
   TenantAuditLogEntry, AuditAction, ConnectionAuditLogParams, AuditGateway, ConnectionAuditUser,
@@ -22,8 +22,17 @@ import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
 import { useAuthStore } from '../../store/authStore';
 import { ACTION_LABELS, getActionColor, formatDetails, ALL_ACTIONS } from '../Audit/auditConstants';
 import IpGeoCell from '../Audit/IpGeoCell';
-import { SlideUp } from '../common/SlideUp';
 import { hasAnyRole } from '../../utils/roles';
+
+const ACTION_COLOR_MAP: Record<string, string> = {
+  default: '',
+  primary: 'bg-primary/15 text-primary border-primary/30',
+  secondary: 'bg-muted text-muted-foreground',
+  error: 'bg-destructive/15 text-destructive border-destructive/30',
+  warning: 'bg-yellow-600/15 text-yellow-500 border-yellow-600/30',
+  success: 'bg-emerald-600/15 text-emerald-400 border-emerald-600/30',
+  info: 'bg-blue-600/15 text-blue-400 border-blue-600/30',
+};
 
 function exportCsv(logs: TenantAuditLogEntry[], connectionName: string) {
   const header = 'Date,User,Email,Action,IP Address,Country,City,Details';
@@ -145,298 +154,280 @@ export default function ConnectionAuditLogDialog({ open, onClose, connectionId, 
     setPage(0);
   };
 
-  const selectedUser = auditUsers.find((u) => u.id === connAuditLogUserId) ?? null;
   const colSpan = isAdmin ? 7 : 6;
   const hasActiveFilters = connAuditLogAction || connAuditLogSearch || connAuditLogGatewayId || connAuditLogUserId || ipAddress || geoCountry || startDate || endDate || flaggedOnly;
+  const totalPages = Math.ceil(total / rowsPerPage);
 
   return (
-    <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
-      <AppBar position="static" sx={{ position: 'relative' }}>
-        <Toolbar variant="dense">
-          <IconButton edge="start" color="inherit" onClick={onClose} sx={{ mr: 1 }}>
-            <CloseIcon />
-          </IconButton>
-          <Typography variant="h6" sx={{ flex: 1 }}>
-            Activity Log &mdash; {connectionName}
-          </Typography>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent
+        className="h-[100dvh] w-screen max-w-none gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+        showCloseButton={false}
+      >
+        <DialogTitle className="sr-only">Activity Log — {connectionName}</DialogTitle>
+        <DialogDescription className="sr-only">Connection audit log</DialogDescription>
+
+        {/* Header */}
+        <div className="flex items-center gap-3 border-b px-4 py-2.5 bg-card">
+          <Button variant="ghost" size="icon" onClick={onClose} className="size-8">
+            <X className="size-4" />
+          </Button>
+          <h2 className="flex-1 text-lg font-semibold">Activity Log &mdash; {connectionName}</h2>
           {isAdmin && (
             <Button
-              color="inherit"
-              size="small"
-              startIcon={<DownloadIcon />}
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
               onClick={() => exportCsv(logs, connectionName)}
               disabled={logs.length === 0}
             >
+              <Download className="size-4" />
               Export CSV
             </Button>
           )}
-        </Toolbar>
-      </AppBar>
+        </div>
 
-      <Box sx={{ flex: 1, overflow: 'auto', p: 2 }}>
-        <Card sx={{ mb: 2 }}>
-          <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
-            <TextField
-              size="small"
-              fullWidth
-              placeholder="Search across IP address and details..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              slotProps={{
-                input: {
-                  startAdornment: (
-                    <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
-                  ),
-                },
-              }}
-              sx={{ mb: 1.5 }}
-            />
-            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
+        {/* Body */}
+        <div className="flex-1 overflow-auto p-4">
+          {/* Filters */}
+          <div className="rounded-lg border bg-card p-3 mb-4">
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Search across IP address and details..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
               {isAdmin && auditUsers.length > 0 && (
-                <Autocomplete
-                  size="small"
-                  sx={{ minWidth: 220 }}
-                  options={auditUsers}
-                  getOptionLabel={(u) => u.username ?? u.email}
-                  value={selectedUser}
-                  onChange={(_, val) => {
-                    setUiPref('connAuditLogUserId', val?.id ?? '');
-                    setPage(0);
-                  }}
-                  renderInput={(params) => <TextField {...params} label="User" />}
-                  isOptionEqualToValue={(opt, val) => opt.id === val.id}
-                />
+                <div className="min-w-[220px] space-y-1">
+                  <Label className="text-xs">User</Label>
+                  <Select value={connAuditLogUserId || '__all__'} onValueChange={(v) => { setUiPref('connAuditLogUserId', v === '__all__' ? '' : v); setPage(0); }}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="All Users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Users</SelectItem>
+                      {auditUsers.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.username ?? u.email}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel>Action</InputLabel>
-                <Select
-                  value={connAuditLogAction}
-                  label="Action"
-                  onChange={(e) => {
-                    setUiPref('connAuditLogAction', e.target.value);
-                    setPage(0);
-                  }}
-                >
-                  <MenuItem value="">All Actions</MenuItem>
-                  {ALL_ACTIONS.map((action) => (
-                    <MenuItem key={action} value={action}>
-                      {ACTION_LABELS[action]}
-                    </MenuItem>
-                  ))}
+              <div className="min-w-[200px] space-y-1">
+                <Label className="text-xs">Action</Label>
+                <Select value={connAuditLogAction || '__all__'} onValueChange={(v) => { setUiPref('connAuditLogAction', v === '__all__' ? '' : v); setPage(0); }}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Actions</SelectItem>
+                    {ALL_ACTIONS.map((action) => (
+                      <SelectItem key={action} value={action}>{ACTION_LABELS[action]}</SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
-              </FormControl>
+              </div>
               {gateways.length > 0 && (
-                <FormControl size="small" sx={{ minWidth: 160 }}>
-                  <InputLabel>Gateway</InputLabel>
-                  <Select
-                    value={connAuditLogGatewayId}
-                    label="Gateway"
-                    onChange={(e) => {
-                      setUiPref('connAuditLogGatewayId', e.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <MenuItem value="">All Gateways</MenuItem>
-                    {gateways.map((gw) => (
-                      <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
-                    ))}
+                <div className="min-w-[160px] space-y-1">
+                  <Label className="text-xs">Gateway</Label>
+                  <Select value={connAuditLogGatewayId || '__all__'} onValueChange={(v) => { setUiPref('connAuditLogGatewayId', v === '__all__' ? '' : v); setPage(0); }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Gateways</SelectItem>
+                      {gateways.map((gw) => (
+                        <SelectItem key={gw.id} value={gw.id}>{gw.name}</SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
-                </FormControl>
+                </div>
               )}
-              <TextField
-                size="small"
-                label="IP Address"
-                value={ipAddress}
-                onChange={(e) => { setIpAddress(e.target.value); setPage(0); }}
-                sx={{ width: 160 }}
-              />
+              <div className="w-[160px] space-y-1">
+                <Label className="text-xs">IP Address</Label>
+                <Input value={ipAddress} onChange={(e) => { setIpAddress(e.target.value); setPage(0); }} />
+              </div>
               {countries.length > 0 && (
-                <FormControl size="small" sx={{ minWidth: 160 }}>
-                  <InputLabel>Country</InputLabel>
-                  <Select
-                    value={geoCountry}
-                    label="Country"
-                    onChange={(e) => {
-                      setGeoCountry(e.target.value);
-                      setPage(0);
-                    }}
-                  >
-                    <MenuItem value="">All Countries</MenuItem>
-                    {countries.map((c) => (
-                      <MenuItem key={c} value={c}>{c}</MenuItem>
-                    ))}
+                <div className="min-w-[160px] space-y-1">
+                  <Label className="text-xs">Country</Label>
+                  <Select value={geoCountry || '__all__'} onValueChange={(v) => { setGeoCountry(v === '__all__' ? '' : v); setPage(0); }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Countries</SelectItem>
+                      {countries.map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
                   </Select>
-                </FormControl>
+                </div>
               )}
-              <TextField
-                size="small"
-                type="date"
-                label="From"
-                value={startDate}
-                onChange={(e) => { setStartDate(e.target.value); setPage(0); }}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
-              <TextField
-                size="small"
-                type="date"
-                label="To"
-                value={endDate}
-                onChange={(e) => { setEndDate(e.target.value); setPage(0); }}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
-              <Tooltip title="Show only flagged entries (e.g. impossible travel)">
-                <Chip
-                  icon={<WarningIcon fontSize="small" />}
-                  label="Flagged"
-                  size="small"
-                  color={flaggedOnly ? 'warning' : 'default'}
-                  variant={flaggedOnly ? 'filled' : 'outlined'}
-                  onClick={() => { setFlaggedOnly(!flaggedOnly); setPage(0); }}
-                  sx={{ cursor: 'pointer' }}
-                />
-              </Tooltip>
-            </Stack>
-          </CardContent>
-        </Card>
+              <div className="space-y-1">
+                <Label className="text-xs">From</Label>
+                <Input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(0); }} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">To</Label>
+                <Input type="date" value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(0); }} />
+              </div>
+              <Badge
+                variant={flaggedOnly ? 'default' : 'outline'}
+                className={cn(
+                  'cursor-pointer gap-1 mt-5',
+                  flaggedOnly ? 'bg-yellow-600/15 text-yellow-500 border-yellow-600/30' : '',
+                )}
+                onClick={() => { setFlaggedOnly(!flaggedOnly); setPage(0); }}
+                title="Show only flagged entries (e.g. impossible travel)"
+              >
+                <AlertTriangle className="size-3" />
+                Flagged
+              </Badge>
+            </div>
+          </div>
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+          {error && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive mb-4">
+              {error}
+            </div>
+          )}
 
-        <Card>
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-              <CircularProgress />
-            </Box>
-          ) : logs.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 6 }}>
-              <Typography color="text.secondary">
-                {hasActiveFilters
-                  ? 'No logs match your filters'
-                  : 'No activity recorded yet'}
-              </Typography>
-            </Box>
-          ) : (
-            <>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell padding="checkbox" />
-                    <TableCell>
-                      <TableSortLabel
-                        active={connAuditLogSortBy === 'createdAt'}
-                        direction={connAuditLogSortBy === 'createdAt' ? (connAuditLogSortOrder as 'asc' | 'desc') : 'asc'}
-                        onClick={() => handleSort('createdAt')}
-                      >
-                        Date/Time
-                      </TableSortLabel>
-                    </TableCell>
-                    {isAdmin && <TableCell>User</TableCell>}
-                    <TableCell>
-                      <TableSortLabel
-                        active={connAuditLogSortBy === 'action'}
-                        direction={connAuditLogSortBy === 'action' ? (connAuditLogSortOrder as 'asc' | 'desc') : 'asc'}
-                        onClick={() => handleSort('action')}
-                      >
-                        Action
-                      </TableSortLabel>
-                    </TableCell>
-                    <TableCell>IP Address</TableCell>
-                    <TableCell>Details</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {logs.map((log) => {
-                    const isExpanded = expandedRowId === log.id;
-                    return (
-                      <Fragment key={log.id}>
-                        <TableRow
-                          hover
-                          onClick={() => setExpandedRowId(isExpanded ? null : log.id)}
-                          sx={{ cursor: 'pointer', '& > *': { borderBottom: isExpanded ? 'unset' : undefined } }}
-                        >
-                          <TableCell padding="checkbox">
-                            <IconButton size="small">
-                              {isExpanded ? <CollapseIcon /> : <ExpandIcon />}
-                            </IconButton>
-                          </TableCell>
-                          <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                            {new Date(log.createdAt).toLocaleString()}
-                          </TableCell>
-                          {isAdmin && (
-                            <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                              {log.userName ?? log.userEmail ?? '\u2014'}
-                            </TableCell>
+          {/* Table */}
+          <div className="rounded-lg border bg-card">
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="size-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-sm text-muted-foreground">
+                  {hasActiveFilters ? 'No logs match your filters' : 'No activity recorded yet'}
+                </p>
+              </div>
+            ) : (
+              <>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="w-8 px-2 py-2" />
+                      <th className="text-left px-3 py-2 font-medium">
+                        <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => handleSort('createdAt')}>
+                          Date/Time
+                          {connAuditLogSortBy === 'createdAt' && (
+                            connAuditLogSortOrder === 'asc' ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />
                           )}
-                          <TableCell>
-                            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
-                              <Chip
-                                label={ACTION_LABELS[log.action] || log.action}
-                                color={getActionColor(log.action)}
-                                size="small"
-                              />
-                              {log.flags?.includes('IMPOSSIBLE_TRAVEL') && (
-                                <Tooltip title="Impossible travel detected">
-                                  <WarningIcon color="warning" fontSize="small" />
-                                </Tooltip>
-                              )}
-                            </Box>
-                          </TableCell>
-                          <TableCell>
-                            <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} onGeoIpClick={onGeoIpClick} />
-                          </TableCell>
-                          <TableCell sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {formatDetails(log.details as Record<string, unknown> | null)}
-                          </TableCell>
-                        </TableRow>
-                        <TableRow>
-                          <TableCell colSpan={colSpan} sx={{ py: 0, borderBottom: isExpanded ? undefined : 'none' }}>
-                            <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                              <Box sx={{ py: 2, px: 3 }}>
+                        </button>
+                      </th>
+                      {isAdmin && <th className="text-left px-3 py-2 font-medium">User</th>}
+                      <th className="text-left px-3 py-2 font-medium">
+                        <button className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => handleSort('action')}>
+                          Action
+                          {connAuditLogSortBy === 'action' && (
+                            connAuditLogSortOrder === 'asc' ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />
+                          )}
+                        </button>
+                      </th>
+                      <th className="text-left px-3 py-2 font-medium">IP Address</th>
+                      <th className="text-left px-3 py-2 font-medium">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log) => {
+                      const isExpanded = expandedRowId === log.id;
+                      return (
+                        <Fragment key={log.id}>
+                          <tr
+                            className="border-b hover:bg-accent/50 cursor-pointer"
+                            onClick={() => setExpandedRowId(isExpanded ? null : log.id)}
+                          >
+                            <td className="px-2 py-2">
+                              <Button variant="ghost" size="icon" className="size-6">
+                                {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                              </Button>
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </td>
+                            {isAdmin && (
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                {log.userName ?? log.userEmail ?? '\u2014'}
+                              </td>
+                            )}
+                            <td className="px-3 py-2">
+                              <div className="inline-flex items-center gap-1.5">
+                                <Badge variant="outline" className={cn('border', ACTION_COLOR_MAP[getActionColor(log.action) as string] || '')}>
+                                  {ACTION_LABELS[log.action] || log.action}
+                                </Badge>
+                                {log.flags?.includes('IMPOSSIBLE_TRAVEL') && (
+                                  <span title="Impossible travel detected"><AlertTriangle className="size-4 text-yellow-500" /></span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <IpGeoCell ipAddress={log.ipAddress} geoCountry={log.geoCountry} geoCity={log.geoCity} onGeoIpClick={onGeoIpClick} />
+                            </td>
+                            <td className="px-3 py-2 max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap">
+                              {formatDetails(log.details as Record<string, unknown> | null)}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr>
+                              <td colSpan={colSpan} className="px-6 py-4 border-b">
                                 {log.details && typeof log.details === 'object' && Object.keys(log.details as object).length > 0 ? (
-                                  <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 1, maxWidth: 600 }}>
+                                  <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 max-w-[600px]">
                                     {Object.entries(log.details as Record<string, unknown>).map(([key, value]) => (
                                       <Fragment key={key}>
-                                        <Typography variant="body2" fontWeight={600} color="text.secondary">
-                                          {key}
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>
+                                        <span className="text-sm font-semibold text-muted-foreground">{key}</span>
+                                        <span className="text-sm break-all">
                                           {Array.isArray(value) ? value.join(', ') : String(value)}
-                                        </Typography>
+                                        </span>
                                       </Fragment>
                                     ))}
-                                  </Box>
+                                  </div>
                                 ) : (
-                                  <Typography variant="body2" color="text.secondary">No additional details</Typography>
+                                  <p className="text-sm text-muted-foreground">No additional details</p>
                                 )}
                                 {isAdmin && log.userEmail && (
-                                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                                    Email: {log.userEmail}
-                                  </Typography>
+                                  <p className="text-xs text-muted-foreground mt-2">Email: {log.userEmail}</p>
                                 )}
-                              </Box>
-                            </Collapse>
-                          </TableCell>
-                        </TableRow>
-                      </Fragment>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              <TablePagination
-                component="div"
-                count={total}
-                page={page}
-                onPageChange={(_, newPage) => setPage(newPage)}
-                rowsPerPage={rowsPerPage}
-                onRowsPerPageChange={(e) => {
-                  setRowsPerPage(parseInt(e.target.value, 10));
-                  setPage(0);
-                }}
-                rowsPerPageOptions={[25, 50, 100]}
-              />
-            </>
-          )}
-        </Card>
-      </Box>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {/* Pagination */}
+                <div className="flex items-center justify-between px-4 py-2 border-t text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <span>Rows per page:</span>
+                    <Select value={String(rowsPerPage)} onValueChange={(v) => { setRowsPerPage(parseInt(v, 10)); setPage(0); }}>
+                      <SelectTrigger className="h-8 w-[70px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="25">25</SelectItem>
+                        <SelectItem value="50">50</SelectItem>
+                        <SelectItem value="100">100</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>{page * rowsPerPage + 1}-{Math.min((page + 1) * rowsPerPage, total)} of {total}</span>
+                    <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</Button>
+                    <Button variant="ghost" size="sm" disabled={page + 1 >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </DialogContent>
     </Dialog>
   );
 }

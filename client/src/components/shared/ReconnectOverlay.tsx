@@ -1,5 +1,6 @@
-import { Box, Button, Chip, CircularProgress, Typography } from '@mui/material';
-import { ErrorOutline as ErrorIcon, SignalWifiOff as UnstableIcon } from '@mui/icons-material';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, AlertTriangle, WifiOff } from 'lucide-react';
 
 interface ReconnectOverlayProps {
   state: 'reconnecting' | 'unstable' | 'failed';
@@ -13,64 +14,46 @@ interface ReconnectOverlayProps {
 export default function ReconnectOverlay({ state, attempt, maxRetries, onRetry, onClose, protocol }: ReconnectOverlayProps) {
   if (state === 'unstable') {
     return (
-      <Box sx={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', zIndex: 2 }}>
-        <Chip
-          icon={<UnstableIcon fontSize="small" />}
-          label="Connection unstable"
-          color="warning"
-          size="small"
-          variant="filled"
-        />
-      </Box>
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10">
+        <Badge className="bg-yellow-500/15 text-yellow-400 border-yellow-500/30 gap-1">
+          <WifiOff className="h-3.5 w-3.5" />
+          Connection unstable
+        </Badge>
+      </div>
     );
   }
 
   return (
-    <Box
-      sx={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1,
-        bgcolor: 'rgba(0,0,0,0.7)',
-        gap: 2,
-      }}
-    >
+    <div className="absolute inset-0 flex flex-col items-center justify-center z-10 bg-black/70 gap-3">
       {state === 'reconnecting' && (
         <>
-          <CircularProgress size={32} />
-          <Typography>
+          <Loader2 className="h-8 w-8 animate-spin" />
+          <span>
             Reconnecting to {protocol} session... (attempt {attempt + 1}/{maxRetries})
-          </Typography>
+          </span>
         </>
       )}
       {state === 'failed' && (
         <>
-          <ErrorIcon sx={{ fontSize: 48, color: 'error.main' }} />
-          <Typography variant="h6">Reconnection failed</Typography>
-          <Typography variant="body2" color="text.secondary">
+          <AlertTriangle className="h-12 w-12 text-red-500" />
+          <h3 className="text-lg font-semibold">Reconnection failed</h3>
+          <p className="text-sm text-muted-foreground">
             Could not restore the {protocol} session after {maxRetries} attempts.
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+          </p>
+          <div className="flex gap-2 mt-2">
             {onRetry && (
-              <Button variant="contained" size="small" onClick={onRetry}>
+              <Button size="sm" onClick={onRetry}>
                 Retry
               </Button>
             )}
             {onClose && (
-              <Button variant="outlined" size="small" onClick={onClose}>
+              <Button variant="outline" size="sm" onClick={onClose}>
                 Close Tab
               </Button>
             )}
-          </Box>
+          </div>
         </>
       )}
-    </Box>
+    </div>
   );
 }

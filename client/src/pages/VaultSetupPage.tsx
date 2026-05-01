@@ -1,9 +1,14 @@
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Card, CardContent, TextField, Button, Typography, Alert } from '@mui/material';
+import AuthLayout from '@/components/auth/AuthLayout';
+import PasswordStrengthMeter from '@/components/common/PasswordStrengthMeter';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { setupVaultPassword } from '../api/oauth.api';
-import { useVaultStore } from '../store/vaultStore';
 import { useAuthStore } from '../store/authStore';
+import { useVaultStore } from '../store/vaultStore';
 import { extractApiError } from '../utils/apiError';
 
 export default function VaultSetupPage() {
@@ -12,11 +17,11 @@ export default function VaultSetupPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const setVaultUnlocked = useVaultStore((s) => s.setUnlocked);
-  const updateUser = useAuthStore((s) => s.updateUser);
+  const setVaultUnlocked = useVaultStore((state) => state.setUnlocked);
+  const updateUser = useAuthStore((state) => state.updateUser);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     setError('');
 
     if (vaultPassword !== confirmPassword) {
@@ -42,113 +47,50 @@ export default function VaultSetupPage() {
   };
 
   return (
-    <Box sx={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      bgcolor: 'background.default',
-      background: (theme) => `radial-gradient(ellipse at 50% 0%, ${theme.palette.primary.main}08 0%, ${theme.palette.background.default} 70%)`,
-    }}>
-      <Card sx={{
-        width: 450,
-        maxWidth: '90vw',
-        bgcolor: 'background.paper',
-        border: 1, borderColor: 'divider',
-        borderRadius: 4,
-        boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-      }}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-            <Box sx={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              bgcolor: 'primary.main',
-              boxShadow: (theme) => `0 0 8px ${theme.palette.primary.main}66`,
-            }} />
-          </Box>
-          <Typography variant="h4" gutterBottom align="center" sx={{
-            fontFamily: (theme) => theme.typography.h4.fontFamily,
-            color: 'text.primary',
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
-          }}>
-            Set Up Your Vault
-          </Typography>
-          <Typography variant="body2" align="center" sx={{ mb: 1, color: 'text.secondary' }}>
-            Your vault encrypts all saved connection credentials.
-          </Typography>
-          <Typography variant="body2" align="center" sx={{ mb: 3, color: 'text.secondary' }}>
-            This vault password is separate from your OAuth login and cannot be recovered if lost.
-          </Typography>
+    <AuthLayout
+      cardClassName="max-w-lg"
+      title="Set Up Your Vault"
+      description="Your vault encrypts all saved connection credentials. This vault password is separate from your OAuth login and cannot be recovered if lost."
+    >
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription className="text-foreground">{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="vault-password">Vault Password</Label>
+          <Input
+            id="vault-password"
+            autoFocus
+            required
+            type="password"
+            value={vaultPassword}
+            onChange={(event) => setVaultPassword(event.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Minimum 8 characters. This password encrypts your saved credentials.
+          </p>
+        </div>
 
-          <Box component="form" onSubmit={handleSubmit}>
-            <TextField
-              fullWidth
-              label="Vault Password"
-              type="password"
-              value={vaultPassword}
-              onChange={(e) => setVaultPassword(e.target.value)}
-              margin="normal"
-              required
-              helperText="Min 8 characters. This password encrypts your saved credentials."
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'background.default',
-                  '& fieldset': { borderColor: 'divider' },
-                  '&:hover fieldset': { borderColor: 'text.disabled' },
-                  '&.Mui-focused fieldset': { borderColor: 'primary.main' },
-                },
-                '& .MuiInputLabel-root': { color: 'text.secondary' },
-                '& .MuiInputBase-input': { color: 'text.primary' },
-                '& .MuiFormHelperText-root': { color: 'text.secondary' },
-              }}
-            />
-            <TextField
-              fullWidth
-              label="Confirm Vault Password"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              margin="normal"
-              required
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  bgcolor: 'background.default',
-                  '& fieldset': { borderColor: 'divider' },
-                  '&:hover fieldset': { borderColor: 'text.disabled' },
-                  '&.Mui-focused fieldset': { borderColor: 'primary.main' },
-                },
-                '& .MuiInputLabel-root': { color: 'text.secondary' },
-                '& .MuiInputBase-input': { color: 'text.primary' },
-              }}
-            />
-            <Button
-              fullWidth
-              type="submit"
-              variant="contained"
-              disabled={loading}
-              sx={{
-                mt: 3,
-                py: 1.4,
-                bgcolor: 'primary.main',
-                color: (theme) => theme.palette.getContrastText(theme.palette.primary.main),
-                fontWeight: 600,
-                textTransform: 'none',
-                fontSize: '0.95rem',
-                borderRadius: 2,
-                '&:hover': { bgcolor: 'secondary.main' },
-                '&.Mui-disabled': { bgcolor: (theme) => `${theme.palette.primary.main}4D`, color: (theme) => theme.palette.getContrastText(theme.palette.primary.main) },
-              }}
-            >
-              {loading ? 'Setting up...' : 'Set Vault Password'}
-            </Button>
-          </Box>
-        </CardContent>
-      </Card>
-    </Box>
+        <PasswordStrengthMeter password={vaultPassword} />
+
+        <div className="space-y-2">
+          <Label htmlFor="vault-confirm-password">Confirm Vault Password</Label>
+          <Input
+            id="vault-confirm-password"
+            required
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+          />
+        </div>
+
+        <Button type="submit" className="w-full" disabled={loading}>
+          {loading ? 'Setting up...' : 'Set Vault Password'}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }

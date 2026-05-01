@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import {
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Chip, IconButton, Tooltip, Typography, Paper,
-} from '@mui/material';
-import { RestartAlt as RestartIcon, Article as ArticleIcon } from '@mui/icons-material';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { RotateCcw, FileText } from 'lucide-react';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { ManagedInstanceData } from '../../api/gateway.api';
 import ContainerLogDialog from './ContainerLogDialog';
@@ -12,12 +10,12 @@ type InstanceStatus = 'PROVISIONING' | 'RUNNING' | 'STOPPED' | 'ERROR' | 'REMOVI
 
 const EMPTY_INSTANCES: ManagedInstanceData[] = [];
 
-const statusColor: Record<InstanceStatus, 'warning' | 'success' | 'default' | 'error'> = {
-  PROVISIONING: 'warning',
-  RUNNING: 'success',
-  STOPPED: 'default',
-  ERROR: 'error',
-  REMOVING: 'warning',
+const statusBadgeClass: Record<InstanceStatus, string> = {
+  PROVISIONING: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  RUNNING: 'bg-green-500/15 text-green-400 border-green-500/30',
+  STOPPED: '',
+  ERROR: 'bg-red-500/15 text-red-400 border-red-500/30',
+  REMOVING: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
 };
 
 interface GatewayInstanceListProps {
@@ -27,101 +25,102 @@ interface GatewayInstanceListProps {
 export default function GatewayInstanceList({ gatewayId }: GatewayInstanceListProps) {
   const instances = useGatewayStore((s) => s.instances[gatewayId] ?? EMPTY_INSTANCES);
   const fetchInstances = useGatewayStore((s) => s.fetchInstances);
+  const watchInstances = useGatewayStore((s) => s.watchInstances);
+  const unwatchInstances = useGatewayStore((s) => s.unwatchInstances);
   const restartInstance = useGatewayStore((s) => s.restartInstance);
   const [logsOpen, setLogsOpen] = useState(false);
   const [logsInstance, setLogsInstance] = useState<ManagedInstanceData | null>(null);
 
   useEffect(() => {
-    fetchInstances(gatewayId);
-  }, [gatewayId, fetchInstances]);
+    watchInstances(gatewayId);
+    void fetchInstances(gatewayId);
+    return () => {
+      unwatchInstances(gatewayId);
+    };
+  }, [gatewayId, fetchInstances, watchInstances, unwatchInstances]);
 
   if (instances.length === 0) {
     return (
-      <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+      <p className="text-sm text-muted-foreground py-4 text-center">
         No instances deployed
-      </Typography>
+      </p>
     );
   }
 
   return (
     <>
-    <TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell>Container ID</TableCell>
-            <TableCell>Name</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Health</TableCell>
-            <TableCell>Host:Port</TableCell>
-            <TableCell>Created</TableCell>
-            <TableCell align="right">Actions</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
+    <div className="mt-2 rounded-lg border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b">
+            <th className="text-left py-2 px-3 font-medium">Container ID</th>
+            <th className="text-left py-2 px-3 font-medium">Name</th>
+            <th className="text-left py-2 px-3 font-medium">Status</th>
+            <th className="text-left py-2 px-3 font-medium">Health</th>
+            <th className="text-left py-2 px-3 font-medium">Host:Port</th>
+            <th className="text-left py-2 px-3 font-medium">Created</th>
+            <th className="text-right py-2 px-3 font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
           {instances.map((inst) => (
-            <TableRow key={inst.id}>
-              <TableCell>
-                <Tooltip title={inst.containerId}>
-                  <Typography variant="body2" fontFamily="monospace">
-                    {inst.containerId.slice(0, 12)}
-                  </Typography>
-                </Tooltip>
-              </TableCell>
-              <TableCell>{inst.containerName}</TableCell>
-              <TableCell>
-                <Chip
-                  label={inst.status}
-                  size="small"
-                  color={statusColor[inst.status as InstanceStatus] ?? 'default'}
-                />
-              </TableCell>
-              <TableCell>
-                <Tooltip title={inst.errorMessage || ''}>
-                  <Typography variant="body2" color={inst.healthStatus === 'healthy' ? 'success.main' : 'text.secondary'}>
-                    {inst.healthStatus || 'N/A'}
-                  </Typography>
-                </Tooltip>
-              </TableCell>
-              <TableCell>
-                <Typography variant="body2" fontFamily="monospace">
+            <tr key={inst.id} className="border-b border-border/50">
+              <td className="py-2 px-3">
+                <span className="font-mono text-sm" title={inst.containerId}>
+                  {inst.containerId.slice(0, 12)}
+                </span>
+              </td>
+              <td className="py-2 px-3">{inst.containerName}</td>
+              <td className="py-2 px-3">
+                <Badge className={statusBadgeClass[inst.status as InstanceStatus] ?? ''}>
+                  {inst.status}
+                </Badge>
+              </td>
+              <td className="py-2 px-3">
+                <span
+                  className={inst.healthStatus === 'healthy' ? 'text-green-400' : 'text-muted-foreground'}
+                  title={inst.errorMessage || ''}
+                >
+                  {inst.healthStatus || 'N/A'}
+                </span>
+              </td>
+              <td className="py-2 px-3">
+                <span className="font-mono text-sm">
                   {inst.host}:{inst.port}
-                </Typography>
-              </TableCell>
-              <TableCell>
-                <Typography variant="caption">
+                </span>
+              </td>
+              <td className="py-2 px-3">
+                <span className="text-xs">
                   {new Date(inst.createdAt).toLocaleString()}
-                </Typography>
-              </TableCell>
-              <TableCell align="right">
-                <Tooltip title="View logs">
-                  <span>
-                    <IconButton
-                      size="small"
-                      onClick={() => { setLogsInstance(inst); setLogsOpen(true); }}
-                      disabled={inst.status === 'PROVISIONING'}
-                    >
-                      <ArticleIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-                <Tooltip title="Restart instance">
-                  <span>
-                    <IconButton
-                      size="small"
-                      onClick={() => restartInstance(gatewayId, inst.id)}
-                      disabled={inst.status !== 'RUNNING' && inst.status !== 'ERROR'}
-                    >
-                      <RestartIcon fontSize="small" />
-                    </IconButton>
-                  </span>
-                </Tooltip>
-              </TableCell>
-            </TableRow>
+                </span>
+              </td>
+              <td className="py-2 px-3 text-right">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => { setLogsInstance(inst); setLogsOpen(true); }}
+                  disabled={inst.status === 'PROVISIONING'}
+                  title="View logs"
+                >
+                  <FileText className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => restartInstance(gatewayId, inst.id)}
+                  disabled={inst.status !== 'RUNNING' && inst.status !== 'ERROR'}
+                  title="Restart instance"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </td>
+            </tr>
           ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+        </tbody>
+      </table>
+    </div>
     <ContainerLogDialog
       open={logsOpen}
       onClose={() => setLogsOpen(false)}

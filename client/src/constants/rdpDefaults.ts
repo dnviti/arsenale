@@ -77,7 +77,7 @@ export const RDP_DEFAULTS: Required<
   forceLossless: false,
   disableAudio: true,
   enableAudioInput: false,
-  security: 'nla',
+  security: 'any',
   ignoreCert: false,
   console: false,
 };

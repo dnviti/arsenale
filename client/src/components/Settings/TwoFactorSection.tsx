@@ -1,16 +1,26 @@
-import { useState, useEffect } from 'react';
-import {
-  Card, CardContent, Typography, Button, TextField, Alert, Box, Stack, Chip,
-} from '@mui/material';
+import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { setup2FA, verify2FA, disable2FA, get2FAStatus } from '../../api/twofa.api';
-import { extractApiError } from '../../utils/apiError';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  SettingsButtonRow,
+  SettingsPanel,
+  SettingsStatusBadge,
+} from './settings-ui';
+import {
+  disable2FA,
+  get2FAStatus,
+  setup2FA,
+  verify2FA,
+} from '../../api/twofa.api';
 import { useNotificationStore } from '../../store/notificationStore';
+import { extractApiError } from '../../utils/apiError';
 
 type Phase = 'idle' | 'setup' | 'disabling';
 
 export default function TwoFactorSection() {
-  const notify = useNotificationStore((s) => s.notify);
+  const notify = useNotificationStore((state) => state.notify);
   const [enabled, setEnabled] = useState(false);
   const [statusLoading, setStatusLoading] = useState(true);
   const [phase, setPhase] = useState<Phase>('idle');
@@ -23,10 +33,20 @@ export default function TwoFactorSection() {
 
   useEffect(() => {
     get2FAStatus()
-      .then(({ enabled: e }) => setEnabled(e))
+      .then(({ enabled: isEnabled }) => setEnabled(isEnabled))
       .catch(() => {})
       .finally(() => setStatusLoading(false));
   }, []);
+
+  if (statusLoading) return null;
+
+  const resetSetup = () => {
+    setPhase('idle');
+    setCode('');
+    setSecret('');
+    setOtpauthUri('');
+    setError('');
+  };
 
   const handleStartSetup = async () => {
     setError('');
@@ -50,10 +70,7 @@ export default function TwoFactorSection() {
       await verify2FA(code);
       setEnabled(true);
       notify('Two-factor authentication enabled successfully', 'success');
-      setPhase('idle');
-      setCode('');
-      setSecret('');
-      setOtpauthUri('');
+      resetSetup();
     } catch (err: unknown) {
       setError(extractApiError(err, 'Invalid code'));
     } finally {
@@ -77,158 +94,124 @@ export default function TwoFactorSection() {
     }
   };
 
-  const handleCancelSetup = () => {
-    setPhase('idle');
-    setCode('');
-    setSecret('');
-    setOtpauthUri('');
-    setError('');
-  };
-
-  if (statusLoading) return null;
-
   return (
-    <Card>
-      <CardContent>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-          <Typography variant="h6">Two-Factor Authentication</Typography>
-          <Chip
-            label={enabled ? 'Enabled' : 'Disabled'}
-            color={enabled ? 'success' : 'default'}
-            size="small"
-          />
-        </Stack>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Add an extra layer of security using an authenticator app (Google Authenticator, Authy, etc.)
-        </Typography>
+    <SettingsPanel
+      title="Two-Factor Authentication"
+      description="Protect your account with a time-based authenticator app."
+      heading={
+        <SettingsStatusBadge tone={enabled ? 'success' : 'neutral'}>
+          {enabled ? 'Enabled' : 'Disabled'}
+        </SettingsStatusBadge>
+      }
+    >
+      <div className="space-y-4">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-        {/* State: 2FA disabled, idle */}
         {!enabled && phase === 'idle' && (
-          <Button
-            variant="contained"
-            color="success"
-            disabled={loading}
-            onClick={handleStartSetup}
-          >
+          <Button type="button" onClick={() => void handleStartSetup()} disabled={loading}>
             {loading ? 'Setting up...' : 'Enable Two-Factor Authentication'}
           </Button>
         )}
 
-        {/* State: Setup in progress */}
         {phase === 'setup' && (
-          <Box>
-            <Typography variant="body2" sx={{ mb: 2 }}>
-              1. Scan this QR code with your authenticator app:
-            </Typography>
-            <Box sx={{
-              p: 2,
-              bgcolor: 'background.paper',
-              borderRadius: 1,
-              display: 'inline-block',
-              mb: 2,
-            }}>
-              <QRCodeSVG value={otpauthUri} size={200} />
-            </Box>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                1. Scan this QR code with your authenticator app.
+              </p>
+              <div className="inline-flex rounded-xl border bg-background p-4">
+                <QRCodeSVG value={otpauthUri} size={200} />
+              </div>
+            </div>
 
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              2. Or enter this code manually:
-            </Typography>
-            <TextField
-              fullWidth
-              value={secret}
-              size="small"
-              slotProps={{ input: { readOnly: true } }}
-              sx={{ mb: 2, fontFamily: 'monospace' }}
-            />
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                2. Or enter this code manually.
+              </p>
+              <Input value={secret} readOnly className="font-mono" />
+            </div>
 
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              3. Enter the 6-digit code from your app to confirm:
-            </Typography>
-            <TextField
-              fullWidth
-              label="6-digit code"
-              type="text"
-              inputMode="numeric"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              size="small"
-              placeholder="000000"
-              slotProps={{ htmlInput: { maxLength: 6 } }}
-              sx={{ mb: 2 }}
-            />
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                3. Enter the 6-digit code from your app.
+              </p>
+              <Input
+                value={code}
+                onChange={(event) =>
+                  setCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
+              />
+            </div>
 
-            <Stack direction="row" spacing={1}>
+            <SettingsButtonRow>
               <Button
-                variant="contained"
+                type="button"
                 disabled={loading || code.length !== 6}
-                onClick={handleVerifyAndEnable}
+                onClick={() => void handleVerifyAndEnable()}
               >
                 {loading ? 'Verifying...' : 'Confirm & Enable'}
               </Button>
-              <Button
-                variant="outlined"
-                disabled={loading}
-                onClick={handleCancelSetup}
-              >
+              <Button type="button" variant="outline" disabled={loading} onClick={resetSetup}>
                 Cancel
               </Button>
-            </Stack>
-          </Box>
+            </SettingsButtonRow>
+          </div>
         )}
 
-        {/* State: 2FA enabled, idle */}
         {enabled && phase === 'idle' && (
-          <Box>
-            <Button
-              variant="outlined"
-              color="warning"
-              onClick={() => setPhase('disabling')}
-            >
-              Disable Two-Factor Authentication
-            </Button>
-          </Box>
+          <Button type="button" variant="outline" onClick={() => setPhase('disabling')}>
+            Disable Two-Factor Authentication
+          </Button>
         )}
 
-        {/* State: Disabling */}
         {enabled && phase === 'disabling' && (
-          <Box>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Enter your current authenticator code to disable 2FA:
-            </Typography>
-            <TextField
-              fullWidth
-              label="6-digit code"
-              type="text"
-              inputMode="numeric"
-              value={disableCode}
-              onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              size="small"
-              placeholder="000000"
-              slotProps={{ htmlInput: { maxLength: 6 } }}
-              sx={{ mb: 2 }}
-            />
-            <Stack direction="row" spacing={1}>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-foreground">
+                Enter your current authenticator code to disable 2FA.
+              </p>
+              <Input
+                value={disableCode}
+                onChange={(event) =>
+                  setDisableCode(event.target.value.replace(/\D/g, '').slice(0, 6))
+                }
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="000000"
+              />
+            </div>
+
+            <SettingsButtonRow>
               <Button
-                variant="contained"
-                color="warning"
+                type="button"
                 disabled={loading || disableCode.length !== 6}
-                onClick={handleDisable}
+                onClick={() => void handleDisable()}
               >
                 {loading ? 'Verifying...' : 'Disable 2FA'}
               </Button>
               <Button
-                variant="outlined"
+                type="button"
+                variant="outline"
                 disabled={loading}
-                onClick={() => { setPhase('idle'); setDisableCode(''); setError(''); }}
+                onClick={() => {
+                  setPhase('idle');
+                  setDisableCode('');
+                  setError('');
+                }}
               >
                 Cancel
               </Button>
-            </Stack>
-          </Box>
+            </SettingsButtonRow>
+          </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsPanel>
   );
 }

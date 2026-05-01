@@ -111,7 +111,7 @@ export async function executeDbQuery(sessionId: string, sql: string): Promise<Db
   return data;
 }
 
-export async function getDbSchema(sessionId: string): Promise<DbSchemaInfo> {
+export async function fetchDbSchema(sessionId: string): Promise<DbSchemaInfo> {
   const { data } = await api.get(`/sessions/database/${sessionId}/schema`);
   return data;
 }
@@ -184,11 +184,6 @@ export async function updateDbSessionConfig(
   sessionConfig: DbSessionConfig,
 ): Promise<{ applied: boolean; activeDatabase?: string }> {
   const { data } = await api.put(`/sessions/database/${sessionId}/config`, { sessionConfig });
-  return data;
-}
-
-export async function getDbSessionConfig(sessionId: string): Promise<DbSessionConfig> {
-  const { data } = await api.get(`/sessions/database/${sessionId}/config`);
   return data;
 }
 

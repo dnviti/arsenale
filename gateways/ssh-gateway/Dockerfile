@@ -1,61 +1,68 @@
 # Build context: monorepo root (see compose.yml — context: .)
-# This allows copying gateways/tunnel-agent sources alongside the ssh-gateway files.
+# This allows copying gateways/tunnel-agent and gateway-core sources alongside the ssh-gateway files.
+
+ARG GO_VERSION=1.25.8
+
+# ── gRPC key management server build stage ──────────────────────────────────
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:${GO_VERSION}-alpine AS grpc-builder
+
+WORKDIR /build
+COPY gateways/ssh-gateway/grpc-server/ ./
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -ldflags="-s -w" -o /key-mgmt-server .
 
 # ── Tunnel agent build stage ─────────────────────────────────────────────────
-FROM --platform=$BUILDPLATFORM node:22-alpine AS tunnel-builder
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:${GO_VERSION}-alpine AS tunnel-builder
 
-WORKDIR /tunnel-agent
+WORKDIR /src
 
-COPY gateways/tunnel-agent/package.json ./
-RUN npm install --ignore-scripts
+COPY gateways/gateway-core/go.mod gateways/gateway-core/
+COPY gateways/tunnel-agent/go.mod gateways/tunnel-agent/go.sum gateways/tunnel-agent/
+WORKDIR /src/gateways/tunnel-agent
+RUN GOWORK=off go mod download
 
-COPY gateways/tunnel-agent/tsconfig.json ./
-COPY gateways/tunnel-agent/src/ ./src/
+WORKDIR /src
+COPY gateways/gateway-core/ gateways/gateway-core/
+COPY gateways/tunnel-agent/ gateways/tunnel-agent/
+WORKDIR /src/gateways/tunnel-agent
 
-RUN npm run build && npm prune --omit=dev
+ARG TARGETOS
+ARG TARGETARCH
+ARG AGENT_VERSION=1.7.1
+RUN GOWORK=off CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags="-s -w -X main.version=${AGENT_VERSION}" \
+    -o /out/tunnel-agent .
 
 # ── SSH gateway runtime ───────────────────────────────────────────────────────
-FROM alpine:3.21
-
-RUN apk update && apk upgrade --no-cache
+FROM docker.io/library/alpine:3.21
 
 LABEL org.opencontainers.image.title="Arsenale SSH Gateway"
 LABEL org.opencontainers.image.description="Lightweight SSH tunnel for TCP port forwarding (no shell access)"
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
 LABEL org.opencontainers.image.licenses="MIT"
 
-RUN apk add --no-cache openssh-server netcat-openbsd busybox-extras nodejs \
+RUN apk add --no-cache openssh-server netcat-openbsd busybox-extras \
     && adduser -D -s /sbin/nologin tunnel \
     && sed -i 's/^tunnel:!/tunnel:*/' /etc/shadow \
-    && mkdir -p /home/tunnel/.ssh \
-    && chown tunnel:tunnel /home/tunnel/.ssh \
-    && chmod 700 /home/tunnel/.ssh \
     && mkdir -p /config
 
 COPY gateways/ssh-gateway/sshd_config /etc/ssh/sshd_config
 RUN sed -i 's/\r$//' /etc/ssh/sshd_config
 
-# Generate host keys at build time and make them readable by tunnel user
-RUN ssh-keygen -A \
-    && chown tunnel:tunnel /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub \
-    && chmod 600 /etc/ssh/ssh_host_*_key \
-    && chmod 644 /etc/ssh/ssh_host_*_key.pub
-
 COPY gateways/ssh-gateway/entrypoint.sh /entrypoint.sh
 RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
-RUN mkdir -p /var/www/cgi-bin
-COPY gateways/ssh-gateway/key-api.sh /var/www/cgi-bin/authorized-keys
-RUN sed -i 's/\r$//' /var/www/cgi-bin/authorized-keys && chmod +x /var/www/cgi-bin/authorized-keys
+# gRPC key management server (static binary — replaces Node.js key-api-server.js)
+COPY --from=grpc-builder /key-mgmt-server /usr/local/bin/key-mgmt-server
 
 # Embed pre-built tunnel agent
-COPY --from=tunnel-builder /tunnel-agent/dist /opt/tunnel-agent/dist
-COPY --from=tunnel-builder /tunnel-agent/node_modules /opt/tunnel-agent/node_modules
-COPY --from=tunnel-builder /tunnel-agent/package.json /opt/tunnel-agent/package.json
+COPY --from=tunnel-builder /out/tunnel-agent /usr/local/bin/tunnel-agent
 
 USER tunnel
 
-EXPOSE 2222 8022
+EXPOSE 2222 9022
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
     CMD nc -z localhost ${SSH_PORT:-2222} || exit 1

@@ -1,319 +1,300 @@
 ---
 title: LLM Context
-description: Consolidated single-file context for LLM and bot consumption
-generated-by: ctdf-docs
-generated-at: 2026-03-24T23:40:00Z
+description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
+generated-by: claw-docs
+generated-at: 2026-04-17T18:30:00Z
 source-files:
   - README.md
-  - CLAUDE.md
-  - server/src/index.ts
-  - server/src/app.ts
-  - server/src/config.ts
-  - server/prisma/schema.prisma
-  - client/src/App.tsx
+  - AGENT.md
+  - package.json
+  - backend/internal/catalog/catalog.go
+  - backend/internal/app/app.go
+  - backend/internal/runtimefeatures/manifest.go
+  - backend/internal/publicconfig/service.go
+  - backend/cmd/control-plane-api/runtime.go
+  - backend/cmd/control-plane-api/routes.go
+  - backend/cmd/control-plane-api/routes_public.go
+  - backend/cmd/control-plane-api/routes_user_account.go
+  - backend/cmd/control-plane-api/routes_sessions.go
+  - backend/cmd/control-plane-api/routes_operations.go
+  - backend/cmd/control-plane-api/routes_secrets.go
+  - deployment/ansible/playbooks/install.yml
+  - deployment/ansible/playbooks/dev_refresh.yml
+  - deployment/ansible/playbooks/status.yml
+  - deployment/ansible/install/capabilities.yml
   - client/vite.config.ts
+  - client/src/api/auth.api.ts
+  - client/src/api/user.api.ts
+  - client/src/store/authStore.ts
+  - client/src/hooks/useGatewayMonitor.ts
+  - client/src/store/featureFlagsStore.ts
+  - tools/arsenale-cli/cmd/root.go
 ---
 
-# Arsenale -- LLM Context
+# Arsenale LLM Context
 
-## Project Summary
+## 📌 Project Summary
 
-Arsenale is a web-based remote access management platform for SSH, RDP, VNC, and database connections. Monorepo with npm workspaces: `server/` (Express + TypeScript + Prisma), `client/` (React 19 + Vite + MUI v7), `gateways/tunnel-agent/`, `extra-clients/browser-extensions/`.
+Arsenale is a Go-first remote access, database access, and installer-managed deployment platform with a React frontend. It supports SSH, RDP, VNC, secrets management, tenant administration, gateway orchestration, database querying through DB proxy gateways, audit logging, and AI-assisted database tooling.
 
-**Stack:** Node.js 22, PostgreSQL 16, Socket.IO, XTerm.js, guacamole-common-js, Zustand, Docker/Podman/Kubernetes.
+The active runtime lives in:
 
-**Version:** 1.7.1
+- `backend/` for services and internal packages
+- `client/` for the SPA
+- `gateways/` for protocol and tunnel containers
+- `tools/arsenale-cli/` for operator and smoke-test tooling
+- `deployment/ansible/` and `deployment/helm/` for installer-managed deployment
 
----
+## 🧭 Runtime Planes
 
-## Architecture Overview
+| Plane | Services |
+|------|----------|
+| Control | `control-plane-api`, `control-plane-controller`, `authz-pdp` |
+| Agent | `model-gateway`, `tool-gateway`, `agent-orchestrator`, `memory-service` |
+| Runtime | `terminal-broker`, `desktop-broker`, `tunnel-broker`, `query-runner`, `map-assets`, `recording-worker`, `db-proxy` |
+| Execution | `runtime-agent` |
 
-**Server (Express on :3001):** Layered architecture -- Routes -> Controllers -> Services -> Prisma ORM. 43 route files under `/api`. Socket.IO for SSH terminals (`/ssh`) and notifications (`/notifications`). Guacamole WebSocket on :3002 for RDP/VNC. Raw WebSocket tunnel broker on `/api/tunnel/connect`. Middleware stack includes Helmet, CORS, CSRF (double-submit cookies with exemptions for login, register, OAuth code exchange), peekAuth (lightweight JWT extraction for rate-limit keying), and global rate limiting with CIDR whitelist. Feature gate middleware for database proxy, connections, and keychain subsystems.
+Every Go service shares these meta endpoints via `backend/internal/app/app.go`:
 
-**Client (Vite on :3000):** React 19 SPA. 17 Zustand stores. 37 API modules. Full-screen MUI Dialog pattern for overlays (preserves active sessions). 6 themes x 2 modes. PWA with Workbox.
+- `/healthz`
+- `/readyz`
+- `/v1/meta/service`
+- `/v1/meta/architecture`
 
-**Database:** PostgreSQL 16 with 42 Prisma models. Key models: User, Tenant, Connection, VaultSecret, Gateway, ActiveSession, AuditLog, AccessPolicy.
+## 🎬 Session Recording
 
-**Gateways:** guacd (RDP/VNC protocol), SSH Gateway (bastion), guacenc (recording processor), Tunnel Agent (zero-trust outbound tunnel).
+SSH sessions are recorded as asciicast `.cast` files by the SSH gateway. Desktop sessions (RDP/VNC) are recorded as Guacamole `.guac` files by guacd. The `recording-worker` (port 8094) handles conversion and retention. Key env vars: `RECORDING_ENABLED`, `RECORDING_PATH`, `RECORDING_VOLUME`, `RECORDING_RETENTION_DAYS`.
 
-**Browser Extension:** Chrome Manifest V3. Service worker for API calls (bypasses CORS), React popup for account switching and keychain browsing, content scripts for credential autofill.
+## 🤖 Agent and AI Capabilities
 
----
+The capability catalog in `backend/internal/catalog/catalog.go` defines risk-rated permissions:
 
-## Key Commands
+- `connection.read` (Low), `connection.connect.ssh` (Medium), `connection.connect.rdp` (Medium)
+- `db.schema.read` (Low), `db.query.execute.readonly` (Medium), `db.query.execute.write` (High, requires approval)
+- `gateway.read` (Low), `gateway.scale` (High, requires approval), `workload.deploy` (Critical, requires approval)
+- `memory.read` (Low), `memory.write` (Medium), `audit.search` (Low)
 
-```bash
-npm run predev && npm run dev   # Full dev setup (Docker + Prisma + server + client)
-npm run dev:server              # Express on :3001 (tsx watch, hot reload)
-npm run dev:client              # Vite on :3000 (proxies /api -> :3001)
-npm run verify                  # typecheck -> lint -> audit -> build
-npm run db:generate             # Regenerate Prisma client
-npm run db:push                 # Sync schema to DB (no migration)
-npm run db:migrate              # Run Prisma migrations
-npm run docker:dev              # Start PostgreSQL + guacenc containers
-npm run docker:dev:down         # Stop dev containers
-npm run docker:prod             # Full production stack
-npm run build                   # Build all workspaces
-npm run typecheck               # TypeScript type-check (both workspaces)
-npm run lint                    # ESLint (both workspaces)
-npm run sast                    # npm audit (dependency scan)
-npm run codeql                  # Local CodeQL security scan
+Memory types: `working`, `episodic`, `semantic`, `procedural`, `artifact`.
+Memory scopes: `tenant`, `principal`, `agent`, `run`, `workflow`.
+AI providers: `anthropic`, `openai`, `ollama`, `openai-compatible`.
+The `/api/ai/*` routes run in `control-plane-api`, so external provider DNS and egress must be available from that service.
+
+## 🧩 Installer And Feature Profile
+
+Current runtime shape is not static. `backend/internal/runtimefeatures/manifest.go` builds a manifest from:
+
+- `ARSENALE_INSTALL_MODE`
+- `ARSENALE_INSTALL_BACKEND`
+- `ARSENALE_INSTALL_CAPABILITIES`
+- `FEATURE_*`
+- `CLI_ENABLED`
+- `GATEWAY_ROUTING_MODE`
+
+That manifest controls:
+
+- which route families are registered in `backend/cmd/control-plane-api/routes*.go`
+- what the SPA exposes after it loads `GET /api/auth/config`
+- the ordered `enabledCapabilities` list used by clients and operators to inspect the active install profile
+- whether connections, GeoIP, DB proxy, keychain, multi-tenancy, recordings, zero trust, AI, enterprise auth, sharing, and CLI surfaces are active
+
+The SPA reads the public config through `client/src/api/auth.api.ts` and stores it in `client/src/store/featureFlagsStore.ts`.
+It also loads the current tenant permission snapshot from `GET /api/user/permissions` into `client/src/store/authStore.ts` so tenant settings surfaces can be hidden when the user lacks edit rights.
+
+## 🏗 Core Request Flow
+
+```mermaid
+flowchart LR
+    Browser["Browser"] --> Client["client / nginx"]
+    Browser --> PublicConfig["GET /api/auth/config"]
+    Client --> API["control-plane-api"]
+    PublicConfig --> API
+    API --> Features["runtimefeatures.Manifest"]
+    API --> Postgres["PostgreSQL"]
+    API --> Redis["Redis"]
+    API --> Brokers["terminal-broker / desktop-broker / tunnel-broker"]
+    Client --> MapAssets["map-assets OSM cache"]
+    API --> Gateways["ssh-gateway / guacd / db-proxy / guacenc"]
 ```
 
----
+## 🔐 Public API Groups
 
-## API Structure
+Authoritative route registration files:
 
-All endpoints under `/api`. JWT Bearer authentication. Zod validation on request bodies. CSRF double-submit cookie protection for state-changing requests.
+- `backend/cmd/control-plane-api/routes.go`
+- `backend/cmd/control-plane-api/routes_public.go`
+- `backend/cmd/control-plane-api/routes_auth*.go`
+- `backend/cmd/control-plane-api/routes_user_*.go`
+- `backend/cmd/control-plane-api/routes_resources.go`
+- `backend/cmd/control-plane-api/routes_secrets.go`
+- `backend/cmd/control-plane-api/routes_sessions.go`
+- `backend/cmd/control-plane-api/routes_tenants.go`
+- `backend/cmd/control-plane-api/routes_operations.go`
+- `backend/cmd/control-plane-api/routes_live.go`
+- `backend/cmd/control-plane-api/routes_internal.go`
 
-### Core
+Highest-value public prefixes:
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/auth` | `auth.routes.ts` | Login, register, MFA verification, refresh, forgot/reset password |
-| `/api/auth` | `oauth.routes.ts` | Google, Microsoft, GitHub OAuth flows + code exchange |
-| `/api/auth/saml` | `saml.routes.ts` | SAML 2.0 SSO |
-| `/api/vault` | `vault.routes.ts` | Unlock/lock vault, MFA unlock |
-| `/api/connections` | `connections.routes.ts` | CRUD, import/export (feature-gated) |
-| `/api/connections` | `sharing.routes.ts` | Share connections with users |
-| `/api/connections` | `importExport.routes.ts` | Bulk import/export |
-| `/api/folders` | `folders.routes.ts` | Hierarchical folder tree |
-| `/api/sessions` | `session.routes.ts` | RDP/VNC/SSH session lifecycle |
-| `/api/sessions/ssh-proxy` | `sshProxy.routes.ts` | SSH proxy token management |
-| `/api/sessions/db-tunnel` | `dbTunnel.routes.ts` | Database SSH tunnel sessions |
-| `/api/sessions/database` | `dbProxy.routes.ts` | Web SQL client proxy (feature-gated) |
+- `/api/auth` — passkey-first login, password fallback, tenant-aware MFA, browser-session restore/activity touch, registration, OAuth, SAML, recovery
+- `/api/user` — profile, password, avatar, effective permissions, MFA lifecycle, notification schedule
+- `/api/secrets` — keychain CRUD, versioning, sharing, breach check, rotation
+- `/api/vault` — personal vault lock/unlock, activity touch, passkey-first re-unlock, recovery
+- `/api/connections` — connection CRUD, sharing, import/export, favorites
+- `/api/files` — connection-scoped managed transfer sandbox for RDP workspace staging/cleanup plus the generic `/api/files/history` retained-upload surface
+- `/api/files/ssh/*` — SSH sandbox workspace list/mkdir/delete/rename/upload/download, plus `/api/files/ssh/history/*` retained-upload actions, all sandbox-relative
+- `/api/sessions` — SSH, SSH observe grants, RDP, VNC, database, DB tunnel, heartbeat, pause, resume, terminate, active-session visibility fallback, and unified session-console rows with recording summaries
+- `/api/gateways` — gateway CRUD, derived operational status, templates, scaling, tunnel controls, instances, and per-gateway ordered egress firewall policy
+- `/api/db-audit` — query audit logs, firewall rules, masking policies, rate limits
+- `/api/recordings` — recording list, stream, analyze, video export, and audit trail aligned to the same tenant/own session-visibility rules used by `/api/sessions/console`
+- `/api/tenants` — tenant CRUD, users, invite, permissions, IP allowlist, MFA stats
+- `/api/admin` — email status, app config, system settings, auth providers
+- `/api/ai` — named AI backend config, per-feature defaults, natural-language-to-SQL generation, query optimization
+- `/api/audit` — audit log search, geo summary, connection/tenant audit
+- `/api/notifications` — notification list, preferences, read state
+- `/api/access-policies` — access policy CRUD
+- `/api/keystroke-policies` — keystroke policy CRUD
+- `/api/checkouts` — approval-style credential checkout flow
+- `/api/teams` — team CRUD and membership management; `scope=tenant` returns all tenant teams for tenant managers
+- `/api/tabs` — UI tab state sync with tab-instance ids for restoreable same-connection duplicates
 
-### User & Auth
+## 🗄 Database Execution Model
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/user` | `user.routes.ts` | Profile, preferences, domain credentials |
-| `/api/user/2fa` | `twofa.routes.ts` | TOTP setup and verification |
-| `/api/user/2fa/sms` | `smsMfa.routes.ts` | SMS OTP (Twilio/SNS/Vonage) |
-| `/api/user/2fa/webauthn` | `webauthn.routes.ts` | FIDO2/WebAuthn passkeys |
+This remains a critical architectural rule:
 
-### Secrets & Keychain
+- the control plane issues database sessions,
+- the control plane does not directly become the database client of record,
+- interactive database queries flow through `db-proxy` gateways,
+- `db-proxy` exposes the shared `queryrunnerapi` routes.
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/secrets` | `secret.routes.ts` | CRUD, versioning, sharing, external links (feature-gated) |
-| `/api/secrets` | `passwordRotation.routes.ts` | Automatic credential rotation |
-| `/api/vault-folders` | `vault-folders.routes.ts` | Secrets folder organization (feature-gated) |
-| `/api/share` | `publicShare.routes.ts` | Public/external share links |
-| `/api/vault-providers` | `externalVault.routes.ts` | HashiCorp Vault KV v2 integration |
+Public DB session endpoints:
 
-### Multi-Tenant & Teams
+- `POST /api/sessions/database`
+- `POST /api/sessions/database/{id}/query`
+- `GET /api/sessions/database/{id}/schema`
+- `POST /api/sessions/database/{id}/explain`
+- `POST /api/sessions/database/{id}/introspect`
+- `GET /api/sessions/database/{id}/history`
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/tenants` | `tenant.routes.ts` | Tenant CRUD, members, IP allowlist |
-| `/api/teams` | `team.routes.ts` | Team CRUD, member roles |
-| `/api/access-policies` | `accessPolicy.routes.ts` | ABAC policies with time windows |
-| `/api/checkouts` | `checkout.routes.ts` | Credential checkout/check-in (PAM) |
+DB audit endpoints:
 
-### Infrastructure & Monitoring
+- `/api/db-audit/logs`
+- `/api/db-audit/firewall-rules`
+- `/api/db-audit/masking-policies`
+- `/api/db-audit/rate-limit-policies`
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/gateways` | `gateway.routes.ts` | Gateway CRUD, deploy, scale, tunnel, SSH keys |
-| `/api/recordings` | `recording.routes.ts` | Session playback and video export |
-| `/api/audit` | `audit.routes.ts` | Audit logs (user, tenant, connection) |
-| `/api/geoip` | `geoip.routes.ts` | IP geolocation lookups |
-| `/api/notifications` | `notification.routes.ts` | In-app notifications |
-| `/api/db-audit` | `dbAudit.routes.ts` | Database query audit (feature-gated) |
-| `/api/keystroke-policies` | `keystrokePolicy.routes.ts` | SSH command block/alert policies |
+Interactive query protocols currently supported:
 
-### Admin & System
+- PostgreSQL
+- MySQL / MariaDB
+- MongoDB
+- Oracle
+- SQL Server
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/admin` | `admin.routes.ts` | Admin operations |
-| `/api/admin/system-settings` | `systemSettings.routes.ts` | Runtime system configuration |
-| `/api/setup` | `setup.routes.ts` | Startup configuration wizard |
-| `/api/cli` | `cli.routes.ts` | CLI device auth (RFC 8628) |
-| `/api/rdgw` | `rdGateway.routes.ts` | RD Gateway (MS-TSGU) for native RDP |
-| `/api/ai` | `aiQuery.routes.ts` | AI-assisted SQL generation (feature-gated) |
-| `/api` | `health.routes.ts` | Health and readiness probes |
+DB2 metadata fields exist in the connection schema, but DB2 is not active in the current query protocol switch.
 
-### Integrations
+Standalone gateway installs live beside each gateway image under `gateways/*/compose.yml`. Tunnel-backed installs (`ssh-gateway`, `guacd`, `db-proxy`, and standalone `tunnel-agent`) require a CLI-generated bundle from `arsenale gateway tunnel-token create <id> --bundle-dir <dir>`, because the tunnel broker requires both token and gateway client certificate material. Tunnel runtimes normalize Arsenale HTTP(S) base URLs to the WebSocket broker endpoint and accept inline PEM or matching `_FILE` PEM variables for CA/client certificate material. `guacenc` and `rdgw` are direct HTTPS services with their own auth tokens and TLS cert/key mounts.
 
-| Mount | Routes file | Purpose |
-|-------|-------------|---------|
-| `/api/ldap` | `ldap.routes.ts` | LDAP sync and authentication |
-| `/api/sync-profiles` | `sync.routes.ts` | NetBox connection sync |
+## ⚙️ Configuration Truth
 
-### WebSocket Namespaces
+Authoritative inputs:
 
-| Namespace | Purpose |
-|-----------|---------|
-| Socket.IO `/ssh` | Terminal I/O for SSH sessions |
-| Socket.IO `/notifications` | Real-time event notifications |
-| Socket.IO `/gateways` | Gateway health monitoring |
-| Raw WS `/api/tunnel/connect` | Tunnel broker (binary multiplexed protocol) |
-| Guacamole WS `:3002` | RDP/VNC protocol tunnel |
+- `.env.example` for root env shape
+- `deployment/ansible/inventory/group_vars/all/vars.yml` for non-secret defaults
+- `deployment/ansible/inventory/group_vars/all/vault.yml` for secrets
+- `deployment/ansible/install/capabilities.yml` for installer-owned capability toggles
+- `deployment/ansible/playbooks/install.yml` for installer entry
+- `deployment/ansible/playbooks/status.yml` for encrypted installer status reads
+- `deployment/ansible/roles/deploy/templates/compose.yml.j2` for actual container env, ports, and secret mounts
+- `client/vite.config.ts` for frontend local-dev proxying
 
----
+## 🚀 Useful Commands
 
-## Security
+```bash
+npm install
+make setup
+make dev
+make dev control-plane
+npm run dev
+make status
+make deploy
+make recover
+npm run verify
+npm run dev:api-acceptance
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
+```
 
-- **Encryption:** AES-256-GCM for all credentials, secrets, TOTP seeds. Master key derived from password via Argon2id.
-- **Auth:** JWT access tokens (15 min) + refresh tokens (7 days, DB-stored, family tracking). Token binding (IP + User-Agent).
-- **MFA:** TOTP, SMS (Twilio/SNS/Vonage), WebAuthn/FIDO2.
-- **SSO:** Google, Microsoft, GitHub OAuth. Any OIDC provider. SAML 2.0. LDAP (with sync and auto-provisioning).
-- **RBAC:** 7 tenant roles (OWNER -> GUEST), 3 team roles. ABAC policies with time windows, trusted device, MFA step-up.
-- **Audit:** 100+ action types, GeoIP, impossible travel detection, lateral movement anomaly detection (MITRE T1021).
-- **DLP:** Per-tenant/connection copy, paste, upload, download controls.
-- **CSRF:** Double-submit cookie with exempt paths for login/register/OAuth.
-- **Rate Limiting:** Global rate limiter with CIDR whitelist, per-route rate limiters for login, vault, sessions, OAuth.
-- **Logging:** Sensitive data never logged in clear text. Logger sanitizes passwords, tokens, error objects.
+## 🧪 Development Bootstrap
 
----
+The installer-driven development flow now resolves the same capability graph as production and builds the selected images locally on Podman.
 
-## Configuration Reference
+It still seeds:
 
-Single `.env` file at monorepo root. Key categories:
+- admin credentials: `admin@example.com` / `ArsenaleTemp91Qx`
+- a default tenant: `Development Environment`
+- tenant membership and baseline setup state
+- local `ssh-gateway` and `guacd` gateway records when `connections` is enabled
+- demo databases with a deterministic ERP-style dataset: 60 customers, 72 products, 180 orders, 540 order lines, and 180 invoices per engine
 
-### Core
+With the default development capabilities, `make dev` includes the demo databases. Tunnel gateway fixtures still require `DEV_ZERO_TRUST=true` and are seeded with narrow egress policies for their demo SSH, desktop, and database targets.
+If `multi_tenancy` is disabled, the seeded tenant remains the platform's only organization and the create/switch organization flows stay off.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql://...@127.0.0.1:5432/arsenale` | PostgreSQL connection string |
-| `PORT` | `3001` | Express server port |
-| `GUACAMOLE_WS_PORT` | `3002` | Guacamole WebSocket port |
-| `NODE_ENV` | `development` | Environment mode |
-| `CLIENT_URL` | `http://localhost:3000` | Client URL (CORS, OAuth, emails) |
-| `TRUST_PROXY` | `false` | Reverse proxy trust depth |
+For code-only iteration, `make dev client`, `make dev gateways`, and `make dev control-plane` reuse the saved dev render artifacts and refresh only those services; installer/profile/cert/secret changes still require a full `make dev`.
 
-### Secrets
+## 📧 Email, SMS, And Security Config
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | `dev-secret-change-me` | JWT signing key (**must be strong in production**) |
-| `JWT_EXPIRES_IN` | `15m` | Access token TTL |
-| `JWT_REFRESH_EXPIRES_IN` | `7d` | Refresh token TTL |
-| `GUACAMOLE_SECRET` | `dev-guac-secret` | Guacamole encryption key |
-| `SERVER_ENCRYPTION_KEY` | Auto-generated | 32-byte hex (64 chars) for server-level encryption |
+- Email providers: `smtp`, `sendgrid`, `ses`, `resend`, `mailgun` (via `EMAIL_PROVIDER`)
+- SMS providers: `twilio`, `sns`, `vonage` (via `SMS_PROVIDER`; empty for dev mode)
+- Login rate limiting: `LOGIN_RATE_LIMIT_WINDOW_MS`, `LOGIN_RATE_LIMIT_MAX_ATTEMPTS`
+- Rate limit whitelist: `RATE_LIMIT_WHITELIST_CIDRS` bypasses global and auth login limiters for trusted CIDRs
+- Account lockout: `ACCOUNT_LOCKOUT_THRESHOLD`, `ACCOUNT_LOCKOUT_DURATION_MS`
+- Session limits: `MAX_CONCURRENT_SESSIONS`, `ABSOLUTE_SESSION_TIMEOUT_SECONDS`
+- Impossible travel detection: `IMPOSSIBLE_TRAVEL_SPEED_KMH` (default 900)
+- WebAuthn: `WEBAUTHN_RP_ID`, `WEBAUTHN_RP_ORIGIN`, `WEBAUTHN_RP_NAME`
+- LDAP: `LDAP_ENABLED`, `LDAP_SERVER_URL`, `LDAP_SYNC_ENABLED`, `LDAP_AUTO_PROVISION`
+- External vault providers: HashiCorp Vault, AWS Secrets Manager, Azure Key Vault, GCP Secret Manager, CyberArk Conjur
 
-### Vault
+## 🔐 Security Model
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VAULT_TTL_MINUTES` | `30` | Vault session auto-lock timeout |
+- **Vault encryption**: AES-256-GCM with Argon2id key derivation (65,536 KiB memory, 3 iterations)
+- **Server encryption**: Separate `SERVER_ENCRYPTION_KEY` for tenant SSH keys and server-held material
+- **Sharing**: Re-encrypted per recipient; external shares use HKDF-SHA256 with optional PIN
+- **ABAC policies**: Folder > Team > Tenant specificity with time windows, MFA step-up, trusted-device requirements
+- **DLP**: Tenant floor + per-connection overrides; Guacamole params + staged-file API guards for desktop, REST file browser guards for SSH
 
-### OAuth / SSO
+## 📁 File Transfer Model
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GOOGLE_CLIENT_ID/SECRET` | -- | Google OAuth |
-| `GOOGLE_HD` | -- | Google domain restriction |
-| `MICROSOFT_CLIENT_ID/SECRET` | -- | Microsoft OAuth |
-| `MICROSOFT_TENANT_ID` | `common` | Azure AD tenant filter |
-| `GITHUB_CLIENT_ID/SECRET` | -- | GitHub OAuth |
-| `OIDC_CLIENT_ID/SECRET/ISSUER_URL` | -- | Generic OIDC provider |
-| `SAML_ENTRY_POINT/ISSUER/CERT` | -- | SAML 2.0 |
+- RDP shared-drive files are keyed by tenant, user, and connection in the shared object store, then materialized into the Guacamole drive cache under `DRIVE_BASE_PATH`.
+- SSH file browsing does not use terminal WebSocket file-transfer events. The SPA calls `/api/files/ssh/*` over REST for workspace actions and `/api/files/ssh/history/*` for retained-upload actions, while the generic CLI and RDP history surface uses `/api/files/history`. The control plane stages upload and download payloads through shared object storage first, SSH session responses expose a managed sandbox browser only, absolute paths and traversal are rejected before transfer, and the workspace browser never exposes raw remote filesystem browsing.
+- Threat scanning is pluggable through `FILE_THREAT_SCANNER_MODE`. The builtin scanner blocks the EICAR signature and is applied before staged payloads are delivered to the target or returned to the browser.
+- The control plane requires `SHARED_FILES_S3_*` env vars for staged RDP and SSH file payloads. Development installs provision a MinIO-compatible endpoint by default; production installs must point these values at external S3-compatible storage.
+- **SQL firewall**: Regex-based query blocking in db-proxy
+- **Impossible travel**: Haversine distance between logins, flagged above 900 km/h default
 
-### LDAP
+Detailed specs: [security/encryption.md](security/encryption.md), [security/policies.md](security/policies.md), [security/authentication.md](security/authentication.md).
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LDAP_ENABLED` | `false` | Enable LDAP authentication |
-| `LDAP_SERVER_URL` | -- | LDAP server URL |
-| `LDAP_BASE_DN` | -- | Base distinguished name |
-| `LDAP_SYNC_ENABLED` | `false` | Periodic user sync |
-| `LDAP_SYNC_CRON` | `0 */6 * * *` | Sync schedule |
+## 🗃 Database Schema
 
-### Email & SMS
+PostgreSQL 16 with versioned SQL migrations in `backend/migrations/`. Key entity groups: User, Tenant, Team, Connection, Session, VaultSecret, Gateway, AuditLog, AccessPolicy, Checkout, Notification. 100+ audit action types, including `TUNNEL_EGRESS_DENIED` for blocked tunnel targets. 7 tenant roles (OWNER through GUEST). Detailed schemas: [database/](database/).
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EMAIL_PROVIDER` | `smtp` | smtp, sendgrid, ses, resend, mailgun |
-| `SMS_PROVIDER` | -- | twilio, sns, vonage |
+## 🌐 WebSocket Protocols
 
-### Infrastructure
+- SSH terminal: `/ws/terminal` (port 8090) — JSON text frames for `ready`/`data`/`error`/`closed`; one controlling SSH client can fan out live read-only output to observer sockets on the same runtime
+- Desktop (RDP/VNC): `/guacamole` (port 8091) — Guacamole wire protocol
+- SSE streams: gateway status, notifications, vault status, active sessions, audit, DB audit
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ORCHESTRATOR_TYPE` | -- | docker, podman, kubernetes, none |
-| `RECORDING_ENABLED` | `false` | Enable session recording |
-| `RECORDING_PATH` | `/recordings` | Recording storage path |
+## 📁 Extended References
 
-### Security
+- [guides/tunnel-implementation-guide.md](guides/tunnel-implementation-guide.md) — binary tunnel protocol spec
+- [guides/zero-trust-tunnel-user-guide.md](guides/zero-trust-tunnel-user-guide.md) — tunnel deployment for Docker, K8s, systemd
+- [agent-orchestration-gateway.md](agent-orchestration-gateway.md) — planned agent orchestration system
+- [environment.md](environment.md) — complete 100+ env var catalog
+- [components/](components/) — frontend component, store, and hook inventory
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOGIN_RATE_LIMIT_MAX_ATTEMPTS` | `5` | Login attempts per window |
-| `ACCOUNT_LOCKOUT_THRESHOLD` | `10` | Failed attempts before lockout |
-| `MAX_CONCURRENT_SESSIONS` | `0` (unlimited) | Per-user session limit |
-| `ABSOLUTE_SESSION_TIMEOUT_SECONDS` | `43200` (12h) | Hard session timeout |
-| `TOKEN_BINDING_ENABLED` | `true` | Bind JWT to IP + User-Agent |
-| `LATERAL_MOVEMENT_DETECTION_ENABLED` | `true` | MITRE T1021 anomaly detection |
-| `ALLOW_LOCAL_NETWORK` | `true` | Allow private IP connections |
-| `ALLOW_LOOPBACK` | `false` | Allow localhost connections |
+## ⚠️ Historical Notes
 
-### Database Proxy
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DB_QUERY_TIMEOUT_MS` | `30000` | SQL query timeout |
-| `DB_QUERY_MAX_ROWS` | `10000` | Max result rows |
-| `DB_POOL_MAX_CONNECTIONS` | `3` | Connection pool size |
-
-### SSH Proxy
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SSH_PROXY_ENABLED` | `false` | Enable SSH protocol proxy |
-| `SSH_PROXY_PORT` | `2222` | SSH proxy listen port |
-
-### AI Integration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AI_PROVIDER` | -- | anthropic, openai, ollama, openai-compatible |
-| `AI_API_KEY` | -- | Provider API key |
-| `AI_MODEL` | -- | Model identifier |
-| `AI_QUERY_GENERATION_ENABLED` | `false` | Natural language to SQL |
-
-### Feature Toggles
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `FEATURE_DATABASE_PROXY_ENABLED` | `true` | Database SQL proxy subsystem |
-| `FEATURE_CONNECTIONS_ENABLED` | `true` | Connection management subsystem |
-| `FEATURE_KEYCHAIN_ENABLED` | `true` | Secrets keychain subsystem |
-
-### Defaults (simplified first-run)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SELF_SIGNUP_ENABLED` | `false` | Allow public registration |
-| `EMAIL_VERIFY_REQUIRED` | `false` | Require email verification |
-
----
-
-## File Naming
-
-| Layer | Pattern | Example |
-|-------|---------|---------|
-| Routes | `*.routes.ts` | `auth.routes.ts` |
-| Controllers | `*.controller.ts` | `connection.controller.ts` |
-| Services | `*.service.ts` | `encryption.service.ts` |
-| Middleware | `*.middleware.ts` | `auth.middleware.ts` |
-| Stores | `*Store.ts` | `authStore.ts` |
-| API (client) | `*.api.ts` | `connections.api.ts` |
-| Hooks | `use*.ts` | `useAuth.ts` |
-
----
-
-## Development Patterns
-
-- **Full-screen Dialog pattern** for overlays (not routes) -- preserves active sessions
-- **`extractApiError(err, fallback)`** for API error handling in catch blocks
-- **`useAsyncAction`** hook for dialog form submissions with loading/error state
-- **`uiPreferencesStore`** for all persistent UI layout state (never raw localStorage)
-- **Vault must be unlocked** to access encrypted credentials
-- **`npm run verify`** must pass before closing any task
-- **Migrations run automatically** on server start -- no manual migrate needed
-- **Env vars override UI settings** -- config.ts is the single source of truth
-- **Feature gates** -- `requireFeature()` middleware disables route groups at runtime
-- **No clear-text logging** -- logger sanitizes all sensitive data; never pass raw error objects
+- Do not treat deleted `server/` paths as authoritative.
+- Use plural `/api/secrets`, not older singular secret paths.
+- Database connections are expected to pass through `db-proxy`, not direct control-plane drivers.
+- Use `tools/arsenale-cli` as a first-class acceptance client when changing API behavior.
+- Docker is not a supported installer backend; supported installer backends are Podman and Kubernetes.

@@ -3,11 +3,13 @@
 > Auto-generated on 2026-03-15 by /docs create security.
 > Source of truth is the codebase. Run /docs update security after code changes.
 
+> Runtime note: the active auth runtime is in `backend/internal/authservice`, `backend/internal/mfaapi`, and related Go packages. Older `server/src` references are archival.
+
 ## Vault Session Management
 
 ### Session Lifecycle
 
-1. **Unlock**: User provides password (or MFA for re-unlock). Master key is decrypted and stored in the in-memory `vaultStore` Map.
+1. **Unlock**: Users without a passkey unlock with their password. When a passkey is configured, soft re-unlock is passkey-first with password fallback.
 2. **Active**: Every vault access resets the TTL (sliding window). Default TTL: 30 minutes (`VAULT_TTL_MINUTES`).
 3. **Soft lock**: TTL expiry or manual lock clears the vault session but preserves the recovery entry for MFA re-unlock.
 4. **Hard lock**: Logout or password change clears both the vault session AND the recovery entry.
@@ -21,10 +23,10 @@
 
 ### Vault Recovery (MFA Re-unlock)
 
-When the vault is unlocked with a password, the master key is also encrypted with the `SERVER_ENCRYPTION_KEY` and stored in the recovery store (`vaultRecoveryStore`). This allows MFA-based re-unlock after TTL expiry:
+When the vault is unlocked with a password, the master key is also encrypted with the `SERVER_ENCRYPTION_KEY` and stored in the recovery store (`vaultRecoveryStore`). This allows passkey-first re-unlock after TTL expiry:
 
 1. User's vault expires
-2. User triggers MFA vault unlock (TOTP, SMS, or WebAuthn)
+2. User triggers vault re-unlock with a passkey when WebAuthn is configured, otherwise with the available secondary factor
 3. Server verifies MFA, retrieves the recovery entry, decrypts the master key
 4. New vault session is created
 
@@ -77,6 +79,15 @@ The Axios client interceptor (`client/src/api/client.ts`):
 4. On refresh success, retries the original request with the new token
 5. On refresh failure, calls `logout()` to clear all auth state
 
+### Primary Login And Tenant-Aware MFA
+
+- The browser login flow is passkey-first and starts with a usernameless WebAuthn request.
+- Users can switch to email/password explicitly, and the UI also reveals password fallback after three failed passkey attempts in the same visit.
+- Discoverable passkeys are configured at the user level. New WebAuthn registrations now require resident credentials and user verification.
+- MFA enforcement remains tenant-aware through the active tenant policy (`mfaRequired`).
+- When a passkey is the primary sign-in method, Arsenale only prompts for secondary MFA if tenant-enforced secondary methods are actually configured for the user (email, TOTP, or SMS).
+- When password fallback is used, tenant-required MFA still applies after the password step.
+
 ### Socket.IO JWT Middleware
 
 Socket.IO namespaces (`/ssh`, `/notifications`, `/gateway-monitor`) authenticate via JWT in the handshake:
@@ -98,7 +109,7 @@ All rate limiters are built via a shared `rateLimitFactory` (`server/src/middlew
 | Registration | 5 attempts | 1 hour | IP |
 | Account lockout | 10 consecutive failures | 30 min | User |
 | Vault unlock (password) | 5 attempts | 1 min | User |
-| Vault unlock (MFA) | 10 attempts | 1 min | User |
+| Vault unlock (MFA) | 5 attempts | 1 min | User |
 | Session endpoints | 20 requests | 1 min | User |
 | OAuth flow (initiate/callback) | 20 requests | 15 min | IP |
 | OAuth account management | 15 requests | 1 min | User |
@@ -124,7 +135,8 @@ Token binding ties JWT access tokens and refresh tokens to the originating clien
 - If a refresh token is presented from a different IP or User-Agent, the token is rejected and the entire token family is revoked
 - A `TOKEN_HIJACK_ATTEMPT` audit event is logged for security monitoring
 - Enabled by default; disable via `TOKEN_BINDING_ENABLED=false` for environments with dynamic IPs (e.g., mobile clients, VPNs)
-- Tokens issued before binding was enabled are accepted without verification for backward compatibility
+- Access tokens without the binding claim are only accepted when their `iat` is at or before `TOKEN_BINDING_ENFORCEMENT_TIMESTAMP`
+- `TOKEN_BINDING_ENFORCEMENT_TIMESTAMP` accepts Unix seconds or RFC3339; when unset, the cutoff defaults to control-plane startup time so pre-restart legacy access tokens can expire naturally
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -168,8 +180,9 @@ Tunnel agents (gateway-side daemons) authenticate to the broker WebSocket endpoi
 - **Constant-time comparison**: Prevents timing side-channel attacks on token validation.
 - **Defense in depth**: Dual verification (hash lookup + decryption check) ensures integrity even if one layer is compromised.
 - **Tenant-level controls**: `tunnelAgentAllowedCidrs` restricts which source IPs can establish tunnels. `tunnelTokenMaxLifetimeDays` enforces token expiry.
+- **Gateway egress controls**: each gateway has an ordered `egressPolicy` firewall for tunneled protocol, host/CIDR, port, user, and team targets. Rules can allow or disallow, disabled rules are ignored, empty user/team scope means everyone, and no match denies by default. Denied attempts are audited as `TUNNEL_EGRESS_DENIED`.
 
-Source: `server/src/services/tunnel.service.ts`, `server/src/services/crypto.service.ts`
+Source: `backend/internal/tunnelbroker`, `backend/internal/gateways/tunnels_service.go`, `backend/internal/gateways/tunnels_crypto.go`, `backend/pkg/egresspolicy`
 
 <!-- manual-start -->
 <!-- manual-end -->

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Terminal } from '@xterm/xterm';
-import { Box, IconButton, Slider, Typography, Stack, Select, MenuItem } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
-import ReplayIcon from '@mui/icons-material/Replay';
+import { Pause, Play, RotateCcw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { getRecordingStreamUrl } from '../../api/recordings.api';
 import { useAuthStore } from '../../store/authStore';
 import '@xterm/xterm/css/xterm.css';
@@ -167,8 +167,8 @@ export default function SshPlayer({ recordingId, onError }: SshPlayerProps) {
     setPlaying(false);
   }, []);
 
-  const seekTo = useCallback((_: Event | React.SyntheticEvent, value: number | number[]) => {
-    const targetTime = value as number;
+  const seekTo = useCallback((value: number[]) => {
+    const targetTime = value[0];
     if (timerRef.current) clearTimeout(timerRef.current);
 
     terminalRef.current?.reset();
@@ -213,52 +213,51 @@ export default function SshPlayer({ recordingId, onError }: SshPlayerProps) {
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <Box
+    <div className="flex flex-col flex-1 min-h-0">
+      <div
         ref={termContainerRef}
-        sx={{
-          flex: 1,
-          bgcolor: '#1e1e1e',
-          borderRadius: 1,
-          overflow: 'hidden',
-        }}
+        className="flex-1 bg-[#1e1e1e] rounded overflow-hidden"
       >
-        <Box
+        <div
           ref={termRef}
-          sx={{
-            '& .xterm-viewport': { background: '#1e1e1e !important' },
-          }}
+          className="[&_.xterm-viewport]:!bg-[#1e1e1e]"
         />
-      </Box>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1, px: 1 }}>
+      </div>
+      <div className="flex items-center gap-2 mt-2 px-2">
         {playing ? (
-          <IconButton size="small" onClick={pause}><PauseIcon /></IconButton>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={pause}>
+            <Pause className="h-4 w-4" />
+          </Button>
         ) : (
-          <IconButton size="small" onClick={play} disabled={!loaded}><PlayArrowIcon /></IconButton>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={play} disabled={!loaded}>
+            <Play className="h-4 w-4" />
+          </Button>
         )}
-        <IconButton size="small" onClick={restart} disabled={!loaded}><ReplayIcon /></IconButton>
-        <Typography variant="caption" sx={{ minWidth: 40 }}>{formatTime(currentTime)}</Typography>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={restart} disabled={!loaded}>
+          <RotateCcw className="h-4 w-4" />
+        </Button>
+        <span className="text-xs min-w-[40px]">{formatTime(currentTime)}</span>
         <Slider
-          size="small"
-          value={currentTime}
+          value={[currentTime]}
           max={duration || 1}
-          onChange={seekTo}
-          sx={{ flex: 1 }}
+          step={0.1}
+          onValueChange={seekTo}
+          className="flex-1"
         />
-        <Typography variant="caption" sx={{ minWidth: 40 }}>{formatTime(duration)}</Typography>
-        <Select
-          size="small"
-          value={speed}
-          onChange={(e) => setSpeed(Number(e.target.value))}
-          sx={{ minWidth: 70, '& .MuiSelect-select': { py: 0.5, fontSize: '0.75rem' } }}
-        >
-          <MenuItem value={0.5}>0.5x</MenuItem>
-          <MenuItem value={1}>1x</MenuItem>
-          <MenuItem value={2}>2x</MenuItem>
-          <MenuItem value={4}>4x</MenuItem>
-          <MenuItem value={8}>8x</MenuItem>
+        <span className="text-xs min-w-[40px]">{formatTime(duration)}</span>
+        <Select value={String(speed)} onValueChange={(v) => setSpeed(Number(v))}>
+          <SelectTrigger className="h-7 w-[70px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="0.5">0.5x</SelectItem>
+            <SelectItem value="1">1x</SelectItem>
+            <SelectItem value="2">2x</SelectItem>
+            <SelectItem value="4">4x</SelectItem>
+            <SelectItem value="8">8x</SelectItem>
+          </SelectContent>
         </Select>
-      </Stack>
-    </Box>
+      </div>
+    </div>
   );
 }

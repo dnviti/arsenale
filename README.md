@@ -2,19 +2,14 @@
   <img src="icons/Arsenale_logo_transparent.png" alt="Arsenale" width="500" />
 </div>
 
-[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/docker-build.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/docker-build.yml)
-[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/gateways-build.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/gateways-build.yml)
-[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/release.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/release.yml)
-[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/security.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/security.yml)
-[![Verify Server](https://github.com/dnviti/arsenale/actions/workflows/verify.yml/badge.svg)](https://github.com/dnviti/arsenale/actions/workflows/verify.yml)
 [![License: BSL 1.1](https://img.shields.io/badge/License-BSL_1.1-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.0-green.svg)](CHANGELOG.md)
 
 A web-based application for managing and accessing remote SSH and RDP connections from your browser. Organize connections in folders, share them with team members, and keep credentials encrypted at rest with a personal vault.
 
 ## Features
 
-- **SSH Terminal** — Interactive terminal sessions powered by XTerm.js and Socket.IO, with integrated SFTP file browser
+- **SSH Terminal** — Interactive terminal sessions powered by XTerm.js and Go WebSocket brokers, with sandbox-only managed file transfer
 - **RDP Viewer** — Remote desktop connections via Apache Guacamole with clipboard sync and drive redirection
 - **VNC Viewer** — VNC sessions via the Guacamole protocol
 - **Encrypted Vault** — All credentials encrypted at rest with AES-256-GCM; master key derived from your password via Argon2id
@@ -33,22 +28,24 @@ A web-based application for managing and accessing remote SSH and RDP connection
 - **IP Allowlist** — Per-tenant IP/CIDR allowlists with flag (audit) or block enforcement modes
 - **Session Limits** — Max concurrent sessions per user and absolute session timeouts (OWASP A07)
 - **External Vault Integration** — Reference credentials from HashiCorp Vault (KV v2) instead of storing them in Arsenale
-- **SSH Gateway Management** — Deploy, scale, and monitor SSH gateway containers via Docker, Podman, or Kubernetes
+- **SSH Gateway Management** — Deploy, scale, and monitor SSH gateway containers via Podman or Kubernetes
 - **JWT Authentication** — Short-lived access tokens with httpOnly refresh cookies, CSRF protection, and token binding
 
 ## Tech Stack
 
 | Layer | Technologies |
 |-------|-------------|
-| **Server** | Express, TypeScript, Prisma, Socket.IO, ssh2, guacamole-lite |
-| **Client** | React 19, Vite, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
+| **Backend** | Go split services under `backend/` (control plane, brokers, orchestration, AI, runtime) |
+| **Client** | React 19, Vite, Tailwind CSS 4, shadcn/ui, Material-UI v7, Zustand, XTerm.js, guacamole-common-js |
 | **Database** | PostgreSQL 16 |
-| **Infrastructure** | Docker / Podman / Kubernetes, Nginx, guacd, ssh-gateway |
+| **Infrastructure** | Podman / Kubernetes, Nginx, guacd, ssh-gateway |
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 22+
-- [Docker](https://www.docker.com/) (required for RDP support via `guacd`)
+- [Go](https://go.dev/) 1.25+ or a container runtime for the bundled Go fallback
+- [Podman](https://podman.io/) for compose-backed installs or [minikube](https://minikube.sigs.k8s.io/docs/start/) for Kubernetes validation
+- [Ansible](https://docs.ansible.com/ansible/latest/installation_guide/) for the installer and deployment flow
 - npm 9+
 
 ## Getting Started
@@ -66,26 +63,76 @@ cd arsenale
 npm install
 ```
 
-### 3. Configure environment
+### 3. Prepare the installer
 
 ```bash
-cp .env.example .env
+make setup
 ```
 
-Edit `.env` as needed — see [Environment Variables](#environment-variables) below.
+This installs the required Ansible collections and creates the encrypted Ansible vault used for long-lived deployment secrets.
 
-### 4. Run in development
+### 4. Run the full development stack
 
 ```bash
-# Full setup: starts guacd, generates Prisma client, syncs DB schema, then runs dev servers
-npm run predev && npm run dev
+make dev
+npm run dev
 ```
 
-This starts:
-- PostgreSQL 16 on port 5432 (Docker)
-- guacd container on port 4822 (Docker)
-- Express API server on `http://localhost:3001`
-- Vite dev server on `http://localhost:3000` (proxies API and WebSocket requests)
+`make dev` runs the installer-aware development flow. With the default development capabilities it deploys the local fixture targets, demo databases, and bootstrap data; add `DEV_ZERO_TRUST=true` when you also want the tunnel fixtures and zero-trust acceptance path. `npm run dev` is optional when you want the Vite client on `https://localhost:3005` against that stack.
+
+For faster local iteration after that first full deploy, you can refresh only the changed images with the same saved dev profile:
+
+```bash
+make dev client
+make dev gateways
+make dev control-plane
+make dev control-plane-api query-runner
+```
+
+Those scoped refreshes rebuild and restart only the requested services, reusing the last rendered dev compose/env artifacts. Use full `make dev` again when you change installer inputs, capabilities, certs, secrets, or compose wiring.
+
+For headless local reruns, place the technician password in `install/password.txt`.
+The repo `Makefile` auto-detects that file and passes it to the installer as
+`install_password_file`, so `make dev`, `make install`, `make deploy`, and
+`make status` can run without an interactive password prompt.
+
+### 5. Run the installer
+
+```bash
+make install
+```
+
+The installer is CLI-only, interactive, password-gated, idempotent, and backend-aware. It can deploy:
+
+- Development via the full local compose stack
+- Production via Podman compose
+- Production via Helm on Kubernetes
+
+Docker is not a supported installer backend.
+
+See [docs/installer.md](docs/installer.md) for the full flow.
+
+## Installer
+
+The installer persists encrypted profile, state, status, log, and rendered-artifact payloads. On a target host the canonical location is:
+
+```text
+/opt/arsenale/install/
+```
+
+Artifacts written there:
+
+- `install-profile.enc`
+- `install-state.enc`
+- `install-status.enc`
+- `install-log.enc`
+- `rendered-artifacts.enc`
+
+Every rerun asks for the technician password before those artifacts are read. External tooling can read the encrypted installer status directly with the supported helper path instead of querying a running Arsenale instance:
+
+```bash
+make status
+```
 
 ## Environment Variables
 
@@ -94,37 +141,29 @@ Key variables — see [docs/environment.md](docs/environment.md) for the full re
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgresql://arsenale:arsenale_password@127.0.0.1:5432/arsenale` | PostgreSQL connection string |
-| `JWT_SECRET` | `dev-secret-change-me` | Secret key for signing JWT tokens (**must be strong in production**) |
+| `JWT_SECRET` | — | Secret key for signing JWT tokens. Provide via `JWT_SECRET` or `JWT_SECRET_FILE`. |
 | `JWT_EXPIRES_IN` | `15m` | Access token TTL |
 | `JWT_REFRESH_EXPIRES_IN` | `7d` | Refresh token TTL |
 | `GUACD_HOST` | `localhost` | Guacamole daemon hostname |
 | `GUACD_PORT` | `4822` | Guacamole daemon port |
-| `GUACAMOLE_SECRET` | `dev-guac-secret` | Guacamole token encryption key (**must be strong in production**) |
+| `GUACAMOLE_SECRET` | — | Guacamole token encryption key. Provide via `GUACAMOLE_SECRET` or `GUACAMOLE_SECRET_FILE`. |
 | `SERVER_ENCRYPTION_KEY` | Auto-generated | 32-byte hex key for server-level encryption (**required in production**) |
-| `PORT` | `3001` | Express server port |
-| `GUACAMOLE_WS_PORT` | `3002` | Guacamole WebSocket port |
 | `NODE_ENV` | `development` | Environment mode |
 | `VAULT_TTL_MINUTES` | `30` | Vault session auto-lock timeout (minutes) |
 | `CLIENT_URL` | `http://localhost:3000` | Client URL (CORS, OAuth redirects, emails) |
+| `VITE_API_TARGET` | `http://localhost:18080` | Local Vite proxy target for `/api` |
+| `VITE_GUAC_TARGET` | `http://localhost:18091` | Local Vite proxy target for `/guacamole` |
+| `VITE_TERMINAL_TARGET` | `http://localhost:18090` | Local Vite proxy target for `/ws/terminal` |
 | `RECORDING_ENABLED` | `false` | Enable session recording |
 
 ## Project Structure
 
 ```
 arsenale/
-├── server/                        # Express backend
-│   ├── src/
-│   │   ├── index.ts              # Entry point (HTTP + Socket.IO + Guacamole WS)
-│   │   ├── app.ts                # Express app setup
-│   │   ├── routes/               # REST API route definitions
-│   │   ├── controllers/          # Request handling and validation
-│   │   ├── services/             # Business logic and database operations
-│   │   ├── socket/               # Socket.IO handlers (SSH, notifications, gateway monitor)
-│   │   ├── middleware/           # Auth, CSRF, rate limiting, error handling
-│   │   ├── orchestrator/         # Container orchestration (Docker/Podman/Kubernetes)
-│   │   └── types/                # Shared TypeScript types
-│   └── prisma/
-│       └── schema.prisma         # Database schema (32 models)
+├── backend/                       # New Go backend monorepo (control, agent, runtime services)
+│   ├── cmd/                      # Service entrypoints (API, controller, brokers, agent services)
+│   ├── internal/                 # Internal Go packages
+│   └── pkg/                      # Shared Go contracts and workload spec
 │
 ├── client/                        # React frontend
 │   ├── src/
@@ -137,11 +176,12 @@ arsenale/
 │
 ├── gateways/                      # Gateway containers and tunnel agent
 │   ├── ssh-gateway/              # Optional SSH gateway container
-│   ├── tunnel-agent/             # Zero-trust tunnel agent (workspace)
+│   ├── tunnel-agent/             # Zero-trust tunnel agent (Go module)
 │   ├── guacd/                    # Custom guacd with embedded tunnel agent
 │   └── guacenc/                  # Recording-to-video conversion sidecar
-├── compose.yml                    # Production Docker Compose stack
-├── compose.dev.yml                # Dev containers (PostgreSQL + guacenc)
+├── Makefile                       # Ansible deployment UX (make dev/deploy/etc.)
+├── deployment/ansible/            # Installer playbooks, roles, schemas, and templates
+├── deployment/helm/               # Helm chart for the Kubernetes backend
 └── .env.example                   # Environment template (121 variables)
 ```
 
@@ -149,58 +189,71 @@ arsenale/
 
 ```bash
 # Development
-npm run dev                 # Run server + client concurrently
-npm run dev:server          # Server only (Express on :3001)
-npm run dev:client          # Client only (Vite on :3000)
+npm run dev                 # Start the Go dev stack and local Vite on :3005
+npm run dev:client          # Client only (Vite on :3005)
 
 # Build
-npm run build               # Build both server and client
-npm run build -w server     # Server only
+npm run build               # Build the active Go/backend + client workspaces
+npm run backend:build       # Build the Go backend module
+npm run backend:generate    # Regenerate sqlc code for the converted Go domains
 npm run build -w client     # Client only
 
 # Database
-npm run db:generate         # Generate Prisma client types
-npm run db:push             # Sync schema to DB (no migration)
-npm run db:migrate          # Run Prisma migrations
+npm run db:migrate          # Apply pending backend SQL migrations
+npm run db:status           # Show applied and pending backend migrations
+npm run db:bootstrap        # Compatibility alias of db:migrate
+npm run db:push             # Alias of db:migrate
 
-# Docker
-npm run docker:dev          # Start guacd + PostgreSQL containers
-npm run docker:dev:down     # Stop dev containers
-npm run docker:prod         # Full production stack (requires .env.production)
+# Infrastructure (via Makefile + Ansible)
+make setup                  # First-time setup (Ansible collections, vault)
+make install                # Interactive installer entrypoint
+make dev                    # Full installer-aware development environment
+make dev-down               # Stop dev infrastructure
+make deploy                 # Production installer/deploy flow
+make configure              # Reconfigure an existing install
+make recover                # Rerun installer recovery flow
+make status                 # Read encrypted installer status
+
+# Go backend checks
+npm run backend:test        # Run Go backend tests
 ```
 
 ## Production Deployment
 
-Deploy the full stack with Docker Compose:
+Deploy the full stack with the installer (via Makefile):
 
 ```bash
-# 1. Create production secrets
-cp .env.production.example .env.production
-# Edit .env.production — set strong values for POSTGRES_PASSWORD, JWT_SECRET, GUACAMOLE_SECRET
+# 1. First-time setup (install Ansible collections, generate vault)
+make setup
 
-# 2. Launch the stack
-npm run docker:prod
+# 2. Deploy or reconfigure production stack
+make deploy
+
+# 3. Read encrypted installer status
+make status
 ```
 
-This starts the full container stack:
-- **PostgreSQL 16** — Production database
-- **guacd** — Apache Guacamole daemon for RDP/VNC
-- **guacenc** — Recording-to-video conversion sidecar
-- **Server** — Express API + Guacamole WebSocket (runs migrations on startup)
-- **Client** — Nginx serving the React app with reverse proxy to the API
-- **ssh-gateway** — Optional SSH gateway container (port 2222)
+Production mode uses the same installer profile model across Podman and Kubernetes. Selected capabilities are installer-owned only; disabled capabilities remove their services, APIs, and UI affordances from the rendered runtime.
+
+The installer can render and apply:
+
+- Compose for Podman
+- Helm for Kubernetes
+
+Development mode always deploys the full stack and fixtures. Production mode deploys only the selected capabilities.
+
+See [deployment/ansible/README.md](deployment/ansible/README.md) and [docs/installer.md](docs/installer.md) for the operator flow and artifact model.
 
 ## Architecture
 
-### Server
+### Backend
 
-Layered architecture: **Routes → Controllers → Services → Prisma ORM**
+The public edge is now Go-first: control-plane, desktop, terminal, tunnel, query, AI, and orchestration services run from `backend/`.
 
-- 238+ REST endpoints across 29 route groups
-- Socket.IO namespaces: `/ssh` (terminal), `/notifications`, `/gateway-monitor`
-- Guacamole WebSocket server (port 3002) for RDP/VNC tunneling
-- Background jobs: SSH key rotation, gateway health checks, session cleanup, secret expiry notifications
-- Container orchestration: Docker, Podman, and Kubernetes providers
+- The public `/api` surface is handled by `control-plane-api-go`
+- Browser SSH and desktop runtime terminate in direct Go brokers
+- Database sessions, orchestration, gateway management, and AI flows are verified against the Go services
+- Legacy `server/` code is no longer part of the default runtime or top-level build path
 
 ### Client
 

@@ -1,21 +1,34 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, Box, IconButton, Typography,
-  CircularProgress, Select, MenuItem, Tooltip, SelectChangeEvent,
-  ToggleButton,
-} from '@mui/material';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import {
-  Close as CloseIcon,
-  Refresh as RefreshIcon,
-  PlayArrow as PlayIcon,
-  Pause as PauseIcon,
-  Fullscreen as FullscreenIcon,
-  FullscreenExit as FullscreenExitIcon,
-} from '@mui/icons-material';
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import {
+  X,
+  RefreshCw,
+  Play,
+  Pause,
+  Maximize,
+  Minimize,
+  Loader2,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { ContainerLogStreamSnapshot } from '../../api/live.api';
+import { connectSSE } from '../../api/sse';
 import { getInstanceLogs, type ManagedInstanceData } from '../../api/gateway.api';
+import { useAuthStore } from '../../store/authStore';
 
 const TAIL_OPTIONS = [100, 200, 500, 1000] as const;
-const LIVE_INTERVAL_MS = 3000;
 const MIN_HEIGHT = 200;
 const DEFAULT_HEIGHT = 500;
 
@@ -29,6 +42,7 @@ interface ContainerLogDialogProps {
 export default function ContainerLogDialog({
   open, onClose, gatewayId, instance,
 }: ContainerLogDialogProps) {
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [logs, setLogs] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,11 +51,7 @@ export default function ContainerLogDialog({
   const [fullScreen, setFullScreen] = useState(false);
   const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const logsEndRef = useRef<HTMLDivElement>(null);
-  const liveRef = useRef(false);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
-
-  // Keep ref in sync for interval callback
-  liveRef.current = live;
 
   const fetchLogs = useCallback(async () => {
     if (!instance) return;
@@ -58,39 +68,57 @@ export default function ContainerLogDialog({
     }
   }, [gatewayId, instance, tail]);
 
-  // Initial fetch on open / tail change
   useEffect(() => {
-    if (open && instance) {
-      fetchLogs();
-    }
     if (!open) {
       setLogs('');
       setError(null);
       setLive(true);
+      setLoading(false);
+      return;
     }
-  }, [open, instance, fetchLogs]);
+    if (open && instance && !live) {
+      void fetchLogs();
+    }
+  }, [open, instance, live, fetchLogs]);
 
-  // Live polling
   useEffect(() => {
-    if (!live || !open || !instance) return;
-    const id = setInterval(() => {
-      if (liveRef.current) fetchLogs();
-    }, LIVE_INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [live, open, instance, fetchLogs]);
+    if (!live || !open || !instance || !accessToken) return undefined;
 
-  // Auto-scroll to bottom
+    setLoading(true);
+    setError(null);
+
+    const params = new URLSearchParams({ tail: String(tail) });
+    return connectSSE({
+      url: `/api/gateways/${gatewayId}/instances/${instance.id}/logs/stream?${params.toString()}`,
+      accessToken,
+      onEvent: ({ event, data }) => {
+        if (event !== 'snapshot') return;
+        const snapshot = data as ContainerLogStreamSnapshot;
+        setLogs(snapshot.logs);
+        setLoading(false);
+        setError(null);
+      },
+      onError: (streamError) => {
+        const status = (streamError as Error & { status?: number }).status;
+        setError(streamError.message);
+        setLoading(false);
+        if (status != null && !(status === 408 || status === 429 || (status >= 500 && status !== 501))) {
+          setLive(false);
+        }
+      },
+    });
+  }, [live, open, instance, accessToken, tail, gatewayId]);
+
   useEffect(() => {
     if (logs && logsEndRef.current) {
       logsEndRef.current.scrollIntoView();
     }
   }, [logs]);
 
-  const handleTailChange = (e: SelectChangeEvent<number>) => {
-    setTail(Number(e.target.value));
+  const handleTailChange = (value: string) => {
+    setTail(Number(value));
   };
 
-  // Resize drag handlers
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     dragRef.current = { startY: e.clientY, startH: height };
@@ -115,118 +143,105 @@ export default function ContainerLogDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      maxWidth="md"
-      fullWidth
-      fullScreen={fullScreen}
-    >
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pr: 1 }}>
-        <Typography variant="h6" component="span" sx={{ flex: 1, fontFamily: 'monospace' }} noWrap>
-          {instance?.containerName ?? 'Container Logs'}
-        </Typography>
-        <Select
-          size="small"
-          value={tail}
-          onChange={handleTailChange}
-          sx={{ minWidth: 100 }}
-        >
-          {TAIL_OPTIONS.map((n) => (
-            <MenuItem key={n} value={n}>{n} lines</MenuItem>
-          ))}
-        </Select>
-        <Tooltip title={live ? 'Pause live' : 'Live view (auto-refresh)'}>
-          <ToggleButton
-            value="live"
-            selected={live}
-            onChange={() => setLive((v) => !v)}
-            size="small"
-            sx={{ border: 0, minWidth: 0, px: 0.75 }}
-          >
-            {live ? <PauseIcon fontSize="small" /> : <PlayIcon fontSize="small" />}
-          </ToggleButton>
-        </Tooltip>
-        <Tooltip title="Refresh">
-          <span>
-            <IconButton onClick={fetchLogs} disabled={loading} size="small">
-              <RefreshIcon />
-            </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title={fullScreen ? 'Exit full screen' : 'Full screen'}>
-          <IconButton onClick={() => setFullScreen((v) => !v)} size="small">
-            {fullScreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
-          </IconButton>
-        </Tooltip>
-        <IconButton onClick={handleClose} size="small" edge="end">
-          <CloseIcon />
-        </IconButton>
-      </DialogTitle>
-      <DialogContent dividers sx={{ p: 0, display: 'flex', flexDirection: 'column' }}>
-        {loading && !logs ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-            <CircularProgress />
-          </Box>
-        ) : error ? (
-          <Box sx={{ p: 2 }}>
-            <Typography color="error">{error}</Typography>
-          </Box>
-        ) : !logs ? (
-          <Box sx={{ p: 2 }}>
-            <Typography color="text.secondary">No logs available</Typography>
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              bgcolor: 'grey.900',
-              color: 'grey.100',
-              fontFamily: 'monospace',
-              fontSize: '0.8125rem',
-              lineHeight: 1.6,
-              whiteSpace: 'pre',
-              overflowX: 'auto',
-              p: 2,
-              height: fullScreen ? '100%' : height,
-              overflowY: 'auto',
-              flex: fullScreen ? 1 : undefined,
-            }}
-          >
-            {logs}
-            <div ref={logsEndRef} />
-          </Box>
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className={cn(
+          "flex flex-col p-0 gap-0",
+          fullScreen
+            ? "h-[100dvh] w-screen max-w-none rounded-none border-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+            : "sm:max-w-3xl",
         )}
-        {/* Resize drag handle — hidden in full screen */}
-        {!fullScreen && logs && (
-          <Box
-            onMouseDown={handleDragStart}
-            sx={{
-              height: 6,
-              cursor: 'ns-resize',
-              bgcolor: 'divider',
-              '&:hover': { bgcolor: 'primary.main' },
-              flexShrink: 0,
-            }}
-          />
+      >
+        <DialogHeader className="flex flex-row items-center gap-2 px-4 py-2 border-b shrink-0">
+          <DialogTitle className="flex-1 font-mono text-sm truncate">
+            {instance?.containerName ?? 'Container Logs'}
+          </DialogTitle>
+          <Select value={String(tail)} onValueChange={handleTailChange}>
+            <SelectTrigger className="h-7 w-[100px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TAIL_OPTIONS.map((n) => (
+                <SelectItem key={n} value={String(n)}>{n} lines</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            variant={live ? 'default' : 'ghost'}
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setLive((v) => !v)}
+            title={live ? 'Pause live' : 'Live view (auto-refresh)'}
+          >
+            {live ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={fetchLogs}
+            disabled={loading}
+            title="Refresh"
+          >
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setFullScreen((v) => !v)}
+            title={fullScreen ? 'Exit full screen' : 'Full screen'}
+          >
+            {fullScreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+          </Button>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </DialogHeader>
+
+        <div className="flex flex-col flex-1 min-h-0">
+          {loading && !logs ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <div className="p-4">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          ) : !logs ? (
+            <div className="p-4">
+              <p className="text-muted-foreground text-sm">No logs available</p>
+            </div>
+          ) : (
+            <div
+              className="bg-gray-900 text-gray-100 font-mono text-[0.8125rem] leading-relaxed whitespace-pre overflow-x-auto p-4 overflow-y-auto"
+              style={{
+                height: fullScreen ? '100%' : height,
+                flex: fullScreen ? 1 : undefined,
+              }}
+            >
+              {logs}
+              <div ref={logsEndRef} />
+            </div>
+          )}
+          {/* Resize drag handle */}
+          {!fullScreen && logs && (
+            <div
+              onMouseDown={handleDragStart}
+              className="h-1.5 cursor-ns-resize bg-border hover:bg-primary shrink-0"
+            />
+          )}
+        </div>
+        {live && (
+          <div className="px-4 py-1 flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs text-muted-foreground">
+              Live stream connected
+            </span>
+          </div>
         )}
       </DialogContent>
-      {live && (
-        <Box sx={{ px: 2, py: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Box
-            sx={{
-              width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main',
-              animation: 'pulse 1.5s ease-in-out infinite',
-              '@keyframes pulse': {
-                '0%, 100%': { opacity: 1 },
-                '50%': { opacity: 0.4 },
-              },
-            }}
-          />
-          <Typography variant="caption" color="text.secondary">
-            Live — refreshing every {LIVE_INTERVAL_MS / 1000}s
-          </Typography>
-        </Box>
-      )}
     </Dialog>
   );
 }

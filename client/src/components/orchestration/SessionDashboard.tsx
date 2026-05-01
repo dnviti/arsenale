@@ -1,231 +1,81 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  Box, Paper, Typography, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Chip, IconButton, Tooltip, FormControl, InputLabel,
-  Select, MenuItem, Button, Switch, FormControlLabel, Dialog, DialogTitle,
-  DialogContent, DialogContentText, DialogActions, Stack,
-} from '@mui/material';
-import {
-  Refresh as RefreshIcon,
-  Stop as StopIcon,
-  Computer as ComputerIcon,
-  Dns as DnsIcon,
-  Terminal as TerminalIcon,
-} from '@mui/icons-material';
+import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowRight, Eye, Pause, ShieldCheck } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useAuthStore } from '../../store/authStore';
 import { useGatewayStore } from '../../store/gatewayStore';
-import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { buildSessionsRoute } from '@/components/sessions/sessionConsoleRoute';
 
-const statusColor: Record<string, 'success' | 'warning' | 'default'> = {
-  ACTIVE: 'success',
-  IDLE: 'warning',
-  CLOSED: 'default',
-};
+interface SessionDashboardProps {
+  onOpenSessions?: () => void;
+}
 
-export default function SessionDashboard() {
-  const activeSessions = useGatewayStore((s) => s.activeSessions);
+export default function SessionDashboard({ onOpenSessions }: SessionDashboardProps) {
   const sessionCount = useGatewayStore((s) => s.sessionCount);
-  const sessionsLoading = useGatewayStore((s) => s.sessionsLoading);
-  const gateways = useGatewayStore((s) => s.gateways);
-  const fetchActiveSessions = useGatewayStore((s) => s.fetchActiveSessions);
-  const fetchSessionCount = useGatewayStore((s) => s.fetchSessionCount);
-  const terminateSessionAction = useGatewayStore((s) => s.terminateSession);
+  const canObserveSessions = useAuthStore((s) => s.permissions.canObserveSessions);
+  const canControlSessions = useAuthStore((s) => s.permissions.canControlSessions);
+  const navigate = useNavigate();
 
-  const autoRefresh = useUiPreferencesStore((s) => s.orchestrationAutoRefresh);
-  const refreshInterval = useUiPreferencesStore((s) => s.orchestrationRefreshInterval);
-  const toggleAutoRefresh = useUiPreferencesStore((s) => s.toggle);
-
-  const [protocolFilter, setProtocolFilter] = useState<string>('');
-  const [gatewayFilter, setGatewayFilter] = useState<string>('');
-  const [terminateTarget, setTerminateTarget] = useState<{ id: string; label: string } | null>(null);
-
-  const filters = useMemo(() => {
-    const f: { protocol?: 'SSH' | 'RDP'; gatewayId?: string } = {};
-    if (protocolFilter) f.protocol = protocolFilter as 'SSH' | 'RDP';
-    if (gatewayFilter) f.gatewayId = gatewayFilter;
-    return f;
-  }, [protocolFilter, gatewayFilter]);
-
-  const refresh = useCallback(() => {
-    fetchActiveSessions(filters);
-    fetchSessionCount();
-  }, [filters, fetchActiveSessions, fetchSessionCount]);
-
-  useEffect(() => {
-    refresh();
-    if (!autoRefresh) return;
-    const timer = setInterval(refresh, refreshInterval);
-    return () => clearInterval(timer);
-  }, [refresh, autoRefresh, refreshInterval]);
-
-  const sshCount = activeSessions.filter((s) => s.protocol === 'SSH').length;
-  const rdpCount = activeSessions.filter((s) => s.protocol === 'RDP').length;
-  const managedGateways = gateways.filter((g) => g.isManaged).length;
-
-  const handleTerminate = async () => {
-    if (!terminateTarget) return;
-    try {
-      await terminateSessionAction(terminateTarget.id);
-    } finally {
-      setTerminateTarget(null);
+  const capabilityHint = useMemo(() => {
+    if (canControlSessions) {
+      return 'Pause, resume, stop, review recordings, and audit closed sessions from one console.';
     }
-  };
+    if (canObserveSessions) {
+      return 'Review live sessions and recording history with read-only controls.';
+    }
+    return 'Review the unified sessions console for current visibility.';
+  }, [canControlSessions, canObserveSessions]);
 
   return (
-    <Box>
-      {/* Metric cards */}
-      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-        <MetricCard label="Total Active" value={sessionCount} icon={<ComputerIcon />} />
-        <MetricCard label="SSH Sessions" value={sshCount} icon={<TerminalIcon />} />
-        <MetricCard label="RDP Sessions" value={rdpCount} icon={<DnsIcon />} />
-        <MetricCard label="Managed Gateways" value={managedGateways} icon={<DnsIcon />} />
-      </Box>
-
-      {/* Filters */}
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }} flexWrap="wrap">
-        <FormControl size="small" sx={{ minWidth: 130 }}>
-          <InputLabel>Protocol</InputLabel>
-          <Select value={protocolFilter} label="Protocol" onChange={(e) => setProtocolFilter(e.target.value)}>
-            <MenuItem value="">All</MenuItem>
-            <MenuItem value="SSH">SSH</MenuItem>
-            <MenuItem value="RDP">RDP</MenuItem>
-          </Select>
-        </FormControl>
-        <FormControl size="small" sx={{ minWidth: 180 }}>
-          <InputLabel>Gateway</InputLabel>
-          <Select value={gatewayFilter} label="Gateway" onChange={(e) => setGatewayFilter(e.target.value)}>
-            <MenuItem value="">All</MenuItem>
-            {gateways.map((gw) => (
-              <MenuItem key={gw.id} value={gw.id}>{gw.name}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+    <Card className="border-border/70 bg-card/70">
+      <CardHeader>
+        <CardTitle>Sessions console</CardTitle>
+        <CardDescription>{capabilityHint}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <SummaryPill label="Live sessions" value={sessionCount} icon={<ShieldCheck className="size-4" />} />
+          <SummaryPill label="Observe" value={canObserveSessions ? 'Enabled' : 'Disabled'} icon={<Eye className="size-4" />} />
+          <SummaryPill label="Control" value={canControlSessions ? 'Enabled' : 'Read only'} icon={<Pause className="size-4" />} />
+        </div>
         <Button
-          startIcon={<RefreshIcon />}
-          onClick={refresh}
-          size="small"
-          variant="outlined"
-          disabled={sessionsLoading}
+          type="button"
+          onClick={() => {
+            if (onOpenSessions) {
+              onOpenSessions();
+              return;
+            }
+            navigate(buildSessionsRoute());
+          }}
+          className="gap-2 self-start md:self-auto"
         >
-          Refresh
+          Open sessions console
+          <ArrowRight className="size-4" />
         </Button>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={autoRefresh}
-              onChange={() => toggleAutoRefresh('orchestrationAutoRefresh')}
-              size="small"
-            />
-          }
-          label="Auto-refresh"
-        />
-      </Stack>
-
-      {/* Sessions table */}
-      <TableContainer component={Paper} variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>User</TableCell>
-              <TableCell>Connection</TableCell>
-              <TableCell>Protocol</TableCell>
-              <TableCell>Gateway</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Started</TableCell>
-              <TableCell>Last Activity</TableCell>
-              <TableCell>Duration</TableCell>
-              <TableCell align="right">Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {activeSessions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
-                  <Typography color="text.secondary">No active sessions</Typography>
-                </TableCell>
-              </TableRow>
-            ) : (
-              activeSessions.map((session) => (
-                <TableRow key={session.id}>
-                  <TableCell>{session.username || session.email}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2">{session.connectionName}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {session.connectionHost}:{session.connectionPort}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={session.protocol} size="small" variant="outlined" />
-                  </TableCell>
-                  <TableCell>{session.gatewayName || 'Direct'}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={session.status}
-                      size="small"
-                      color={statusColor[session.status] ?? 'default'}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption">
-                      {new Date(session.startedAt).toLocaleString()}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="caption">
-                      {new Date(session.lastActivityAt).toLocaleString()}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>{session.durationFormatted}</TableCell>
-                  <TableCell align="right">
-                    <Tooltip title="Terminate session">
-                      <IconButton
-                        size="small"
-                        color="error"
-                        onClick={() =>
-                          setTerminateTarget({
-                            id: session.id,
-                            label: `${session.username || session.email} - ${session.connectionName}`,
-                          })
-                        }
-                      >
-                        <StopIcon fontSize="small" />
-                      </IconButton>
-                    </Tooltip>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      {/* Terminate confirmation */}
-      <Dialog open={Boolean(terminateTarget)} onClose={() => setTerminateTarget(null)}>
-        <DialogTitle>Terminate Session</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to terminate the session for <strong>{terminateTarget?.label}</strong>?
-            The user&apos;s connection will be dropped immediately.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setTerminateTarget(null)}>Cancel</Button>
-          <Button onClick={handleTerminate} color="error" variant="contained">
-            Terminate
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+      </CardContent>
+    </Card>
   );
 }
 
-function MetricCard({ label, value, icon }: { label: string; value: number; icon: React.ReactElement }) {
+function SummaryPill({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number | string;
+  icon: React.ReactElement;
+}) {
   return (
-    <Paper variant="outlined" sx={{ p: 2, flex: '1 1 160px', minWidth: 160 }}>
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+    <div className="flex min-w-[10rem] items-center gap-3 rounded-xl border border-border/70 bg-muted/20 px-4 py-3">
+      <span className="rounded-full border border-border/70 bg-background/70 p-2 text-muted-foreground">
         {icon}
-        <Typography variant="caption" color="text.secondary">{label}</Typography>
-      </Stack>
-      <Typography variant="h4" fontWeight="bold">{value}</Typography>
-    </Paper>
+      </span>
+      <div>
+        <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+        <div className="mt-1 text-sm font-semibold text-foreground">{value}</div>
+      </div>
+    </div>
   );
 }

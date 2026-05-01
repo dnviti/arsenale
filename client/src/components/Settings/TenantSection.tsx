@@ -1,92 +1,189 @@
-import { useState, useEffect } from 'react';
-import {
-  Card, CardContent, Typography, TextField, Button, Stack, Chip, Avatar,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Select, MenuItem, Dialog, DialogTitle, DialogContent, DialogContentText,
-  DialogActions, Alert, CircularProgress, Box, IconButton, FormControlLabel, Switch,
-  Menu,
-} from '@mui/material';
-import { PersonAdd, GroupAdd, MoreVert, ContentCopy } from '@mui/icons-material';
+import { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useAuthStore } from '../../store/authStore';
-import { useTenantStore } from '../../store/tenantStore';
-import { getTenantMfaStats, adminChangeUserEmail, adminChangeUserPassword } from '../../api/tenant.api';
-import { initiateIdentityVerification, type VerificationMethod } from '../../api/user.api';
-import InviteDialog from '../Dialogs/InviteDialog';
-import CreateUserDialog from '../Dialogs/CreateUserDialog';
-import IdentityVerification from '../common/IdentityVerification';
-import VaultProvidersSection from './VaultProvidersSection';
-import { extractApiError } from '../../utils/apiError';
-import { ALL_ROLES, ROLE_LABELS, isAdminOrAbove, type TenantRole } from '../../utils/roles';
+import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { useNotificationStore } from '../../store/notificationStore';
+import { useTenantStore } from '../../store/tenantStore';
+import {
+  adminChangeUserEmail,
+  adminChangeUserPassword,
+  getTenantMfaStats,
+  type TenantUser,
+} from '../../api/tenant.api';
+import { initiateIdentityVerification, type VerificationMethod } from '../../api/user.api';
+import { extractApiError } from '../../utils/apiError';
+import { isAdminOrAbove } from '../../utils/roles';
+import CreateUserDialog from '../Dialogs/CreateUserDialog';
+import InviteDialog from '../Dialogs/InviteDialog';
+import PermissionOverridesDialog from './PermissionOverridesDialog';
+import {
+  SettingsFieldCard,
+  SettingsFieldGroup,
+  SettingsPanel,
+  SettingsSectionBlock,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+  SettingsSwitchRow,
+} from './settings-ui';
+import TenantMembersPanel from './tenantSectionMembers';
+import {
+  ChangeUserEmailDialog,
+  ChangeUserPasswordDialog,
+  DeleteTenantDialog,
+  MandatoryMfaDialog,
+  MembershipExpiryDialog,
+  RemoveMemberDialog,
+  type TenantDialogTarget,
+  type TenantExpiryTarget,
+} from './tenantSectionDialogs';
+import { TenantInlineSaveField, TenantPolicySelectField } from './tenantSectionFields';
+import {
+  absoluteSessionTimeoutOptions,
+  accessTokenExpiryOptions,
+  accountLockoutDurationOptions,
+  impossibleTravelSpeedOptions,
+  loginAttemptOptions,
+  loginRateLimitWindowOptions,
+  maxConcurrentSessionOptions,
+  refreshTokenExpiryOptions,
+  vaultAutoLockOptions,
+  vaultDefaultTtlOptions,
+} from './tenantSectionOptions';
+import {
+  formatMegabytes,
+  parseRecordingRetentionPatch,
+  parseSessionTimeoutPatch,
+  parseUserDriveQuotaPatch,
+} from './tenantPolicyValues';
 
 interface TenantSectionProps {
+  onDeleteRequest?: (trigger: (() => void) | null) => void;
   onViewUserProfile?: (userId: string) => void;
-  /** Parent calls this ref to expose the delete-org trigger */
-  onDeleteRequest?: (trigger: () => void) => void;
 }
 
-export default function TenantSection({ onViewUserProfile, onDeleteRequest }: TenantSectionProps) {
-  const user = useAuthStore((s) => s.user);
-  const tenant = useTenantStore((s) => s.tenant);
-  const users = useTenantStore((s) => s.users);
-  const loading = useTenantStore((s) => s.loading);
-  const usersLoading = useTenantStore((s) => s.usersLoading);
-  const fetchTenant = useTenantStore((s) => s.fetchTenant);
-  const createTenant = useTenantStore((s) => s.createTenant);
-  const updateTenant = useTenantStore((s) => s.updateTenant);
-  const deleteTenant = useTenantStore((s) => s.deleteTenant);
-  const fetchUsers = useTenantStore((s) => s.fetchUsers);
-  const updateUserRole = useTenantStore((s) => s.updateUserRole);
-  const removeUser = useTenantStore((s) => s.removeUser);
-  const toggleUserEnabled = useTenantStore((s) => s.toggleUserEnabled);
-  const updateMembershipExpiry = useTenantStore((s) => s.updateMembershipExpiry);
+type TenantUpdateInput = Parameters<ReturnType<typeof useTenantStore.getState>['updateTenant']>[0];
 
-  const [editName, setEditName] = useState('');
-  const [nameError, setNameError] = useState('');
-  const [savingName, setSavingName] = useState(false);
+function getMemberTarget(user: TenantUser): TenantDialogTarget {
+  return {
+    id: user.id,
+    name: user.username || user.email,
+  };
+}
+
+export default function TenantSection({ onDeleteRequest, onViewUserProfile }: TenantSectionProps) {
+  const user = useAuthStore((state) => state.user);
+  const tenant = useTenantStore((state) => state.tenant);
+  const users = useTenantStore((state) => state.users);
+  const loading = useTenantStore((state) => state.loading);
+  const usersLoading = useTenantStore((state) => state.usersLoading);
+  const fetchTenant = useTenantStore((state) => state.fetchTenant);
+  const createTenant = useTenantStore((state) => state.createTenant);
+  const updateTenant = useTenantStore((state) => state.updateTenant);
+  const deleteTenant = useTenantStore((state) => state.deleteTenant);
+  const fetchUsers = useTenantStore((state) => state.fetchUsers);
+  const updateUserRole = useTenantStore((state) => state.updateUserRole);
+  const removeUser = useTenantStore((state) => state.removeUser);
+  const toggleUserEnabled = useTenantStore((state) => state.toggleUserEnabled);
+  const updateMembershipExpiry = useTenantStore((state) => state.updateMembershipExpiry);
+  const notify = useNotificationStore((state) => state.notify);
+
+  const multiTenancyEnabled = useFeatureFlagsStore((state) => state.multiTenancyEnabled);
+  const recordingsFeatureEnabled = useFeatureFlagsStore((state) => state.recordingsEnabled);
+  const tenantRole = user?.tenantRole;
+  const isAdmin = isAdminOrAbove(tenantRole);
+
+  const [error, setError] = useState('');
   const [createName, setCreateName] = useState('');
   const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [nameError, setNameError] = useState('');
+  const [savingName, setSavingName] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState<{ id: string; name: string } | null>(null);
-  const [error, setError] = useState('');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [createUserOpen, setCreateUserOpen] = useState(false);
+  const [togglingUser, setTogglingUser] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<TenantDialogTarget | null>(null);
+  const [permDialogOpen, setPermDialogOpen] = useState(false);
+  const [permTarget, setPermTarget] = useState<TenantDialogTarget | null>(null);
+  const [expiryDialogOpen, setExpiryDialogOpen] = useState(false);
+  const [expiryTarget, setExpiryTarget] = useState<TenantExpiryTarget | null>(null);
+  const [expiryValue, setExpiryValue] = useState('');
+  const [savingExpiry, setSavingExpiry] = useState(false);
+
   const [sessionTimeout, setSessionTimeout] = useState('');
-  const [savingTimeout, setSavingTimeout] = useState(false);
   const [timeoutError, setTimeoutError] = useState('');
+  const [savingTimeout, setSavingTimeout] = useState(false);
+
   const [mfaRequired, setMfaRequired] = useState(false);
-  const [savingMfa, setSavingMfa] = useState(false);
   const [mfaError, setMfaError] = useState('');
+  const [savingMfa, setSavingMfa] = useState(false);
   const [mfaConfirmOpen, setMfaConfirmOpen] = useState(false);
   const [mfaStats, setMfaStats] = useState<{ total: number; withoutMfa: number } | null>(null);
   const [mfaDashboard, setMfaDashboard] = useState<{ total: number; withoutMfa: number } | null>(null);
-  const [vaultAutoLockMax, setVaultAutoLockMax] = useState<string>('none');
-  const [savingVaultLock, setSavingVaultLock] = useState(false);
+
+  const [vaultAutoLockMax, setVaultAutoLockMax] = useState('none');
   const [vaultLockError, setVaultLockError] = useState('');
-  const [maxConcurrentSessions, setMaxConcurrentSessions] = useState<string>('0');
-  const [savingConcurrentSessions, setSavingConcurrentSessions] = useState(false);
+  const [savingVaultLock, setSavingVaultLock] = useState(false);
+  const [maxConcurrentSessions, setMaxConcurrentSessions] = useState('0');
   const [concurrentSessionsError, setConcurrentSessionsError] = useState('');
-  const [absoluteSessionTimeout, setAbsoluteSessionTimeout] = useState<string>('43200');
-  const [savingAbsoluteTimeout, setSavingAbsoluteTimeout] = useState(false);
+  const [savingConcurrentSessions, setSavingConcurrentSessions] = useState(false);
+  const [absoluteSessionTimeout, setAbsoluteSessionTimeout] = useState('43200');
   const [absoluteTimeoutError, setAbsoluteTimeoutError] = useState('');
+  const [savingAbsoluteTimeout, setSavingAbsoluteTimeout] = useState(false);
+
+  const [loginRateLimitWindow, setLoginRateLimitWindow] = useState('default');
+  const [rateLimitWindowError, setRateLimitWindowError] = useState('');
+  const [savingRateLimitWindow, setSavingRateLimitWindow] = useState(false);
+  const [loginRateLimitMaxAttempts, setLoginRateLimitMaxAttempts] = useState('default');
+  const [rateLimitMaxAttemptsError, setRateLimitMaxAttemptsError] = useState('');
+  const [savingRateLimitMaxAttempts, setSavingRateLimitMaxAttempts] = useState(false);
+  const [accountLockoutThreshold, setAccountLockoutThreshold] = useState('default');
+  const [lockoutThresholdError, setLockoutThresholdError] = useState('');
+  const [savingLockoutThreshold, setSavingLockoutThreshold] = useState(false);
+  const [accountLockoutDuration, setAccountLockoutDuration] = useState('default');
+  const [lockoutDurationError, setLockoutDurationError] = useState('');
+  const [savingLockoutDuration, setSavingLockoutDuration] = useState(false);
+  const [impossibleTravelSpeed, setImpossibleTravelSpeed] = useState('default');
+  const [travelSpeedError, setTravelSpeedError] = useState('');
+  const [savingTravelSpeed, setSavingTravelSpeed] = useState(false);
+
+  const [jwtExpiresIn, setJwtExpiresIn] = useState('default');
+  const [jwtExpiresError, setJwtExpiresError] = useState('');
+  const [savingJwtExpires, setSavingJwtExpires] = useState(false);
+  const [jwtRefreshExpiresIn, setJwtRefreshExpiresIn] = useState('default');
+  const [jwtRefreshExpiresError, setJwtRefreshExpiresError] = useState('');
+  const [savingJwtRefreshExpires, setSavingJwtRefreshExpires] = useState(false);
+  const [vaultDefaultTtl, setVaultDefaultTtl] = useState('default');
+  const [vaultDefaultTtlError, setVaultDefaultTtlError] = useState('');
+  const [savingVaultDefaultTtl, setSavingVaultDefaultTtl] = useState(false);
+
   const [dlpDisableCopy, setDlpDisableCopy] = useState(false);
   const [dlpDisablePaste, setDlpDisablePaste] = useState(false);
   const [dlpDisableDownload, setDlpDisableDownload] = useState(false);
   const [dlpDisableUpload, setDlpDisableUpload] = useState(false);
-  const [savingDlp, setSavingDlp] = useState(false);
   const [dlpError, setDlpError] = useState('');
-  const [createUserOpen, setCreateUserOpen] = useState(false);
-  const [togglingUser, setTogglingUser] = useState<string | null>(null);
+  const [savingDlp, setSavingDlp] = useState(false);
 
-  // Admin action menu
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [menuTargetUser, setMenuTargetUser] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [recordingEnabled, setRecordingEnabled] = useState(true);
+  const [recordingError, setRecordingError] = useState('');
+  const [savingRecording, setSavingRecording] = useState(false);
+  const [recordingRetentionDays, setRecordingRetentionDays] = useState('');
+  const [retentionError, setRetentionError] = useState('');
+  const [savingRetention, setSavingRetention] = useState(false);
 
-  // Admin change email dialog
+  const [userDriveQuotaMb, setUserDriveQuotaMb] = useState('');
+  const [storageError, setStorageError] = useState('');
+  const [savingStorage, setSavingStorage] = useState(false);
+
   const [changeEmailOpen, setChangeEmailOpen] = useState(false);
-  const [changeEmailTarget, setChangeEmailTarget] = useState<{ id: string; name: string } | null>(null);
+  const [changeEmailTarget, setChangeEmailTarget] = useState<TenantDialogTarget | null>(null);
   const [newEmail, setNewEmail] = useState('');
   const [changeEmailPhase, setChangeEmailPhase] = useState<'input' | 'verifying' | 'done'>('input');
   const [changeEmailVerificationId, setChangeEmailVerificationId] = useState('');
@@ -95,9 +192,8 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
   const [changeEmailLoading, setChangeEmailLoading] = useState(false);
   const [changeEmailError, setChangeEmailError] = useState('');
 
-  // Admin change password dialog
   const [changePwdOpen, setChangePwdOpen] = useState(false);
-  const [changePwdTarget, setChangePwdTarget] = useState<{ id: string; name: string } | null>(null);
+  const [changePwdTarget, setChangePwdTarget] = useState<TenantDialogTarget | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [changePwdPhase, setChangePwdPhase] = useState<'input' | 'verifying' | 'done'>('input');
@@ -107,129 +203,119 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
   const [changePwdLoading, setChangePwdLoading] = useState(false);
   const [changePwdError, setChangePwdError] = useState('');
   const [recoveryKey, setRecoveryKey] = useState('');
-
-  // Membership expiry dialog
-  const [expiryDialogOpen, setExpiryDialogOpen] = useState(false);
-  const [expiryTarget, setExpiryTarget] = useState<{ id: string; name: string; expiresAt: string | null } | null>(null);
-  const [expiryValue, setExpiryValue] = useState('');
-  const [savingExpiry, setSavingExpiry] = useState(false);
-
-  const notify = useNotificationStore((s) => s.notify);
-  const tenantRole = user?.tenantRole;
-  const isAdmin = isAdminOrAbove(tenantRole);
+  const openDeleteConfirm = useCallback(() => {
+    setDeleteConfirmOpen(true);
+  }, []);
 
   useEffect(() => {
-    fetchTenant();
+    void fetchTenant();
   }, [fetchTenant]);
 
-  // Expose delete trigger to parent
   useEffect(() => {
-    onDeleteRequest?.(() => setDeleteConfirmOpen(true));
-  }, [onDeleteRequest]);
+    onDeleteRequest?.(openDeleteConfirm);
+  }, [onDeleteRequest, openDeleteConfirm]);
 
   useEffect(() => {
-    if (tenant) {
-      setEditName(tenant.name);
-      setSessionTimeout(String(Math.floor(tenant.defaultSessionTimeoutSeconds / 60)));
-      setMfaRequired(tenant.mfaRequired);
-      setVaultAutoLockMax(tenant.vaultAutoLockMaxMinutes == null ? 'none' : String(tenant.vaultAutoLockMaxMinutes));
-      setMaxConcurrentSessions(String(tenant.maxConcurrentSessions));
-      setAbsoluteSessionTimeout(String(tenant.absoluteSessionTimeoutSeconds));
-      setDlpDisableCopy(tenant.dlpDisableCopy);
-      setDlpDisablePaste(tenant.dlpDisablePaste);
-      setDlpDisableDownload(tenant.dlpDisableDownload);
-      setDlpDisableUpload(tenant.dlpDisableUpload);
-      fetchUsers();
-      if (isAdmin) {
-        getTenantMfaStats(tenant.id).then(setMfaDashboard).catch(() => {});
-      }
-    }
-  }, [tenant, fetchUsers, isAdmin]);
+    if (!tenant) return;
 
-  const handleSaveName = async () => {
-    if (!editName.trim() || editName.trim().length < 2) {
-      setNameError('Name must be at least 2 characters');
-      return;
+    setEditName(tenant.name);
+    setSessionTimeout(String(Math.floor(tenant.defaultSessionTimeoutSeconds / 60)));
+    setMfaRequired(tenant.mfaRequired);
+    setVaultAutoLockMax(tenant.vaultAutoLockMaxMinutes == null ? 'none' : String(tenant.vaultAutoLockMaxMinutes));
+    setMaxConcurrentSessions(String(tenant.maxConcurrentSessions));
+    setAbsoluteSessionTimeout(String(tenant.absoluteSessionTimeoutSeconds));
+    setLoginRateLimitWindow(tenant.loginRateLimitWindowMs == null ? 'default' : String(tenant.loginRateLimitWindowMs));
+    setLoginRateLimitMaxAttempts(tenant.loginRateLimitMaxAttempts == null ? 'default' : String(tenant.loginRateLimitMaxAttempts));
+    setAccountLockoutThreshold(tenant.accountLockoutThreshold == null ? 'default' : String(tenant.accountLockoutThreshold));
+    setAccountLockoutDuration(tenant.accountLockoutDurationMs == null ? 'default' : String(tenant.accountLockoutDurationMs));
+    setImpossibleTravelSpeed(tenant.impossibleTravelSpeedKmh == null ? 'default' : String(tenant.impossibleTravelSpeedKmh));
+    setJwtExpiresIn(tenant.jwtExpiresInSeconds == null ? 'default' : String(tenant.jwtExpiresInSeconds));
+    setJwtRefreshExpiresIn(tenant.jwtRefreshExpiresInSeconds == null ? 'default' : String(tenant.jwtRefreshExpiresInSeconds));
+    setVaultDefaultTtl(tenant.vaultDefaultTtlMinutes == null ? 'default' : String(tenant.vaultDefaultTtlMinutes));
+    setDlpDisableCopy(tenant.dlpDisableCopy);
+    setDlpDisablePaste(tenant.dlpDisablePaste);
+    setDlpDisableDownload(tenant.dlpDisableDownload);
+    setDlpDisableUpload(tenant.dlpDisableUpload);
+    setRecordingEnabled(tenant.recordingEnabled);
+    setRecordingRetentionDays(tenant.recordingRetentionDays != null ? String(tenant.recordingRetentionDays) : '');
+    setUserDriveQuotaMb(tenant.userDriveQuotaBytes != null ? String(parseFloat((tenant.userDriveQuotaBytes / 1048576).toFixed(2))) : '');
+
+    void fetchUsers();
+    if (isAdmin) {
+      getTenantMfaStats(tenant.id).then(setMfaDashboard).catch(() => {});
     }
-    setNameError('');
-    setSavingName(true);
+  }, [fetchUsers, isAdmin, tenant]);
+
+  const saveTenantPatch = async ({
+    fallbackMessage,
+    onSuccess,
+    patch,
+    setError,
+    setSaving,
+  }: {
+    fallbackMessage: string;
+    onSuccess?: () => void;
+    patch: TenantUpdateInput;
+    setError: (value: string) => void;
+    setSaving: (value: boolean) => void;
+  }) => {
+    setError('');
+    setSaving(true);
     try {
-      await updateTenant({ name: editName.trim() });
+      await updateTenant(patch);
+      onSuccess?.();
     } catch (err: unknown) {
-      setNameError(extractApiError(err, 'Failed to update name'));
+      setError(extractApiError(err, fallbackMessage));
     } finally {
-      setSavingName(false);
-    }
-  };
-
-  const handleSaveTimeout = async () => {
-    const minutes = parseInt(sessionTimeout, 10);
-    if (isNaN(minutes) || minutes < 1 || minutes > 1440) {
-      setTimeoutError('Must be between 1 and 1440 minutes');
-      return;
-    }
-    setTimeoutError('');
-    setSavingTimeout(true);
-    try {
-      await updateTenant({ defaultSessionTimeoutSeconds: minutes * 60 });
-    } catch (err: unknown) {
-      setTimeoutError(extractApiError(err, 'Failed to update timeout'));
-    } finally {
-      setSavingTimeout(false);
-    }
-  };
-
-  const handleMfaToggle = async (enable: boolean) => {
-    setMfaError('');
-    if (enable) {
-      try {
-        const stats = await getTenantMfaStats(tenant?.id ?? '');
-        setMfaStats(stats);
-        setMfaConfirmOpen(true);
-      } catch {
-        setMfaError('Failed to check MFA status');
-      }
-    } else {
-      setSavingMfa(true);
-      try {
-        await updateTenant({ mfaRequired: false });
-        setMfaRequired(false);
-      } catch (err: unknown) {
-        setMfaError(extractApiError(err, 'Failed to update MFA policy'));
-      } finally {
-        setSavingMfa(false);
-      }
-    }
-  };
-
-  const handleConfirmEnableMfa = async () => {
-    setMfaConfirmOpen(false);
-    setSavingMfa(true);
-    setMfaError('');
-    try {
-      await updateTenant({ mfaRequired: true });
-      setMfaRequired(true);
-    } catch (err: unknown) {
-      setMfaError(extractApiError(err, 'Failed to update MFA policy'));
-    } finally {
-      setSavingMfa(false);
+      setSaving(false);
     }
   };
 
   const handleCreateTenant = async () => {
     if (!createName.trim() || createName.trim().length < 2) {
-      setCreateError('Name must be at least 2 characters');
+      setCreateError('Name must be at least 2 characters.');
       return;
     }
+
     setCreateError('');
     setCreating(true);
     try {
       await createTenant(createName.trim());
     } catch (err: unknown) {
-      setCreateError(extractApiError(err, 'Failed to create organization'));
+      setCreateError(extractApiError(err, 'Failed to create organization.'));
     } finally {
       setCreating(false);
     }
+  };
+
+  const handleSaveName = async () => {
+    if (!tenant) return;
+    if (!editName.trim() || editName.trim().length < 2) {
+      setNameError('Name must be at least 2 characters.');
+      return;
+    }
+
+    await saveTenantPatch({
+      patch: { name: editName.trim() },
+      setSaving: setSavingName,
+      setError: setNameError,
+      fallbackMessage: 'Failed to update organization name.',
+    });
+  };
+
+  const handleSaveTimeout = async () => {
+    const result = parseSessionTimeoutPatch(sessionTimeout);
+    if (result.error || !result.patch) {
+      setTimeoutError(result.error ?? 'Invalid session timeout.');
+      return;
+    }
+
+    await saveTenantPatch({
+      patch: result.patch,
+      setSaving: setSavingTimeout,
+      setError: setTimeoutError,
+      fallbackMessage: 'Failed to update session timeout.',
+    });
   };
 
   const handleDeleteTenant = async () => {
@@ -237,20 +323,21 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
     setDeleting(true);
     try {
       await deleteTenant();
+      setDeleteConfirmOpen(false);
+      setDeleteConfirmName('');
     } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to delete organization'));
+      setError(extractApiError(err, 'Failed to delete organization.'));
     } finally {
       setDeleting(false);
-      setDeleteConfirmOpen(false);
     }
   };
 
-  const handleRoleChange = async (userId: string, newRole: string) => {
+  const handleRoleChange = async (userId: string, role: string) => {
     setError('');
     try {
-      await updateUserRole(userId, newRole as TenantRole);
+      await updateUserRole(userId, role as Parameters<typeof updateUserRole>[1]);
     } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to update role'));
+      setError(extractApiError(err, 'Failed to update role.'));
     }
   };
 
@@ -260,7 +347,7 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
     try {
       await toggleUserEnabled(userId, enabled);
     } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to update user status'));
+      setError(extractApiError(err, 'Failed to update member status.'));
     } finally {
       setTogglingUser(null);
     }
@@ -272,113 +359,204 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
     try {
       await removeUser(removeTarget.id);
     } catch (err: unknown) {
-      setError(extractApiError(err, 'Failed to remove user'));
+      setError(extractApiError(err, 'Failed to remove member.'));
+    } finally {
+      setRemoveTarget(null);
     }
-    setRemoveTarget(null);
   };
 
-  const openAdminMenu = (event: React.MouseEvent<HTMLElement>, u: { id: string; email: string; username: string | null }) => {
-    setMenuAnchor(event.currentTarget);
-    setMenuTargetUser({ id: u.id, email: u.email, name: u.username || u.email });
+  const openPermissionOverrides = (member: TenantUser) => {
+    setPermTarget(getMemberTarget(member));
+    setPermDialogOpen(true);
   };
 
-  const closeAdminMenu = () => {
-    setMenuAnchor(null);
-    setMenuTargetUser(null);
+  const openExpiryDialog = (member: TenantUser) => {
+    setExpiryTarget({
+      ...getMemberTarget(member),
+      expiresAt: member.expiresAt,
+    });
+    setExpiryValue(member.expiresAt ? new Date(member.expiresAt).toISOString().slice(0, 16) : '');
+    setExpiryDialogOpen(true);
   };
 
-  const openChangeEmail = () => {
-    if (!menuTargetUser) return;
-    setChangeEmailTarget({ id: menuTargetUser.id, name: menuTargetUser.name });
+  const openChangeEmail = (member: TenantUser) => {
+    setChangeEmailTarget(getMemberTarget(member));
+    setChangeEmailOpen(true);
     setNewEmail('');
     setChangeEmailPhase('input');
     setChangeEmailError('');
-    setChangeEmailOpen(true);
-    closeAdminMenu();
   };
 
-  const openChangePwd = () => {
-    if (!menuTargetUser) return;
-    setChangePwdTarget({ id: menuTargetUser.id, name: menuTargetUser.name });
+  const openChangePassword = (member: TenantUser) => {
+    setChangePwdTarget(getMemberTarget(member));
+    setChangePwdOpen(true);
     setNewPassword('');
     setConfirmPassword('');
     setChangePwdPhase('input');
     setChangePwdError('');
     setRecoveryKey('');
-    setChangePwdOpen(true);
-    closeAdminMenu();
+  };
+
+  const handleMfaToggle = async (checked: boolean) => {
+    if (!tenant) return;
+    if (checked) {
+      try {
+        const stats = await getTenantMfaStats(tenant.id);
+        setMfaStats(stats);
+        setMfaConfirmOpen(true);
+      } catch {
+        setMfaError('Failed to check MFA adoption.');
+      }
+      return;
+    }
+
+    await saveTenantPatch({
+      patch: { mfaRequired: false },
+      setSaving: setSavingMfa,
+      setError: setMfaError,
+      fallbackMessage: 'Failed to update MFA policy.',
+      onSuccess: () => setMfaRequired(false),
+    });
+  };
+
+  const handleConfirmEnableMfa = async () => {
+    setMfaConfirmOpen(false);
+    await saveTenantPatch({
+      patch: { mfaRequired: true },
+      setSaving: setSavingMfa,
+      setError: setMfaError,
+      fallbackMessage: 'Failed to update MFA policy.',
+      onSuccess: () => setMfaRequired(true),
+    });
+  };
+
+  const handleSaveRetention = async () => {
+    const result = parseRecordingRetentionPatch(recordingRetentionDays);
+    if (result.error || !result.patch) {
+      setRetentionError(result.error ?? 'Invalid retention policy.');
+      return;
+    }
+
+    await saveTenantPatch({
+      patch: result.patch,
+      setSaving: setSavingRetention,
+      setError: setRetentionError,
+      fallbackMessage: 'Failed to update retention policy.',
+    });
+  };
+
+  const handleSaveStorage = async () => {
+    const result = parseUserDriveQuotaPatch(userDriveQuotaMb);
+    if (result.error || !result.patch) {
+      setStorageError(result.error ?? 'Invalid storage policy.');
+      return;
+    }
+
+    await saveTenantPatch({
+      patch: result.patch,
+      setSaving: setSavingStorage,
+      setError: setStorageError,
+      fallbackMessage: 'Failed to update storage policy.',
+    });
+  };
+
+  const handleSaveExpiry = async () => {
+    if (!expiryTarget || !expiryValue) return;
+    setSavingExpiry(true);
+    try {
+      await updateMembershipExpiry(expiryTarget.id, new Date(expiryValue).toISOString());
+      setExpiryDialogOpen(false);
+    } catch (err: unknown) {
+      setError(extractApiError(err, 'Failed to update membership expiration.'));
+    } finally {
+      setSavingExpiry(false);
+    }
+  };
+
+  const handleRemoveExpiry = async () => {
+    if (!expiryTarget) return;
+    setSavingExpiry(true);
+    try {
+      await updateMembershipExpiry(expiryTarget.id, null);
+      setExpiryDialogOpen(false);
+    } catch (err: unknown) {
+      setError(extractApiError(err, 'Failed to remove membership expiration.'));
+    } finally {
+      setSavingExpiry(false);
+    }
   };
 
   const handleAdminEmailSubmit = async () => {
-    if (!newEmail.trim() || !changeEmailTarget) return;
+    if (!newEmail.trim()) return;
     setChangeEmailLoading(true);
     setChangeEmailError('');
     try {
-      const res = await initiateIdentityVerification('admin-action');
-      setChangeEmailVerificationId(res.verificationId);
-      setChangeEmailMethod(res.method);
-      setChangeEmailMetadata(res.metadata);
+      const result = await initiateIdentityVerification('admin-action');
+      setChangeEmailVerificationId(result.verificationId);
+      setChangeEmailMethod(result.method);
+      setChangeEmailMetadata(result.metadata);
       setChangeEmailPhase('verifying');
     } catch (err: unknown) {
-      setChangeEmailError(extractApiError(err, 'Failed to initiate verification'));
+      setChangeEmailError(extractApiError(err, 'Failed to initiate verification.'));
     } finally {
       setChangeEmailLoading(false);
     }
   };
 
   const handleAdminEmailVerified = async (verificationId: string) => {
-    if (!changeEmailTarget || !tenant) return;
+    if (!tenant || !changeEmailTarget) return;
     setChangeEmailLoading(true);
     setChangeEmailError('');
     try {
       await adminChangeUserEmail(tenant.id, changeEmailTarget.id, newEmail.trim(), verificationId);
       notify(`Email changed successfully to ${newEmail.trim()}`, 'success');
       setChangeEmailOpen(false);
-      fetchUsers();
+      void fetchUsers();
     } catch (err: unknown) {
-      setChangeEmailError(extractApiError(err, 'Failed to change email'));
+      setChangeEmailError(extractApiError(err, 'Failed to change email.'));
       setChangeEmailPhase('input');
     } finally {
       setChangeEmailLoading(false);
     }
   };
 
-  const handleAdminPwdSubmit = async () => {
-    if (!newPassword || !changePwdTarget) return;
+  const handleAdminPasswordSubmit = async () => {
+    if (!changePwdTarget) return;
     if (newPassword !== confirmPassword) {
-      setChangePwdError('Passwords do not match');
+      setChangePwdError('Passwords do not match.');
       return;
     }
     if (newPassword.length < 8) {
-      setChangePwdError('Password must be at least 8 characters');
+      setChangePwdError('Password must be at least 8 characters.');
       return;
     }
+
     setChangePwdLoading(true);
     setChangePwdError('');
     try {
-      const res = await initiateIdentityVerification('admin-action');
-      setChangePwdVerificationId(res.verificationId);
-      setChangePwdMethod(res.method);
-      setChangePwdMetadata(res.metadata);
+      const result = await initiateIdentityVerification('admin-action');
+      setChangePwdVerificationId(result.verificationId);
+      setChangePwdMethod(result.method);
+      setChangePwdMetadata(result.metadata);
       setChangePwdPhase('verifying');
     } catch (err: unknown) {
-      setChangePwdError(extractApiError(err, 'Failed to initiate verification'));
+      setChangePwdError(extractApiError(err, 'Failed to initiate verification.'));
     } finally {
       setChangePwdLoading(false);
     }
   };
 
-  const handleAdminPwdVerified = async (verificationId: string) => {
-    if (!changePwdTarget || !tenant) return;
+  const handleAdminPasswordVerified = async (verificationId: string) => {
+    if (!tenant || !changePwdTarget) return;
     setChangePwdLoading(true);
     setChangePwdError('');
     try {
-      const res = await adminChangeUserPassword(tenant.id, changePwdTarget.id, newPassword, verificationId);
-      setRecoveryKey(res.recoveryKey);
+      const result = await adminChangeUserPassword(tenant.id, changePwdTarget.id, newPassword, verificationId);
+      setRecoveryKey(result.recoveryKey);
       setChangePwdPhase('done');
       notify('Password changed successfully', 'success');
     } catch (err: unknown) {
-      setChangePwdError(extractApiError(err, 'Failed to change password'));
+      setChangePwdError(extractApiError(err, 'Failed to change password.'));
       setChangePwdPhase('input');
     } finally {
       setChangePwdLoading(false);
@@ -387,725 +565,587 @@ export default function TenantSection({ onViewUserProfile, onDeleteRequest }: Te
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-        <CircularProgress />
-      </Box>
+      <SettingsPanel title="Organization" description="Loading organization settings...">
+        <div className="py-6 text-sm text-muted-foreground">Loading organization settings...</div>
+      </SettingsPanel>
     );
   }
 
-  // Onboarding: no tenant yet
   if (!tenant) {
     return (
-      <Box sx={{ maxWidth: 500, mx: 'auto', mt: 2 }}>
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>Create Your Organization</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              Create an organization to collaborate with your team. You can invite members and create teams after setup.
-            </Typography>
-            {createError && <Alert severity="error" sx={{ mb: 2 }}>{createError}</Alert>}
-            <TextField
-              label="Organization Name"
-              value={createName}
-              onChange={(e) => setCreateName(e.target.value)}
-              fullWidth
-              autoFocus
-              inputProps={{ maxLength: 100 }}
-              sx={{ mb: 2 }}
-            />
-            <Button
-              variant="contained"
-              onClick={handleCreateTenant}
-              disabled={creating || !createName.trim()}
-              fullWidth
-            >
+      <SettingsPanel
+        title={multiTenancyEnabled ? 'Create Your Organization' : 'Organization Required'}
+        description={
+          multiTenancyEnabled
+            ? 'Create a shared workspace before teams, policies, and infrastructure settings become available.'
+            : 'This deployment is running in single-tenant mode. An administrator must provision the workspace organization.'
+        }
+        contentClassName="space-y-4"
+      >
+        {createError ? (
+          <Alert variant="destructive">
+            <AlertDescription>{createError}</AlertDescription>
+          </Alert>
+        ) : null}
+        {multiTenancyEnabled ? (
+          <div className="max-w-lg space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="tenant-create-name">Organization name</Label>
+              <Input
+                id="tenant-create-name"
+                autoFocus
+                value={createName}
+                maxLength={100}
+                onChange={(event) => setCreateName(event.target.value)}
+              />
+            </div>
+            <Button type="button" onClick={handleCreateTenant} disabled={creating || !createName.trim()}>
               {creating ? 'Creating...' : 'Create Organization'}
             </Button>
-          </CardContent>
-        </Card>
-      </Box>
+          </div>
+        ) : (
+          <Alert>
+            <AlertTriangle className="size-4" />
+            <AlertDescription>
+              Single-tenant deployments must be provisioned during setup rather than from the end-user UI.
+            </AlertDescription>
+          </Alert>
+        )}
+      </SettingsPanel>
     );
   }
 
   return (
     <>
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-      {/* Organization Info */}
-      <Card>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>Organization Info</Typography>
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-end' }}>
-              <TextField
-                label="Name"
-                value={editName}
-                onChange={(e) => setEditName(e.target.value)}
-                disabled={!isAdmin}
-                fullWidth
-                size="small"
-                error={!!nameError}
-                helperText={nameError}
-                inputProps={{ maxLength: 100 }}
-              />
-              {isAdmin && editName !== tenant.name && (
-                <Button variant="contained" size="small" onClick={handleSaveName} disabled={savingName}>
-                  {savingName ? 'Saving...' : 'Save'}
-                </Button>
-              )}
-            </Box>
-            <TextField
-              label="Slug"
-              value={tenant.slug}
-              disabled
-              fullWidth
-              size="small"
+      <SettingsPanel
+        title="Organization"
+        description="Workspace identity, baseline session behavior, and organization-level controls."
+        contentClassName="space-y-5"
+      >
+        <SettingsSummaryGrid>
+          <SettingsSummaryItem label="Slug" value={tenant.slug} />
+          <SettingsSummaryItem label="Members" value={tenant.userCount} />
+          <SettingsSummaryItem label="Teams" value={tenant.teamCount} />
+          <SettingsSummaryItem label="Default Session Timeout" value={`${Math.floor(tenant.defaultSessionTimeoutSeconds / 60)} min`} />
+        </SettingsSummaryGrid>
+
+        <SettingsSectionBlock
+          title="Workspace identity"
+          description="Keep the organization name stable and recognizable. The slug is derived and read-only."
+        >
+          <div className="grid gap-4 lg:grid-cols-2">
+            <TenantInlineSaveField
+              label="Organization name"
+              description="Visible across invitations, settings, and audit surfaces."
+              value={editName}
+              saving={savingName}
+              error={nameError}
+              onChange={(value) => {
+                setEditName(value);
+                setNameError('');
+              }}
+              onSave={handleSaveName}
+              inputProps={{ maxLength: 100 }}
             />
-            <Stack direction="row" spacing={1}>
-              <Chip label={`${tenant.userCount} members`} size="small" />
-              <Chip label={`${tenant.teamCount} teams`} size="small" />
-            </Stack>
-            {isAdmin && (
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', mt: 1 }}>
-                <TextField
-                  label="Default Session Timeout (minutes)"
-                  value={sessionTimeout}
-                  onChange={(e) => { setSessionTimeout(e.target.value); setTimeoutError(''); }}
-                  type="number"
-                  size="small"
-                  fullWidth
-                  error={!!timeoutError}
-                  helperText={timeoutError || 'Idle sessions will be closed after this time (1-1440 min)'}
-                  inputProps={{ min: 1, max: 1440 }}
-                />
-                {parseInt(sessionTimeout, 10) * 60 !== tenant.defaultSessionTimeoutSeconds && (
-                  <Button variant="contained" size="small" onClick={handleSaveTimeout} disabled={savingTimeout} sx={{ mt: 0.5 }}>
-                    {savingTimeout ? 'Saving...' : 'Save'}
-                  </Button>
-                )}
-              </Box>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
+            <SettingsFieldCard
+              label="Slug"
+              description="Stable identifier used in APIs and tenant routing."
+            >
+              <Input readOnly value={tenant.slug} />
+            </SettingsFieldCard>
+          </div>
 
-      {/* Members */}
-      <Card>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" sx={{ flexGrow: 1 }}>Members</Typography>
-            {isAdmin && (
-              <Stack direction="row" spacing={1}>
-                <Button
-                  startIcon={<GroupAdd />}
-                  variant="contained"
-                  size="small"
-                  onClick={() => setCreateUserOpen(true)}
-                >
-                  Create User
-                </Button>
-                <Button
-                  startIcon={<PersonAdd />}
-                  variant="outlined"
-                  size="small"
-                  onClick={() => setInviteOpen(true)}
-                >
-                  Invite
-                </Button>
-              </Stack>
-            )}
-          </Box>
-          {usersLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : (
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>User</TableCell>
-                    <TableCell>Role</TableCell>
-                    <TableCell>MFA</TableCell>
-                    {isAdmin && <TableCell>Expires</TableCell>}
-                    {isAdmin && <TableCell>Status</TableCell>}
-                    {isAdmin && <TableCell align="right">Actions</TableCell>}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id} sx={u.enabled === false ? { opacity: 0.5 } : undefined}>
-                      <TableCell
-                        sx={{ cursor: onViewUserProfile ? 'pointer' : undefined }}
-                        onClick={() => onViewUserProfile?.(u.id)}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Avatar src={u.avatarData || undefined} sx={{ width: 28, height: 28 }}>
-                            {(u.username || u.email).charAt(0).toUpperCase()}
-                          </Avatar>
-                          <Box>
-                            <Typography variant="body2">
-                              {u.username || u.email}
-                              {u.id === user?.id && (
-                                <Typography component="span" variant="caption" color="text.secondary"> (you)</Typography>
-                              )}
-                            </Typography>
-                            {u.username && (
-                              <Typography variant="caption" color="text.secondary">{u.email}</Typography>
-                            )}
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        {isAdmin && u.id !== user?.id ? (
-                          <Select
-                            value={u.role}
-                            size="small"
-                            onChange={(e) => handleRoleChange(u.id, e.target.value)}
-                            sx={{ minWidth: 110 }}
-                          >
-                            {ALL_ROLES.map((r) => (
-                              <MenuItem key={r} value={r}>{ROLE_LABELS[r]}</MenuItem>
-                            ))}
-                          </Select>
-                        ) : (
-                          <Chip label={u.role} size="small" variant="outlined" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {u.totpEnabled || u.smsMfaEnabled ? (
-                          <Chip label="Active" color="success" size="small" />
-                        ) : (
-                          <Chip label="None" size="small" />
-                        )}
-                      </TableCell>
-                      {isAdmin && (
-                        <TableCell>
-                          {u.expiresAt ? (
-                            <Chip
-                              label={u.expired ? 'Expired' : new Date(u.expiresAt).toLocaleDateString()}
-                              color={u.expired ? 'error' : 'default'}
-                              size="small"
-                              variant="outlined"
-                            />
-                          ) : (
-                            <Typography variant="caption" color="text.secondary">—</Typography>
-                          )}
-                        </TableCell>
-                      )}
-                      {isAdmin && (
-                        <TableCell>
-                          {u.id === user?.id ? (
-                            <Chip label="Active" color="success" size="small" />
-                          ) : (
-                            <Switch
-                              size="small"
-                              checked={u.enabled !== false}
-                              disabled={togglingUser === u.id}
-                              onChange={(_, checked) => handleToggleEnabled(u.id, checked)}
-                            />
-                          )}
-                        </TableCell>
-                      )}
-                      {isAdmin && (
-                        <TableCell align="right">
-                          {u.id !== user?.id && (
-                            <IconButton
-                              size="small"
-                              onClick={(e) => openAdminMenu(e, u)}
-                            >
-                              <MoreVert fontSize="small" />
-                            </IconButton>
-                          )}
-                        </TableCell>
-                      )}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </CardContent>
-      </Card>
+          {isAdmin ? (
+            <TenantInlineSaveField
+              label="Default session timeout (minutes)"
+              description="Idle sessions are closed after this much inactivity."
+              value={sessionTimeout}
+              saving={savingTimeout}
+              error={timeoutError}
+              onChange={(value) => {
+                setSessionTimeout(value);
+                setTimeoutError('');
+              }}
+              onSave={handleSaveTimeout}
+              type="number"
+              helperText="Choose a value between 1 and 1440 minutes."
+              inputProps={{ min: 1, max: 1440 }}
+            />
+          ) : null}
+        </SettingsSectionBlock>
+      </SettingsPanel>
 
-      {/* Security Policy */}
-      {isAdmin && (
-        <Card>
-          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="h6" gutterBottom>Security Policy</Typography>
-              {mfaDashboard && (
-                <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-                  <Typography variant="subtitle2" gutterBottom>
-                    MFA Adoption
-                  </Typography>
-                  <Stack direction="row" spacing={2} alignItems="center">
-                    <Chip
-                      label={`${mfaDashboard.total - mfaDashboard.withoutMfa} / ${mfaDashboard.total} users`}
-                      color={mfaDashboard.withoutMfa === 0 ? 'success' : 'warning'}
-                      variant="outlined"
-                      size="small"
-                    />
-                    <Typography variant="body2" color="text.secondary">
-                      {mfaDashboard.withoutMfa === 0
-                        ? 'All members have MFA configured'
-                        : `${mfaDashboard.withoutMfa} member${mfaDashboard.withoutMfa > 1 ? 's' : ''} without MFA`}
-                    </Typography>
-                  </Stack>
-                </Box>
-              )}
-              {mfaError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setMfaError('')}>{mfaError}</Alert>}
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={mfaRequired}
-                    onChange={(_, checked) => handleMfaToggle(checked)}
-                    disabled={savingMfa}
-                  />
-                }
-                label="Require MFA for all members"
+      <TenantMembersPanel
+        currentUserId={user?.id}
+        isAdmin={isAdmin}
+        loading={usersLoading}
+        users={users}
+        togglingUserId={togglingUser}
+        onViewUserProfile={onViewUserProfile}
+        onCreateUser={() => setCreateUserOpen(true)}
+        onInvite={() => setInviteOpen(true)}
+        onRoleChange={handleRoleChange}
+        onToggleEnabled={handleToggleEnabled}
+        onEditPermissions={openPermissionOverrides}
+        onEditExpiry={openExpiryDialog}
+        onChangeEmail={openChangeEmail}
+        onChangePassword={openChangePassword}
+        onRemove={(member) => setRemoveTarget(getMemberTarget(member))}
+      />
+
+      {isAdmin ? (
+        <SettingsPanel
+          title="Security & Session Policy"
+          description="Tenant-wide controls for authentication, lifetime management, storage, and data handling."
+          contentClassName="space-y-5"
+        >
+          {mfaDashboard ? (
+            <SettingsSummaryGrid>
+              <SettingsSummaryItem label="MFA Enabled" value={`${mfaDashboard.total - mfaDashboard.withoutMfa} / ${mfaDashboard.total} users`} />
+              <SettingsSummaryItem label="Members Without MFA" value={mfaDashboard.withoutMfa} />
+              <SettingsSummaryItem label="User Drive Quota" value={formatMegabytes(tenant.userDriveQuotaBytes)} />
+            </SettingsSummaryGrid>
+          ) : null}
+
+          <SettingsFieldGroup>
+            <SettingsSectionBlock
+              title="Identity & access"
+              description="Baseline requirements for MFA, vault behavior, and hard session limits."
+            >
+              {mfaError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{mfaError}</AlertDescription>
+                </Alert>
+              ) : null}
+              <SettingsSwitchRow
+                title="Require MFA for every member"
+                description="Members without MFA configured are forced through setup on their next login."
+                checked={mfaRequired}
+                disabled={savingMfa}
+                onCheckedChange={(checked) => { void handleMfaToggle(checked); }}
               />
-              <Typography variant="caption" color="text.secondary" display="block">
-                When enabled, members without MFA configured will be required to set it up during their next login.
-              </Typography>
+              <TenantPolicySelectField
+                label="Max vault auto-lock timeout"
+                description="Members cannot disable auto-lock or choose a longer timeout than this."
+                value={vaultAutoLockMax}
+                saving={savingVaultLock}
+                error={vaultLockError}
+                options={vaultAutoLockOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { vaultAutoLockMaxMinutes: value === 'none' ? null : Number(value) },
+                    setSaving: setSavingVaultLock,
+                    setError: setVaultLockError,
+                    fallbackMessage: 'Failed to update vault auto-lock policy.',
+                    onSuccess: () => setVaultAutoLockMax(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Max concurrent sessions per user"
+                description="When the limit is exceeded, the oldest session is terminated automatically."
+                value={maxConcurrentSessions}
+                saving={savingConcurrentSessions}
+                error={concurrentSessionsError}
+                options={maxConcurrentSessionOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { maxConcurrentSessions: Number(value) },
+                    setSaving: setSavingConcurrentSessions,
+                    setError: setConcurrentSessionsError,
+                    fallbackMessage: 'Failed to update concurrent session limit.',
+                    onSuccess: () => setMaxConcurrentSessions(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Absolute session timeout"
+                description="Force re-authentication after this total duration, even if the session remains active."
+                value={absoluteSessionTimeout}
+                saving={savingAbsoluteTimeout}
+                error={absoluteTimeoutError}
+                options={absoluteSessionTimeoutOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { absoluteSessionTimeoutSeconds: Number(value) },
+                    setSaving: setSavingAbsoluteTimeout,
+                    setError: setAbsoluteTimeoutError,
+                    fallbackMessage: 'Failed to update absolute session timeout.',
+                    onSuccess: () => setAbsoluteSessionTimeout(value),
+                  });
+                }}
+              />
+            </SettingsSectionBlock>
 
-              {vaultLockError && <Alert severity="error" sx={{ mt: 1, mb: 1 }} onClose={() => setVaultLockError('')}>{vaultLockError}</Alert>}
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>Max vault auto-lock timeout</Typography>
-                <Select
-                  value={vaultAutoLockMax}
-                  size="small"
-                  disabled={savingVaultLock}
-                  onChange={async (e) => {
-                    const val = e.target.value;
-                    setVaultLockError('');
-                    setSavingVaultLock(true);
-                    try {
-                      await updateTenant({ vaultAutoLockMaxMinutes: val === 'none' ? null : Number(val) });
-                      setVaultAutoLockMax(val);
-                    } catch (err: unknown) {
-                      setVaultLockError(extractApiError(err, 'Failed to update vault auto-lock policy'));
-                    } finally {
-                      setSavingVaultLock(false);
-                    }
-                  }}
-                  sx={{ minWidth: 200 }}
-                >
-                  <MenuItem value="none">No enforcement</MenuItem>
-                  <MenuItem value="5">5 minutes</MenuItem>
-                  <MenuItem value="15">15 minutes</MenuItem>
-                  <MenuItem value="30">30 minutes</MenuItem>
-                  <MenuItem value="60">1 hour</MenuItem>
-                  <MenuItem value="240">4 hours</MenuItem>
-                </Select>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                  When set, members cannot configure a vault auto-lock timeout exceeding this value or disable auto-lock.
-                </Typography>
-              </Box>
+            <SettingsSectionBlock
+              title="Login protection"
+              description="Control abusive login attempts, account lockout behavior, and impossible-travel detection."
+            >
+              <TenantPolicySelectField
+                label="Rate limit window"
+                description="Time window used to count failed login attempts."
+                value={loginRateLimitWindow}
+                saving={savingRateLimitWindow}
+                error={rateLimitWindowError}
+                options={loginRateLimitWindowOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { loginRateLimitWindowMs: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingRateLimitWindow,
+                    setError: setRateLimitWindowError,
+                    fallbackMessage: 'Failed to update rate limit window.',
+                    onSuccess: () => setLoginRateLimitWindow(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Max login attempts"
+                description="Maximum failed login attempts inside the rate limit window."
+                value={loginRateLimitMaxAttempts}
+                saving={savingRateLimitMaxAttempts}
+                error={rateLimitMaxAttemptsError}
+                options={loginAttemptOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { loginRateLimitMaxAttempts: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingRateLimitMaxAttempts,
+                    setError: setRateLimitMaxAttemptsError,
+                    fallbackMessage: 'Failed to update max login attempts.',
+                    onSuccess: () => setLoginRateLimitMaxAttempts(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Account lockout threshold"
+                description="Failed attempts before the account is considered locked."
+                value={accountLockoutThreshold}
+                saving={savingLockoutThreshold}
+                error={lockoutThresholdError}
+                options={loginAttemptOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { accountLockoutThreshold: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingLockoutThreshold,
+                    setError: setLockoutThresholdError,
+                    fallbackMessage: 'Failed to update lockout threshold.',
+                    onSuccess: () => setAccountLockoutThreshold(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Account lockout duration"
+                description="How long locked accounts remain unavailable after crossing the threshold."
+                value={accountLockoutDuration}
+                saving={savingLockoutDuration}
+                error={lockoutDurationError}
+                options={accountLockoutDurationOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { accountLockoutDurationMs: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingLockoutDuration,
+                    setError: setLockoutDurationError,
+                    fallbackMessage: 'Failed to update lockout duration.',
+                    onSuccess: () => setAccountLockoutDuration(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Impossible travel speed"
+                description="Flag login location changes that imply travel faster than this speed."
+                value={impossibleTravelSpeed}
+                saving={savingTravelSpeed}
+                error={travelSpeedError}
+                options={impossibleTravelSpeedOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { impossibleTravelSpeedKmh: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingTravelSpeed,
+                    setError: setTravelSpeedError,
+                    fallbackMessage: 'Failed to update impossible travel speed.',
+                    onSuccess: () => setImpossibleTravelSpeed(value),
+                  });
+                }}
+              />
+            </SettingsSectionBlock>
 
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>Max concurrent sessions per user</Typography>
-                {concurrentSessionsError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setConcurrentSessionsError('')}>{concurrentSessionsError}</Alert>}
-                <Select
-                  value={maxConcurrentSessions}
-                  size="small"
-                  disabled={savingConcurrentSessions}
-                  onChange={async (e) => {
-                    const val = e.target.value as string;
-                    setConcurrentSessionsError('');
-                    setSavingConcurrentSessions(true);
-                    try {
-                      await updateTenant({ maxConcurrentSessions: Number(val) });
-                      setMaxConcurrentSessions(val);
-                    } catch (err: unknown) {
-                      setConcurrentSessionsError(extractApiError(err, 'Failed to update concurrent session limit'));
-                    } finally {
-                      setSavingConcurrentSessions(false);
-                    }
-                  }}
-                  sx={{ minWidth: 200 }}
-                >
-                  <MenuItem value="0">Unlimited</MenuItem>
-                  <MenuItem value="1">1 session</MenuItem>
-                  <MenuItem value="2">2 sessions</MenuItem>
-                  <MenuItem value="3">3 sessions</MenuItem>
-                  <MenuItem value="5">5 sessions</MenuItem>
-                  <MenuItem value="10">10 sessions</MenuItem>
-                </Select>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                  When exceeded, the oldest session is automatically terminated. Set to Unlimited to disable.
-                </Typography>
-              </Box>
+            <SettingsSectionBlock
+              title="Token lifetime"
+              description="Align access token, refresh token, and vault default TTL lifetimes."
+            >
+              <TenantPolicySelectField
+                label="Access token expiry"
+                description="How long access tokens remain valid before the client must refresh them."
+                value={jwtExpiresIn}
+                saving={savingJwtExpires}
+                error={jwtExpiresError}
+                options={accessTokenExpiryOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { jwtExpiresInSeconds: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingJwtExpires,
+                    setError: setJwtExpiresError,
+                    fallbackMessage: 'Failed to update access token expiry.',
+                    onSuccess: () => setJwtExpiresIn(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Refresh token expiry"
+                description="Longer-lived tokens control how long users stay signed in without a full re-login."
+                value={jwtRefreshExpiresIn}
+                saving={savingJwtRefreshExpires}
+                error={jwtRefreshExpiresError}
+                options={refreshTokenExpiryOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { jwtRefreshExpiresInSeconds: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingJwtRefreshExpires,
+                    setError: setJwtRefreshExpiresError,
+                    fallbackMessage: 'Failed to update refresh token expiry.',
+                    onSuccess: () => setJwtRefreshExpiresIn(value),
+                  });
+                }}
+              />
+              <TenantPolicySelectField
+                label="Vault default TTL"
+                description="Default auto-lock timeout applied to new users unless they choose a stricter setting."
+                value={vaultDefaultTtl}
+                saving={savingVaultDefaultTtl}
+                error={vaultDefaultTtlError}
+                options={vaultDefaultTtlOptions}
+                onValueChange={(value) => {
+                  void saveTenantPatch({
+                    patch: { vaultDefaultTtlMinutes: value === 'default' ? null : Number(value) },
+                    setSaving: setSavingVaultDefaultTtl,
+                    setError: setVaultDefaultTtlError,
+                    fallbackMessage: 'Failed to update vault default TTL.',
+                    onSuccess: () => setVaultDefaultTtl(value),
+                  });
+                }}
+              />
+            </SettingsSectionBlock>
 
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>Absolute session timeout</Typography>
-                {absoluteTimeoutError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setAbsoluteTimeoutError('')}>{absoluteTimeoutError}</Alert>}
-                <Select
-                  value={absoluteSessionTimeout}
-                  size="small"
-                  disabled={savingAbsoluteTimeout}
-                  onChange={async (e) => {
-                    const val = e.target.value as string;
-                    setAbsoluteTimeoutError('');
-                    setSavingAbsoluteTimeout(true);
-                    try {
-                      await updateTenant({ absoluteSessionTimeoutSeconds: Number(val) });
-                      setAbsoluteSessionTimeout(val);
-                    } catch (err: unknown) {
-                      setAbsoluteTimeoutError(extractApiError(err, 'Failed to update absolute session timeout'));
-                    } finally {
-                      setSavingAbsoluteTimeout(false);
-                    }
-                  }}
-                  sx={{ minWidth: 200 }}
-                >
-                  <MenuItem value="0">Disabled</MenuItem>
-                  <MenuItem value="3600">1 hour</MenuItem>
-                  <MenuItem value="14400">4 hours</MenuItem>
-                  <MenuItem value="28800">8 hours</MenuItem>
-                  <MenuItem value="43200">12 hours</MenuItem>
-                  <MenuItem value="86400">24 hours</MenuItem>
-                  <MenuItem value="604800">7 days</MenuItem>
-                </Select>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                  Forces re-authentication after this duration, regardless of user activity. Disabled means no forced re-login.
-                </Typography>
-              </Box>
+            <SettingsSectionBlock
+              title="Data controls"
+              description="Limit clipboard/file transfer exposure, recording retention, and user storage quotas."
+            >
+              {dlpError ? (
+                <Alert variant="destructive">
+                  <AlertDescription>{dlpError}</AlertDescription>
+                </Alert>
+              ) : null}
+              <SettingsSwitchRow
+                title="Disable clipboard copy"
+                description="Block remote-to-local clipboard copy for RDP and VNC sessions."
+                checked={dlpDisableCopy}
+                disabled={savingDlp}
+                onCheckedChange={(checked) => {
+                  void saveTenantPatch({
+                    patch: { dlpDisableCopy: checked },
+                    setSaving: setSavingDlp,
+                    setError: setDlpError,
+                    fallbackMessage: 'Failed to update DLP policy.',
+                    onSuccess: () => setDlpDisableCopy(checked),
+                  });
+                }}
+              />
+              <SettingsSwitchRow
+                title="Disable clipboard paste"
+                description="Block local-to-remote clipboard paste for RDP and VNC sessions."
+                checked={dlpDisablePaste}
+                disabled={savingDlp}
+                onCheckedChange={(checked) => {
+                  void saveTenantPatch({
+                    patch: { dlpDisablePaste: checked },
+                    setSaving: setSavingDlp,
+                    setError: setDlpError,
+                    fallbackMessage: 'Failed to update DLP policy.',
+                    onSuccess: () => setDlpDisablePaste(checked),
+                  });
+                }}
+              />
+              <SettingsSwitchRow
+                title="Disable file download"
+                description="Prevent downloading files from the shared drive back to the local device."
+                checked={dlpDisableDownload}
+                disabled={savingDlp}
+                onCheckedChange={(checked) => {
+                  void saveTenantPatch({
+                    patch: { dlpDisableDownload: checked },
+                    setSaving: setSavingDlp,
+                    setError: setDlpError,
+                    fallbackMessage: 'Failed to update DLP policy.',
+                    onSuccess: () => setDlpDisableDownload(checked),
+                  });
+                }}
+              />
+              <SettingsSwitchRow
+                title="Disable file upload"
+                description="Block file uploads into remote shared drives."
+                checked={dlpDisableUpload}
+                disabled={savingDlp}
+                onCheckedChange={(checked) => {
+                  void saveTenantPatch({
+                    patch: { dlpDisableUpload: checked },
+                    setSaving: setSavingDlp,
+                    setError: setDlpError,
+                    fallbackMessage: 'Failed to update DLP policy.',
+                    onSuccess: () => setDlpDisableUpload(checked),
+                  });
+                }}
+              />
 
-              <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
-                <Typography variant="subtitle2" gutterBottom>Data Loss Prevention (DLP)</Typography>
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
-                  Organization-wide restrictions for RDP and VNC sessions. Per-connection overrides can only be more restrictive.
-                </Typography>
-                {dlpError && <Alert severity="error" sx={{ mb: 1 }} onClose={() => setDlpError('')}>{dlpError}</Alert>}
-                {([
-                  { key: 'dlpDisableCopy' as const, label: 'Disable clipboard copy (remote to local)', value: dlpDisableCopy, setter: setDlpDisableCopy },
-                  { key: 'dlpDisablePaste' as const, label: 'Disable clipboard paste (local to remote)', value: dlpDisablePaste, setter: setDlpDisablePaste },
-                  { key: 'dlpDisableDownload' as const, label: 'Disable file download from shared drive', value: dlpDisableDownload, setter: setDlpDisableDownload },
-                  { key: 'dlpDisableUpload' as const, label: 'Disable file upload to shared drive', value: dlpDisableUpload, setter: setDlpDisableUpload },
-                ] as const).map(({ key, label, value, setter }) => (
-                  <FormControlLabel
-                    key={key}
-                    control={
-                      <Switch
-                        checked={value}
-                        disabled={savingDlp}
-                        onChange={async (_, checked) => {
-                          setDlpError('');
-                          setSavingDlp(true);
-                          try {
-                            await updateTenant({ [key]: checked });
-                            setter(checked);
-                          } catch (err: unknown) {
-                            setDlpError(extractApiError(err, 'Failed to update DLP policy'));
-                          } finally {
-                            setSavingDlp(false);
-                          }
-                        }}
-                      />
-                    }
-                    label={label}
-                    sx={{ display: 'block' }}
+              {recordingsFeatureEnabled ? (
+                <>
+                  {recordingError ? (
+                    <Alert variant="destructive">
+                      <AlertDescription>{recordingError}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <SettingsSwitchRow
+                    title="Enable session recording"
+                    description="Capture SSH, RDP, and VNC sessions for later review."
+                    checked={recordingEnabled}
+                    disabled={savingRecording}
+                    onCheckedChange={(checked) => {
+                      void saveTenantPatch({
+                        patch: { recordingEnabled: checked },
+                        setSaving: setSavingRecording,
+                        setError: setRecordingError,
+                        fallbackMessage: 'Failed to update recording policy.',
+                        onSuccess: () => setRecordingEnabled(checked),
+                      });
+                    }}
                   />
-                ))}
-              </Box>
-          </CardContent>
-        </Card>
-      )}
+                  <TenantInlineSaveField
+                    label="Recording retention (days)"
+                    description="Leave blank to inherit the system default."
+                    value={recordingRetentionDays}
+                    saving={savingRetention}
+                    error={retentionError}
+                    type="number"
+                    helperText="Choose a value between 1 and 3650 days or leave blank."
+                    onChange={(value) => {
+                      setRecordingRetentionDays(value);
+                      setRetentionError('');
+                    }}
+                    onSave={handleSaveRetention}
+                  />
+                </>
+              ) : null}
 
-      {/* External Vault Providers */}
-      {isAdmin && tenant && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>External Vault Providers</Typography>
-            <VaultProvidersSection tenantId={tenant.id} />
-          </CardContent>
-        </Card>
-      )}
+              <div className="grid gap-4 xl:grid-cols-2">
+                <TenantInlineSaveField
+                  label="User drive quota (MB)"
+                  description="Leave blank to inherit the system default."
+                  value={userDriveQuotaMb}
+                  saving={savingStorage}
+                  error={storageError}
+                  type="number"
+                  onChange={(value) => {
+                    setUserDriveQuotaMb(value);
+                    setStorageError('');
+                  }}
+                  onSave={handleSaveStorage}
+                />
+              </div>
+            </SettingsSectionBlock>
+          </SettingsFieldGroup>
+        </SettingsPanel>
+      ) : null}
 
       <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <CreateUserDialog open={createUserOpen} onClose={() => setCreateUserOpen(false)} />
 
-      {/* Delete org confirmation */}
-      <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
-        <DialogTitle>Delete Organization</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            This will permanently delete the organization, all teams, and remove all members.
-            Type <strong>{tenant.name}</strong> to confirm.
-          </DialogContentText>
-          <TextField
-            fullWidth
-            value={deleteConfirmName}
-            onChange={(e) => setDeleteConfirmName(e.target.value)}
-            placeholder={tenant.name}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setDeleteConfirmOpen(false); setDeleteConfirmName(''); }}>Cancel</Button>
-          <Button
-            onClick={handleDeleteTenant}
-            color="error"
-            variant="contained"
-            disabled={deleting || deleteConfirmName !== tenant.name}
-          >
-            {deleting ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <DeleteTenantDialog
+        open={deleteConfirmOpen}
+        tenantName={tenant.name}
+        confirmName={deleteConfirmName}
+        deleting={deleting}
+        onConfirmNameChange={setDeleteConfirmName}
+        onClose={() => {
+          setDeleteConfirmOpen(false);
+          setDeleteConfirmName('');
+        }}
+        onConfirm={handleDeleteTenant}
+      />
 
-      {/* Remove user confirmation */}
-      <Dialog open={!!removeTarget} onClose={() => setRemoveTarget(null)}>
-        <DialogTitle>Remove Member</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Are you sure you want to remove <strong>{removeTarget?.name}</strong> from the organization?
-            They will also be removed from all teams.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRemoveTarget(null)}>Cancel</Button>
-          <Button onClick={handleRemoveUser} color="error" variant="contained">Remove</Button>
-        </DialogActions>
-      </Dialog>
+      <RemoveMemberDialog
+        open={Boolean(removeTarget)}
+        target={removeTarget}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={() => { void handleRemoveUser(); }}
+      />
 
-      {/* Admin actions menu */}
-      <Menu
-        anchorEl={menuAnchor}
-        open={!!menuAnchor}
-        onClose={closeAdminMenu}
-      >
-        <MenuItem onClick={openChangeEmail}>Change Email</MenuItem>
-        <MenuItem onClick={openChangePwd}>Change Password</MenuItem>
-        <MenuItem onClick={() => {
-          if (menuTargetUser) {
-            const u = users.find((usr) => usr.id === menuTargetUser.id);
-            setExpiryTarget({ id: menuTargetUser.id, name: menuTargetUser.name, expiresAt: u?.expiresAt ?? null });
-            setExpiryValue(u?.expiresAt ? new Date(u.expiresAt).toISOString().slice(0, 16) : '');
-            setExpiryDialogOpen(true);
-            closeAdminMenu();
-          }
-        }}>
-          {users.find((usr) => usr.id === menuTargetUser?.id)?.expiresAt ? 'Change Expiration' : 'Set Expiration'}
-        </MenuItem>
-        <MenuItem onClick={() => { if (menuTargetUser) { setRemoveTarget({ id: menuTargetUser.id, name: menuTargetUser.name }); closeAdminMenu(); } }} sx={{ color: 'error.main' }}>
-          Remove
-        </MenuItem>
-      </Menu>
+      <MembershipExpiryDialog
+        open={expiryDialogOpen}
+        target={expiryTarget}
+        value={expiryValue}
+        saving={savingExpiry}
+        onClose={() => setExpiryDialogOpen(false)}
+        onValueChange={setExpiryValue}
+        onSave={() => { void handleSaveExpiry(); }}
+        onRemove={() => { void handleRemoveExpiry(); }}
+      />
 
-      {/* Membership expiry dialog */}
-      <Dialog open={expiryDialogOpen} onClose={() => setExpiryDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Membership Expiration — {expiryTarget?.name}</DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-            <TextField
-              label="Expires At"
-              type="datetime-local"
-              value={expiryValue}
-              onChange={(e) => setExpiryValue(e.target.value)}
-              fullWidth
-              size="small"
-              slotProps={{ inputLabel: { shrink: true } }}
-              helperText="Clear to remove expiration"
-            />
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          {expiryTarget?.expiresAt && (
-            <Button
-              color="warning"
-              disabled={savingExpiry}
-              onClick={async () => {
-                if (!expiryTarget) return;
-                setSavingExpiry(true);
-                try {
-                  await updateMembershipExpiry(expiryTarget.id, null);
-                  setExpiryDialogOpen(false);
-                } catch { /* ignore */ }
-                setSavingExpiry(false);
-              }}
-            >
-              Remove Expiration
-            </Button>
-          )}
-          <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setExpiryDialogOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            disabled={savingExpiry || !expiryValue}
-            onClick={async () => {
-              if (!expiryTarget || !expiryValue) return;
-              setSavingExpiry(true);
-              try {
-                await updateMembershipExpiry(expiryTarget.id, new Date(expiryValue).toISOString());
-                setExpiryDialogOpen(false);
-              } catch { /* ignore */ }
-              setSavingExpiry(false);
-            }}
-          >
-            {savingExpiry ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ChangeUserEmailDialog
+        open={changeEmailOpen}
+        target={changeEmailTarget}
+        newEmail={newEmail}
+        phase={changeEmailPhase}
+        verificationId={changeEmailVerificationId}
+        method={changeEmailMethod}
+        metadata={changeEmailMetadata}
+        loading={changeEmailLoading}
+        error={changeEmailError}
+        onClose={() => setChangeEmailOpen(false)}
+        onEmailChange={setNewEmail}
+        onSubmit={() => { void handleAdminEmailSubmit(); }}
+        onVerified={(verificationId) => { void handleAdminEmailVerified(verificationId); }}
+      />
 
-      {/* Admin change email dialog */}
-      <Dialog open={changeEmailOpen} onClose={() => setChangeEmailOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Change Email — {changeEmailTarget?.name}</DialogTitle>
-        <DialogContent>
-          {changeEmailError && <Alert severity="error" sx={{ mb: 2 }}>{changeEmailError}</Alert>}
-          {changeEmailPhase === 'input' && (
-            <>
-              <DialogContentText sx={{ mb: 2 }}>
-                Enter the new email address for this user. The user&apos;s email will not be verified after the change.
-              </DialogContentText>
-              <TextField
-                label="New Email"
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                fullWidth
-                autoFocus
-              />
-            </>
-          )}
-          {changeEmailPhase === 'verifying' && (
-            <>
-              <DialogContentText sx={{ mb: 2 }}>
-                Verify your identity to proceed.
-              </DialogContentText>
-              <IdentityVerification
-                verificationId={changeEmailVerificationId}
-                method={changeEmailMethod}
-                metadata={changeEmailMetadata}
-                onVerified={handleAdminEmailVerified}
-                onCancel={() => setChangeEmailPhase('input')}
-              />
-            </>
-          )}
-        </DialogContent>
-        <DialogActions>
-          {changeEmailPhase === 'input' && (
-            <>
-              <Button onClick={() => setChangeEmailOpen(false)}>Cancel</Button>
-              <Button
-                variant="contained"
-                onClick={handleAdminEmailSubmit}
-                disabled={changeEmailLoading || !newEmail.trim()}
-              >
-                {changeEmailLoading ? 'Verifying...' : 'Continue'}
-              </Button>
-            </>
-          )}
-        </DialogActions>
-      </Dialog>
+      <ChangeUserPasswordDialog
+        open={changePwdOpen}
+        target={changePwdTarget}
+        newPassword={newPassword}
+        confirmPassword={confirmPassword}
+        phase={changePwdPhase}
+        verificationId={changePwdVerificationId}
+        method={changePwdMethod}
+        metadata={changePwdMetadata}
+        loading={changePwdLoading}
+        error={changePwdError}
+        recoveryKey={recoveryKey}
+        onClose={() => setChangePwdOpen(false)}
+        onNewPasswordChange={setNewPassword}
+        onConfirmPasswordChange={setConfirmPassword}
+        onSubmit={() => { void handleAdminPasswordSubmit(); }}
+        onVerified={(verificationId) => { void handleAdminPasswordVerified(verificationId); }}
+        onCopyRecoveryKey={() => navigator.clipboard.writeText(recoveryKey)}
+      />
 
-      {/* Admin change password dialog */}
-      <Dialog open={changePwdOpen} onClose={() => { if (changePwdPhase !== 'verifying') setChangePwdOpen(false); }} maxWidth="sm" fullWidth>
-        <DialogTitle>Change Password — {changePwdTarget?.name}</DialogTitle>
-        <DialogContent>
-          {changePwdError && <Alert severity="error" sx={{ mb: 2 }}>{changePwdError}</Alert>}
-          {changePwdPhase === 'input' && (
-            <>
-              <DialogContentText sx={{ mb: 2 }}>
-                Set a new password for this user. This will reset their vault — all stored credentials will be lost.
-              </DialogContentText>
-              <Stack spacing={2}>
-                <TextField
-                  label="New Password"
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  fullWidth
-                  autoFocus
-                />
-                <TextField
-                  label="Confirm Password"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  fullWidth
-                />
-              </Stack>
-            </>
-          )}
-          {changePwdPhase === 'verifying' && (
-            <>
-              <DialogContentText sx={{ mb: 2 }}>
-                Verify your identity to proceed.
-              </DialogContentText>
-              <IdentityVerification
-                verificationId={changePwdVerificationId}
-                method={changePwdMethod}
-                metadata={changePwdMetadata}
-                onVerified={handleAdminPwdVerified}
-                onCancel={() => setChangePwdPhase('input')}
-              />
-            </>
-          )}
-          {changePwdPhase === 'done' && (
-            <>
-              <Alert severity="warning" sx={{ mb: 2 }}>
-                The user&apos;s vault has been reset. Save the recovery key below — it will not be shown again.
-              </Alert>
-              <TextField
-                label="Recovery Key"
-                value={recoveryKey}
-                fullWidth
-                slotProps={{ input: { readOnly: true } }}
-                sx={{ fontFamily: 'monospace' }}
-              />
-              <Button
-                size="small"
-                startIcon={<ContentCopy />}
-                onClick={() => navigator.clipboard.writeText(recoveryKey)}
-                sx={{ mt: 1 }}
-              >
-                Copy Recovery Key
-              </Button>
-            </>
-          )}
-        </DialogContent>
-        <DialogActions>
-          {changePwdPhase === 'input' && (
-            <>
-              <Button onClick={() => setChangePwdOpen(false)}>Cancel</Button>
-              <Button
-                variant="contained"
-                onClick={handleAdminPwdSubmit}
-                disabled={changePwdLoading || !newPassword || !confirmPassword}
-              >
-                {changePwdLoading ? 'Verifying...' : 'Continue'}
-              </Button>
-            </>
-          )}
-          {changePwdPhase === 'done' && (
-            <Button onClick={() => setChangePwdOpen(false)}>Close</Button>
-          )}
-        </DialogActions>
-      </Dialog>
+      <MandatoryMfaDialog
+        open={mfaConfirmOpen}
+        stats={mfaStats}
+        onClose={() => setMfaConfirmOpen(false)}
+        onConfirm={() => { void handleConfirmEnableMfa(); }}
+      />
 
-      {/* Confirm enable mandatory MFA */}
-      <Dialog open={mfaConfirmOpen} onClose={() => setMfaConfirmOpen(false)}>
-        <DialogTitle>Enable Mandatory MFA</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {mfaStats && mfaStats.withoutMfa > 0 ? (
-              <>
-                <strong>{mfaStats.withoutMfa}</strong> of {mfaStats.total} members do not have MFA configured.
-                They will be required to set up MFA during their next login.
-              </>
-            ) : (
-              'All members already have MFA configured. Enabling this policy will ensure future members also set up MFA.'
-            )}
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMfaConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleConfirmEnableMfa} variant="contained">
-            Enable Mandatory MFA
-          </Button>
-        </DialogActions>
-      </Dialog>
-
+      {tenant && permTarget ? (
+        <PermissionOverridesDialog
+          open={permDialogOpen}
+          onClose={() => setPermDialogOpen(false)}
+          tenantId={tenant.id}
+          userId={permTarget.id}
+          userName={permTarget.name}
+        />
+      ) : null}
     </>
   );
 }

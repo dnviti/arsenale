@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Arsenale",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Arsenale browser extension for remote connection management, keychain browsing, and credential autofill.",
   "permissions": [
     "storage",
     "alarms",
     "activeTab",
     "tabs",
-    "clipboardWrite"
+    "clipboardWrite",
+    "offscreen"
   ],
   "host_permissions": [
     "https://*/api/*",

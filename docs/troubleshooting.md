@@ -1,364 +1,210 @@
 ---
 title: Troubleshooting
-description: Common errors, debugging tips, and frequently asked questions
-generated-by: ctdf-docs
-generated-at: 2026-03-24T23:40:00Z
+description: Common failures, debugging commands, and operator guidance for Arsenale
+generated-by: claw-docs
+generated-at: 2026-04-05T18:35:00Z
 source-files:
-  - server/src/index.ts
-  - server/src/middleware/error.middleware.ts
-  - server/src/middleware/auth.middleware.ts
-  - server/src/utils/logger.ts
-  - client/src/api/auth.api.ts
-  - server/src/config.ts
-  - server/src/services/keystrokeInspection.service.ts
-  - .env.example
+  - Makefile
+  - scripts/dev-api-acceptance.sh
+  - scripts/db-migrate.sh
+  - dev-certs/generate.sh
+  - deployment/ansible/playbooks/install.yml
+  - deployment/ansible/playbooks/status.yml
+  - client/vite.config.ts
+  - client/nginx.dev.conf
+  - backend/internal/runtimefeatures/manifest.go
+  - backend/internal/publicconfig/service.go
+  - backend/internal/app/app.go
+  - backend/cmd/control-plane-api/routes_public.go
+  - backend/cmd/control-plane-api/readiness.go
+  - backend/cmd/control-plane-api/dev_bootstrap.go
+  - docker-compose.yml
 ---
 
-# Troubleshooting
+## 🩺 First Checks
 
-## Startup Issues
+Start with installer status, health, and container state before debugging feature code.
 
-### Database Connection Failed
-
-**Error:** `Can't reach database server at localhost:5432`
-
-**Causes and fixes:**
-1. PostgreSQL container not running: `npm run docker:dev`
-2. Wrong `DATABASE_URL` in `.env`: verify host, port, credentials
-3. Port conflict: `sudo lsof -i :5432` to check
-4. Docker/Podman not running: start Docker daemon
-
-### Prisma Migration Failed
-
-**Error:** `Error: P3009: migrate found failed migrations`
-
-**Fix:** Check `server/prisma/migrations/` for failed migration. If in development:
 ```bash
-npm run db:push    # Force-sync schema (drops data)
+make status
+curl -k https://localhost:3000/health
+curl http://127.0.0.1:18080/api/ready
+curl http://127.0.0.1:18080/healthz
+curl http://127.0.0.1:18090/healthz
+curl http://127.0.0.1:18091/healthz
+curl http://127.0.0.1:18092/healthz
+curl http://127.0.0.1:18093/healthz
+curl http://127.0.0.1:18094/healthz
 ```
 
-For production, investigate the specific migration error and fix the SQL.
+Useful log tail:
 
-### Port Already in Use
-
-**Error:** `EADDRINUSE: address already in use :::3001`
-
-**Fix:**
 ```bash
-# Find and kill the process
-lsof -i :3001
-kill <PID>
+make logs SVC=arsenale-control-plane-api
+make logs SVC=arsenale-client
+make logs SVC=arsenale-query-runner
+make logs SVC=arsenale-dev-tunnel-db-proxy
 ```
 
-Common ports: 3000 (client), 3001 (server), 3002 (Guacamole WS), 5432 (PostgreSQL).
+`GET /api/ready` is worth checking early because it returns structured dependency status. Today it reports:
 
-### .env File Not Found
+- PostgreSQL readiness
+- desktop broker readiness when connection features are enabled
 
-**Error:** `Error: .env file not found`
+## 🔐 TLS, Browser, And Hostname Issues
 
-**Fix:** The `.env` file must be at the **monorepo root**, not inside `server/` or `client/`:
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Browser warns about the cert | Dev CA not trusted | Import `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/ca.pem` |
+| `ERR_CERT_AUTHORITY_INVALID` | Fresh machine or browser profile | Re-import CA and restart browser |
+| `arsenale-cli` fails with `x509: certificate signed by unknown authority` on `https://localhost:3000` | Dev CA missing or moved | Restore `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/client/ca.pem`, or point `ARSENALE_CA_CERT` at the active CA bundle |
+| Vite starts without HTTPS | Dev cert files missing | Run `make setup` or `make certs` |
+| API calls fail only in local Vite | Proxy targets or TLS overrides wrong | Check `client/vite.config.ts` and `VITE_*` overrides |
+| Containerized client is up but UI assets fail | nginx template mismatch | Check `client/nginx.dev.conf` and `make logs SVC=arsenale-client` |
+| WebAuthn, OAuth, or cookie flows behave oddly on `localhost` | Hostname does not match the configured public URL or RP values | Use the installer-configured hostname such as `arsenale.home.arpa.viti`, or align `CLIENT_URL`, `WEBAUTHN_RP_ID`, and `WEBAUTHN_RP_ORIGIN` |
+
+## 🧩 Feature Flags, Auth, And Bootstrap Problems
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Login page is missing expected buttons or tabs | `/api/auth/config` disabled that feature family | Inspect `curl http://127.0.0.1:18080/api/auth/config` and check `FEATURE_*`, `CLI_ENABLED`, and `ARSENALE_INSTALL_CAPABILITIES` |
+| UI sections disappear after load | Client fail-open defaults were replaced by the server manifest | Treat the server manifest as authoritative and inspect the current install profile |
+| Setup wizard appears unexpectedly | Empty DB or dev bootstrap did not run | Check `arsenale-control-plane-api` logs and rerun `make dev` |
+| Tenant vault says not initialized on a newly created tenant | Old control-plane container or stale session | Restart the current stack and log in again; new tenants auto-provision tenant vault state |
+| Tenant SSH keypair is missing on a new tenant | Bootstrap or tenant-create side effect did not run | Redeploy the current stack and inspect `service dev-bootstrap` output |
+| `make status` fails even though containers exist | Installer password mismatch or encrypted artifact drift | Retry with the correct technician password or rerun `make recover` / `make deploy` |
+
+## 🖥 Session And Gateway Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| `/guacamole` fails or shows a black screen | `guacd` unhealthy or target issue | Check `arsenale-guacd` logs and `desktop-broker` health |
+| SSH session fails immediately | SSH target, gateway, or credentials wrong | Verify connection settings and `ssh-gateway` health |
+| Gateway inventory looks empty | Current install profile has `zeroTrustEnabled` off, or dev bootstrap did not finish | Inspect `/api/auth/config`, then rerun `make dev` if needed |
+| Tunneled gateway stays disconnected | Tunnel certs or tunnel-broker state issue | Check `arsenale-dev-tunnel-*` logs and `tunnel-broker` health |
+| Managed SSH gateway never becomes usable in dev | Post-bootstrap SSH key push did not complete | Inspect `arsenale-control-plane-api` logs for managed key push retries |
+
+## 🎬 Recording Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Recordings not appearing | `RECORDING_ENABLED` is `false` | Set `RECORDING_ENABLED=true` and redeploy |
+| SSH recording empty or missing | SSH gateway did not write `.cast` file | Check `ssh-gateway` logs and `RECORDING_PATH` permissions |
+| Desktop recording black or corrupt | `guacd` recording params misconfigured | Check `guacd` container logs and verify `GUACAMOLE_SECRET` |
+| Video export fails | `guacenc` sidecar unreachable or timed out | Check `guacenc` health and `GUACENC_SERVICE_URL` |
+| Recording conversion hangs | Large recording or insufficient resources | Increase `GUACENC_TIMEOUT_MS` and check worker resources |
+| Old recordings not cleaned up | Retention job not running | Check `recording-worker` logs and `RECORDING_RETENTION_DAYS` |
+
+## 🤖 AI and Query Generation Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| AI tab missing in database UI | AI query generation is disabled globally or the connection has `dbSettings.aiQueryGenerationEnabled=false` | Enable generation in `/api/ai/config`, verify a named backend exists, or remove the connection-level override |
+| "Query generation failed" error | Provider API error, model unavailable, or `control-plane-api` lacks outbound DNS/egress | Check tenant AI settings, `AI_API_KEY`, `AI_BASE_URL`, model name, and `arsenale-control-plane-api` connectivity |
+| Daily limit reached | Tenant hit `AI_MAX_REQUESTS_PER_DAY` | Wait for reset or increase the limit |
+| Ollama connection refused | Ollama service not running or wrong URL | Verify `AI_BASE_URL` points to the correct Ollama endpoint |
+| AI optimizer button missing | Query optimizer disabled globally or the connection has `dbSettings.aiQueryOptimizerEnabled=false` | Enable the optimizer in `/api/ai/config` or clear the connection-level disable flag |
+
+## 🔑 Credential Checkout And Policy Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| Checkout request stuck in PENDING | No admin or operator online to approve | Check notification delivery and admin availability |
+| Checkout expired but credentials still accessible | Cleanup job not running | Check `control-plane-controller` logs for checkout expiry reconciliation |
+| Keystroke policy not triggering | Policy not enabled or regex mismatch | Verify policy via `/api/keystroke-policies` and test regex against expected input |
+| ABAC denied but no time window applies | Policy on a parent scope (team/tenant) is restricting | Check all applicable policies at folder, team, and tenant levels |
+| SQL firewall blocking legitimate queries | Overly broad regex pattern | Review `/api/db-audit/firewall-rules` and refine patterns |
+
+## 🗄 Database Query And Migration Issues
+
+| Symptom | Likely cause | Action |
+|---------|--------------|--------|
+| `No active session to fetch execution plan.` in audit | Old audit entry without stored plan | Enable persisted execution plans on the connection and run a new query |
+| Oracle error `ORA-01435: user does not exist` with `CURRENT_SCHEMA = FREEPDB1` | Session config used the Oracle service name as schema | Reopen the session after the fix, or clear `searchPath` when it matches the service name |
+| Query blocked by firewall | Built-in or custom SQL firewall matched | Inspect `/api/db-audit/firewall-rules` and the DB audit entry |
+| Query throttled | DB rate-limit policy triggered | Inspect `/api/db-audit/rate-limit-policies` and retry later |
+| DB session created but host-side DB tunnel is unreachable | Raw DB tunnel flow is different from UI query path | Use `DATABASE` sessions through `db-proxy`; do not treat host DB tunnel reachability as the UI query path |
+| Demo DB connection refused | Demo fixture container not healthy | Check `arsenale-dev-demo-postgres`, `-mysql`, `-mongodb`, `-oracle`, or `-mssql` |
+| `./scripts/db-migrate.sh` says compose file not found | Stack was never rendered locally, or you are using a non-default compose file | Run `make dev` or set `ARSENALE_COMPOSE_FILE` |
+| Migration runs against the wrong service names | Custom compose service naming | Set `ARSENALE_POSTGRES_SERVICE` and `ARSENALE_MIGRATE_SERVICE` before running the script |
+
+Representative direct fixture checks:
+
 ```bash
-cp .env.example .env
+podman exec arsenale-dev-demo-postgres psql -U demo_pg_user -d arsenale_demo -At -c "select count(*) from public.demo_customers; select count(*) from public.demo_products; select count(*) from public.demo_orders;"
+podman exec arsenale-dev-demo-mysql mysql -u demo_mysql_user -pDemoMySqlPass123! -D arsenale_demo -Nse "select count(*) from demo_customers; select count(*) from demo_products; select count(*) from demo_orders;"
+podman exec arsenale-dev-demo-mongodb mongosh --quiet -u demo_mongo_user -p DemoMongoPass123! --authenticationDatabase arsenale_demo arsenale_demo --eval "print([db.demo_customers.countDocuments({}), db.demo_products.countDocuments({}), db.demo_orders.countDocuments({})].join('|'))"
 ```
 
-### Prisma Client Not Generated
+Expected baseline counts after a healthy demo-stack install:
 
-**Error:** `@prisma/client did not initialize yet`
+- `demo_customers`: `60`
+- `demo_products`: `72`
+- `demo_orders`: `180`
 
-**Fix:**
+## 🧪 Deeper Diagnostics
+
+### Public config
+
 ```bash
-npm run db:generate
+curl http://127.0.0.1:18080/api/auth/config
 ```
 
-This is automatically done by `npm run predev`.
+Use this to confirm the current feature manifest and self-signup state instead of guessing from the UI.
 
-## Authentication Issues
+### Acceptance script
 
-### JWT Token Expired
-
-**Error:** `401 Unauthorized` on API calls
-
-**How it works:** Access tokens expire after 15 minutes (default). The Axios client interceptor automatically refreshes tokens on 401. If refresh also fails, the user is redirected to login.
-
-**If tokens keep expiring:**
-- Check `JWT_EXPIRES_IN` and `JWT_REFRESH_EXPIRES_IN` in `.env`
-- Verify server clock is synchronized
-- Check for `TOKEN_HIJACK_ATTEMPT` in audit logs (IP/User-Agent mismatch)
-
-### CSRF Token Mismatch
-
-**Error:** `403 Forbidden: CSRF token mismatch`
-
-**Causes:**
-- Browser cookies blocked or cleared
-- Cross-origin request without proper CSRF header
-- Extension client not sending `Authorization: Bearer` header (extension clients bypass CSRF)
-
-**Fix:** Ensure the client sends the CSRF token from cookies in the `x-csrf-token` header.
-
-### OAuth Callback Error
-
-**Error:** OAuth redirect fails or loops
-
-**Causes:**
-- `CLIENT_URL` in `.env` doesn't match the actual client URL
-- OAuth callback URL in provider settings doesn't match
-- Missing or wrong `GOOGLE_CLIENT_SECRET`, `MICROSOFT_CLIENT_SECRET`, etc.
-
-### Microsoft OAuth Returns "User Not In Tenant"
-
-**Error:** Microsoft login fails with tenant validation error
-
-**Cause:** `MICROSOFT_TENANT_ID` is set to a specific Azure AD tenant ID, but the user's account belongs to a different tenant.
-
-**Fix:** Set `MICROSOFT_TENANT_ID=common` in `.env` to allow any Microsoft account, or verify the tenant ID matches your Azure AD directory. Default is `common` (all Microsoft accounts accepted).
-
-### Google OAuth Rejects Users Outside Domain
-
-**Error:** Google login fails for users not in the expected domain
-
-**Cause:** `GOOGLE_HD` (hosted domain) is set to restrict login to a specific Google Workspace domain.
-
-**Fix:** Clear `GOOGLE_HD` in `.env` to allow any Google account, or set it to your organization's domain (e.g., `GOOGLE_HD=example.com`). When set, only users with an email in that domain can authenticate via Google OAuth.
-
-### Account Lockout
-
-**Error:** `Account locked` after too many failed attempts
-
-**Default:** 10 failed attempts → 30 minute lockout.
-
-**Fix:** Wait for lockout to expire, or adjust `ACCOUNT_LOCKOUT_THRESHOLD` and `ACCOUNT_LOCKOUT_DURATION_MS` in `.env`.
-
-### Self-Signup Not Working
-
-**Error:** Registration page not available or returns `403 Forbidden`
-
-**Cause:** Self-signup is disabled by default (`SELF_SIGNUP_ENABLED=false`). The admin must create user accounts.
-
-**Fix:** Either create accounts from the admin panel, or enable self-signup:
-- Set `SELF_SIGNUP_ENABLED=true` in `.env`, or
-- Toggle the setting in **Settings → System Settings** in the admin panel
-
-### Email Verification Blocking Login
-
-**Error:** User cannot log in because email is not verified, but no verification email was received
-
-**Cause:** Email verification is disabled by default (`EMAIL_VERIFY_REQUIRED=false`). If it has been enabled without configuring an email provider, verification emails cannot be sent.
-
-**Fix:** Either disable email verification (`EMAIL_VERIFY_REQUIRED=false`) or configure an email provider (SMTP, SendGrid, SES, Resend, or Mailgun) in `.env`. See [Configuration — Email](configuration.md#email).
-
-## Vault Issues
-
-### Vault Won't Unlock
-
-**Error:** `Invalid password` on vault unlock
-
-**Causes:**
-- Wrong password (master key derived from password via Argon2)
-- Vault not initialized (first-time users need vault setup)
-- Corrupted vault data
-
-**Alternative:** Use MFA-based vault unlock if TOTP/WebAuthn/SMS is configured.
-
-### Vault Auto-Locks Too Quickly
-
-**Configuration:** `VAULT_TTL_MINUTES` (default: 30). Set to `0` for never-auto-lock.
-
-Users can also set per-user auto-lock via `PUT /api/vault/auto-lock`.
-
-## Connection Issues
-
-### SSH Connection Fails
-
-**Error:** `SSH connection error` in terminal
-
-**Debugging:**
-1. Verify target host is reachable from the server
-2. Check credentials are correct (vault must be unlocked)
-3. If using a gateway, verify gateway health in the Gateway Manager
-4. Check `ALLOW_LOCAL_NETWORK` if connecting to private IPs (default: `true`)
-5. Check DLP policies if copy/paste is blocked
-
-### RDP/VNC Black Screen
-
-**Error:** RDP connects but shows nothing
-
-**Causes:**
-1. `guacd` not running: check container health (`nc -z localhost 4822`)
-2. Wrong Guacamole secret: verify `GUACAMOLE_SECRET` matches between server and guacd
-3. Target RDP/VNC service not accepting connections
-4. Firewall blocking port 3389 (RDP) or 5900 (VNC) on target
-
-### RDP Clipboard Not Working
-
-**Possible causes:**
-- DLP policy `dlpDisableCopy` or `dlpDisablePaste` enabled on tenant or connection
-- Guacamole connection settings don't include clipboard
-- Browser permissions blocking clipboard access
-
-### Session Recording Not Working
-
-**Configuration:**
-- `RECORDING_ENABLED=true` in `.env`
-- `RECORDING_PATH` must be writable
-- `guacenc` container must be running for video export
-
-### Gateway Shows "Unreachable"
-
-**Debugging:**
-1. Check gateway container is running
-2. Test network connectivity from server to gateway
-3. For tunnel-based gateways, verify tunnel agent is connected
-4. Check `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, `TUNNEL_GATEWAY_ID` on the agent
-
-## Build and Type Errors
-
-### TypeScript Errors After Schema Change
-
-**Fix:** Regenerate Prisma client:
 ```bash
-npm run db:generate
+npm run dev:api-acceptance
 ```
 
-### ESLint Errors in New Code
+This is the fastest way to determine whether the breakage is UI-only or a real platform regression.
 
-**Fix:**
+### Database migrations
+
 ```bash
-npm run lint:fix   # Auto-fix what's possible
+./scripts/db-migrate.sh status
+./scripts/db-migrate.sh up
 ```
 
-Common issues:
-- `no-console` in server code (use the logger utility; create child loggers via `logger.child('module')` for prefixed output)
-- Missing React hook dependencies
-- `@typescript-eslint/no-explicit-any` (use proper types)
+### CLI smoke
 
-### Build Fails with Chunk Size Warning
-
-Vite warns at 700 KB chunk size. The manual chunk splitting in `client/vite.config.ts` handles most cases. If you import a large library, add it to the manual chunks configuration.
-
-## Docker Issues
-
-### Docker Socket Permission Denied
-
-**Error:** `permission denied while trying to connect to the Docker daemon socket`
-
-**Fix:**
 ```bash
-# Add user to docker group
-sudo usermod -aG docker $USER
-# Re-login or:
-newgrp docker
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+./build/go/arsenale-cli --server https://localhost:3000 health
+./build/go/arsenale-cli --server https://localhost:3000 whoami
+./build/go/arsenale-cli --server https://localhost:3000 gateway list
 ```
 
-For Podman, ensure the socket path is correct: `PODMAN_SOCKET_PATH=$XDG_RUNTIME_DIR/podman/podman.sock`
+## 🔄 Safe Reset Options
 
-### Container Orchestration Not Working
+Use these in order, from least disruptive to most disruptive:
 
-**Error:** `Orchestrator type not detected`
+1. `make logs SVC=...` for the failing service.
+2. `make status` to confirm installer state.
+3. `make certs` if the symptom is TLS-only.
+4. `make recover` if the installer state appears stale or interrupted.
+5. `make dev-down && make dev` to recreate the local stack.
 
-**Fix:** Set `ORCHESTRATOR_TYPE` explicitly in `.env`:
-- `docker` — Docker socket at `/var/run/docker.sock`
-- `podman` — Podman socket
-- `kubernetes` — In-cluster or kubeconfig
-- `none` — Disable managed gateways
+Avoid deleting PostgreSQL volumes unless you intentionally want to lose the local application database.
 
-### PostgreSQL Data Lost After Restart
+## 🛡 Production Security Checklist
 
-**Cause:** Volume not persisted.
+Before deploying to production, verify:
 
-**Fix:** Ensure `pgdata` volume is defined in compose file (it is by default in both `compose.yml` and `compose.dev.yml`).
+1. `JWT_SECRET` is a unique 64-byte hex value (not `CHANGE_ME`)
+2. `GUACAMOLE_SECRET` is a unique 32-byte hex value
+3. `SERVER_ENCRYPTION_KEY` is set (not auto-generated)
+4. `DATABASE_URL` uses `sslmode=verify-full` with a proper CA cert
+5. `COOKIE_SECURE=true` when behind HTTPS
+6. `HOST_VALIDATION_ENABLED=true` to prevent DNS rebinding
+7. `SELF_SIGNUP_ENABLED=false` unless public registration is intended
+8. `TRUST_PROXY` is set to the correct hop count for your reverse proxy chain
+9. All `*_FILE` secret variants are used instead of inline env values
+10. `RECORDING_ENABLED` is set according to compliance requirements
+11. `TUNNEL_STRICT_MTLS=true` for zero-trust gateway deployments
+12. Email provider is configured (not dev mode console logging)
+13. `WEBAUTHN_RP_ID` and `WEBAUTHN_RP_ORIGIN` match the production domain
 
-## Network Issues
-
-### CORS Errors in Browser
-
-**Error:** `Access-Control-Allow-Origin` header missing
-
-**Fix:** Set `CLIENT_URL` in `.env` to match exactly the URL in the browser address bar (including port).
-
-### WebSocket Connection Failed
-
-**Error:** Socket.IO or Guacamole WebSocket can't connect
-
-**Causes:**
-1. Client proxy not configured (check `client/vite.config.ts` proxy settings)
-2. In production, Nginx proxy config missing WebSocket upgrade headers
-3. Firewall or reverse proxy blocking WebSocket upgrade
-
-**Vite proxy override:** Set `VITE_API_TARGET` environment variable to override the default proxy target.
-
-### Impossible Travel False Positives
-
-**Fix:** Adjust `IMPOSSIBLE_TRAVEL_SPEED_KMH` in `.env` (default: 900 km/h). Set to `0` to disable.
-
-## Performance
-
-### Slow API Responses
-
-**Debugging:**
-1. Enable `LOG_HTTP_REQUESTS=true` to see request timing
-2. Set `LOG_FORMAT=json` for structured log output that is easier to parse with log aggregation tools
-3. Check database query performance with `npx prisma studio`
-4. Verify PostgreSQL has adequate resources
-5. Check for missing database indexes
-
-### High Memory Usage
-
-**Common causes:**
-1. Large number of concurrent SSH sessions (each holds a stream buffer)
-2. Vault sessions accumulating (check `VAULT_TTL_MINUTES`)
-3. Node.js default heap size too low: `NODE_OPTIONS=--max-old-space-size=4096`
-
-## Keystroke Policy Issues
-
-### Policy Not Matching
-
-**Symptom:** SSH commands not being caught by keystroke policies.
-
-**Causes and fixes:**
-1. Policy not enabled: verify `enabled: true` in policy settings
-2. Regex pattern error: check pattern validity in the API response
-3. Cache delay: policies refresh every 30 seconds — wait and retry
-4. ReDoS safety: patterns with nested quantifiers are automatically rejected
-
-### Session Terminated Unexpectedly
-
-**Symptom:** SSH session closed with "input matched a security policy rule"
-
-**Cause:** A `BLOCK_AND_TERMINATE` keystroke policy matched the entered command.
-
-**Fix:** Review keystroke policies in Settings → Keystroke Policies. Check audit log for the matched pattern.
-
-## Database Connection Issues
-
-### Database Proxy Not Connecting
-
-**Symptom:** Database sessions fail to establish via the proxy gateway.
-
-**Causes and fixes:**
-1. DB proxy container not running: check gateway status in Settings → Gateways
-2. Wrong protocol ports: verify Oracle (1521), MSSQL (1433), DB2 (50000) configuration
-3. Network connectivity: ensure the proxy container can reach the target database server
-
-## FAQ
-
-**Q: Can I use MySQL instead of PostgreSQL?**
-A: No. The Prisma schema uses PostgreSQL-specific features (enums, UUID generation, JSON columns).
-
-**Q: Can I run without Docker?**
-A: You need PostgreSQL accessible somewhere. `guacd` is required for RDP/VNC. SSH-only setups can skip guacd.
-
-**Q: How do I reset my vault password?**
-A: If recovery keys were generated during vault setup, use them. Otherwise, the vault must be re-initialized (credentials will be lost).
-
-**Q: How do I add a new OAuth provider?**
-A: Set the provider's `CLIENT_ID` and `CLIENT_SECRET` in `.env`. The server auto-detects configured providers.
-
-**Q: Why are my connections not showing after login?**
-A: The vault must be unlocked to decrypt connection credentials. Check vault status.
-
-**Q: How do I debug WebSocket issues?**
-A: Enable `LOG_GUACAMOLE=true` in `.env`. For Socket.IO, set `LOG_LEVEL=verbose` for intermediate detail or `LOG_LEVEL=debug` for full trace output. Valid levels from least to most verbose: `error`, `warn`, `info`, `verbose`, `debug`.
-
-**Q: Why are sensitive values showing as `[REDACTED]` in logs?**
-A: The logger automatically sanitizes output. Known sensitive keys (password, token, secret, apikey, etc.) are redacted in objects, and patterns like JWTs and Bearer tokens are scrubbed from strings. This is by design to prevent clear-text credential leaks. Error objects are also sanitized -- only the message string is logged, never the raw object.
+For the full checklist, see [security/production.md](security/production.md).

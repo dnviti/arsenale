@@ -1,12 +1,20 @@
 import { useState, useEffect } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  FormControl, InputLabel, Select, MenuItem, Box, Alert,
-  FormControlLabel, Checkbox, Accordion, AccordionSummary, AccordionDetails, Typography,
-  ToggleButtonGroup, ToggleButton,
-} from '@mui/material';
-import { ExpandMore as ExpandMoreIcon, Keyboard, VpnKey, Cloud as CloudIcon } from '@mui/icons-material';
-import { createConnection, updateConnection, ConnectionInput, ConnectionUpdate, ConnectionData, DlpPolicy, DbSettings, DbProtocol, OracleConnectionType, OracleRole } from '../../api/connections.api';
+  Dialog, DialogContent,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Select, SelectTrigger, SelectValue, SelectContent, SelectItem,
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/lib/utils';
+import { Keyboard, KeyRound, Cloud, X } from 'lucide-react';
+import { createConnection, updateConnection, ConnectionData, DlpPolicy, DbSettings, TransferRetentionPolicy } from '../../api/connections.api';
 import { useConnectionsStore } from '../../store/connectionsStore';
 import type { SshTerminalConfig } from '../../constants/terminalThemes';
 import { mergeTerminalConfig } from '../../constants/terminalThemes';
@@ -27,6 +35,23 @@ import { useVaultStore } from '../../store/vaultStore';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { listVaultProviders, VaultProviderData } from '../../api/externalVault.api';
+import { gatewayEndpointLabel } from '../../utils/gatewayMode';
+import ConnectionDialogDatabaseSection from './ConnectionDialogDatabaseSection';
+import {
+  applyConnectionTypeChange,
+  buildConnectionInput,
+  buildConnectionUpdate,
+  ConnectionIntakeState,
+  ConnectionType,
+  CredentialMode,
+  DEFAULT_CONNECTION_UPLOAD_LIMIT_MB,
+  connectionToIntakeState,
+  emptyConnectionIntakeState,
+  normalizeTransferRetentionPolicy,
+  supportsDatabaseSettings,
+  supportsTransferRetention,
+  validateConnectionIntake,
+} from './connectionIntake';
 
 interface ConnectionDialogProps {
   open: boolean;
@@ -40,7 +65,7 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   const databaseProxyEnabled = useFeatureFlagsStore((s) => s.databaseProxyEnabled);
   const connectionsEnabled = useFeatureFlagsStore((s) => s.connectionsEnabled);
   const [name, setName] = useState('');
-  const [type, setType] = useState<'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL'>('SSH');
+  const [type, setType] = useState<ConnectionType>('SSH');
   const [host, setHost] = useState('');
   const [port, setPort] = useState('22');
   const [username, setUsername] = useState('');
@@ -53,16 +78,19 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   const [vncSettings, setVncSettings] = useState<Partial<VncSettings>>({});
   const [dbSettings, setDbSettings] = useState<Partial<DbSettings>>({});
   const [gatewayId, setGatewayId] = useState('');
-  const [credentialMode, setCredentialMode] = useState<'manual' | 'keychain' | 'external-vault'>('manual');
+  const [credentialMode, setCredentialMode] = useState<CredentialMode>('manual');
   const [selectedSecretId, setSelectedSecretId] = useState<string | null>(null);
   const [selectedVaultProviderId, setSelectedVaultProviderId] = useState<string | null>(null);
   const [vaultSecretPath, setVaultSecretPath] = useState('');
   const [vaultProviders, setVaultProviders] = useState<VaultProviderData[]>([]);
   const [defaultConnectMode, setDefaultConnectMode] = useState<string>('');
   const [dlpPolicy, setDlpPolicy] = useState<DlpPolicy>({});
+  const [transferRetentionPolicy, setTransferRetentionPolicy] = useState<TransferRetentionPolicy>(normalizeTransferRetentionPolicy());
+  const [fileTransferMaxUploadSizeMb, setFileTransferMaxUploadSizeMb] = useState(String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB));
   const [targetDbHost, setTargetDbHost] = useState('');
   const [targetDbPort, setTargetDbPort] = useState('');
   const [dbType, setDbType] = useState('');
+  const [activeSection, setActiveSection] = useState<string>('general');
   const { loading, error, setError, clearError, run } = useAsyncAction();
   const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
   const userDefaults = useTerminalSettingsStore((s) => s.userDefaults);
@@ -75,6 +103,62 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
 
   const isEditMode = Boolean(connection);
 
+  const currentIntakeState = (): ConnectionIntakeState => ({
+    name,
+    type,
+    host,
+    port,
+    username,
+    password,
+    domain,
+    description,
+    enableDrive,
+    sshTerminalConfig,
+    rdpSettings,
+    vncSettings,
+    dbSettings,
+    gatewayId,
+    credentialMode,
+    selectedSecretId,
+    selectedVaultProviderId,
+    vaultSecretPath,
+    defaultConnectMode,
+    dlpPolicy,
+    transferRetentionPolicy,
+    fileTransferMaxUploadSizeMb,
+    targetDbHost,
+    targetDbPort,
+    dbType,
+  });
+
+  const applyIntakeState = (next: ConnectionIntakeState) => {
+    setName(next.name);
+    setType(next.type);
+    setHost(next.host);
+    setPort(next.port);
+    setUsername(next.username);
+    setPassword(next.password);
+    setDomain(next.domain);
+    setDescription(next.description);
+    setEnableDrive(next.enableDrive);
+    setGatewayId(next.gatewayId);
+    setSshTerminalConfig(next.sshTerminalConfig);
+    setRdpSettings(next.rdpSettings);
+    setVncSettings(next.vncSettings);
+    setDbSettings(next.dbSettings);
+    setCredentialMode(next.credentialMode);
+    setSelectedSecretId(next.selectedSecretId);
+    setSelectedVaultProviderId(next.selectedVaultProviderId);
+    setVaultSecretPath(next.vaultSecretPath);
+    setDefaultConnectMode(next.defaultConnectMode);
+    setDlpPolicy(next.dlpPolicy);
+    setTransferRetentionPolicy(next.transferRetentionPolicy);
+    setFileTransferMaxUploadSizeMb(next.fileTransferMaxUploadSizeMb);
+    setTargetDbHost(next.targetDbHost);
+    setTargetDbPort(next.targetDbPort);
+    setDbType(next.dbType);
+  };
+
   useEffect(() => {
     if (open && hasTenant) {
       fetchGateways();
@@ -82,88 +166,15 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     }
     if (open && connection) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting form state when dialog opens is intentional
-      setName(connection.name);
-      setType(connection.type);
-      setHost(connection.host);
-      setPort(String(connection.port));
-      setUsername('');
-      setPassword('');
-      setDomain('');
-      setDescription(connection.description || '');
-      setEnableDrive(connection.enableDrive ?? false);
-      setGatewayId(connection.gatewayId || '');
-      setSshTerminalConfig(
-        (connection.sshTerminalConfig as Partial<SshTerminalConfig>) ?? {}
-      );
-      setRdpSettings(
-        (connection.rdpSettings as Partial<RdpSettings>) ?? {}
-      );
-      setVncSettings(
-        (connection.vncSettings as Partial<VncSettings>) ?? {}
-      );
-      setDbSettings(
-        (connection.dbSettings as Partial<DbSettings>) ?? {}
-      );
-      if (connection.externalVaultProviderId) {
-        setCredentialMode('external-vault');
-        setSelectedVaultProviderId(connection.externalVaultProviderId);
-        setVaultSecretPath(connection.externalVaultPath ?? '');
-        setSelectedSecretId(null);
-      } else if (connection.credentialSecretId) {
-        setCredentialMode('keychain');
-        setSelectedSecretId(connection.credentialSecretId);
-        setSelectedVaultProviderId(null);
-        setVaultSecretPath('');
-      } else {
-        setCredentialMode('manual');
-        setSelectedSecretId(null);
-        setSelectedVaultProviderId(null);
-        setVaultSecretPath('');
-      }
-      setDefaultConnectMode(connection.defaultCredentialMode ?? '');
-      setDlpPolicy((connection.dlpPolicy as DlpPolicy) ?? {});
-      setTargetDbHost((connection as ConnectionData & { targetDbHost?: string }).targetDbHost ?? '');
-      setTargetDbPort((connection as ConnectionData & { targetDbPort?: number }).targetDbPort?.toString() ?? '');
-      setDbType((connection as ConnectionData & { dbType?: string }).dbType ?? '');
+      applyIntakeState(connectionToIntakeState(connection));
     } else if (open && !connection) {
-      setName('');
-      setType('SSH');
-      setHost('');
-      setPort('22');
-      setUsername('');
-      setPassword('');
-      setDomain('');
-      setDescription('');
-      setEnableDrive(false);
-      setGatewayId('');
-      setSshTerminalConfig({});
-      setRdpSettings({});
-      setVncSettings({});
-      setDbSettings({});
-      setCredentialMode('manual');
-      setSelectedSecretId(null);
-      setSelectedVaultProviderId(null);
-      setVaultSecretPath('');
-      setDefaultConnectMode('');
-      setDlpPolicy({});
-      setTargetDbHost('');
-      setTargetDbPort('');
-      setDbType('');
+      applyIntakeState(emptyConnectionIntakeState());
     }
   }, [open, connection, fetchGateways, hasTenant]);
 
-  const handleTypeChange = (newType: 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL') => {
-    setType(newType);
-    const knownPorts = ['22', '3389', '5900', '5432', '3306', '27017', '1521', '1433', '50000'];
-    if (newType === 'SSH' && knownPorts.includes(port)) setPort('22');
-    if (newType === 'RDP' && knownPorts.includes(port)) setPort('3389');
-    if (newType === 'VNC' && knownPorts.includes(port)) setPort('5900');
-    if (newType === 'DATABASE' && knownPorts.includes(port)) setPort('5432');
-    if (newType === 'DB_TUNNEL' && knownPorts.includes(port)) setPort('22');
-    setGatewayId('');
-    if (newType === 'DATABASE') {
-      setDbSettings((prev) => ({ protocol: 'postgresql', ...prev }));
-    }
+  const handleTypeChange = (newType: ConnectionType) => {
+    applyIntakeState(applyConnectionTypeChange(currentIntakeState(), newType));
+    setActiveSection('general');
   };
 
   const availableGateways = gateways.filter((g) => {
@@ -173,108 +184,31 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
     return false;
   });
 
+  const sections: { key: string; label: string }[] = [
+    { key: 'general', label: 'General' },
+    { key: 'credentials', label: 'Credentials' },
+    { key: 'options', label: 'Options' },
+    ...(supportsTransferRetention(type) ? [{ key: 'file-transfer', label: 'File Transfer' }] : []),
+    ...(type === 'SSH' ? [{ key: 'terminal', label: 'Terminal' }] : []),
+    ...(type === 'RDP' ? [{ key: 'rdp', label: 'RDP Settings' }] : []),
+    ...(type === 'VNC' ? [{ key: 'vnc', label: 'VNC Settings' }] : []),
+    ...(supportsDatabaseSettings(type) ? [{ key: 'database', label: 'Database' }] : []),
+    ...((type === 'RDP' || type === 'VNC') ? [{ key: 'dlp', label: 'DLP Policy' }] : []),
+  ];
+
   const handleSubmit = async () => {
-    if (!name || !host) {
-      setError('Name and host are required');
-      return;
-    }
-    if (type === 'DB_TUNNEL' && (!targetDbHost || !targetDbPort)) {
-      setError('Target database host and port are required for DB Tunnel connections');
-      return;
-    }
-    if (credentialMode === 'keychain' && !selectedSecretId) {
-      setError('Please select a secret from the keychain');
-      return;
-    }
-    if (credentialMode === 'external-vault' && (!selectedVaultProviderId || !vaultSecretPath)) {
-      setError('Please select a vault provider and enter a secret path');
-      return;
-    }
-    if (credentialMode === 'manual' && !isEditMode && !username) {
-      setError('Username is required for new connections');
+    const state = currentIntakeState();
+    const validationError = validateConnectionIntake(state, isEditMode);
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
     const ok = await run(async () => {
       if (isEditMode && connection) {
-        const data: ConnectionUpdate = {
-          name,
-          type,
-          host,
-          port: parseInt(port, 10),
-          description: description || null,
-          enableDrive,
-          gatewayId: gatewayId || null,
-          credentialSecretId: credentialMode === 'keychain' ? selectedSecretId : null,
-          externalVaultProviderId: credentialMode === 'external-vault' ? selectedVaultProviderId : null,
-          externalVaultPath: credentialMode === 'external-vault' ? vaultSecretPath : null,
-          ...(type === 'SSH' && {
-            sshTerminalConfig: Object.keys(sshTerminalConfig).length > 0 ? sshTerminalConfig : null,
-          }),
-          ...(type === 'RDP' && {
-            rdpSettings: Object.keys(rdpSettings).length > 0 ? rdpSettings : null,
-          }),
-          ...(type === 'VNC' && {
-            vncSettings: Object.keys(vncSettings).length > 0 ? vncSettings : null,
-          }),
-          ...(type === 'DATABASE' && {
-            dbSettings: dbSettings.protocol ? dbSettings as DbSettings : null,
-          }),
-          defaultCredentialMode: (defaultConnectMode as 'saved' | 'domain' | 'prompt') || null,
-          ...((type === 'RDP' || type === 'VNC') && {
-            dlpPolicy: Object.values(dlpPolicy).some(Boolean) ? dlpPolicy : null,
-          }),
-          ...(type === 'DB_TUNNEL' && {
-            targetDbHost: targetDbHost || null,
-            targetDbPort: targetDbPort ? parseInt(targetDbPort, 10) : null,
-            dbType: dbType || null,
-          }),
-        };
-        if (credentialMode === 'manual') {
-          if (username) data.username = username;
-          if (password) data.password = password;
-          if (domain) data.domain = domain;
-        }
-        await updateConnection(connection.id, data);
+        await updateConnection(connection.id, buildConnectionUpdate(state));
       } else {
-        const data: ConnectionInput = {
-          name,
-          type,
-          host,
-          port: parseInt(port, 10),
-          description: description || undefined,
-          enableDrive,
-          gatewayId: gatewayId || null,
-          ...(credentialMode === 'keychain' && selectedSecretId
-            ? { credentialSecretId: selectedSecretId }
-            : credentialMode === 'external-vault' && selectedVaultProviderId
-              ? { externalVaultProviderId: selectedVaultProviderId, externalVaultPath: vaultSecretPath }
-              : credentialMode === 'manual' ? { username, password, ...(domain ? { domain } : {}) } : {}),
-          ...(folderId ? { folderId } : {}),
-          ...(teamId ? { teamId } : {}),
-          ...(type === 'SSH' && Object.keys(sshTerminalConfig).length > 0 && {
-            sshTerminalConfig,
-          }),
-          ...(type === 'RDP' && Object.keys(rdpSettings).length > 0 && {
-            rdpSettings,
-          }),
-          ...(type === 'VNC' && Object.keys(vncSettings).length > 0 && {
-            vncSettings,
-          }),
-          ...(type === 'DATABASE' && dbSettings.protocol && {
-            dbSettings: dbSettings as DbSettings,
-          }),
-          ...(defaultConnectMode ? { defaultCredentialMode: defaultConnectMode as 'saved' | 'domain' | 'prompt' } : {}),
-          ...((type === 'RDP' || type === 'VNC') && Object.values(dlpPolicy).some(Boolean) && {
-            dlpPolicy,
-          }),
-          ...(type === 'DB_TUNNEL' && {
-            targetDbHost,
-            targetDbPort: parseInt(targetDbPort, 10),
-            ...(dbType ? { dbType } : {}),
-          }),
-        };
-        await createConnection(data);
+        await createConnection(buildConnectionInput(state, folderId, teamId));
       }
       await fetchConnections();
     }, isEditMode ? 'Failed to update connection' : 'Failed to create connection');
@@ -282,264 +216,323 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
   };
 
   const handleClose = () => {
-    setName('');
-    setType('SSH');
-    setHost('');
-    setPort('22');
-    setUsername('');
-    setPassword('');
-    setDomain('');
-    setDescription('');
-    setEnableDrive(false);
-    setGatewayId('');
-    setSshTerminalConfig({});
-    setRdpSettings({});
-    setVncSettings({});
-    setDbSettings({});
-    setCredentialMode('manual');
-    setSelectedSecretId(null);
-    setSelectedVaultProviderId(null);
-    setVaultSecretPath('');
-    setDefaultConnectMode('');
-    setDlpPolicy({});
-    setTargetDbHost('');
-    setTargetDbPort('');
-    setDbType('');
+    applyIntakeState(emptyConnectionIntakeState());
     clearError();
     onClose();
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>{isEditMode ? 'Edit Connection' : 'New Connection'}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <TextField
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            fullWidth
-            required
-          />
-          <FormControl fullWidth>
-            <InputLabel>Type</InputLabel>
-            <Select
-              value={type}
-              label="Type"
-              onChange={(e) => handleTypeChange(e.target.value as 'SSH' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL')}
-              disabled={isEditMode}
-            >
-              {connectionsEnabled && <MenuItem value="SSH">SSH</MenuItem>}
-              {connectionsEnabled && <MenuItem value="RDP">RDP</MenuItem>}
-              {connectionsEnabled && <MenuItem value="VNC">VNC</MenuItem>}
-              {databaseProxyEnabled && <MenuItem value="DATABASE">Database</MenuItem>}
-              {databaseProxyEnabled && <MenuItem value="DB_TUNNEL">Database (SSH Tunnel)</MenuItem>}
-            </Select>
-          </FormControl>
-          {hasTenant && availableGateways.length > 0 && (
-            <FormControl fullWidth>
-              <InputLabel>Gateway (optional)</InputLabel>
-              <Select
-                value={gatewayId}
-                label="Gateway (optional)"
-                onChange={(e) => setGatewayId(e.target.value)}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) handleClose(); }}>
+      <DialogContent
+        showCloseButton={false}
+        className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+      >
+        {/* Compact header */}
+        <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+          <span className="text-xs font-medium">{isEditMode ? 'Edit Connection' : 'New Connection'}</span>
+          <div className="ml-auto">
+            <Button variant="ghost" size="icon-xs" onClick={handleClose}>
+              <X className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="mx-4 mt-3 rounded-md border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {error}
+          </div>
+        )}
+
+        <div className="flex min-h-0 flex-1">
+          {/* Left nav */}
+          <nav className="flex w-[180px] shrink-0 flex-col gap-1 border-r p-2">
+            {sections.map((s) => (
+              <button
+                key={s.key}
+                type="button"
+                onClick={() => setActiveSection(s.key)}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-left text-sm transition-colors',
+                  activeSection === s.key
+                    ? 'bg-accent text-accent-foreground font-medium'
+                    : 'text-muted-foreground hover:bg-accent/50',
+                )}
               >
-                <MenuItem value="">None (Direct connection)</MenuItem>
-                {availableGateways.map((gw) => (
-                  <MenuItem key={gw.id} value={gw.id}>
-                    {gw.name} — {gw.host}:{gw.port}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <TextField
-              label={type === 'DB_TUNNEL' ? 'Bastion Host' : 'Host'}
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              fullWidth
-              required
-            />
-            <TextField
-              label={type === 'DB_TUNNEL' ? 'Bastion Port' : 'Port'}
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              type="number"
-              sx={{ width: 120 }}
-            />
-          </Box>
-          {type === 'DB_TUNNEL' && (
-            <>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <TextField
-                  label="Target DB Host"
-                  value={targetDbHost}
-                  onChange={(e) => setTargetDbHost(e.target.value)}
-                  fullWidth
-                  required
-                  placeholder="e.g. db.internal.example.com"
-                />
-                <TextField
-                  label="Target DB Port"
-                  value={targetDbPort}
-                  onChange={(e) => setTargetDbPort(e.target.value)}
-                  type="number"
-                  sx={{ width: 120 }}
-                  required
-                  placeholder="5432"
-                />
-              </Box>
-              <FormControl fullWidth>
-                <InputLabel>Database Type</InputLabel>
-                <Select
-                  value={dbType}
-                  label="Database Type"
-                  onChange={(e) => setDbType(e.target.value)}
-                >
-                  <MenuItem value="">Generic</MenuItem>
-                  <MenuItem value="postgresql">PostgreSQL</MenuItem>
-                  <MenuItem value="mysql">MySQL</MenuItem>
-                  <MenuItem value="mariadb">MariaDB</MenuItem>
-                  <MenuItem value="mongodb">MongoDB</MenuItem>
-                  <MenuItem value="redis">Redis</MenuItem>
-                  <MenuItem value="mssql">SQL Server</MenuItem>
-                  <MenuItem value="oracle">Oracle</MenuItem>
-                </Select>
-              </FormControl>
-            </>
-          )}
-          <Box>
-            <Typography variant="subtitle2" sx={{ mb: 1.5 }}>Credentials</Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Box>
-                <ToggleButtonGroup
-                  value={credentialMode}
-                  exclusive
-                  onChange={(_e, val) => { if (val) setCredentialMode(val); }}
-                  size="small"
-                  fullWidth
-                >
-                  <ToggleButton value="manual">
-                    <Keyboard fontSize="small" sx={{ mr: 0.5 }} /> Manual
-                  </ToggleButton>
-                  <ToggleButton value="keychain" disabled={!vaultUnlocked}>
-                    <VpnKey fontSize="small" sx={{ mr: 0.5 }} /> From Keychain
-                  </ToggleButton>
-                  {hasTenant && vaultProviders.length > 0 && (
-                    <ToggleButton value="external-vault">
-                      <CloudIcon fontSize="small" sx={{ mr: 0.5 }} /> External Vault
-                    </ToggleButton>
-                  )}
-                </ToggleButtonGroup>
-              </Box>
-              {credentialMode === 'external-vault' ? (
+                {s.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Right content */}
+          <ScrollArea className="flex-1 px-6 py-4">
+            <div className="mx-auto max-w-3xl flex flex-col gap-4">
+
+              {/* General */}
+              {activeSection === 'general' && (
                 <>
-                  <FormControl fullWidth>
-                    <InputLabel>Vault Provider</InputLabel>
-                    <Select
-                      value={selectedVaultProviderId ?? ''}
-                      label="Vault Provider"
-                      onChange={(e) => setSelectedVaultProviderId(e.target.value || null)}
-                    >
-                      {vaultProviders.filter((p) => p.enabled).map((p) => (
-                        <MenuItem key={p.id} value={p.id}>
-                          {p.name} — {p.serverUrl}
-                        </MenuItem>
-                      ))}
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="conn-name">Name</Label>
+                      <Input id="conn-name" value={name} onChange={(e) => setName(e.target.value)} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Type</Label>
+                      <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)} disabled={isEditMode}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {connectionsEnabled && <SelectItem value="SSH">SSH</SelectItem>}
+                          {connectionsEnabled && <SelectItem value="RDP">RDP</SelectItem>}
+                          {connectionsEnabled && <SelectItem value="VNC">VNC</SelectItem>}
+                          {databaseProxyEnabled && <SelectItem value="DATABASE">Database</SelectItem>}
+                          {databaseProxyEnabled && <SelectItem value="DB_TUNNEL">Database (SSH Tunnel)</SelectItem>}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {hasTenant && availableGateways.length > 0 && (
+                    <div className="space-y-2">
+                      <Label>Gateway (optional)</Label>
+                      <Select value={gatewayId || '__none__'} onValueChange={(v) => setGatewayId(v === '__none__' ? '' : v)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="None (Direct connection)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None (Direct connection)</SelectItem>
+                          {availableGateways.map((gw) => (
+                            <SelectItem key={gw.id} value={gw.id}>
+                              {gw.name} — {gatewayEndpointLabel(gw)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <div className="flex-1 space-y-2">
+                      <Label htmlFor="conn-host">{type === 'DB_TUNNEL' ? 'Bastion Host' : 'Host'}</Label>
+                      <Input id="conn-host" value={host} onChange={(e) => setHost(e.target.value)} required />
+                    </div>
+                    <div className="w-[120px] space-y-2">
+                      <Label htmlFor="conn-port">{type === 'DB_TUNNEL' ? 'Bastion Port' : 'Port'}</Label>
+                      <Input id="conn-port" value={port} onChange={(e) => setPort(e.target.value)} type="number" />
+                    </div>
+                  </div>
+
+                  {type === 'DB_TUNNEL' && (
+                    <>
+                      <div className="flex gap-3">
+                        <div className="flex-1 space-y-2">
+                          <Label htmlFor="conn-target-host">Target DB Host</Label>
+                          <Input id="conn-target-host" value={targetDbHost} onChange={(e) => setTargetDbHost(e.target.value)} required placeholder="e.g. db.internal.example.com" />
+                        </div>
+                        <div className="w-[120px] space-y-2">
+                          <Label htmlFor="conn-target-port">Target DB Port</Label>
+                          <Input id="conn-target-port" value={targetDbPort} onChange={(e) => setTargetDbPort(e.target.value)} type="number" required placeholder="5432" />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Database Type</Label>
+                        <Select value={dbType || '__generic__'} onValueChange={(v) => setDbType(v === '__generic__' ? '' : v)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Generic" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__generic__">Generic</SelectItem>
+                            <SelectItem value="postgresql">PostgreSQL</SelectItem>
+                            <SelectItem value="mysql">MySQL</SelectItem>
+                            <SelectItem value="mariadb">MariaDB</SelectItem>
+                            <SelectItem value="mongodb">MongoDB</SelectItem>
+                            <SelectItem value="redis">Redis</SelectItem>
+                            <SelectItem value="mssql">SQL Server</SelectItem>
+                            <SelectItem value="oracle">Oracle</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Credentials */}
+              {activeSection === 'credentials' && (
+                <div className="flex flex-col gap-4">
+                  <ToggleGroup
+                    type="single"
+                    value={credentialMode}
+                    onValueChange={(val) => { if (val) setCredentialMode(val as typeof credentialMode); }}
+                    className="w-full"
+                  >
+                    <ToggleGroupItem value="manual" className="flex-1 gap-1.5">
+                      <Keyboard className="size-4" /> Manual
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="keychain" className="flex-1 gap-1.5" disabled={!vaultUnlocked}>
+                      <KeyRound className="size-4" /> From Keychain
+                    </ToggleGroupItem>
+                    {hasTenant && vaultProviders.length > 0 && (
+                      <ToggleGroupItem value="external-vault" className="flex-1 gap-1.5">
+                        <Cloud className="size-4" /> External Vault
+                      </ToggleGroupItem>
+                    )}
+                  </ToggleGroup>
+
+                  {credentialMode === 'external-vault' ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Vault Provider</Label>
+                        <Select value={selectedVaultProviderId ?? ''} onValueChange={(v) => setSelectedVaultProviderId(v || null)}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select provider" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {vaultProviders.filter((p) => p.enabled).map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name} — {p.serverUrl}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="vault-path">Secret Path</Label>
+                        <Input
+                          id="vault-path"
+                          value={vaultSecretPath}
+                          onChange={(e) => setVaultSecretPath(e.target.value)}
+                          required
+                          placeholder="e.g. servers/web1"
+                        />
+                        <p className="text-xs text-muted-foreground">Path within the KV v2 mount (must contain username/password fields)</p>
+                      </div>
+                    </>
+                  ) : credentialMode === 'keychain' ? (
+                    <SecretPicker
+                      value={selectedSecretId}
+                      onChange={(id) => setSelectedSecretId(id)}
+                      connectionType={type === 'DB_TUNNEL' ? 'SSH' : type}
+                      error={!selectedSecretId && !!error}
+                      initialName={connection?.credentialSecretName}
+                      initialType={connection?.credentialSecretType as 'LOGIN' | 'SSH_KEY' | undefined}
+                    />
+                  ) : (
+                    <>
+                      <div className="space-y-2">
+                        <Label htmlFor="conn-username">Username</Label>
+                        <Input
+                          id="conn-username"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          required={!isEditMode}
+                          placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="conn-password">Password</Label>
+                        <Input
+                          id="conn-password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          type="password"
+                          placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined}
+                        />
+                      </div>
+                      {type === 'RDP' && (
+                        <div className="space-y-2">
+                          <Label htmlFor="conn-domain">Domain (optional)</Label>
+                          <Input
+                            id="conn-domain"
+                            value={domain}
+                            onChange={(e) => setDomain(e.target.value)}
+                            placeholder={isEditMode ? 'Leave blank to keep unchanged' : 'e.g. CONTOSO'}
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Options */}
+              {activeSection === 'options' && (
+                <div className="flex flex-col gap-4">
+                  <div className="space-y-2">
+                    <Label>Default connect behavior</Label>
+                    <Select value={defaultConnectMode || '__saved__'} onValueChange={(v) => setDefaultConnectMode(v === '__saved__' ? '' : v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Use saved credentials (default)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__saved__">Use saved credentials (default)</SelectItem>
+                        <SelectItem value="domain">Use domain profile credentials</SelectItem>
+                        <SelectItem value="prompt">Always ask (show Connect As dialog)</SelectItem>
+                      </SelectContent>
                     </Select>
-                  </FormControl>
-                  <TextField
-                    label="Secret Path"
-                    value={vaultSecretPath}
-                    onChange={(e) => setVaultSecretPath(e.target.value)}
-                    fullWidth
-                    required
-                    placeholder="e.g. servers/web1"
-                    helperText="Path within the KV v2 mount (must contain username/password fields)"
-                  />
-                </>
-              ) : credentialMode === 'keychain' ? (
-                <SecretPicker
-                  value={selectedSecretId}
-                  onChange={(id) => setSelectedSecretId(id)}
-                  connectionType={type === 'DB_TUNNEL' ? 'SSH' : type}
-                  error={!selectedSecretId && !!error}
-                  initialName={connection?.credentialSecretName}
-                  initialType={connection?.credentialSecretType as 'LOGIN' | 'SSH_KEY' | undefined}
-                />
-              ) : (
-                <>
-                  <TextField
-                    label="Username"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    fullWidth
-                    required={!isEditMode}
-                    placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined}
-                  />
-                  <TextField
-                    label="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    type="password"
-                    fullWidth
-                    placeholder={isEditMode ? 'Leave blank to keep unchanged' : undefined}
-                  />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="conn-desc">Description (optional)</Label>
+                    <Textarea
+                      id="conn-desc"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      rows={2}
+                    />
+                  </div>
                   {type === 'RDP' && (
-                    <TextField
-                      label="Domain (optional)"
-                      value={domain}
-                      onChange={(e) => setDomain(e.target.value)}
-                      fullWidth
-                      placeholder={isEditMode ? 'Leave blank to keep unchanged' : 'e.g. CONTOSO'}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="enable-drive"
+                        checked={enableDrive}
+                        onCheckedChange={(v) => setEnableDrive(v === true)}
+                      />
+                      <Label htmlFor="enable-drive" className="font-normal">
+                        Enable file sharing (drive redirection)
+                      </Label>
+                    </div>
                   )}
-                </>
+                </div>
               )}
-            </Box>
-          </Box>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <Typography variant="subtitle2">Options</Typography>
-              <FormControl fullWidth size="small">
-                <InputLabel>Default connect behavior</InputLabel>
-                <Select
-                  value={defaultConnectMode}
-                  label="Default connect behavior"
-                  onChange={(e) => setDefaultConnectMode(e.target.value)}
-                >
-                  <MenuItem value="">Use saved credentials (default)</MenuItem>
-                  <MenuItem value="domain">Use domain profile credentials</MenuItem>
-                  <MenuItem value="prompt">Always ask (show Connect As dialog)</MenuItem>
-                </Select>
-              </FormControl>
-              <TextField
-                label="Description (optional)"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                fullWidth
-                multiline
-                rows={2}
-              />
-              {type === 'RDP' && (
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={enableDrive}
-                      onChange={(e) => setEnableDrive(e.target.checked)}
+
+              {activeSection === 'file-transfer' && supportsTransferRetention(type) && (
+                <div className="flex flex-col gap-4">
+                  <p className="text-xs text-muted-foreground">
+                    Successful uploads are cleaned up by default. Enable retention to keep them in history for this connection.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    The workspace stays temporary. Retained uploads appear in a separate History view.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="transfer-max-upload-size">Max upload size (MiB)</Label>
+                    <Input
+                      id="transfer-max-upload-size"
+                      type="number"
+                      min="1"
+                      max={String(DEFAULT_CONNECTION_UPLOAD_LIMIT_MB)}
+                      value={fileTransferMaxUploadSizeMb}
+                      onChange={(event) => setFileTransferMaxUploadSizeMb(event.target.value)}
                     />
-                  }
-                  label="Enable file sharing (drive redirection)"
-                />
+                    <p className="text-xs text-muted-foreground">
+                      Default and maximum is {DEFAULT_CONNECTION_UPLOAD_LIMIT_MB} MiB for this connection.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="transfer-retention"
+                      checked={transferRetentionPolicy.retainSuccessfulUploads}
+                      onCheckedChange={(value) => setTransferRetentionPolicy((current) => ({
+                        ...current,
+                        retainSuccessfulUploads: value === true,
+                      }))}
+                    />
+                    <Label htmlFor="transfer-retention" className="font-normal">
+                      Retain successful uploads in history
+                    </Label>
+                  </div>
+                </div>
               )}
-          </Box>
-          {type === 'SSH' && (
-            <Accordion variant="outlined" disableGutters>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">Terminal Appearance</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
+
+              {/* SSH Terminal Appearance */}
+              {activeSection === 'terminal' && type === 'SSH' && (
                 <TerminalSettingsSection
                   value={sshTerminalConfig}
                   onChange={setSshTerminalConfig}
@@ -547,15 +540,10 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                   resolvedDefaults={mergeTerminalConfig(userDefaults)}
                   enforcedFields={tenantEnforced?.ssh}
                 />
-              </AccordionDetails>
-            </Accordion>
-          )}
-          {type === 'RDP' && (
-            <Accordion variant="outlined" disableGutters>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">RDP Settings</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
+              )}
+
+              {/* RDP Settings */}
+              {activeSection === 'rdp' && type === 'RDP' && (
                 <RdpSettingsSection
                   value={rdpSettings}
                   onChange={setRdpSettings}
@@ -563,15 +551,10 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                   resolvedDefaults={mergeRdpConfig(rdpUserDefaults)}
                   enforcedFields={tenantEnforced?.rdp}
                 />
-              </AccordionDetails>
-            </Accordion>
-          )}
-          {type === 'VNC' && (
-            <Accordion variant="outlined" disableGutters>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">VNC Settings</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
+              )}
+
+              {/* VNC Settings */}
+              {activeSection === 'vnc' && type === 'VNC' && (
                 <VncSettingsSection
                   value={vncSettings}
                   onChange={setVncSettings}
@@ -579,245 +562,61 @@ export default function ConnectionDialog({ open, onClose, connection, folderId, 
                   resolvedDefaults={mergeVncConfig()}
                   enforcedFields={tenantEnforced?.vnc}
                 />
-              </AccordionDetails>
-            </Accordion>
-          )}
-          {type === 'DATABASE' && (
-            <Accordion variant="outlined" disableGutters defaultExpanded>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">Database Settings</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <FormControl fullWidth>
-                    <InputLabel>Database Protocol</InputLabel>
-                    <Select
-                      value={dbSettings.protocol ?? 'postgresql'}
-                      label="Database Protocol"
-                      onChange={(e) => {
-                        const proto = e.target.value as DbProtocol;
-                        setDbSettings({ protocol: proto, ...(proto === 'oracle' ? { oracleConnectionType: 'basic' as OracleConnectionType } : {}) });
-                        const protoPorts: Record<string, string> = { postgresql: '5432', mysql: '3306', mongodb: '27017', oracle: '1521', mssql: '1433', db2: '50000' };
-                        setPort(protoPorts[proto] ?? '5432');
-                      }}
-                    >
-                      <MenuItem value="postgresql">PostgreSQL</MenuItem>
-                      <MenuItem value="mysql">MySQL / MariaDB</MenuItem>
-                      <MenuItem value="mongodb">MongoDB</MenuItem>
-                      <MenuItem value="oracle">Oracle (TNS)</MenuItem>
-                      <MenuItem value="mssql">Microsoft SQL Server (TDS)</MenuItem>
-                      <MenuItem value="db2">IBM DB2 (DRDA)</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <TextField
-                    label="Database Name (optional)"
-                    value={dbSettings.databaseName ?? ''}
-                    onChange={(e) => setDbSettings((prev) => ({ ...prev, databaseName: e.target.value || undefined }))}
-                    fullWidth
-                    placeholder="e.g. mydb"
-                  />
-                  {dbSettings.protocol === 'oracle' && (
-                    <>
-                      {/* Connection type toggle: Basic | TNS | Custom */}
-                      <ToggleButtonGroup
-                        value={dbSettings.oracleConnectionType ?? 'basic'}
-                        exclusive
-                        size="small"
-                        onChange={(_e, val) => {
-                          if (!val) return;
-                          setDbSettings((prev) => ({
-                            protocol: 'oracle' as DbProtocol,
-                            databaseName: prev.databaseName,
-                            oracleConnectionType: val as OracleConnectionType,
-                            oracleRole: prev.oracleRole,
-                            // Keep only fields relevant to the selected mode
-                            ...(val === 'basic' ? { oracleSid: prev.oracleSid, oracleServiceName: prev.oracleServiceName } : {}),
-                            ...(val === 'tns' ? { oracleTnsAlias: prev.oracleTnsAlias, oracleTnsDescriptor: prev.oracleTnsDescriptor } : {}),
-                            ...(val === 'custom' ? { oracleConnectString: prev.oracleConnectString } : {}),
-                          }));
-                        }}
-                        fullWidth
-                      >
-                        <ToggleButton value="basic">Basic</ToggleButton>
-                        <ToggleButton value="tns">TNS</ToggleButton>
-                        <ToggleButton value="custom">Custom</ToggleButton>
-                      </ToggleButtonGroup>
+              )}
 
-                      {/* Basic mode */}
-                      {(dbSettings.oracleConnectionType ?? 'basic') === 'basic' && (
-                        <Box sx={{ display: 'flex', gap: 1.5 }}>
-                          <FormControl sx={{ minWidth: 160 }}>
-                            <InputLabel>Identifier Type</InputLabel>
-                            <Select
-                              value={dbSettings.oracleSid ? 'sid' : 'service'}
-                              label="Identifier Type"
-                              onChange={(e) => {
-                                if (e.target.value === 'sid') {
-                                  setDbSettings((prev) => ({ ...prev, oracleSid: prev.oracleServiceName || prev.oracleSid || '', oracleServiceName: undefined }));
-                                } else {
-                                  setDbSettings((prev) => ({ ...prev, oracleServiceName: prev.oracleSid || prev.oracleServiceName || '', oracleSid: undefined }));
-                                }
-                              }}
-                            >
-                              <MenuItem value="service">Service Name</MenuItem>
-                              <MenuItem value="sid">SID</MenuItem>
-                            </Select>
-                          </FormControl>
-                          <TextField
-                            label={dbSettings.oracleSid !== undefined ? 'SID' : 'Service Name'}
-                            value={dbSettings.oracleSid ?? dbSettings.oracleServiceName ?? ''}
-                            onChange={(e) => {
-                              const val = e.target.value || undefined;
-                              if (dbSettings.oracleSid !== undefined) {
-                                setDbSettings((prev) => ({ ...prev, oracleSid: val }));
-                              } else {
-                                setDbSettings((prev) => ({ ...prev, oracleServiceName: val }));
-                              }
-                            }}
-                            fullWidth
-                            placeholder={dbSettings.oracleSid !== undefined ? 'e.g. ORCL' : 'e.g. FREEPDB1'}
-                          />
-                        </Box>
-                      )}
-
-                      {/* TNS mode */}
-                      {dbSettings.oracleConnectionType === 'tns' && (
-                        <>
-                          <TextField
-                            label="TNS Alias"
-                            value={dbSettings.oracleTnsAlias ?? ''}
-                            onChange={(e) => setDbSettings((prev) => ({ ...prev, oracleTnsAlias: e.target.value || undefined }))}
-                            fullWidth
-                            placeholder="e.g. MYDB"
-                            helperText="Alias from tnsnames.ora (resolved via TNS_ADMIN)"
-                          />
-                          <TextField
-                            label="TNS Descriptor"
-                            value={dbSettings.oracleTnsDescriptor ?? ''}
-                            onChange={(e) => setDbSettings((prev) => ({ ...prev, oracleTnsDescriptor: e.target.value || undefined }))}
-                            fullWidth
-                            multiline
-                            minRows={2}
-                            maxRows={6}
-                            placeholder="(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=...)(PORT=...))(CONNECT_DATA=(SERVICE_NAME=...)))"
-                            helperText="Full TNS descriptor (overrides alias if both provided)"
-                          />
-                        </>
-                      )}
-
-                      {/* Custom mode */}
-                      {dbSettings.oracleConnectionType === 'custom' && (
-                        <TextField
-                          label="Connect String"
-                          value={dbSettings.oracleConnectString ?? ''}
-                          onChange={(e) => setDbSettings((prev) => ({ ...prev, oracleConnectString: e.target.value || undefined }))}
-                          fullWidth
-                          multiline
-                          minRows={2}
-                          maxRows={6}
-                          placeholder="host:port/service_name or full TNS descriptor"
-                          helperText="Raw connect string passed directly to the Oracle driver"
-                        />
-                      )}
-
-                      {/* Oracle Role (all modes) */}
-                      <FormControl fullWidth>
-                        <InputLabel>Role</InputLabel>
-                        <Select
-                          value={dbSettings.oracleRole ?? 'normal'}
-                          label="Role"
-                          onChange={(e) => setDbSettings((prev) => ({ ...prev, oracleRole: (e.target.value === 'normal' ? undefined : e.target.value) as OracleRole | undefined }))}
-                        >
-                          <MenuItem value="normal">Normal</MenuItem>
-                          <MenuItem value="sysdba">SYSDBA</MenuItem>
-                          <MenuItem value="sysoper">SYSOPER</MenuItem>
-                          <MenuItem value="sysasm">SYSASM</MenuItem>
-                          <MenuItem value="sysbackup">SYSBACKUP</MenuItem>
-                          <MenuItem value="sysdg">SYSDG</MenuItem>
-                          <MenuItem value="syskm">SYSKM</MenuItem>
-                          <MenuItem value="sysrac">SYSRAC</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </>
-                  )}
-                  {dbSettings.protocol === 'mssql' && (
-                    <>
-                      <TextField
-                        label="Instance Name (optional)"
-                        value={dbSettings.mssqlInstanceName ?? ''}
-                        onChange={(e) => setDbSettings((prev) => ({ ...prev, mssqlInstanceName: e.target.value || undefined }))}
-                        fullWidth
-                        placeholder="e.g. SQLEXPRESS"
-                      />
-                      <FormControl fullWidth>
-                        <InputLabel>Authentication Mode</InputLabel>
-                        <Select
-                          value={dbSettings.mssqlAuthMode ?? 'sql'}
-                          label="Authentication Mode"
-                          onChange={(e) => setDbSettings((prev) => ({ ...prev, mssqlAuthMode: e.target.value as 'sql' | 'windows' }))}
-                        >
-                          <MenuItem value="sql">SQL Server Authentication</MenuItem>
-                          <MenuItem value="windows">Windows Authentication (NTLM/Kerberos)</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </>
-                  )}
-                  {dbSettings.protocol === 'db2' && (
-                    <TextField
-                      label="Database Alias (optional)"
-                      value={dbSettings.db2DatabaseAlias ?? ''}
-                      onChange={(e) => setDbSettings((prev) => ({ ...prev, db2DatabaseAlias: e.target.value || undefined }))}
-                      fullWidth
-                      placeholder="e.g. SAMPLE"
-                      helperText="Alias as cataloged on the DB2 Connect gateway"
-                    />
-                  )}
-                </Box>
-              </AccordionDetails>
-            </Accordion>
-          )}
-          {(type === 'RDP' || type === 'VNC') && (
-            <Accordion variant="outlined" disableGutters>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Typography variant="subtitle2">Data Loss Prevention</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-                  These restrictions are additive to the organization&apos;s DLP policy.
-                </Typography>
-                <FormControlLabel
-                  control={<Checkbox checked={dlpPolicy.disableCopy ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disableCopy: e.target.checked || undefined }))} />}
-                  label="Disable clipboard copy (remote to local)"
+              {/* Database Settings */}
+              {activeSection === 'database' && supportsDatabaseSettings(type) && (
+                <ConnectionDialogDatabaseSection
+                  dbSettings={dbSettings}
+                  onChange={setDbSettings}
+                  onPortChange={type === 'DB_TUNNEL' ? setTargetDbPort : setPort}
                 />
-                <FormControlLabel
-                  control={<Checkbox checked={dlpPolicy.disablePaste ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disablePaste: e.target.checked || undefined }))} />}
-                  label="Disable clipboard paste (local to remote)"
-                />
-                {type === 'RDP' && (
-                  <>
-                    <FormControlLabel
-                      control={<Checkbox checked={dlpPolicy.disableDownload ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disableDownload: e.target.checked || undefined }))} />}
-                      label="Disable file download from shared drive"
-                    />
-                    <FormControlLabel
-                      control={<Checkbox checked={dlpPolicy.disableUpload ?? false} onChange={(e) => setDlpPolicy((p) => ({ ...p, disableUpload: e.target.checked || undefined }))} />}
-                      label="Disable file upload to shared drive"
-                    />
-                  </>
-                )}
-              </AccordionDetails>
-            </Accordion>
-          )}
-        </Box>
+              )}
+
+              {/* DLP */}
+              {activeSection === 'dlp' && (type === 'RDP' || type === 'VNC') && (
+                <>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    These restrictions are additive to the organization&apos;s DLP policy.
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="dlp-copy" checked={dlpPolicy.disableCopy ?? false} onCheckedChange={(v) => setDlpPolicy((p) => ({ ...p, disableCopy: (v === true) || undefined }))} />
+                      <Label htmlFor="dlp-copy" className="font-normal">Disable clipboard copy (remote to local)</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="dlp-paste" checked={dlpPolicy.disablePaste ?? false} onCheckedChange={(v) => setDlpPolicy((p) => ({ ...p, disablePaste: (v === true) || undefined }))} />
+                      <Label htmlFor="dlp-paste" className="font-normal">Disable clipboard paste (local to remote)</Label>
+                    </div>
+                    {type === 'RDP' && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="dlp-download" checked={dlpPolicy.disableDownload ?? false} onCheckedChange={(v) => setDlpPolicy((p) => ({ ...p, disableDownload: (v === true) || undefined }))} />
+                          <Label htmlFor="dlp-download" className="font-normal">Disable file download from shared drive</Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Checkbox id="dlp-upload" checked={dlpPolicy.disableUpload ?? false} onCheckedChange={(v) => setDlpPolicy((p) => ({ ...p, disableUpload: (v === true) || undefined }))} />
+                          <Label htmlFor="dlp-upload" className="font-normal">Disable file upload to shared drive</Label>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
+
+            </div>
+          </ScrollArea>
+        </div>
+
+        <div className="flex shrink-0 items-center justify-end gap-2 border-t px-4 py-2">
+          <Button variant="outline" size="sm" onClick={handleClose}>Cancel</Button>
+          <Button size="sm" onClick={handleSubmit} disabled={loading}>
+            {loading
+              ? (isEditMode ? 'Saving...' : 'Creating...')
+              : (isEditMode ? 'Save' : 'Create')}
+          </Button>
+        </div>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
-          {loading
-            ? (isEditMode ? 'Saving...' : 'Creating...')
-            : (isEditMode ? 'Save' : 'Create')}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

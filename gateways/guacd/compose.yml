@@ -1,0 +1,40 @@
+services:
+  guacd:
+    image: ${GUACD_IMAGE:-ghcr.io/dnviti/arsenale/guacd:latest}
+    container_name: ${GUACD_CONTAINER_NAME:-arsenale-guacd}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GUACD_SSL: "true"
+      GUACD_SSL_CERT: /certs/server-cert.pem
+      GUACD_SSL_KEY: /certs/server-key.pem
+      TUNNEL_SERVER_URL: "${TUNNEL_SERVER_URL:?set TUNNEL_SERVER_URL from arsenale-cli bundle output}"
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:?set TUNNEL_TOKEN from arsenale-cli bundle output}"
+      TUNNEL_GATEWAY_ID: "${TUNNEL_GATEWAY_ID:?set TUNNEL_GATEWAY_ID from arsenale-cli bundle output}"
+      TUNNEL_LOCAL_HOST: "${TUNNEL_LOCAL_HOST:-127.0.0.1}"
+      TUNNEL_LOCAL_PORT: "${TUNNEL_LOCAL_PORT:-4822}"
+      TUNNEL_CLIENT_CERT_FILE: /tunnel-certs/client-cert.pem
+      TUNNEL_CLIENT_KEY_FILE: /tunnel-certs/client-key.pem
+    volumes:
+      - guacd-drive:/guacd-drive
+      - guacd-recordings:/recordings
+      - ${GUACD_TLS_CERT_FILE:?set GUACD_TLS_CERT_FILE}:/certs/server-cert.pem:ro
+      - ${GUACD_TLS_KEY_FILE:?set GUACD_TLS_KEY_FILE}:/certs/server-key.pem:ro
+      - ${TUNNEL_CLIENT_CERT_FILE:?set TUNNEL_CLIENT_CERT_FILE from arsenale-cli bundle output}:/tunnel-certs/client-cert.pem:ro
+      - ${TUNNEL_CLIENT_KEY_FILE:?set TUNNEL_CLIENT_KEY_FILE from arsenale-cli bundle output}:/tunnel-certs/client-key.pem:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 4822 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  guacd-drive:
+  guacd-recordings:

@@ -1,8 +1,12 @@
 import api from './client';
 import type { TenantRole } from '../utils/roles';
+import type { PermissionFlag } from '../utils/permissionFlags';
 import type { SshTerminalConfig } from '../constants/terminalThemes';
 import type { RdpSettings } from '../constants/rdpDefaults';
 import type { VncSettings } from '../constants/vncDefaults';
+import type { TenantMembershipStatus } from './auth.api';
+export { ALL_PERMISSION_FLAGS, emptyPermissionFlags } from '../utils/permissionFlags';
+export type { PermissionFlag } from '../utils/permissionFlags';
 
 export interface EnforcedConnectionSettings {
   ssh?: Partial<SshTerminalConfig>;
@@ -31,6 +35,18 @@ export interface TenantData {
   tunnelRequireForRemote: boolean;
   tunnelTokenMaxLifetimeDays: number | null;
   tunnelAgentAllowedCidrs: string[];
+  loginRateLimitWindowMs: number | null;
+  loginRateLimitMaxAttempts: number | null;
+  accountLockoutThreshold: number | null;
+  accountLockoutDurationMs: number | null;
+  impossibleTravelSpeedKmh: number | null;
+  jwtExpiresInSeconds: number | null;
+  jwtRefreshExpiresInSeconds: number | null;
+  vaultDefaultTtlMinutes: number | null;
+  recordingEnabled: boolean;
+  recordingRetentionDays: number | null;
+  fileUploadMaxSizeBytes: number | null;
+  userDriveQuotaBytes: number | null;
   teamCount: number;
   createdAt: string;
   updatedAt: string;
@@ -42,6 +58,8 @@ export interface TenantUser {
   username: string | null;
   avatarData: string | null;
   role: string;
+  status: TenantMembershipStatus;
+  pending: boolean;
   totpEnabled: boolean;
   smsMfaEnabled: boolean;
   enabled: boolean;
@@ -55,6 +73,8 @@ export interface TenantMembership {
   name: string;
   slug: string;
   role: string;
+  status: TenantMembershipStatus;
+  pending: boolean;
   isActive: boolean;
   joinedAt: string;
 }
@@ -84,6 +104,8 @@ export interface InviteResult {
   email: string;
   username: string | null;
   role: string;
+  status: TenantMembershipStatus;
+  pending: boolean;
 }
 
 export interface CreateTenantResponse {
@@ -108,7 +130,7 @@ export async function getTenantMfaStats(tenantId: string): Promise<{ total: numb
   return data;
 }
 
-export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; maxConcurrentSessions?: number; absoluteSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null; dlpDisableCopy?: boolean; dlpDisablePaste?: boolean; dlpDisableDownload?: boolean; dlpDisableUpload?: boolean; enforcedConnectionSettings?: EnforcedConnectionSettings | null; tunnelDefaultEnabled?: boolean; tunnelAutoTokenRotation?: boolean; tunnelTokenRotationDays?: number; tunnelRequireForRemote?: boolean; tunnelTokenMaxLifetimeDays?: number | null; tunnelAgentAllowedCidrs?: string[] }): Promise<TenantData> {
+export async function updateTenant(id: string, payload: { name?: string; defaultSessionTimeoutSeconds?: number; maxConcurrentSessions?: number; absoluteSessionTimeoutSeconds?: number; mfaRequired?: boolean; vaultAutoLockMaxMinutes?: number | null; dlpDisableCopy?: boolean; dlpDisablePaste?: boolean; dlpDisableDownload?: boolean; dlpDisableUpload?: boolean; enforcedConnectionSettings?: EnforcedConnectionSettings | null; tunnelDefaultEnabled?: boolean; tunnelAutoTokenRotation?: boolean; tunnelTokenRotationDays?: number; tunnelRequireForRemote?: boolean; tunnelTokenMaxLifetimeDays?: number | null; tunnelAgentAllowedCidrs?: string[]; recordingEnabled?: boolean; recordingRetentionDays?: number | null; fileUploadMaxSizeBytes?: number | null; userDriveQuotaBytes?: number | null; loginRateLimitWindowMs?: number | null; loginRateLimitMaxAttempts?: number | null; accountLockoutThreshold?: number | null; accountLockoutDurationMs?: number | null; impossibleTravelSpeedKmh?: number | null; jwtExpiresInSeconds?: number | null; jwtRefreshExpiresInSeconds?: number | null; vaultDefaultTtlMinutes?: number | null }): Promise<TenantData> {
   const { data } = await api.put(`/tenants/${id}`, payload);
   return data;
 }
@@ -228,6 +250,27 @@ export async function updateMembershipExpiry(
   expiresAt: string | null,
 ): Promise<void> {
   await api.patch(`/tenants/${tenantId}/users/${userId}/expiry`, { expiresAt });
+}
+
+export interface UserPermissionsData {
+  role: string;
+  permissions: Record<PermissionFlag, boolean>;
+  overrides: Record<string, boolean> | null;
+  defaults: Record<PermissionFlag, boolean>;
+}
+
+export async function getUserPermissions(tenantId: string, userId: string): Promise<UserPermissionsData> {
+  const { data } = await api.get<UserPermissionsData>(`/tenants/${tenantId}/users/${userId}/permissions`);
+  return data;
+}
+
+export async function updateUserPermissions(
+  tenantId: string,
+  userId: string,
+  overrides: Record<string, boolean> | null,
+): Promise<UserPermissionsData> {
+  const { data } = await api.put<UserPermissionsData>(`/tenants/${tenantId}/users/${userId}/permissions`, { overrides });
+  return data;
 }
 
 export interface IpAllowlistData {

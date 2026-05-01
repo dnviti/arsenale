@@ -1,31 +1,96 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Dialog, AppBar, Toolbar, IconButton, Typography, Box,
-  Table, TableHead, TableRow, TableCell, TableBody, Chip,
-  Select, MenuItem, FormControl, InputLabel, Button, Tooltip,
-  DialogTitle, DialogContent, DialogActions, CircularProgress,
-} from '@mui/material';
-import CloseIcon from '@mui/icons-material/Close';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import DeleteIcon from '@mui/icons-material/Delete';
-import DownloadIcon from '@mui/icons-material/Download';
-import MovieIcon from '@mui/icons-material/Movie';
-import { listRecordings, deleteRecording, exportRecordingVideo } from '../../api/recordings.api';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Film,
+  Loader2,
+  Monitor,
+  Play,
+  Terminal,
+  Trash2,
+  Video,
+  X,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  listRecordings,
+  deleteRecording,
+  exportRecordingVideo,
+} from '../../api/recordings.api';
 import type { Recording } from '../../api/recordings.api';
 import api from '../../api/client';
 import RecordingPlayerDialog from './RecordingPlayerDialog';
-import { SlideUp } from '../common/SlideUp';
 
 interface RecordingsDialogProps {
   open: boolean;
   onClose: () => void;
 }
 
+const PROTOCOL_BADGE: Record<string, string> = {
+  SSH: 'bg-green-500/15 text-green-400 border-green-500/30',
+  RDP: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  VNC: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+};
+
+const PROTOCOL_ICON: Record<string, React.ElementType> = {
+  SSH: Terminal,
+  RDP: Monitor,
+  VNC: Monitor,
+};
+
+function formatDuration(seconds: number | null) {
+  if (seconds === null) return '\u2014';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function formatSize(bytes: number | null) {
+  if (bytes === null) return '\u2014';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+}
+
 export default function RecordingsDialog({ open, onClose }: RecordingsDialogProps) {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [protocolFilter, setProtocolFilter] = useState<string>('');
+  const [protocolFilter, setProtocolFilter] = useState<string>('all');
   const [page, setPage] = useState(0);
   const [playingRecording, setPlayingRecording] = useState<Recording | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Recording | null>(null);
@@ -36,7 +101,7 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
     setLoading(true);
     try {
       const result = await listRecordings({
-        protocol: protocolFilter || undefined,
+        protocol: protocolFilter === 'all' ? undefined : protocolFilter,
         status: 'COMPLETE',
         limit,
         offset: page * limit,
@@ -65,20 +130,6 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
     }
   };
 
-  const formatDuration = (seconds: number | null) => {
-    if (seconds === null) return '-';
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
-  const formatSize = (bytes: number | null) => {
-    if (bytes === null) return '-';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  };
-
   const handleDownload = async (rec: Recording) => {
     const { data } = await api.get(`/recordings/${rec.id}/stream`, { responseType: 'blob' });
     const url = URL.createObjectURL(data);
@@ -89,7 +140,7 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadVideo = async (rec: Recording) => {
+  const handleExportVideo = async (rec: Recording) => {
     setConvertingIds((prev) => new Set(prev).add(rec.id));
     try {
       const blob = await exportRecordingVideo(rec.id);
@@ -110,165 +161,175 @@ export default function RecordingsDialog({ open, onClose }: RecordingsDialogProp
     }
   };
 
-  const protocolColor = (protocol: string) => {
-    switch (protocol) {
-      case 'SSH': return 'success';
-      case 'RDP': return 'primary';
-      case 'VNC': return 'warning';
-      default: return 'default';
-    }
-  };
+  const totalPages = Math.ceil(total / limit);
 
   return (
     <>
-      <Dialog fullScreen open={open} onClose={onClose} TransitionComponent={SlideUp}>
-        <AppBar position="static" sx={{ position: 'relative' }}>
-          <Toolbar variant="dense">
-            <IconButton edge="start" color="inherit" onClick={onClose}>
-              <CloseIcon />
-            </IconButton>
-            <Typography sx={{ ml: 2, flex: 1 }} variant="h6">
-              Session Recordings
-            </Typography>
-          </Toolbar>
-        </AppBar>
+      <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+        <DialogContent
+          showCloseButton={false}
+          className="flex h-[100dvh] w-screen max-w-none flex-col gap-0 rounded-none border-0 p-0 sm:h-[94vh] sm:w-[96vw] sm:max-w-[1500px] sm:overflow-hidden sm:rounded-2xl sm:border"
+        >
+          {/* Header — compact single-line bar */}
+          <div className="flex h-8 shrink-0 items-center gap-2 border-b px-3">
+            <Video className="size-3.5 text-muted-foreground" />
+            <span className="text-xs font-medium">Recordings</span>
+            <span className="text-[10px] tabular-nums text-muted-foreground">({total})</span>
 
-        <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', p: 2 }}>
-          {/* Filters */}
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-            <FormControl size="small" sx={{ minWidth: 120 }}>
-              <InputLabel>Protocol</InputLabel>
-              <Select
-                value={protocolFilter}
-                onChange={(e) => { setProtocolFilter(e.target.value); setPage(0); }}
-                label="Protocol"
-              >
-                <MenuItem value="">All</MenuItem>
-                <MenuItem value="SSH">SSH</MenuItem>
-                <MenuItem value="RDP">RDP</MenuItem>
-                <MenuItem value="VNC">VNC</MenuItem>
+            <div className="ml-auto flex items-center gap-1.5">
+              <Select value={protocolFilter} onValueChange={(v) => { setProtocolFilter(v); setPage(0); }}>
+                <SelectTrigger className="h-6 w-[90px] text-[11px] px-2">
+                  <SelectValue placeholder="Protocol" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="SSH">SSH</SelectItem>
+                  <SelectItem value="RDP">RDP</SelectItem>
+                  <SelectItem value="VNC">VNC</SelectItem>
+                </SelectContent>
               </Select>
-            </FormControl>
-            <Typography variant="body2" sx={{ alignSelf: 'center', color: 'text.secondary' }}>
-              {total} recording{total !== 1 ? 's' : ''}
-            </Typography>
-          </Box>
+              <Button variant="ghost" size="icon-xs" onClick={onClose}>
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          </div>
 
-          {/* Recordings table */}
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
+          {/* Content */}
+          <ScrollArea className="flex-1">
             {loading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
-                <CircularProgress />
-              </Box>
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
             ) : recordings.length === 0 ? (
-              <Typography color="text.secondary" sx={{ textAlign: 'center', mt: 4 }}>
-                No recordings found. Enable session recording in your environment configuration.
-              </Typography>
+              <div className="flex flex-col items-center gap-3 py-16 text-center">
+                <Video className="size-8 text-muted-foreground/40" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">No recordings found</p>
+                  <p className="text-xs text-muted-foreground/70">
+                    Enable session recording in your environment configuration.
+                  </p>
+                </div>
+              </div>
             ) : (
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Connection</TableCell>
-                    <TableCell>Protocol</TableCell>
-                    <TableCell>User</TableCell>
-                    <TableCell>Duration</TableCell>
-                    <TableCell>Size</TableCell>
-                    <TableCell>Date</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {recordings.map((rec) => (
-                    <TableRow key={rec.id} hover>
-                      <TableCell>{rec.connection.name}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={rec.protocol}
-                          size="small"
-                          color={protocolColor(rec.protocol) as 'success' | 'primary' | 'warning' | 'default'}
-                        />
-                      </TableCell>
-                      <TableCell>{rec.user?.username || rec.user?.email || '-'}</TableCell>
-                      <TableCell>{formatDuration(rec.duration)}</TableCell>
-                      <TableCell>{formatSize(rec.fileSize)}</TableCell>
-                      <TableCell>{new Date(rec.createdAt).toLocaleString()}</TableCell>
-                      <TableCell align="right">
-                        <Tooltip title="Play">
-                          <IconButton size="small" onClick={() => setPlayingRecording(rec)}>
-                            <PlayArrowIcon fontSize="small" />
-                          </IconButton>
+              <div className="px-1">
+                {recordings.map((rec) => {
+                  const Icon = PROTOCOL_ICON[rec.protocol] ?? Monitor;
+                  const converting = convertingIds.has(rec.id);
+
+                  return (
+                    <div
+                      key={rec.id}
+                      className="group flex items-center gap-3 border-b border-border/40 px-3 py-2 transition-colors hover:bg-muted/50"
+                    >
+                      {/* Icon + connection name */}
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted/60">
+                          <Icon className="size-4 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">{rec.connection.name}</span>
+                            <Badge className={cn('shrink-0 px-1.5 py-0 text-[10px] leading-tight', PROTOCOL_BADGE[rec.protocol])}>
+                              {rec.protocol}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                            <span>{rec.user?.username || rec.user?.email || '\u2014'}</span>
+                            <span className="text-border">\u00b7</span>
+                            <span>{formatDate(rec.createdAt)} {formatTime(rec.createdAt)}</span>
+                            <span className="text-border">\u00b7</span>
+                            <span className="tabular-nums">{formatDuration(rec.duration)}</span>
+                            <span className="text-border">\u00b7</span>
+                            <span className="tabular-nums">{formatSize(rec.fileSize)}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" onClick={() => setPlayingRecording(rec)}>
+                              <Play className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">Play</TooltipContent>
                         </Tooltip>
-                        <Tooltip title="Download">
-                          <IconButton size="small" onClick={() => handleDownload(rec)}>
-                            <DownloadIcon fontSize="small" />
-                          </IconButton>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" onClick={() => handleDownload(rec)}>
+                              <Download className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">Download raw</TooltipContent>
                         </Tooltip>
-                        {(rec.format === 'guac' || rec.format === 'asciicast') && (
-                          <Tooltip title="Download MP4">
-                            <span>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleDownloadVideo(rec)}
-                                disabled={convertingIds.has(rec.id)}
-                              >
-                                {convertingIds.has(rec.id) ? (
-                                  <CircularProgress size={18} />
-                                ) : (
-                                  <MovieIcon fontSize="small" />
-                                )}
-                              </IconButton>
-                            </span>
+
+                        {(rec.format === 'guac' || rec.format === 'asciicast') ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button variant="ghost" size="icon-sm" onClick={() => handleExportVideo(rec)} disabled={converting}>
+                                {converting ? <Loader2 className="size-3.5 animate-spin" /> : <Film className="size-3.5" />}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Export MP4</TooltipContent>
                           </Tooltip>
-                        )}
-                        <Tooltip title="Delete">
-                          <IconButton size="small" onClick={() => setDeleteTarget(rec)}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+                        ) : null}
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="ghost" size="icon-sm" onClick={() => setDeleteTarget(rec)} className="text-muted-foreground hover:text-destructive">
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">Delete</TooltipContent>
                         </Tooltip>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-          </Box>
+          </ScrollArea>
 
           {/* Pagination */}
-          {total > limit && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, gap: 1 }}>
-              <Button size="small" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                Previous
+          {totalPages > 1 ? (
+            <div className="flex items-center justify-between border-t px-4 py-2">
+              <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)} className="gap-1 text-xs">
+                <ChevronLeft className="size-3.5" /> Previous
               </Button>
-              <Typography variant="body2" sx={{ alignSelf: 'center' }}>
-                Page {page + 1} of {Math.ceil(total / limit)}
-              </Typography>
-              <Button size="small" disabled={(page + 1) * limit >= total} onClick={() => setPage((p) => p + 1)}>
-                Next
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {page + 1} / {totalPages}
+              </span>
+              <Button variant="ghost" size="sm" disabled={(page + 1) * limit >= total} onClick={() => setPage((p) => p + 1)} className="gap-1 text-xs">
+                Next <ChevronRight className="size-3.5" />
               </Button>
-            </Box>
-          )}
-        </Box>
+            </div>
+          ) : null}
+        </DialogContent>
       </Dialog>
 
-      {/* Player popup dialog */}
+      {/* Player */}
       <RecordingPlayerDialog
         open={!!playingRecording}
         onClose={() => setPlayingRecording(null)}
         recording={playingRecording}
       />
 
-      {/* Delete confirmation dialog */}
-      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete Recording</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Delete the recording for &quot;{deleteTarget?.connection.name}&quot;? This action cannot be undone.
-          </Typography>
+      {/* Delete confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(v) => { if (!v) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Recording</DialogTitle>
+            <DialogDescription>
+              Delete the recording for &quot;{deleteTarget?.connection.name}&quot;? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" size="sm" onClick={handleDelete}>Delete</Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button color="error" onClick={handleDelete}>Delete</Button>
-        </DialogActions>
       </Dialog>
     </>
   );

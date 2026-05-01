@@ -1,15 +1,24 @@
 import { useState, useEffect } from 'react';
 import {
-  Card, CardContent, Typography, Box, Alert, CircularProgress,
-  Chip, Stack, TextField, IconButton, Tooltip,
-} from '@mui/material';
-import {
-  ContentCopy as CopyIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-} from '@mui/icons-material';
+  AlertCircle,
+  CheckCircle2,
+  Copy,
+  CopyCheck,
+} from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { getSshProxyStatus } from '../../api/sessions.api';
 import type { SshProxyStatus } from '../../api/sessions.api';
+import {
+  SettingsButtonRow,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsStatusBadge,
+  SettingsSummaryGrid,
+  SettingsSummaryItem,
+} from './settings-ui';
 
 export default function NativeSshSection() {
   const [status, setStatus] = useState<SshProxyStatus | null>(null);
@@ -23,20 +32,26 @@ export default function NativeSshSection() {
       .catch(() => { setError('Unable to fetch SSH proxy status'); setLoading(false); });
   }, []);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+  const handleCopy = async (text: string) => {
+    if (!navigator.clipboard?.writeText) return;
+
+    try {
+      await navigator.clipboard.writeText(text);
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Ignore clipboard failures and leave the snippet visible.
+    }
   };
 
   if (loading) {
     return (
-      <Card variant="outlined">
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="Native SSH Access"
+        description="Connect through the Arsenale SSH proxy with a native OpenSSH client."
+      >
+        <SettingsLoadingState message="Loading SSH proxy status..." />
+      </SettingsPanel>
     );
   }
 
@@ -47,108 +62,105 @@ export default function NativeSshSection() {
   # Use the proxy token as password when prompted` : '';
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-          Native SSH Access
-        </Typography>
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          Connect to your SSH targets using a native OpenSSH client through the Arsenale SSH proxy.
-          The proxy handles authentication and credential injection transparently.
-        </Typography>
+    <SettingsPanel
+      title="Native SSH Access"
+      description="Connect through the Arsenale SSH proxy with a native OpenSSH client."
+      contentClassName="space-y-4"
+    >
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-        {status && (
-          <Stack spacing={2} sx={{ mt: 2 }}>
-            {/* Status */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" fontWeight="bold">Status:</Typography>
-              {status.enabled ? (
-                <Chip
-                  icon={status.listening ? <CheckCircleIcon /> : <CancelIcon />}
-                  label={status.listening ? 'Running' : 'Enabled (not listening)'}
-                  color={status.listening ? 'success' : 'warning'}
-                  size="small"
-                />
-              ) : (
-                <Chip
-                  icon={<CancelIcon />}
-                  label="Disabled"
-                  color="default"
-                  size="small"
-                />
+      {status && (
+        <>
+          <SettingsSummaryGrid>
+            <SettingsSummaryItem
+              label="Proxy Status"
+              value={(
+                <SettingsStatusBadge
+                  tone={status.enabled ? (status.listening ? 'success' : 'warning') : 'neutral'}
+                >
+                  {status.enabled
+                    ? (status.listening ? <CheckCircle2 className="mr-1 size-3.5" /> : <AlertCircle className="mr-1 size-3.5" />)
+                    : <AlertCircle className="mr-1 size-3.5" />}
+                  {status.enabled ? (status.listening ? 'Running' : 'Enabled, not listening') : 'Disabled'}
+                </SettingsStatusBadge>
               )}
-            </Box>
+            />
+            <SettingsSummaryItem label="Proxy Port" value={status.port} />
+            <SettingsSummaryItem label="Active Proxy Sessions" value={status.activeSessions} />
+            <SettingsSummaryItem
+              label="Auth Methods"
+              value={(
+                <div className="flex flex-wrap gap-2">
+                  {status.allowedAuthMethods.map((method) => (
+                    <Badge key={method} variant="outline">{method}</Badge>
+                  ))}
+                </div>
+              )}
+            />
+          </SettingsSummaryGrid>
 
-            {/* Port */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" fontWeight="bold">Proxy Port:</Typography>
-              <Typography variant="body2">{status.port}</Typography>
-            </Box>
+          {status.enabled && (
+            <div className="space-y-3 rounded-xl border border-border/70 bg-background/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-foreground">SSH Config Snippet</div>
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    Drop this into your local SSH config and use a proxy token as the password.
+                  </p>
+                </div>
+                <SettingsButtonRow>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCopy(sshConfigSnippet)}
+                    disabled={!navigator.clipboard?.writeText}
+                  >
+                    {copied ? <CopyCheck /> : <Copy />}
+                    {copied ? 'Copied' : 'Copy Snippet'}
+                  </Button>
+                </SettingsButtonRow>
+              </div>
 
-            {/* Active Sessions */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography variant="body2" fontWeight="bold">Active Proxy Sessions:</Typography>
-              <Typography variant="body2">{status.activeSessions}</Typography>
-            </Box>
+              <Textarea
+                readOnly
+                value={sshConfigSnippet}
+                rows={5}
+                className="min-h-0 font-mono text-xs leading-6"
+              />
+            </div>
+          )}
 
-            {/* Auth Methods */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-              <Typography variant="body2" fontWeight="bold">Auth Methods:</Typography>
-              {status.allowedAuthMethods.map((method) => (
-                <Chip key={method} label={method} size="small" variant="outlined" />
-              ))}
-            </Box>
-
-            {/* SSH Config Snippet */}
-            {status.enabled && (
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Typography variant="body2" fontWeight="bold">SSH Config Snippet:</Typography>
-                  <Tooltip title={copied ? 'Copied!' : 'Copy to clipboard'}>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleCopy(sshConfigSnippet)}
-                    >
-                      <CopyIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={5}
-                  value={sshConfigSnippet}
-                  slotProps={{ input: { readOnly: true } }}
-                  sx={{ mt: 1, '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: '0.85rem' } }}
-                />
-              </Box>
-            )}
-
-            {/* Connection Instructions */}
-            {status.enabled && (
-              <Alert severity="info" sx={{ mt: 1 }}>
-                <Typography variant="body2">
-                  <strong>How to connect:</strong>
-                </Typography>
-                <Typography variant="body2" component="ol" sx={{ pl: 2, mt: 0.5 }}>
-                  <li>Generate a proxy token from the connection context menu or via the API.</li>
-                  <li>Use the token as the password when connecting through the SSH proxy.</li>
-                  <li>The proxy will authenticate you, resolve credentials from the vault, and forward your session.</li>
-                </Typography>
-              </Alert>
-            )}
-
-            {!status.enabled && (
-              <Alert severity="info" sx={{ mt: 1 }}>
-                The SSH proxy is currently disabled. To enable it, set <code>SSH_PROXY_ENABLED=true</code> in your
-                environment variables and restart the server.
-              </Alert>
-            )}
-          </Stack>
-        )}
-      </CardContent>
-    </Card>
+          {status.enabled ? (
+            <Alert variant="info">
+              <AlertDescription>
+                <div className="space-y-2">
+                  <div className="font-medium text-foreground">How to connect</div>
+                  <ol className="list-decimal space-y-1 pl-5">
+                    <li>Generate a proxy token from the connection menu or API.</li>
+                    <li>Use the token as the password when connecting through the SSH proxy.</li>
+                    <li>The proxy authenticates you, resolves vault credentials, and forwards the session.</li>
+                  </ol>
+                </div>
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <Alert variant="info">
+              <AlertDescription>
+                The SSH proxy is currently disabled. Set
+                {' '}
+                <code className="rounded bg-background/80 px-1.5 py-0.5 text-xs text-foreground">SSH_PROXY_ENABLED=true</code>
+                {' '}
+                and restart the server to enable native SSH access.
+              </AlertDescription>
+            </Alert>
+          )}
+        </>
+      )}
+    </SettingsPanel>
   );
 }

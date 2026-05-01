@@ -1,4 +1,5 @@
 import api from './client';
+import type { Recording } from './recordings.api';
 
 export type AuditAction =
   | 'LOGIN' | 'LOGIN_OAUTH' | 'LOGIN_TOTP' | 'LOGIN_FAILURE' | 'LOGOUT' | 'REGISTER'
@@ -30,15 +31,19 @@ export type AuditAction =
   | 'GATEWAY_TEMPLATE_CREATE' | 'GATEWAY_TEMPLATE_UPDATE' | 'GATEWAY_TEMPLATE_DELETE' | 'GATEWAY_TEMPLATE_DEPLOY'
   | 'GATEWAY_VIEW_LOGS'
   | 'REFRESH_TOKEN_REUSE'
-  | 'SFTP_UPLOAD' | 'SFTP_DOWNLOAD' | 'SFTP_DELETE' | 'SFTP_MKDIR' | 'SFTP_RENAME'
+  | 'FILE_UPLOAD' | 'FILE_DOWNLOAD' | 'FILE_DELETE' | 'FILE_MKDIR' | 'FILE_RENAME' | 'FILE_LIST'
+  | 'SFTP_UPLOAD' | 'SFTP_DOWNLOAD' | 'SFTP_DELETE' | 'SFTP_MKDIR' | 'SFTP_RENAME' | 'SFTP_LIST'
   | 'VAULT_AUTO_LOCK'
   | 'SESSION_TERMINATE'
   | 'SECRET_EXTERNAL_REVOKE'
   | 'SECRET_SHARE_UPDATE'
   | 'GATEWAY_RECONCILE'
   | 'CONNECTION_FAVORITE'
+  | 'RECORDING_START' | 'RECORDING_VIEW' | 'RECORDING_DELETE' | 'RECORDING_EXPORT_VIDEO'
+  | 'SESSION_TERMINATED_POLICY_VIOLATION' | 'TOKEN_HIJACK_ATTEMPT'
   | 'IMPOSSIBLE_TRAVEL_DETECTED'
   | 'ANOMALOUS_LATERAL_MOVEMENT'
+  | 'TUNNEL_EGRESS_DENIED'
   | 'DB_QUERY_EXECUTED' | 'DB_QUERY_BLOCKED'
   | 'DB_FIREWALL_RULE_CREATE' | 'DB_FIREWALL_RULE_UPDATE' | 'DB_FIREWALL_RULE_DELETE'
   | 'DB_MASKING_POLICY_CREATE' | 'DB_MASKING_POLICY_UPDATE' | 'DB_MASKING_POLICY_DELETE'
@@ -145,8 +150,13 @@ export interface GeoSummaryPoint {
   lastSeen: string;
 }
 
-export async function getTenantGeoSummary(days: number = 30): Promise<GeoSummaryPoint[]> {
-  const { data } = await api.get('/audit/tenant/geo-summary', { params: { days } });
+export interface TenantGeoSummaryParams extends Omit<TenantAuditLogParams, 'page' | 'limit' | 'sortBy' | 'sortOrder'> {
+  days?: number;
+}
+
+export async function getTenantGeoSummary(paramsOrDays: TenantGeoSummaryParams | number = {}): Promise<GeoSummaryPoint[]> {
+  const params = typeof paramsOrDays === 'number' ? { days: paramsOrDays } : paramsOrDays;
+  const { data } = await api.get('/audit/tenant/geo-summary', { params });
   return data.points;
 }
 
@@ -170,5 +180,15 @@ export async function getConnectionAuditLogs(
 
 export async function getConnectionAuditUsers(connectionId: string): Promise<ConnectionAuditUser[]> {
   const { data } = await api.get(`/audit/connection/${connectionId}/users`);
+  return data;
+}
+
+export async function getRecordingAuditTrail(recordingId: string): Promise<{ data: AuditLogEntry[]; hasMore: boolean }> {
+  const { data } = await api.get(`/recordings/${recordingId}/audit-trail`);
+  return data;
+}
+
+export async function getSessionRecording(sessionId: string): Promise<Recording> {
+  const { data } = await api.get(`/audit/session/${sessionId}/recording`);
   return data;
 }

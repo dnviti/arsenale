@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Switch, FormControlLabel, Button, Chip,
-  CircularProgress, Alert, TextField, Accordion, AccordionSummary,
-  AccordionDetails, Table, TableBody, TableCell, TableHead, TableRow,
-  Tooltip,
-} from '@mui/material';
+  RefreshCw, CheckCircle, AlertCircle, Clock, Loader2,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { Alert } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
 import {
-  ExpandMore as ExpandMoreIcon,
-  Autorenew as RotateIcon,
-  CheckCircle as SuccessIcon,
-  Error as ErrorIcon,
-  HourglassEmpty as PendingIcon,
-} from '@mui/icons-material';
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from '@/components/ui/accordion';
 import {
   getRotationStatus, enableRotation, disableRotation,
   triggerRotation, getRotationHistory,
@@ -25,9 +24,9 @@ interface PasswordRotationPanelProps {
 }
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
-  SUCCESS: <SuccessIcon fontSize="small" color="success" />,
-  FAILED: <ErrorIcon fontSize="small" color="error" />,
-  PENDING: <PendingIcon fontSize="small" color="warning" />,
+  SUCCESS: <CheckCircle className="h-4 w-4 text-green-500" />,
+  FAILED: <AlertCircle className="h-4 w-4 text-destructive" />,
+  PENDING: <Clock className="h-4 w-4 text-yellow-500" />,
 };
 
 export default function PasswordRotationPanel({ secretId, isReadOnly }: PasswordRotationPanelProps) {
@@ -108,129 +107,130 @@ export default function PasswordRotationPanel({ secretId, isReadOnly }: Password
 
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
-        <CircularProgress size={24} />
-      </Box>
+      <div className="flex justify-center p-4">
+        <Loader2 className="h-5 w-5 animate-spin" />
+      </div>
     );
   }
 
   return (
-    <Box>
+    <div>
       {error && (
-        <Alert severity="error" sx={{ mb: 1 }} onClose={() => setError(null)}>
-          {error}
+        <Alert variant="destructive" className="mb-2">
+          <div className="flex items-center justify-between">
+            <span>{error}</span>
+            <button onClick={() => setError(null)} className="text-xs underline">Dismiss</button>
+          </div>
         </Alert>
       )}
       {successMsg && (
-        <Alert severity="success" sx={{ mb: 1 }} onClose={() => setSuccessMsg(null)}>
-          {successMsg}
+        <Alert variant="success" className="mb-2">
+          <div className="flex items-center justify-between">
+            <span>{successMsg}</span>
+            <button onClick={() => setSuccessMsg(null)} className="text-xs underline">Dismiss</button>
+          </div>
         </Alert>
       )}
 
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={status?.enabled ?? false}
-              onChange={(_, checked) => handleToggle(checked)}
-              disabled={isReadOnly || toggling}
-              size="small"
-            />
-          }
-          label={
-            <Typography variant="body2">
-              Auto-rotate password
-            </Typography>
-          }
-        />
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={status?.enabled ?? false}
+            onCheckedChange={(checked) => handleToggle(checked)}
+            disabled={isReadOnly || toggling}
+          />
+          <span className="text-sm">Auto-rotate password</span>
+        </div>
         {status?.enabled && !isReadOnly && (
           <Button
-            size="small"
-            variant="outlined"
-            startIcon={rotating ? <CircularProgress size={16} /> : <RotateIcon />}
+            size="sm"
+            variant="outline"
             onClick={handleTrigger}
             disabled={rotating}
           >
+            {rotating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
             Rotate Now
           </Button>
         )}
-      </Box>
+      </div>
 
       {status?.enabled && (
-        <Box sx={{ mb: 1.5 }}>
-          <TextField
-            label="Interval (days)"
-            type="number"
-            value={intervalDays}
-            onChange={(e) => setIntervalDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
-            onBlur={() => {
-              if (intervalDays !== status.intervalDays) {
-                handleToggle(true);
-              }
-            }}
-            size="small"
-            disabled={isReadOnly || toggling}
-            slotProps={{ htmlInput: { min: 1, max: 365 } }}
-            sx={{ width: 140 }}
-          />
-          <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        <div className="mb-3">
+          <div className="space-y-1.5 mb-2">
+            <Label>Interval (days)</Label>
+            <Input
+              type="number"
+              value={intervalDays}
+              onChange={(e) => setIntervalDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
+              onBlur={() => {
+                if (intervalDays !== status.intervalDays) {
+                  handleToggle(true);
+                }
+              }}
+              disabled={isReadOnly || toggling}
+              min={1}
+              max={365}
+              className="w-36"
+            />
+          </div>
+          <div className="flex gap-1 flex-wrap">
             {status.lastRotatedAt && (
-              <Chip label={`Last rotated: ${formatDate(status.lastRotatedAt)}`} size="small" variant="outlined" />
+              <Badge variant="outline">Last rotated: {formatDate(status.lastRotatedAt)}</Badge>
             )}
             {status.nextRotationAt && (
-              <Chip label={`Next: ${formatDate(status.nextRotationAt)}`} size="small" color="info" variant="outlined" />
+              <Badge variant="outline">Next: {formatDate(status.nextRotationAt)}</Badge>
             )}
-          </Box>
-        </Box>
+          </div>
+        </div>
       )}
 
       {/* Rotation history */}
       {history.length > 0 && (
-        <Accordion disableGutters elevation={0} variant="outlined" sx={{ mt: 1 }}>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography variant="body2">
-              Rotation History ({history.length})
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails sx={{ p: 0 }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Trigger</TableCell>
-                  <TableCell>Target</TableCell>
-                  <TableCell>Date</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {history.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell>
-                      <Tooltip title={entry.errorMessage ?? entry.status}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          {STATUS_ICONS[entry.status]}
-                          <Typography variant="caption">{entry.status}</Typography>
-                        </Box>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption">{entry.trigger}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                        {entry.targetUser}@{entry.targetHost}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption">{formatDate(entry.createdAt)}</Typography>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </AccordionDetails>
+        <Accordion type="single" collapsible className="mt-2">
+          <AccordionItem value="history">
+            <AccordionTrigger>
+              <span className="text-sm">Rotation History ({history.length})</span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-1.5 px-2 text-xs font-medium text-muted-foreground">Status</th>
+                      <th className="text-left py-1.5 px-2 text-xs font-medium text-muted-foreground">Trigger</th>
+                      <th className="text-left py-1.5 px-2 text-xs font-medium text-muted-foreground">Target</th>
+                      <th className="text-left py-1.5 px-2 text-xs font-medium text-muted-foreground">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((entry) => (
+                      <tr key={entry.id} className="border-b last:border-0">
+                        <td className="py-1.5 px-2">
+                          <div className="flex items-center gap-1" title={entry.errorMessage ?? entry.status}>
+                            {STATUS_ICONS[entry.status]}
+                            <span className="text-xs">{entry.status}</span>
+                          </div>
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <span className="text-xs">{entry.trigger}</span>
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <span className="text-xs font-mono">
+                            {entry.targetUser}@{entry.targetHost}
+                          </span>
+                        </td>
+                        <td className="py-1.5 px-2">
+                          <span className="text-xs">{formatDate(entry.createdAt)}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
         </Accordion>
       )}
-    </Box>
+    </div>
   );
 }

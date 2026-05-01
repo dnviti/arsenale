@@ -1,0 +1,14 @@
+services:
+  ssh-gateway:
+    environment:
+      SPIFFE_TRUST_DOMAIN: "${SPIFFE_TRUST_DOMAIN:-arsenale.local}"
+      GATEWAY_GRPC_TLS_CA: /grpc-certs/ca.pem
+      GATEWAY_GRPC_CLIENT_CA: /grpc-certs/client-ca.pem
+      GATEWAY_GRPC_TLS_CERT: /grpc-certs/server-cert.pem
+      GATEWAY_GRPC_TLS_KEY: /grpc-certs/server-key.pem
+      GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "${GATEWAY_GRPC_EXPECTED_SPIFFE_ID:-spiffe://arsenale.local/service/control-plane-api}"
+    volumes:
+      - ${GATEWAY_GRPC_TLS_CA_FILE:?set GATEWAY_GRPC_TLS_CA_FILE}:/grpc-certs/ca.pem:ro
+      - ${GATEWAY_GRPC_CLIENT_CA_FILE:?set GATEWAY_GRPC_CLIENT_CA_FILE}:/grpc-certs/client-ca.pem:ro
+      - ${GATEWAY_GRPC_TLS_CERT_FILE:?set GATEWAY_GRPC_TLS_CERT_FILE}:/grpc-certs/server-cert.pem:ro
+      - ${GATEWAY_GRPC_TLS_KEY_FILE:?set GATEWAY_GRPC_TLS_KEY_FILE}:/grpc-certs/server-key.pem:ro

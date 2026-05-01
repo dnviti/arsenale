@@ -1,19 +1,19 @@
 import { useMemo, useCallback, useRef } from 'react';
 import {
-  ContentCopy as CopyIcon,
-  ContentPaste as PasteIcon,
-  Keyboard as KeyboardIcon,
-  CameraAlt as ScreenshotIcon,
-  Fullscreen as FullscreenIcon,
-  FullscreenExit as FullscreenExitIcon,
-  FolderOpen as FolderOpenIcon,
-  PowerSettingsNew as DisconnectIcon,
-} from '@mui/icons-material';
+  Copy,
+  ClipboardPaste,
+  Keyboard,
+  Camera,
+  Maximize,
+  Minimize,
+  FolderOpen,
+  Power,
+} from 'lucide-react';
 import * as Guacamole from '@glokon/guacamole-common-js';
 import type { ToolbarAction } from '../components/shared/DockedToolbar';
 import type { ResolvedDlpPolicy } from '../api/connections.api';
 import { KEYSYMS } from '../constants/keysyms';
-import { useTabsStore } from '../store/tabsStore';
+import { closeConnectionSurface } from '../utils/closeConnectionSurface';
 
 interface UseGuacToolbarActionsOptions {
   protocol: 'RDP' | 'VNC';
@@ -94,7 +94,7 @@ export function useGuacToolbarActions({
   }, [clientRef]);
 
   const handleDisconnect = useCallback(() => {
-    useTabsStore.getState().closeTab(tabId);
+    closeConnectionSurface(tabId);
   }, [tabId]);
 
   const driveHiddenByDlp = dlpPolicy?.disableDownload && dlpPolicy?.disableUpload;
@@ -106,7 +106,7 @@ export function useGuacToolbarActions({
     // Clipboard: Copy
     list.push({
       id: 'clipboard-copy',
-      icon: <CopyIcon fontSize="small" />,
+      icon: <Copy className="size-4" />,
       tooltip: 'Copy',
       onClick: handleCopy,
       disabled: !!dlpPolicy?.disableCopy,
@@ -115,7 +115,7 @@ export function useGuacToolbarActions({
     // Clipboard: Paste
     list.push({
       id: 'clipboard-paste',
-      icon: <PasteIcon fontSize="small" />,
+      icon: <ClipboardPaste className="size-4" />,
       tooltip: 'Paste',
       onClick: handlePaste,
       disabled: !!dlpPolicy?.disablePaste,
@@ -124,7 +124,7 @@ export function useGuacToolbarActions({
     // Ctrl+Alt+Del
     list.push({
       id: 'ctrl-alt-del',
-      icon: <KeyboardIcon fontSize="small" />,
+      icon: <Keyboard className="size-4" />,
       tooltip: 'Ctrl+Alt+Del',
       onClick: () => sendKeys(KEYSYMS.CTRL_ALT_DEL),
     });
@@ -132,21 +132,21 @@ export function useGuacToolbarActions({
     // Send Keys submenu
     list.push({
       id: 'send-keys',
-      icon: <KeyboardIcon fontSize="small" />,
+      icon: <Keyboard className="size-4" />,
       tooltip: 'Send Keys',
       onClick: () => {},
       subActions: [
-        { id: 'alt-tab', icon: <KeyboardIcon fontSize="small" />, tooltip: 'Alt+Tab', onClick: () => sendKeys(KEYSYMS.ALT_TAB) },
-        { id: 'alt-f4', icon: <KeyboardIcon fontSize="small" />, tooltip: 'Alt+F4', onClick: () => sendKeys(KEYSYMS.ALT_F4) },
-        { id: 'windows-key', icon: <KeyboardIcon fontSize="small" />, tooltip: 'Windows Key', onClick: () => sendKeys(KEYSYMS.WINDOWS) },
-        { id: 'print-screen', icon: <KeyboardIcon fontSize="small" />, tooltip: 'PrintScreen', onClick: () => sendKeys(KEYSYMS.PRINT_SCREEN) },
+        { id: 'alt-tab', icon: <Keyboard className="size-4" />, tooltip: 'Alt+Tab', onClick: () => sendKeys(KEYSYMS.ALT_TAB) },
+        { id: 'alt-f4', icon: <Keyboard className="size-4" />, tooltip: 'Alt+F4', onClick: () => sendKeys(KEYSYMS.ALT_F4) },
+        { id: 'windows-key', icon: <Keyboard className="size-4" />, tooltip: 'Windows Key', onClick: () => sendKeys(KEYSYMS.WINDOWS) },
+        { id: 'print-screen', icon: <Keyboard className="size-4" />, tooltip: 'PrintScreen', onClick: () => sendKeys(KEYSYMS.PRINT_SCREEN) },
       ],
     });
 
     // Screenshot
     list.push({
       id: 'screenshot',
-      icon: <ScreenshotIcon fontSize="small" />,
+      icon: <Camera className="size-4" />,
       tooltip: 'Screenshot',
       onClick: handleScreenshot,
       hidden: !!dlpPolicy?.disableDownload,
@@ -155,7 +155,7 @@ export function useGuacToolbarActions({
     // Fullscreen
     list.push({
       id: 'fullscreen',
-      icon: isFullscreen ? <FullscreenExitIcon fontSize="small" /> : <FullscreenIcon fontSize="small" />,
+      icon: isFullscreen ? <Minimize className="size-4" /> : <Maximize className="size-4" />,
       tooltip: isFullscreen ? 'Exit Fullscreen' : 'Fullscreen',
       onClick: toggleFullscreen,
       active: isFullscreen,
@@ -165,8 +165,8 @@ export function useGuacToolbarActions({
     if (protocol === 'RDP') {
       list.push({
         id: 'shared-drive',
-        icon: <FolderOpenIcon fontSize="small" />,
-        tooltip: fileBrowserOpen ? 'Close Shared Drive' : 'Shared Drive',
+        icon: <FolderOpen className="size-4" />,
+        tooltip: fileBrowserOpen ? 'Close Shared Drive' : 'Open Shared Drive',
         onClick: () => onToggleDrive?.(),
         active: fileBrowserOpen,
         hidden: !enableDrive || !!driveHiddenByDlp,
@@ -176,7 +176,7 @@ export function useGuacToolbarActions({
     // Disconnect
     list.push({
       id: 'disconnect',
-      icon: <DisconnectIcon fontSize="small" />,
+      icon: <Power className="size-4" />,
       tooltip: 'Disconnect',
       onClick: handleDisconnect,
       color: 'error.main',

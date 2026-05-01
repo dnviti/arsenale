@@ -1,5 +1,4 @@
-import { Box, Link, Tooltip, Typography } from '@mui/material';
-import { Language as GlobeIcon } from '@mui/icons-material';
+import { Globe } from 'lucide-react';
 
 /**
  * Convert ISO 3166-1 alpha-2 country code to flag emoji.
@@ -16,14 +15,9 @@ function countryFlag(code: string | null | undefined): string {
 
 /**
  * Determine the country code from the country name.
- * We store the full country name in geoCountry but need the ISO code for the flag.
- * The geoCity field is used for display. For the flag, we fall back to showing
- * a globe icon if we can't determine the code.
  */
 function getCountryCode(geoCountry: string | null): string | null {
   if (!geoCountry) return null;
-  // Common country name to ISO 3166-1 alpha-2 mapping
-  // MaxMind returns English names; we map the most common ones
   const map: Record<string, string> = {
     'Afghanistan': 'AF', 'Albania': 'AL', 'Algeria': 'DZ', 'Andorra': 'AD',
     'Angola': 'AO', 'Argentina': 'AR', 'Armenia': 'AM', 'Australia': 'AU',
@@ -82,10 +76,7 @@ export default function IpGeoCell({ ipAddress, geoCountry, geoCity, onGeoIpClick
   const flag = countryFlag(code);
   const geoLabel = [geoCity, geoCountry].filter(Boolean).join(', ');
 
-  // Extract the public IPv4 for display and GeoIP lookup.
-  // The raw value might be a single IP or comma-separated (legacy entries).
   const publicIp = extractPublicIPv4(ipAddress);
-  // Display the public IPv4 when available, otherwise show the raw value.
   const displayIp = publicIp ?? ipAddress;
   const isExternal = !!publicIp;
 
@@ -97,55 +88,36 @@ export default function IpGeoCell({ ipAddress, geoCountry, geoCity, onGeoIpClick
   };
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+    <div className="flex items-center gap-1">
       {flag && (
-        <Tooltip title={geoLabel || geoCountry || ''}>
-          <span style={{ fontSize: '1rem', lineHeight: 1 }}>{flag}</span>
-        </Tooltip>
+        <span style={{ fontSize: '1rem', lineHeight: 1 }} title={geoLabel || geoCountry || ''}>
+          {flag}
+        </span>
       )}
       {isExternal && onGeoIpClick ? (
-        <Tooltip title={geoLabel ? `${geoLabel} \u2014 Click to inspect` : 'Click to inspect IP'}>
-          <Link
-            component="button"
-            onClick={handleClick}
-            sx={{
-              textDecoration: 'none',
-              '&:hover': { textDecoration: 'underline' },
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.3,
-              cursor: 'pointer',
-              border: 'none',
-              background: 'none',
-              font: 'inherit',
-              color: 'primary.main',
-              p: 0,
-            }}
-          >
-            {displayIp}
-            <GlobeIcon sx={{ fontSize: 14, opacity: 0.6 }} />
-          </Link>
-        </Tooltip>
+        <button
+          onClick={handleClick}
+          className="inline-flex items-center gap-0.5 text-primary hover:underline cursor-pointer border-none bg-transparent p-0"
+          style={{ font: 'inherit' }}
+          title={geoLabel ? `${geoLabel} \u2014 Click to inspect` : 'Click to inspect IP'}
+        >
+          {displayIp}
+          <Globe className="h-3.5 w-3.5 opacity-60" />
+        </button>
       ) : isExternal ? (
-        <Tooltip title={geoLabel ? `${geoLabel}` : displayIp}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            {displayIp}
-            <GlobeIcon sx={{ fontSize: 14, opacity: 0.4 }} />
-          </span>
-        </Tooltip>
+        <span className="inline-flex items-center gap-0.5" title={geoLabel ? `${geoLabel}` : displayIp}>
+          {displayIp}
+          <Globe className="h-3.5 w-3.5 opacity-40" />
+        </span>
       ) : (
         <span>{displayIp}</span>
       )}
       {geoLabel && (
-        <Typography
-          variant="caption"
-          color="text.secondary"
-          sx={{ ml: 0.5, whiteSpace: 'nowrap' }}
-        >
+        <span className="text-xs text-muted-foreground ml-1 whitespace-nowrap">
           {geoLabel}
-        </Typography>
+        </span>
       )}
-    </Box>
+    </div>
   );
 }
 
@@ -154,16 +126,13 @@ export default function IpGeoCell({ ipAddress, geoCountry, geoCity, onGeoIpClick
  */
 function isPrivateIp(ip: string): boolean {
   const clean = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
-  // IPv4 private ranges
   if (clean.startsWith('10.') || clean.startsWith('192.168.') || clean === '127.0.0.1' || clean === '::1') {
     return true;
   }
-  // 172.16.0.0 - 172.31.255.255
   if (clean.startsWith('172.')) {
     const second = parseInt(clean.split('.')[1], 10);
     if (second >= 16 && second <= 31) return true;
   }
-  // localhost / IPv6 link-local
   if (clean === 'localhost' || clean.startsWith('fe80:') || clean.startsWith('fd') || clean.startsWith('fc')) return true;
   return false;
 }

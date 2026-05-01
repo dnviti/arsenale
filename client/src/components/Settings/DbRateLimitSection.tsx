@@ -1,229 +1,106 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from "react";
+import { Plus } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import PolicyTable from "@/components/shared/PolicyTable";
 import {
-  Card, CardContent, Typography, Box, Button, Stack,
-  Table, TableHead, TableBody, TableRow, TableCell,
-  Chip, IconButton, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, FormControl, InputLabel,
-  Select, MenuItem, Switch, FormControlLabel, Alert,
-  CircularProgress, Tooltip, Divider, ListSubheader,
-} from '@mui/material';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Speed as SpeedIcon,
-} from '@mui/icons-material';
+  createRateLimitPolicy,
+  deleteRateLimitPolicy,
+  getRateLimitPolicies,
+  updateRateLimitPolicy,
+  type DbQueryType,
+  type RateLimitAction,
+  type RateLimitPolicy,
+  type RateLimitPolicyInput,
+} from "../../api/dbAudit.api";
+import { useAsyncAction } from "../../hooks/useAsyncAction";
 import {
-  getRateLimitPolicies, createRateLimitPolicy, updateRateLimitPolicy, deleteRateLimitPolicy,
-  RateLimitPolicy, RateLimitPolicyInput, RateLimitAction, DbQueryType,
-} from '../../api/dbAudit.api';
-import { useAsyncAction } from '../../hooks/useAsyncAction';
-
-const ACTION_COLORS: Record<RateLimitAction, 'error' | 'warning'> = {
-  REJECT: 'error',
-  LOG_ONLY: 'warning',
-};
-
-const QUERY_TYPE_OPTIONS: Array<{ value: DbQueryType | ''; label: string }> = [
-  { value: '', label: 'All Types' },
-  { value: 'SELECT', label: 'SELECT' },
-  { value: 'INSERT', label: 'INSERT' },
-  { value: 'UPDATE', label: 'UPDATE' },
-  { value: 'DELETE', label: 'DELETE' },
-  { value: 'DDL', label: 'DDL' },
-  { value: 'OTHER', label: 'OTHER' },
-];
-
-const WINDOW_OPTIONS = [
-  { value: 10000, label: '10 seconds' },
-  { value: 30000, label: '30 seconds' },
-  { value: 60000, label: '1 minute' },
-  { value: 300000, label: '5 minutes' },
-  { value: 3600000, label: '1 hour' },
-];
-
-const EXEMPT_ROLE_OPTIONS = ['OWNER', 'ADMIN', 'OPERATOR', 'MEMBER', 'CONSULTANT', 'AUDITOR', 'GUEST'];
-
-// ---------------------------------------------------------------------------
-// Preset policy templates
-// ---------------------------------------------------------------------------
-
-interface PolicyTemplate {
-  name: string;
-  queryType: DbQueryType | null;
-  windowMs: number;
-  maxQueries: number;
-  burstMax: number;
-  action: RateLimitAction;
-  category: string;
-}
-
-const POLICY_TEMPLATES: PolicyTemplate[] = [
-  // --- General Protection ---
-  {
-    category: 'General Protection',
-    name: 'Standard Query Limit',
-    queryType: null,
-    windowMs: 60000,
-    maxQueries: 100,
-    burstMax: 10,
-    action: 'REJECT',
-  },
-  {
-    category: 'General Protection',
-    name: 'Strict Query Limit',
-    queryType: null,
-    windowMs: 60000,
-    maxQueries: 30,
-    burstMax: 5,
-    action: 'REJECT',
-  },
-  {
-    category: 'General Protection',
-    name: 'Relaxed Query Limit (Log Only)',
-    queryType: null,
-    windowMs: 60000,
-    maxQueries: 500,
-    burstMax: 50,
-    action: 'LOG_ONLY',
-  },
-  // --- Write Protection ---
-  {
-    category: 'Write Protection',
-    name: 'INSERT Rate Limit',
-    queryType: 'INSERT',
-    windowMs: 60000,
-    maxQueries: 50,
-    burstMax: 10,
-    action: 'REJECT',
-  },
-  {
-    category: 'Write Protection',
-    name: 'UPDATE Rate Limit',
-    queryType: 'UPDATE',
-    windowMs: 60000,
-    maxQueries: 30,
-    burstMax: 5,
-    action: 'REJECT',
-  },
-  {
-    category: 'Write Protection',
-    name: 'DELETE Rate Limit',
-    queryType: 'DELETE',
-    windowMs: 60000,
-    maxQueries: 20,
-    burstMax: 3,
-    action: 'REJECT',
-  },
-  // --- DDL Protection ---
-  {
-    category: 'DDL Protection',
-    name: 'DDL Rate Limit',
-    queryType: 'DDL',
-    windowMs: 300000,
-    maxQueries: 5,
-    burstMax: 2,
-    action: 'REJECT',
-  },
-  // --- Performance ---
-  {
-    category: 'Performance',
-    name: 'SELECT Throttle',
-    queryType: 'SELECT',
-    windowMs: 10000,
-    maxQueries: 50,
-    burstMax: 20,
-    action: 'REJECT',
-  },
-  {
-    category: 'Performance',
-    name: 'Heavy Read Alert',
-    queryType: 'SELECT',
-    windowMs: 60000,
-    maxQueries: 200,
-    burstMax: 30,
-    action: 'LOG_ONLY',
-  },
-];
-
-function formatWindow(ms: number): string {
-  if (ms < 60000) return `${ms / 1000}s`;
-  if (ms < 3600000) return `${ms / 60000}m`;
-  return `${ms / 3600000}h`;
-}
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+  ALL_QUERY_TYPES,
+  EMPTY_RATE_LIMIT_POLICY_FORM,
+  formatRateLimitWindow,
+  RATE_LIMIT_ACTION_VARIANTS,
+  RATE_LIMIT_EXEMPT_ROLES,
+  RATE_LIMIT_POLICY_TEMPLATES,
+  RATE_LIMIT_QUERY_TYPE_OPTIONS,
+  RATE_LIMIT_WINDOW_OPTIONS,
+} from "./dbRateLimitPolicyConfig";
+import {
+  PolicyDialogShell,
+  PolicyEmptyState,
+  PolicyFormSection,
+  PolicyMetadataBadge,
+  PolicyRoleChecklist,
+  PolicyTemplatePicker,
+} from "./databasePolicyUi";
+import {
+  SettingsFieldCard,
+  SettingsLoadingState,
+  SettingsPanel,
+  SettingsSwitchRow,
+} from "./settings-ui";
 
 export default function DbRateLimitSection() {
   const [policies, setPolicies] = useState<RateLimitPolicy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingPolicy, setEditingPolicy] = useState<RateLimitPolicy | null>(null);
-  const [formData, setFormData] = useState<RateLimitPolicyInput>({
-    name: '',
-    queryType: null,
-    windowMs: 60000,
-    maxQueries: 100,
-    burstMax: 10,
-    exemptRoles: [],
-    scope: '',
-    action: 'REJECT',
-    enabled: true,
-    priority: 0,
-  });
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingPolicy, setEditingPolicy] = useState<RateLimitPolicy | null>(
+    null,
+  );
+  const [formData, setFormData] = useState<RateLimitPolicyInput>(
+    EMPTY_RATE_LIMIT_POLICY_FORM,
+  );
   const { loading: saving, error, run, clearError } = useAsyncAction();
 
   const fetchPolicies = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getRateLimitPolicies();
-      setPolicies(data);
+      setPolicies(await getRateLimitPolicies());
     } catch {
-      // silent
+      setPolicies([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchPolicies();
+    void fetchPolicies();
   }, [fetchPolicies]);
 
-  const handleOpenCreate = () => {
-    setEditingPolicy(null);
-    setFormData({
-      name: '',
-      queryType: null,
-      windowMs: 60000,
-      maxQueries: 100,
-      burstMax: 10,
-      exemptRoles: [],
-      scope: '',
-      action: 'REJECT',
-      enabled: true,
-      priority: 0,
-    });
+  const resetForm = () => {
+    setFormData(EMPTY_RATE_LIMIT_POLICY_FORM);
     clearError();
-    setEditOpen(true);
   };
 
-  const handleApplyTemplate = (templateValue: string) => {
-    const template = POLICY_TEMPLATES.find((t) => t.name === templateValue);
-    if (!template) return;
-    setFormData({
-      ...formData,
-      name: template.name,
-      queryType: template.queryType,
-      windowMs: template.windowMs,
-      maxQueries: template.maxQueries,
-      burstMax: template.burstMax,
-      action: template.action,
-    });
+  const closeDialog = (open: boolean) => {
+    setDialogOpen(open);
+    if (!open) {
+      setEditingPolicy(null);
+      resetForm();
+    }
   };
 
-  const handleOpenEdit = (policy: RateLimitPolicy) => {
+  const updateField = <K extends keyof RateLimitPolicyInput>(
+    key: K,
+    value: RateLimitPolicyInput[K],
+  ) => {
+    setFormData((current) => ({ ...current, [key]: value }));
+  };
+
+  const openCreate = () => {
+    setEditingPolicy(null);
+    resetForm();
+    setDialogOpen(true);
+  };
+
+  const openEdit = (policy: RateLimitPolicy) => {
     setEditingPolicy(policy);
     setFormData({
       name: policy.name,
@@ -232,280 +109,409 @@ export default function DbRateLimitSection() {
       maxQueries: policy.maxQueries,
       burstMax: policy.burstMax,
       exemptRoles: policy.exemptRoles,
-      scope: policy.scope || '',
+      scope: policy.scope ?? "",
       action: policy.action,
       enabled: policy.enabled,
       priority: policy.priority,
     });
     clearError();
-    setEditOpen(true);
+    setDialogOpen(true);
+  };
+
+  const applyTemplate = (templateName: string) => {
+    const template = RATE_LIMIT_POLICY_TEMPLATES.find(
+      (entry) => entry.name === templateName,
+    );
+    if (!template) {
+      return;
+    }
+
+    setFormData((current) => ({
+      ...current,
+      name: template.name,
+      queryType: template.queryType,
+      windowMs: template.windowMs,
+      maxQueries: template.maxQueries,
+      burstMax: template.burstMax,
+      action: template.action,
+    }));
   };
 
   const handleSave = async () => {
     const payload: RateLimitPolicyInput = {
       ...formData,
       queryType: formData.queryType || null,
-      scope: formData.scope && formData.scope.trim() !== '' ? formData.scope : null,
+      scope: formData.scope?.trim() ? formData.scope.trim() : null,
     };
 
-    const ok = await run(async () => {
+    const isSuccessful = await run(async () => {
       if (editingPolicy) {
         await updateRateLimitPolicy(editingPolicy.id, payload);
       } else {
         await createRateLimitPolicy(payload);
       }
-    }, 'Failed to save rate limit policy');
+    }, "Failed to save rate limit policy");
 
-    if (ok) {
-      setEditOpen(false);
-      fetchPolicies();
+    if (!isSuccessful) {
+      return;
     }
+
+    closeDialog(false);
+    await fetchPolicies();
   };
 
   const handleDelete = async (policyId: string) => {
-    await run(async () => {
+    const isSuccessful = await run(async () => {
       await deleteRateLimitPolicy(policyId);
-      fetchPolicies();
-    }, 'Failed to delete rate limit policy');
+    }, "Failed to delete rate limit policy");
+
+    if (isSuccessful) {
+      await fetchPolicies();
+    }
   };
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <SpeedIcon color="primary" />
-            <Typography variant="subtitle1" fontWeight="bold">Query Rate Limiting</Typography>
-          </Box>
-          <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={handleOpenCreate}>
+    <>
+      <SettingsPanel
+        title="Query Rate Limits"
+        description="Cap noisy workloads, slow abuse, and decide whether overages are rejected or simply logged."
+        heading={
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={openCreate}
+          >
+            <Plus />
             Add Policy
           </Button>
-        </Box>
-
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Configure rate limits for SQL queries executed through database proxy sessions.
-          Policies use a token bucket algorithm to enforce per-user query rate limits by query type.
-        </Typography>
+        }
+        contentClassName="space-y-4"
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {loading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-            <CircularProgress size={24} />
-          </Box>
+          <SettingsLoadingState message="Loading rate limit policies..." />
         ) : policies.length === 0 ? (
-          <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-            No rate limit policies configured. All queries are allowed without rate restrictions.
-          </Typography>
+          <PolicyEmptyState
+            title="No query rate limits"
+            description="Queries are currently unrestricted. Add a policy when you need hard ceilings on read or write throughput."
+          />
         ) : (
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Name</TableCell>
-                <TableCell>Query Type</TableCell>
-                <TableCell>Window</TableCell>
-                <TableCell>Max Queries</TableCell>
-                <TableCell>Burst</TableCell>
-                <TableCell>Action</TableCell>
-                <TableCell>Priority</TableCell>
-                <TableCell>Enabled</TableCell>
-                <TableCell align="right">Actions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {policies.map((policy) => (
-                <TableRow key={policy.id}>
-                  <TableCell>
-                    <Tooltip title={policy.scope ? `Scope: ${policy.scope}` : 'Global scope'}>
-                      <span>{policy.name}</span>
-                    </Tooltip>
-                  </TableCell>
-                  <TableCell>
-                    <Chip
-                      label={policy.queryType || 'All'}
-                      size="small"
-                      variant="outlined"
-                    />
-                  </TableCell>
-                  <TableCell>{formatWindow(policy.windowMs)}</TableCell>
-                  <TableCell>{policy.maxQueries}</TableCell>
-                  <TableCell>{policy.burstMax}</TableCell>
-                  <TableCell>
-                    <Chip label={policy.action === 'REJECT' ? 'Reject' : 'Log Only'} color={ACTION_COLORS[policy.action]} size="small" />
-                  </TableCell>
-                  <TableCell>{policy.priority}</TableCell>
-                  <TableCell>
-                    <Chip label={policy.enabled ? 'On' : 'Off'} size="small" color={policy.enabled ? 'success' : 'default'} variant="outlined" />
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => handleOpenEdit(policy)}><EditIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => handleDelete(policy.id)}><DeleteIcon fontSize="small" /></IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-
-      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingPolicy ? 'Edit Rate Limit Policy' : 'Create Rate Limit Policy'}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            {error && <Alert severity="error">{error}</Alert>}
-
-            {/* Template selector — only shown when creating */}
-            {!editingPolicy && (
-              <>
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Start from template (optional)</InputLabel>
-                  <Select
-                    value=""
-                    label="Start from template (optional)"
-                    onChange={(e) => handleApplyTemplate(e.target.value)}
+          <PolicyTable
+            ariaLabel="Rate limit policies"
+            items={policies}
+            columns={[
+              {
+                id: "name",
+                header: "Policy",
+                className: "align-top whitespace-normal",
+                cell: (policy) => (
+                  <div className="flex min-w-[14rem] flex-col gap-1">
+                    <span className="font-medium text-foreground">
+                      {policy.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Priority {policy.priority}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                id: "query-type",
+                header: "Query type",
+                cell: (policy) => (
+                  <PolicyMetadataBadge variant="outline">
+                    {policy.queryType || "All query types"}
+                  </PolicyMetadataBadge>
+                ),
+              },
+              {
+                id: "window",
+                header: "Window",
+                cell: (policy) => (
+                  <span className="text-sm text-muted-foreground">
+                    {formatRateLimitWindow(policy.windowMs)}
+                  </span>
+                ),
+              },
+              {
+                id: "limits",
+                header: "Limits",
+                className: "align-top whitespace-normal",
+                cell: (policy) => (
+                  <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                    <span>Max {policy.maxQueries}</span>
+                    <span>Burst {policy.burstMax}</span>
+                  </div>
+                ),
+              },
+              {
+                id: "response",
+                header: "Response",
+                className: "align-top whitespace-normal",
+                cell: (policy) => (
+                  <div className="flex flex-col gap-2">
+                    <PolicyMetadataBadge
+                      variant={RATE_LIMIT_ACTION_VARIANTS[policy.action]}
+                    >
+                      {policy.action === "REJECT" ? "Reject" : "Log only"}
+                    </PolicyMetadataBadge>
+                    <span className="text-xs text-muted-foreground">
+                      {policy.scope || "Global scope"}
+                    </span>
+                  </div>
+                ),
+              },
+              {
+                id: "roles",
+                header: "Exempt roles",
+                className: "align-top whitespace-normal",
+                cell: (policy) => (
+                  <span className="text-sm text-muted-foreground">
+                    {policy.exemptRoles.length > 0
+                      ? policy.exemptRoles.join(", ")
+                      : "None"}
+                  </span>
+                ),
+              },
+              {
+                id: "status",
+                header: "Status",
+                cell: (policy) => (
+                  <PolicyMetadataBadge
+                    variant={policy.enabled ? "default" : "outline"}
                   >
-                    {(() => {
-                      const items: React.ReactNode[] = [];
-                      let lastCategory = '';
-                      for (const t of POLICY_TEMPLATES) {
-                        if (t.category !== lastCategory) {
-                          items.push(<ListSubheader key={`cat-${t.category}`}>{t.category}</ListSubheader>);
-                          lastCategory = t.category;
-                        }
-                        items.push(
-                          <MenuItem key={t.name} value={t.name}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                              <Chip label={t.action === 'REJECT' ? 'Reject' : 'Log'} color={ACTION_COLORS[t.action]} size="small" sx={{ minWidth: 56 }} />
-                              <Typography variant="body2">{t.name}</Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-                                {t.queryType || 'All'} · {t.maxQueries}/{formatWindow(t.windowMs)}
-                              </Typography>
-                            </Box>
-                          </MenuItem>,
-                        );
-                      }
-                      return items;
-                    })()}
-                  </Select>
-                </FormControl>
-                <Divider />
-              </>
-            )}
+                    {policy.enabled ? "Enabled" : "Disabled"}
+                  </PolicyMetadataBadge>
+                ),
+              },
+            ]}
+            emptyTitle="No query rate limits"
+            emptyDescription="Queries are currently unrestricted. Add a policy when you need hard ceilings on read or write throughput."
+            getKey={(policy) => policy.id}
+            getRowLabel={(policy) => policy.name}
+            onEdit={openEdit}
+            onDelete={(policy) => void handleDelete(policy.id)}
+          />
+        )}
+      </SettingsPanel>
 
-            <TextField
-              label="Name"
-              size="small"
-              fullWidth
-              required
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            />
-            <FormControl size="small" fullWidth>
-              <InputLabel>Query Type</InputLabel>
+      <PolicyDialogShell
+        open={dialogOpen}
+        onOpenChange={closeDialog}
+        title={
+          editingPolicy ? "Edit Rate Limit Policy" : "Create Rate Limit Policy"
+        }
+        description="Set the query type, time window, exempt roles, and response when a tenant crosses the limit."
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => closeDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving || !formData.name}
+            >
+              {saving
+                ? "Saving..."
+                : editingPolicy
+                  ? "Update Policy"
+                  : "Create Policy"}
+            </Button>
+          </>
+        }
+      >
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {!editingPolicy && (
+          <PolicyTemplatePicker
+            title="Start from a template"
+            description="Choose a baseline limit and then tune the scope, burst allowance, or exemptions for this tenant."
+            templates={RATE_LIMIT_POLICY_TEMPLATES}
+            onApply={applyTemplate}
+          />
+        )}
+
+        <PolicyFormSection>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard
+              label="Policy name"
+              description="Keep the name readable in alerts and audit logs."
+            >
+              <Input
+                aria-label="Policy name"
+                value={formData.name}
+                onChange={(event) => updateField("name", event.target.value)}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard
+              label="Response"
+              description="Reject overages immediately or log them for review."
+            >
               <Select
-                value={formData.queryType || ''}
-                label="Query Type"
-                onChange={(e) => setFormData({ ...formData, queryType: (e.target.value as DbQueryType) || null })}
+                value={formData.action ?? "REJECT"}
+                onValueChange={(value) =>
+                  updateField("action", value as RateLimitAction)
+                }
               >
-                {QUERY_TYPE_OPTIONS.map((opt) => (
-                  <MenuItem key={opt.value || 'all'} value={opt.value}>{opt.label}</MenuItem>
-                ))}
+                <SelectTrigger aria-label="Rate limit action">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="REJECT">Reject excess queries</SelectItem>
+                  <SelectItem value="LOG_ONLY">Log excess queries</SelectItem>
+                </SelectContent>
               </Select>
-            </FormControl>
-            <FormControl size="small" fullWidth>
-              <InputLabel>Time Window</InputLabel>
+            </SettingsFieldCard>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <SettingsFieldCard
+              label="Query type"
+              description="Limit a specific SQL class or all statements together."
+            >
               <Select
-                value={formData.windowMs ?? 60000}
-                label="Time Window"
-                onChange={(e) => setFormData({ ...formData, windowMs: Number(e.target.value) })}
+                value={formData.queryType ?? ALL_QUERY_TYPES}
+                onValueChange={(value) =>
+                  updateField(
+                    "queryType",
+                    value === ALL_QUERY_TYPES ? null : (value as DbQueryType),
+                  )
+                }
               >
-                {WINDOW_OPTIONS.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                ))}
+                <SelectTrigger aria-label="Query type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RATE_LIMIT_QUERY_TYPE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </FormControl>
-            <TextField
-              label="Max Queries"
-              size="small"
-              type="number"
-              fullWidth
-              value={formData.maxQueries ?? 100}
-              onChange={(e) => setFormData({ ...formData, maxQueries: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-              slotProps={{ htmlInput: { min: 1 } }}
-              helperText="Maximum number of queries allowed within the time window (min: 1)"
-            />
-            <TextField
-              label="Burst Max"
-              size="small"
-              type="number"
-              fullWidth
-              value={formData.burstMax ?? 10}
-              onChange={(e) => setFormData({ ...formData, burstMax: Math.max(1, parseInt(e.target.value, 10) || 1) })}
-              slotProps={{ htmlInput: { min: 1 } }}
-              helperText="Token bucket capacity — allows short bursts above the steady rate (min: 1)"
-            />
-            <FormControl size="small" fullWidth>
-              <InputLabel>Exempt Roles</InputLabel>
+            </SettingsFieldCard>
+
+            <SettingsFieldCard
+              label="Time window"
+              description="The rolling window used to count matching queries."
+            >
               <Select
-                multiple
-                value={formData.exemptRoles ?? []}
-                label="Exempt Roles"
-                onChange={(e) => setFormData({ ...formData, exemptRoles: e.target.value as string[] })}
-                renderValue={(selected) => (selected as string[]).join(', ') || 'None'}
+                value={String(formData.windowMs ?? 60000)}
+                onValueChange={(value) =>
+                  updateField("windowMs", Number(value))
+                }
               >
-                {EXEMPT_ROLE_OPTIONS.map((role) => (
-                  <MenuItem key={role} value={role}>{role}</MenuItem>
-                ))}
+                <SelectTrigger aria-label="Time window">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RATE_LIMIT_WINDOW_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={String(option.value)}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </FormControl>
-            <TextField
-              label="Scope (optional)"
-              size="small"
-              fullWidth
-              value={formData.scope || ''}
-              onChange={(e) => setFormData({ ...formData, scope: e.target.value })}
-              helperText="Limit to a specific database or table name (leave empty for global)"
-            />
-            <FormControl size="small" fullWidth>
-              <InputLabel>Action</InputLabel>
-              <Select
-                value={formData.action ?? 'REJECT'}
-                label="Action"
-                onChange={(e) => setFormData({ ...formData, action: e.target.value as RateLimitAction })}
-              >
-                <MenuItem value="REJECT">Reject - Block query execution</MenuItem>
-                <MenuItem value="LOG_ONLY">Log Only - Allow but log over-limit</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
+            </SettingsFieldCard>
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <SettingsFieldCard
+              label="Max queries"
+              description="How many matching queries fit inside the window."
+            >
+              <Input
+                type="number"
+                min={1}
+                aria-label="Max queries"
+                value={formData.maxQueries ?? 100}
+                onChange={(event) => {
+                  const nextValue =
+                    Number.parseInt(event.target.value, 10) || 1;
+                  updateField("maxQueries", Math.max(1, nextValue));
+                }}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard
+              label="Burst allowance"
+              description="Short-term tokens available above the steady limit."
+            >
+              <Input
+                type="number"
+                min={1}
+                aria-label="Burst max"
+                value={formData.burstMax ?? 10}
+                onChange={(event) => {
+                  const nextValue =
+                    Number.parseInt(event.target.value, 10) || 1;
+                  updateField("burstMax", Math.max(1, nextValue));
+                }}
+              />
+            </SettingsFieldCard>
+
+            <SettingsFieldCard
               label="Priority"
-              size="small"
-              type="number"
-              value={formData.priority ?? 0}
-              onChange={(e) => setFormData({ ...formData, priority: Math.max(0, parseInt(e.target.value, 10) || 0) })}
-              slotProps={{ htmlInput: { min: 0 } }}
-              helperText="Higher priority policies are evaluated first (min: 0)"
-            />
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={formData.enabled ?? true}
-                  onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-                />
-              }
-              label="Enabled"
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            disabled={saving || !formData.name}
+              description="Higher priority policies are evaluated first."
+            >
+              <Input
+                type="number"
+                min={0}
+                aria-label="Policy priority"
+                value={formData.priority ?? 0}
+                onChange={(event) => {
+                  const nextValue =
+                    Number.parseInt(event.target.value, 10) || 0;
+                  updateField("priority", Math.max(0, nextValue));
+                }}
+              />
+            </SettingsFieldCard>
+          </div>
+
+          <SettingsFieldCard
+            label="Scope"
+            description="Leave empty to apply the policy across every proxied database."
           >
-            {saving ? <CircularProgress size={20} /> : editingPolicy ? 'Update' : 'Create'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-    </Card>
+            <Input
+              aria-label="Policy scope"
+              value={formData.scope ?? ""}
+              placeholder="database or table name"
+              onChange={(event) => updateField("scope", event.target.value)}
+            />
+          </SettingsFieldCard>
+
+          <PolicyRoleChecklist
+            label="Exempt roles"
+            description="Selected tenant roles bypass this policy entirely."
+            options={RATE_LIMIT_EXEMPT_ROLES}
+            selected={formData.exemptRoles ?? []}
+            onChange={(selected) => updateField("exemptRoles", selected)}
+          />
+
+          <SettingsSwitchRow
+            title="Enable this policy"
+            description="Disabled policies stay saved but do not participate in rate-limit decisions."
+            checked={formData.enabled ?? true}
+            onCheckedChange={(checked) => updateField("enabled", checked)}
+          />
+        </PolicyFormSection>
+      </PolicyDialogShell>
+    </>
   );
 }

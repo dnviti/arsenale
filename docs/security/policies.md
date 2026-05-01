@@ -3,6 +3,8 @@
 > Auto-generated on 2026-03-15 by /docs create security.
 > Source of truth is the codebase. Run /docs update security after code changes.
 
+> Runtime note: the current authorization and policy enforcement path is Go-first. Any `server/src` references below are historical notes kept for migration context.
+
 ## Connection Sharing Security
 
 When a connection is shared with another user, credentials are **re-encrypted** for the recipient:
@@ -62,8 +64,10 @@ Data Loss Prevention policies control clipboard and file operations in remote se
 **Per-connection overrides** (`Connection.dlpPolicy` JSON field): can only be **more** restrictive than the tenant floor (logical OR / most-restrictive wins).
 
 **Protocol enforcement:**
-- **RDP/VNC**: Clipboard via Guacamole `disable-copy`/`disable-paste` parameters + client-side defense-in-depth. File transfer via Guacamole parameters + server-side API guards.
-- **SSH**: Clipboard enforced client-side in terminal (Ctrl+Shift+C/V). SFTP enforced **server-side** in the Socket.IO handler (authoritative), with client-side UI hiding as defense-in-depth.
+- **RDP/VNC**: Clipboard via Guacamole `disable-copy`/`disable-paste` parameters + client-side defense-in-depth. RDP shared-drive transfers are gated by the staged-file API and materialized into the Guacamole drive cache only after policy checks.
+- **SSH**: Clipboard enforced client-side in terminal (Ctrl+Shift+C/V). Remote file browsing uses authenticated REST endpoints under `/api/files/ssh/*`, and upload/download payloads are staged server-side before delivery to the target host or browser.
+
+**Threat scanning:** staged file payloads are scanned before delivery. The builtin scanner currently blocks the EICAR test signature. Files rejected by scanning return HTTP 422 and are not delivered to the remote target or the browser.
 
 DLP policy changes are tracked under the `TENANT_DLP_POLICY_UPDATE` audit action.
 
@@ -83,7 +87,34 @@ Consecutive authentication events are checked for geographically implausible vel
 
 Set `IMPOSSIBLE_TRAVEL_SPEED_KMH=0` to disable detection entirely. Requires GeoIP to be configured (`GEOIP_DB_PATH`).
 
-Source: `server/src/services/impossibleTravel.service.ts`
+Source: `backend/internal/auditapi/impossible_travel.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Lateral Movement Anomaly Detection
+
+Arsenale detects lateral movement patterns consistent with MITRE ATT&CK T1021 (Remote Services). When a user initiates sessions to multiple hosts in rapid succession using the same or different protocols, the system evaluates the pattern against configurable thresholds.
+
+- Session velocity and target diversity are tracked per user within a rolling time window
+- Anomalous patterns trigger an `LATERAL_MOVEMENT_DETECTED` audit entry
+- Tenant admins receive in-app notifications for flagged patterns
+- Detection complements (but does not replace) ABAC policy enforcement
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Pwned Password Check
+
+User passwords are checked against the HaveIBeenPwned database using the k-Anonymity API:
+
+1. The password is SHA-1 hashed
+2. The first 5 characters of the hash are sent to the HIBP API
+3. The API returns all matching hash suffixes
+4. The full hash is compared locally (password never leaves the server)
+5. If the password appears in a known breach, registration or password change is rejected
+
+Controlled by `HIBP_FAIL_OPEN` (default: `false`). When `true`, passwords are allowed if the HIBP API is unreachable.
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -92,12 +123,91 @@ Source: `server/src/services/impossibleTravel.service.ts`
 
 All user-supplied connection hostnames are validated before use to prevent Server-Side Request Forgery (SSRF):
 
-1. The hostname `localhost` is always rejected
-2. If the input is an IP address, it is checked directly; otherwise DNS resolution (`resolve4`, `resolve6`, and `lookup`) is performed and all resolved IPs are checked
-3. **Always blocked**: loopback (`127.0.0.0/8`, `::1`), wildcard (`0.0.0.0`, `::`), link-local (`169.254.0.0/16`, `fe80::/10`), and the server's own interface IPs
-4. **Blocked by default**: private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, IPv6 ULA `fc00::/7`). Set `ALLOW_LOCAL_NETWORK=true` to allow private network connections (for LAN deployments)
+1. The hostname `localhost` is always rejected (unless `ALLOW_LOOPBACK=true`)
+2. If the input is an IP address, it is checked directly; otherwise DNS resolution is performed and all resolved IPs are checked
+3. **Always blocked**: wildcard (`0.0.0.0`, `::`), link-local (`169.254.0.0/16`, `fe80::/10`), and the server's own interface IPs
+4. **Blocked by default**: loopback (`127.0.0.0/8`, `::1`) unless `ALLOW_LOOPBACK=true`; private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, IPv6 ULA `fc00::/7`) unless `ALLOW_LOCAL_NETWORK=true`
 
-Source: `server/src/utils/hostValidation.ts`
+Source: `backend/internal/connections/host_validation.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## SQL Firewall
+
+The DB proxy enforces regex-based SQL firewall rules on all queries before execution:
+
+1. Firewall rules are defined per tenant via `/api/db-audit/firewall-rules`
+2. Each rule has a regex pattern, priority, and BLOCK or ALLOW action
+3. Rules are evaluated in priority order; the first match determines the outcome
+4. Blocked queries return an error to the user and create a `DB_QUERY_BLOCKED` audit entry
+5. Built-in rules block dangerous patterns (e.g., `DROP DATABASE`, `TRUNCATE`, administrative commands)
+
+Source: `backend/internal/dbauditapi/firewall.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Data Masking
+
+Column-level masking policies are applied after database query execution in the control plane:
+
+| Mask Type | Behavior |
+|-----------|----------|
+| `FULL` | Replace entire value with `***` |
+| `PARTIAL` | Show first/last characters, mask middle |
+| `HASH` | Replace with SHA-256 hash prefix |
+| `REDACT` | Remove value entirely (null) |
+
+Masking policies match column names via regex and are managed via `/api/db-audit/masking-policies`.
+
+Source: `backend/internal/dbauditapi/masking.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## SSH Keystroke Inspection
+
+Real-time SSH keystroke inspection policies evaluate terminal input against regex patterns:
+
+1. Keystroke policies are defined per tenant via `/api/keystroke-policies`
+2. Each policy has a regex pattern and an action: `BLOCK_AND_TERMINATE` or `ALERT_ONLY`
+3. The terminal broker applies policies in real-time to SSH session input
+4. `BLOCK_AND_TERMINATE` immediately closes the session and creates a `KEYSTROKE_BLOCKED` audit entry
+5. `ALERT_ONLY` creates a `KEYSTROKE_ALERT` audit entry and notifies tenant admins
+
+Source: `backend/internal/keystrokepolicies/service.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Credential Checkout / PAM
+
+Temporary credential checkout/check-in with approval workflow for privileged access management:
+
+1. A user requests checkout of a connection's credentials via `/api/checkouts`
+2. The request requires a justification reason and a requested duration
+3. Tenant admins or operators receive a notification and can approve or deny
+4. Approved checkouts grant temporary access to the connection credentials
+5. Credentials are automatically returned (checked in) when the checkout expires
+6. All checkout lifecycle events are audited
+
+Source: `backend/internal/checkouts/service.go`
+
+<!-- manual-start -->
+<!-- manual-end -->
+
+## Password Rotation
+
+Automatic password rotation on target systems for stored credentials:
+
+1. Password rotation can be enabled per secret via `/api/secrets/{id}/rotation/enable`
+2. Rotation schedules are configurable (daily, weekly, monthly, or custom cron)
+3. When triggered, the system connects to the target and changes the password
+4. The new password is encrypted and stored as a new secret version
+5. Rotation history is tracked and viewable via `/api/secrets/rotation/history`
+
+Source: `backend/internal/passwordrotationapi/service.go`
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -134,19 +244,19 @@ When a policy denies access:
 - A `SESSION_DENIED_ABAC` audit log entry is created with the denial reason, policy ID, target type/ID, and GeoIP data
 - The caller receives a 403 response
 
-Source: `server/src/services/abac.service.ts`
+Source: `backend/internal/accesspolicies/service.go`
 
 <!-- manual-start -->
 <!-- manual-end -->
 
 ## Input Validation
 
-All API endpoints use Zod schema validation via the `validate` middleware (`server/src/middleware/validate.middleware.ts`):
+All API endpoints use structured validation in Go middleware:
 
-- Supports validating `body`, `query`, and `params` independently or together
-- Invalid input returns 400 with the first Zod issue message
-- Validated data replaces the raw request properties (type-safe downstream)
-- UUID path parameters are validated via `validateUuidParam` helper
+- Request bodies are decoded and validated before reaching handlers
+- Invalid input returns 400 with structured error messages
+- UUID path parameters are validated at the routing layer
+- Query parameters are parsed with type-safe defaults
 
 <!-- manual-start -->
 <!-- manual-end -->

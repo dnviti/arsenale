@@ -1,12 +1,12 @@
 import { useEffect } from 'react';
-import {
-  Box, Typography, Button, Tabs, Tab, Accordion, AccordionSummary,
-  AccordionDetails, Stack, Chip,
-} from '@mui/material';
-import { ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { useAuthStore } from '../../store/authStore';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import { isGatewayGroup } from '../../utils/gatewayMode';
 import SessionDashboard from './SessionDashboard';
 import GatewayInstanceList from './GatewayInstanceList';
 import ScalingControls from './ScalingControls';
@@ -33,76 +33,76 @@ export default function OrchestrationSection({ onNavigateToTab }: OrchestrationS
 
   if (!hasTenant) {
     return (
-      <Box sx={{ textAlign: 'center', py: 6 }}>
-        <Typography variant="h6" gutterBottom>No Organization</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+      <div className="text-center py-12">
+        <h3 className="text-lg font-semibold mb-2">No Organization</h3>
+        <p className="text-sm text-muted-foreground mb-6">
           You need to create or join an organization before using orchestration features.
-        </Typography>
-        <Button variant="contained" onClick={() => onNavigateToTab?.('organization')}>
+        </p>
+        <Button onClick={() => onNavigateToTab?.('organization')}>
           Set Up Organization
         </Button>
-      </Box>
+      </div>
     );
   }
 
   const managedGateways = gateways.filter(
-    (g) => g.type === 'MANAGED_SSH' || g.type === 'GUACD',
+    (g) => isGatewayGroup(g) && (g.type === 'MANAGED_SSH' || g.type === 'GUACD' || g.type === 'DB_PROXY'),
   );
 
   return (
-    <Box>
-      <Typography variant="h6" gutterBottom>Orchestration</Typography>
+    <div>
+      <h3 className="text-lg font-semibold mb-3">Orchestration</h3>
 
-      <Tabs
-        value={subTab}
-        onChange={(_, v) => setSubTab('orchestrationDashboardTab', v)}
-        sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}
-      >
-        <Tab label="Active Sessions" value="sessions" sx={{ textTransform: 'none' }} />
-        <Tab label="Gateway Scaling" value="gateways" sx={{ textTransform: 'none' }} />
-      </Tabs>
+      <Tabs value={subTab} onValueChange={(v) => setSubTab('orchestrationDashboardTab', v)}>
+        <TabsList>
+          <TabsTrigger value="sessions">Active Sessions</TabsTrigger>
+          <TabsTrigger value="gateways">Gateway Scaling</TabsTrigger>
+        </TabsList>
 
-      {subTab === 'sessions' && <SessionDashboard />}
+        <TabsContent value="sessions">
+          <SessionDashboard />
+        </TabsContent>
 
-      {subTab === 'gateways' && (
-        <Box>
+        <TabsContent value="gateways">
           {managedGateways.length === 0 ? (
-            <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography color="text.secondary">
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">
                 No deployable gateways found. Gateways of type MANAGED_SSH or GUACD can be managed here.
-              </Typography>
-            </Box>
+              </p>
+            </div>
           ) : (
-            managedGateways.map((gw) => (
-              <Accordion key={gw.id} defaultExpanded={gw.isManaged}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Typography variant="subtitle1">{gw.name}</Typography>
-                    <Chip label={gw.type} size="small" variant="outlined" />
-                    {gw.isManaged && (
-                      <Chip label="Managed" size="small" color="primary" />
+            <Accordion type="multiple" defaultValue={managedGateways.filter(isGatewayGroup).map(g => g.id)}>
+              {managedGateways.map((gw) => (
+                <AccordionItem key={gw.id} value={gw.id}>
+                  <AccordionTrigger>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{gw.name}</span>
+                      <Badge variant="outline">{gw.type}</Badge>
+                      {isGatewayGroup(gw) && (
+                        <Badge>Managed</Badge>
+                      )}
+                      {isGatewayGroup(gw) && (
+                        <span className="text-xs text-muted-foreground">
+                          {gw.runningInstances}/{gw.totalInstances} instances
+                        </span>
+                      )}
+                    </div>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <ScalingControls gatewayId={gw.id} gateway={gw} />
+                    {isGatewayGroup(gw) && gw.totalInstances > 0 && (
+                      <div className="mt-4">
+                        <p className="text-sm font-medium mb-2">Instances</p>
+                        <GatewayInstanceList gatewayId={gw.id} />
+                      </div>
                     )}
-                    {gw.isManaged && (
-                      <Typography variant="caption" color="text.secondary">
-                        {gw.runningInstances}/{gw.totalInstances} instances
-                      </Typography>
-                    )}
-                  </Stack>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <ScalingControls gatewayId={gw.id} gateway={gw} />
-                  {gw.isManaged && gw.totalInstances > 0 && (
-                    <Box sx={{ mt: 2 }}>
-                      <Typography variant="subtitle2" gutterBottom>Instances</Typography>
-                      <GatewayInstanceList gatewayId={gw.id} />
-                    </Box>
-                  )}
-                </AccordionDetails>
-              </Accordion>
-            ))
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           )}
-        </Box>
-      )}
-    </Box>
+        </TabsContent>
+      </Tabs>
+    </div>
   );
 }

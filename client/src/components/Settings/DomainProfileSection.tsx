@@ -1,33 +1,45 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Building2 } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import {
-  Card, CardContent, Typography, TextField, Button, Alert, Stack,
-  Chip, CircularProgress, Box, Dialog, DialogTitle, DialogContent,
-  DialogActions, DialogContentText,
-} from '@mui/material';
-import DomainIcon from '@mui/icons-material/Domain';
-import {
-  getDomainProfile, updateDomainProfile, clearDomainProfile,
-  type DomainProfile,
-} from '../../api/user.api';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { useNotificationStore } from '../../store/notificationStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { extractApiError } from '../../utils/apiError';
-import { useNotificationStore } from '../../store/notificationStore';
+import {
+  clearDomainProfile,
+  getDomainProfile,
+  updateDomainProfile,
+  type DomainProfile,
+} from '../../api/user.api';
+import {
+  SettingsButtonRow,
+  SettingsPanel,
+  SettingsStatusBadge,
+} from './settings-ui';
 
 export default function DomainProfileSection() {
+  const notify = useNotificationStore((state) => state.notify);
+  const vaultUnlocked = useVaultStore((state) => state.unlocked);
   const [profile, setProfile] = useState<DomainProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
-  const notify = useNotificationStore((s) => s.notify);
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
-
+  const [error, setError] = useState('');
   const [domainName, setDomainName] = useState('');
   const [domainUsername, setDomainUsername] = useState('');
   const [domainPassword, setDomainPassword] = useState('');
   const [clearPassword, setClearPassword] = useState(false);
-
-  const vaultUnlocked = useVaultStore((s) => s.unlocked);
 
   useEffect(() => {
     getDomainProfile()
@@ -40,17 +52,36 @@ export default function DomainProfileSection() {
       .finally(() => setLoading(false));
   }, []);
 
+  const hasProfile = Boolean(profile?.domainName || profile?.domainUsername);
+
+  const resetFormFromProfile = () => {
+    setDomainName(profile?.domainName ?? '');
+    setDomainUsername(profile?.domainUsername ?? '');
+    setDomainPassword('');
+    setClearPassword(false);
+    setError('');
+  };
+
   const handleSave = async () => {
     setError('');
     setSaving(true);
-    try {
-      const data: Record<string, string | null | undefined> = {};
-      if (domainName !== (profile?.domainName ?? '')) data.domainName = domainName;
-      if (domainUsername !== (profile?.domainUsername ?? '')) data.domainUsername = domainUsername;
-      if (domainPassword) data.domainPassword = domainPassword;
-      else if (clearPassword) data.domainPassword = null;
 
-      const result = await updateDomainProfile(data);
+    try {
+      const payload: Record<string, string | null | undefined> = {};
+
+      if (domainName !== (profile?.domainName ?? '')) {
+        payload.domainName = domainName;
+      }
+      if (domainUsername !== (profile?.domainUsername ?? '')) {
+        payload.domainUsername = domainUsername;
+      }
+      if (domainPassword) {
+        payload.domainPassword = domainPassword;
+      } else if (clearPassword) {
+        payload.domainPassword = null;
+      }
+
+      const result = await updateDomainProfile(payload);
       setProfile(result);
       setDomainPassword('');
       setClearPassword(false);
@@ -67,10 +98,15 @@ export default function DomainProfileSection() {
     setConfirmClearOpen(false);
     setError('');
     setSaving(true);
+
     try {
       await clearDomainProfile();
-      const empty: DomainProfile = { domainName: null, domainUsername: null, hasDomainPassword: false };
-      setProfile(empty);
+      const emptyProfile: DomainProfile = {
+        domainName: null,
+        domainUsername: null,
+        hasDomainPassword: false,
+      };
+      setProfile(emptyProfile);
       setDomainName('');
       setDomainUsername('');
       setDomainPassword('');
@@ -84,162 +120,224 @@ export default function DomainProfileSection() {
     }
   };
 
-  const startEditing = () => {
-    setDomainName(profile?.domainName ?? '');
-    setDomainUsername(profile?.domainUsername ?? '');
-    setDomainPassword('');
-    setClearPassword(false);
-    setError('');
-    setEditing(true);
-  };
-
   if (loading) {
     return (
-      <Card>
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="Domain Identity"
+        description="Configure your Windows or Active Directory identity for connection defaults."
+      >
+        <p className="text-sm text-muted-foreground">Loading domain profile...</p>
+      </SettingsPanel>
     );
   }
 
-  const hasProfile = profile?.domainName || profile?.domainUsername;
-
   return (
-    <Card>
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-          <DomainIcon fontSize="small" color="action" />
-          <Typography variant="h6">Domain Identity</Typography>
-        </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Configure your Windows/AD domain credentials for RDP and SSH connections.
-        </Typography>
+    <>
+      <SettingsPanel
+        title="Domain Identity"
+        description="Configure your Windows or Active Directory credentials for RDP and SSH sign-in defaults."
+        heading={
+          <SettingsStatusBadge tone={hasProfile ? 'success' : 'neutral'}>
+            {hasProfile ? 'Configured' : 'Not configured'}
+          </SettingsStatusBadge>
+        }
+      >
+        <div className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-        {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>{error}</Alert>}
+          {!editing ? (
+            <div className="space-y-4">
+              {hasProfile ? (
+                <div className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="size-4 text-primary" />
+                    <p className="text-sm font-medium text-foreground">
+                      Active domain identity
+                    </p>
+                  </div>
 
-        {!editing ? (
-          <Box>
-            {hasProfile ? (
-              <Stack spacing={1} sx={{ mb: 2 }}>
-                <Typography variant="body2">
-                  <strong>Domain:</strong> {profile?.domainName ?? '—'}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>Username:</strong> {profile?.domainUsername ?? '—'}
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body2"><strong>Password:</strong></Typography>
-                  <Chip
-                    label={profile?.hasDomainPassword ? 'Stored' : 'Not set'}
-                    color={profile?.hasDomainPassword ? 'success' : 'default'}
-                    size="small"
-                    variant="outlined"
-                  />
-                </Box>
-              </Stack>
-            ) : (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                No domain identity configured.
-              </Typography>
-            )}
-            <Stack direction="row" spacing={1}>
-              <Button variant="outlined" size="small" onClick={startEditing}>
-                {hasProfile ? 'Edit' : 'Configure'}
-              </Button>
-              {hasProfile && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Domain
+                      </p>
+                      <p className="text-sm text-foreground">
+                        {profile?.domainName ?? '—'}
+                      </p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                        Username
+                      </p>
+                      <p className="text-sm text-foreground">
+                        {profile?.domainUsername ?? '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
+                      Password
+                    </p>
+                    <SettingsStatusBadge
+                      tone={profile?.hasDomainPassword ? 'success' : 'neutral'}
+                    >
+                      {profile?.hasDomainPassword ? 'Stored' : 'Not set'}
+                    </SettingsStatusBadge>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No domain identity is configured yet.
+                </p>
+              )}
+
+              <SettingsButtonRow>
                 <Button
-                  variant="outlined"
-                  size="small"
-                  color="error"
-                  onClick={() => setConfirmClearOpen(true)}
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    resetFormFromProfile();
+                    setEditing(true);
+                  }}
                 >
-                  Clear
+                  {hasProfile ? 'Edit' : 'Configure'}
+                </Button>
+                {hasProfile && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setConfirmClearOpen(true)}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </SettingsButtonRow>
+            </div>
+          ) : (
+            <div className="space-y-4 rounded-xl border border-border/70 bg-background/60 p-4">
+              <div className="space-y-2">
+                <Label htmlFor="domain-name">Domain name</Label>
+                <Input
+                  id="domain-name"
+                  value={domainName}
+                  onChange={(event) => setDomainName(event.target.value)}
+                  placeholder="CONTOSO or contoso.com"
+                />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Use either the NetBIOS name or the fully-qualified domain name.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="domain-username">Domain username</Label>
+                <Input
+                  id="domain-username"
+                  value={domainUsername}
+                  onChange={(event) => setDomainUsername(event.target.value)}
+                  placeholder="john.doe"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="domain-password">
+                  {profile?.hasDomainPassword && !clearPassword
+                    ? 'New password'
+                    : 'Domain password'}
+                </Label>
+                <Input
+                  id="domain-password"
+                  type="password"
+                  value={domainPassword}
+                  onChange={(event) => {
+                    setDomainPassword(event.target.value);
+                    if (event.target.value) {
+                      setClearPassword(false);
+                    }
+                  }}
+                  disabled={!vaultUnlocked && !profile?.hasDomainPassword}
+                  placeholder={
+                    profile?.hasDomainPassword && !clearPassword
+                      ? 'Leave blank to keep the existing password'
+                      : 'Optional'
+                  }
+                />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {!vaultUnlocked
+                    ? 'Unlock your vault to set or change the stored password.'
+                    : 'The password is encrypted with your vault key.'}
+                </p>
+              </div>
+
+              {profile?.hasDomainPassword && !domainPassword && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="justify-start px-0"
+                  onClick={() => setClearPassword((current) => !current)}
+                >
+                  {clearPassword ? 'Keep existing password' : 'Remove saved password'}
                 </Button>
               )}
-            </Stack>
-          </Box>
-        ) : (
-          <Stack spacing={2}>
-            <TextField
-              label="Domain Name"
-              placeholder="e.g. CONTOSO"
-              value={domainName}
-              onChange={(e) => setDomainName(e.target.value)}
-              size="small"
-              fullWidth
-              helperText="NetBIOS or FQDN domain name (e.g. CONTOSO or contoso.com)"
-            />
-            <TextField
-              label="Domain Username"
-              placeholder="e.g. john.doe"
-              value={domainUsername}
-              onChange={(e) => setDomainUsername(e.target.value)}
-              size="small"
-              fullWidth
-            />
-            <TextField
-              label={profile?.hasDomainPassword && !clearPassword ? 'New Password (leave blank to keep)' : 'Domain Password (optional)'}
-              type="password"
-              value={domainPassword}
-              onChange={(e) => {
-                setDomainPassword(e.target.value);
-                if (e.target.value) setClearPassword(false);
-              }}
-              size="small"
-              fullWidth
-              disabled={!vaultUnlocked && !profile?.hasDomainPassword}
-              helperText={
-                !vaultUnlocked
-                  ? 'Unlock your vault to set or change the domain password'
-                  : 'Encrypted with your vault master key'
-              }
-            />
-            {profile?.hasDomainPassword && !domainPassword && (
-              <Button
-                variant="text"
-                size="small"
-                color={clearPassword ? 'primary' : 'error'}
-                onClick={() => setClearPassword(!clearPassword)}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                {clearPassword ? 'Keep existing password' : 'Remove saved password'}
-              </Button>
-            )}
-            <Stack direction="row" spacing={1}>
-              <Button
-                variant="contained"
-                size="small"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                {saving ? <CircularProgress size={20} /> : 'Save'}
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => setEditing(false)}
-                disabled={saving}
-              >
-                Cancel
-              </Button>
-            </Stack>
-          </Stack>
-        )}
-      </CardContent>
 
-      <Dialog open={confirmClearOpen} onClose={() => setConfirmClearOpen(false)}>
-        <DialogTitle>Clear Domain Identity</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This will remove your domain name, username, and saved password. Continue?
-          </DialogContentText>
+              <SettingsButtonRow>
+                <Button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void handleSave()}
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={saving}
+                  onClick={() => {
+                    resetFormFromProfile();
+                    setEditing(false);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </SettingsButtonRow>
+            </div>
+          )}
+        </div>
+      </SettingsPanel>
+
+      <Dialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Clear Domain Identity</DialogTitle>
+            <DialogDescription>
+              This removes the saved domain name, username, and stored password.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={saving}
+              onClick={() => setConfirmClearOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={saving}
+              onClick={() => void handleClear()}
+            >
+              {saving ? 'Clearing...' : 'Clear'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmClearOpen(false)}>Cancel</Button>
-          <Button onClick={handleClear} color="error">Clear</Button>
-        </DialogActions>
       </Dialog>
-    </Card>
+    </>
   );
 }

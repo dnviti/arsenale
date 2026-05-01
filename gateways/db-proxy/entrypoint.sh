@@ -1,15 +1,47 @@
 #!/bin/sh
 set -e
 
-# Start tunnel agent in background if configured
+export PORT="${DB_LISTEN_PORT:-5432}"
+
+db_proxy_pid=""
+tunnel_pid=""
+
+shutdown() {
+  if [ -n "$tunnel_pid" ] && kill -0 "$tunnel_pid" 2>/dev/null; then
+    kill "$tunnel_pid" 2>/dev/null || true
+  fi
+  if [ -n "$db_proxy_pid" ] && kill -0 "$db_proxy_pid" 2>/dev/null; then
+    kill "$db_proxy_pid" 2>/dev/null || true
+  fi
+  wait "$tunnel_pid" 2>/dev/null || true
+  wait "$db_proxy_pid" 2>/dev/null || true
+  exit 0
+}
+
+trap shutdown INT TERM
+
+echo "[db-proxy] Starting middleware service on port ${PORT}..."
+/usr/local/bin/db-proxy &
+db_proxy_pid=$!
+
 if [ -n "$TUNNEL_SERVER_URL" ] && [ -n "$TUNNEL_TOKEN" ]; then
   echo "[db-proxy] Starting tunnel agent..."
-  node /opt/tunnel-agent/dist/index.js &
+  /usr/local/bin/tunnel-agent &
+  tunnel_pid=$!
 fi
 
-echo "[db-proxy] Database proxy gateway ready on port ${DB_LISTEN_PORT:-5432}"
+echo "[db-proxy] Database proxy gateway ready on port ${PORT}"
 
-# Keep the container running — the proxy logic is handled by the tunnel agent
-# and session-level TCP connections from the Arsenale server.
-# In production, this will be replaced by the actual protocol-aware proxy binary.
-exec tail -f /dev/null
+while :; do
+  if ! kill -0 "$db_proxy_pid" 2>/dev/null; then
+    wait "$db_proxy_pid" || true
+    exit 1
+  fi
+
+  if [ -n "$tunnel_pid" ] && ! kill -0 "$tunnel_pid" 2>/dev/null; then
+    wait "$tunnel_pid" || true
+    exit 1
+  fi
+
+  sleep 1
+done

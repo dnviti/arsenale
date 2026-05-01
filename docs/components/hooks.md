@@ -1,13 +1,25 @@
 # Custom Hooks
 
-> Auto-generated on 2026-03-15 by /docs create components.
+> Auto-generated on 2026-04-05 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
 ### `useAuth` (`client/src/hooks/useAuth.ts`)
 
-Bootstraps authentication on mount. Refreshes access token from cookie if authenticated but token is missing. Redirects to login on failure.
+Bootstraps authentication on mount. Restores the browser session from the httpOnly session cookie if the in-memory access token is missing. Redirects to login on failure.
 
 **Returns**: `{ isAuthenticated: boolean, loading: boolean }`
+
+### `useActivityTouch` (`client/src/hooks/useActivityTouch.ts`)
+
+Listens for real user activity and throttles auth/vault touch calls to keep browser and vault sessions alive while the user is active. If the vault touch response reports a locked vault, it updates the vault store and broadcasts the lock to other windows.
+
+**Returns**: void (side-effect hook)
+
+### `useVaultWindowSync` (`client/src/hooks/useVaultWindowSync.ts`)
+
+Subscribes to vault lock/unlock signals via `BroadcastChannel` with a `localStorage` event fallback so multiple browser windows stay in sync.
+
+**Returns**: void (side-effect hook)
 
 ### `useSocket` (`client/src/hooks/useSocket.ts`)
 
@@ -18,13 +30,13 @@ Creates and manages a Socket.IO connection to a given namespace with JWT auth.
 
 ### `useSftpTransfers` (`client/src/hooks/useSftpTransfers.ts`)
 
-Manages SFTP file transfer state — tracks uploads/downloads, progress events, chunked upload/download, cancel, clear.
+Manages managed SSH file transfer state — tracks uploads/downloads, progress events, chunked transfer, cancel, clear.
 
 **Returns**: `{ transfers: TransferItem[], uploadFile, downloadFile, cancelTransfer, clearCompleted }`
 
 ### `useGatewayMonitor` (`client/src/hooks/useGatewayMonitor.ts`)
 
-Connects to `/gateway-monitor` Socket.IO namespace and applies real-time health, instance, scaling, and gateway update events to the gateway store.
+Subscribes to `GET /api/gateways/stream` over SSE and applies real-time health, instance, and scaling snapshots to the gateway store. The hook stays disabled until the current user's effective permissions are loaded and `canManageGateways` is true.
 
 **Returns**: void (side-effect hook)
 
@@ -86,6 +98,18 @@ Manages keyboard capture, focus tracking, and fullscreen for session viewer elem
 
 **Parameters**: `{ focusRef, fullscreenRef, isActive, onBlur?, onFocus?, onMouseDown?, onFullscreenChange?, suppressBrowserKeys? }`
 **Returns**: `{ isFocused, isFullscreen, enterFullscreen, exitFullscreen, toggleFullscreen }`
+
+### `useDesktopNotifications` (`client/src/hooks/useDesktopNotifications.ts`)
+
+Integrates with the Web Notifications API for desktop push notifications. Requests permission on mount and dispatches browser notifications for share events, recordings, and security alerts when the tab is not focused.
+
+**Returns**: `{ permissionGranted: boolean, requestPermission: () => Promise<void> }`
+
+### `useVaultStatusStream` (`client/src/hooks/useVaultStatusStream.ts`)
+
+Subscribes to the `GET /api/vault/status/stream` SSE endpoint for real-time vault lock/unlock state changes. Updates the vault store on status events; the server now pushes matching Redis status updates immediately.
+
+**Returns**: void (side-effect hook)
 
 <!-- manual-start -->
 <!-- manual-end -->

@@ -1,19 +1,22 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
+import { ChevronDown, ChevronRight, FolderPlus, Plus, Users } from 'lucide-react';
 import {
-  Box, Typography, List, Collapse, IconButton, Menu, MenuItem,
-  ListItemIcon, ListItemText,
-} from '@mui/material';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { useUiPreferencesStore } from '@/store/uiPreferencesStore';
+import type { ConnectionData } from '@/api/connections.api';
+import type { Folder } from '@/store/connectionsStore';
 import {
-  ExpandMore, ChevronRight, Groups as GroupsIcon,
-  Add as AddIcon, CreateNewFolder as CreateNewFolderIcon,
-} from '@mui/icons-material';
-import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
-import { ConnectionData } from '../../api/connections.api';
-import type { Folder } from '../../store/connectionsStore';
-import {
-  matchesSearch, buildFolderTree, pruneFolderTree,
-  ConnectionItem, FolderItem,
+  buildFolderTree,
+  ConnectionItem,
+  FolderItem,
+  matchesSearch,
+  pruneFolderTree,
 } from './treeHelpers';
+import { SidebarIconButton } from './sidebarUi';
 
 interface TeamConnectionSectionProps {
   teamId: string;
@@ -39,91 +42,101 @@ interface TeamConnectionSectionProps {
 }
 
 export default function TeamConnectionSection({
-  teamId, teamName, teamRole, connections, folders, compact, searchQuery,
-  onEditConnection, onDeleteConnection, onMoveConnection, onShareConnection,
-  onConnectAsConnection, onToggleFavorite, onViewAuditLog, onCreateConnection, onCreateFolder,
-  onEditFolder, onDeleteFolder, onBulkOpen, onShareFolder,
+  teamId,
+  teamName,
+  teamRole,
+  connections,
+  folders,
+  compact,
+  searchQuery,
+  onEditConnection,
+  onDeleteConnection,
+  onMoveConnection,
+  onShareConnection,
+  onConnectAsConnection,
+  onToggleFavorite,
+  onViewAuditLog,
+  onCreateConnection,
+  onCreateFolder,
+  onEditFolder,
+  onDeleteFolder,
+  onBulkOpen,
+  onShareFolder,
 }: TeamConnectionSectionProps) {
-  const sidebarTeamSections = useUiPreferencesStore((s) => s.sidebarTeamSections);
-  const toggleTeamSection = useUiPreferencesStore((s) => s.toggleTeamSection);
-  const [addMenuAnchor, setAddMenuAnchor] = useState<HTMLElement | null>(null);
-
+  const sidebarTeamSections = useUiPreferencesStore((state) => state.sidebarTeamSections);
+  const toggleTeamSection = useUiPreferencesStore((state) => state.toggleTeamSection);
   const isOpen = sidebarTeamSections[teamId] ?? true;
   const isSearching = searchQuery.trim().length > 0;
   const canCreate = teamRole === 'TEAM_ADMIN' || teamRole === 'TEAM_EDITOR';
 
   const { filteredRootConnections, filteredFolderMap, filteredFolderTree } = useMemo(() => {
-    const filtered = isSearching
-      ? connections.filter((c) => matchesSearch(c, searchQuery))
+    const filteredConnections = isSearching
+      ? connections.filter((connection) => matchesSearch(connection, searchQuery))
       : connections;
 
-    const rootConns = filtered.filter((c) => !c.folderId);
-    const fMap = new Map<string, ConnectionData[]>();
-    filtered.forEach((c) => {
-      if (c.folderId) {
-        const list = fMap.get(c.folderId) || [];
-        list.push(c);
-        fMap.set(c.folderId, list);
+    const rootConnections = filteredConnections.filter((connection) => !connection.folderId);
+    const folderMap = new Map<string, ConnectionData[]>();
+    filteredConnections.forEach((connection) => {
+      if (!connection.folderId) {
+        return;
       }
+      const group = folderMap.get(connection.folderId) || [];
+      group.push(connection);
+      folderMap.set(connection.folderId, group);
     });
 
     const fullTree = buildFolderTree(folders);
-    const prunedTree = isSearching ? pruneFolderTree(fullTree, fMap) : fullTree;
-
     return {
-      filteredRootConnections: rootConns,
-      filteredFolderMap: fMap,
-      filteredFolderTree: prunedTree,
+      filteredRootConnections: rootConnections,
+      filteredFolderMap: folderMap,
+      filteredFolderTree: isSearching ? pruneFolderTree(fullTree, folderMap) : fullTree,
     };
-  }, [connections, folders, searchQuery, isSearching]);
+  }, [connections, folders, isSearching, searchQuery]);
 
-  // Hide section entirely if no matches during search
   if (isSearching && filteredRootConnections.length === 0 && filteredFolderTree.length === 0) {
     return null;
   }
 
   return (
-    <>
-      <Box
-        sx={{
-          display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5,
-          cursor: 'pointer', userSelect: 'none',
-        }}
-        onClick={() => toggleTeamSection(teamId)}
-      >
-        {isOpen
-          ? <ExpandMore sx={{ fontSize: 18, mr: 0.5 }} />
-          : <ChevronRight sx={{ fontSize: 18, mr: 0.5 }} />}
-        <GroupsIcon fontSize="small" sx={{ mr: 1 }} />
-        <Typography variant="subtitle2" sx={{ flexGrow: 1 }} noWrap>{teamName}</Typography>
-        {canCreate && (
-          <IconButton
-            size="small"
-            onClick={(e) => { e.stopPropagation(); setAddMenuAnchor(e.currentTarget); }}
-            title={`Add to ${teamName}`}
-          >
-            <AddIcon fontSize="small" />
-          </IconButton>
-        )}
-      </Box>
+    <section className="space-y-1">
+      <div className="flex items-center gap-1 px-2">
+        <button
+          type="button"
+          onClick={() => toggleTeamSection(teamId)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-accent/70"
+        >
+          {isOpen ? (
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          )}
+          <Users className="size-4 shrink-0 text-muted-foreground" />
+          <span className="truncate text-sm font-medium text-foreground">{teamName}</span>
+        </button>
 
-      <Menu
-        anchorEl={addMenuAnchor}
-        open={Boolean(addMenuAnchor)}
-        onClose={() => setAddMenuAnchor(null)}
-      >
-        <MenuItem onClick={() => { setAddMenuAnchor(null); onCreateConnection(undefined, teamId); }}>
-          <ListItemIcon><AddIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>New Connection</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={() => { setAddMenuAnchor(null); onCreateFolder(undefined, teamId); }}>
-          <ListItemIcon><CreateNewFolderIcon fontSize="small" /></ListItemIcon>
-          <ListItemText>New Folder</ListItemText>
-        </MenuItem>
-      </Menu>
+        {canCreate ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <SidebarIconButton aria-label={`Add to ${teamName}`}>
+                <Plus className="size-4" />
+              </SidebarIconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => onCreateConnection(undefined, teamId)}>
+                <Plus className="size-4" />
+                New Connection
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onCreateFolder(undefined, teamId)}>
+                <FolderPlus className="size-4" />
+                New Folder
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : null}
+      </div>
 
-      <Collapse in={isOpen}>
-        <List disablePadding>
+      {isOpen ? (
+        <div>
           {filteredFolderTree.map((node) => (
             <FolderItem
               key={node.folder.id}
@@ -148,10 +161,10 @@ export default function TeamConnectionSection({
               onShareFolder={onShareFolder}
             />
           ))}
-          {filteredRootConnections.map((conn) => (
+          {filteredRootConnections.map((connection) => (
             <ConnectionItem
-              key={conn.id}
-              conn={conn}
+              key={connection.id}
+              conn={connection}
               depth={0}
               compact={compact}
               onEdit={onEditConnection}
@@ -163,8 +176,8 @@ export default function TeamConnectionSection({
               onViewAuditLog={onViewAuditLog}
             />
           ))}
-        </List>
-      </Collapse>
-    </>
+        </div>
+      ) : null}
+    </section>
   );
 }

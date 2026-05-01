@@ -1,18 +1,96 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Card, CardContent, Typography, CircularProgress, Alert, Accordion,
-  AccordionSummary, AccordionDetails, Box, Divider, Chip, Button,
-} from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import TuneIcon from '@mui/icons-material/Tune';
-import StorageIcon from '@mui/icons-material/Storage';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import CancelIcon from '@mui/icons-material/Cancel';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import { getSystemSettings, getAdminDbStatus } from '../../api/systemSettings.api';
-import type { SettingValue, SettingGroup, DbStatusResponse } from '../../api/systemSettings.api';
+  CheckCircle2,
+  Database,
+  Loader2,
+  RefreshCw,
+  Settings2,
+  XCircle,
+} from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { getAdminDbStatus, getSystemSettings } from '../../api/systemSettings.api';
+import type { DbStatusResponse, SettingGroup, SettingValue } from '../../api/systemSettings.api';
 import { extractApiError } from '../../utils/apiError';
 import SettingField from './SettingField';
+import { SettingsPanel, SettingsStatusBadge } from './settings-ui';
+
+function LoadingState() {
+  return (
+    <SettingsPanel
+      title="System Settings"
+      description="Global runtime defaults and control-plane behavior."
+    >
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" />
+        Loading system settings...
+      </div>
+    </SettingsPanel>
+  );
+}
+
+function DbStatusCard({
+  dbStatus,
+  onRefresh,
+}: {
+  dbStatus: DbStatusResponse;
+  onRefresh: () => void;
+}) {
+  const [openItem, setOpenItem] = useState('database');
+  const connected = dbStatus.connected;
+
+  return (
+    <Accordion type="single" collapsible value={openItem} onValueChange={setOpenItem}>
+      <AccordionItem value="database">
+        <AccordionTrigger>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2">
+              <Database className="size-4 text-muted-foreground" />
+              <span>Database Status</span>
+            </div>
+            <SettingsStatusBadge tone={connected ? 'success' : 'destructive'}>
+              {connected ? <CheckCircle2 className="mr-1 size-3.5" /> : <XCircle className="mr-1 size-3.5" />}
+              {connected ? 'Connected' : 'Disconnected'}
+            </SettingsStatusBadge>
+          </div>
+        </AccordionTrigger>
+        <AccordionContent>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-lg border border-border/70 bg-background/70 p-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Host</div>
+              <div className="mt-1 text-sm font-medium">{dbStatus.host || '—'}</div>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/70 p-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Port</div>
+              <div className="mt-1 text-sm font-medium">{dbStatus.port}</div>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/70 p-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Database</div>
+              <div className="mt-1 text-sm font-medium">{dbStatus.database || '—'}</div>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-background/70 p-3">
+              <div className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Version</div>
+              <div className="mt-1 text-sm font-medium">{dbStatus.version || '—'}</div>
+            </div>
+          </div>
+          <div className="mt-4">
+            <Button type="button" variant="outline" size="sm" onClick={onRefresh}>
+              <RefreshCw />
+              Refresh Status
+            </Button>
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  );
+}
 
 export default function SystemSettingsSection() {
   const [settings, setSettings] = useState<SettingValue[]>([]);
@@ -33,142 +111,111 @@ export default function SystemSettingsSection() {
         if (db) setDbStatus(db);
         setLoading(false);
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
         setError(extractApiError(err, 'Failed to load system settings'));
         setLoading(false);
       });
   }, []);
 
   const handleUpdated = useCallback((key: string, value: unknown) => {
-    setSettings((prev) =>
-      prev.map((s) =>
-        s.key === key ? { ...s, value, source: 'db' as const, envLocked: false } : s,
+    setSettings((current) =>
+      current.map((setting) =>
+        setting.key === key
+          ? { ...setting, value, source: 'db' as const, envLocked: false }
+          : setting,
       ),
     );
   }, []);
 
+  const sortedGroups = useMemo(() => {
+    const grouped = new Map<string, SettingValue[]>();
+
+    for (const setting of settings) {
+      const current = grouped.get(setting.group) ?? [];
+      current.push(setting);
+      grouped.set(setting.group, current);
+    }
+
+    return groups
+      .filter((group) => grouped.has(group.key))
+      .sort((left, right) => left.order - right.order)
+      .map((group) => ({
+        ...group,
+        settings: grouped.get(group.key) ?? [],
+      }));
+  }, [groups, settings]);
+
   if (loading) {
-    return (
-      <Card variant="outlined">
-        <CardContent sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={24} />
-        </CardContent>
-      </Card>
-    );
+    return <LoadingState />;
   }
 
   if (error) {
     return (
-      <Card variant="outlined">
-        <CardContent>
-          <Alert severity="error">{error}</Alert>
-        </CardContent>
-      </Card>
+      <SettingsPanel
+        title="System Settings"
+        description="Global runtime defaults and control-plane behavior."
+      >
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      </SettingsPanel>
     );
   }
 
-  const grouped = new Map<string, SettingValue[]>();
-  for (const s of settings) {
-    const arr = grouped.get(s.group) || [];
-    arr.push(s);
-    grouped.set(s.group, arr);
-  }
-
-  const sortedGroups = groups
-    .filter((g) => grouped.has(g.key))
-    .sort((a, b) => a.order - b.order);
-
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <TuneIcon color="primary" />
-          <Typography variant="subtitle1" fontWeight="bold">
-            System Settings
-          </Typography>
-          <Chip
-            label={`${settings.length} settings`}
-            size="small"
-            variant="outlined"
-          />
-        </Box>
+    <SettingsPanel
+      title="System Settings"
+      description="Global runtime defaults, feature flags, and control-plane behavior."
+      heading={(
+        <div className="flex items-center gap-2">
+          <Settings2 className="size-4 text-muted-foreground" />
+          <Badge variant="outline">{settings.length} settings</Badge>
+        </div>
+      )}
+      contentClassName="space-y-4"
+    >
+      <Alert variant="info">
+        <AlertDescription>
+          Settings locked by environment variables are read-only. Editable values apply immediately unless a restart badge is shown.
+        </AlertDescription>
+      </Alert>
 
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Settings locked by environment variables are read-only. All other changes take effect immediately.
-        </Alert>
+      {dbStatus && <DbStatusCard dbStatus={dbStatus} onRefresh={refreshDbStatus} />}
 
-        {/* Database connection status (read-only) */}
-        {dbStatus && (
-          <Accordion disableGutters variant="outlined" sx={{ mb: 1 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <StorageIcon fontSize="small" />
-                <Typography variant="body1" fontWeight="medium">Database</Typography>
-                <Chip
-                  icon={dbStatus.connected ? <CheckCircleIcon /> : <CancelIcon />}
-                  label={dbStatus.connected ? 'Connected' : 'Disconnected'}
-                  color={dbStatus.connected ? 'success' : 'error'}
-                  size="small"
-                  variant="outlined"
-                />
-              </Box>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                <Typography variant="body2"><strong>Host:</strong> {dbStatus.host || '—'}</Typography>
-                <Typography variant="body2"><strong>Port:</strong> {dbStatus.port}</Typography>
-                <Typography variant="body2"><strong>Database:</strong> {dbStatus.database || '—'}</Typography>
-                {dbStatus.version && (
-                  <Typography variant="caption" color="text.secondary">{dbStatus.version}</Typography>
-                )}
-                <Box sx={{ mt: 1 }}>
-                  <Button size="small" startIcon={<RefreshIcon />} onClick={refreshDbStatus}>
-                    Refresh
-                  </Button>
-                </Box>
-              </Box>
-            </AccordionDetails>
-          </Accordion>
-        )}
-
+      <Accordion
+        type="multiple"
+        defaultValue={sortedGroups.slice(0, 2).map((group) => group.key)}
+        className="space-y-3"
+      >
         {sortedGroups.map((group) => {
-          const groupSettings = grouped.get(group.key) || [];
-          const envCount = groupSettings.filter((s) => s.envLocked).length;
+          const envCount = group.settings.filter((setting) => setting.envLocked).length;
 
           return (
-            <Accordion key={group.key} disableGutters variant="outlined" sx={{ mb: 1 }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="body1" fontWeight="medium">
-                    {group.label}
-                  </Typography>
-                  <Chip
-                    label={`${groupSettings.length}`}
-                    size="small"
-                    variant="outlined"
-                  />
+            <AccordionItem key={group.key} value={group.key}>
+              <AccordionTrigger>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>{group.label}</span>
+                  <Badge variant="outline">{group.settings.length}</Badge>
                   {envCount > 0 && (
-                    <Chip
-                      label={`${envCount} locked`}
-                      size="small"
-                      color="warning"
-                      variant="outlined"
-                    />
+                    <SettingsStatusBadge tone="warning">{envCount} locked</SettingsStatusBadge>
                   )}
-                </Box>
-              </AccordionSummary>
-              <AccordionDetails>
-                {groupSettings.map((s, idx) => (
-                  <Box key={s.key}>
-                    {idx > 0 && <Divider sx={{ my: 1 }} />}
-                    <SettingField setting={s} onUpdated={handleUpdated} />
-                  </Box>
-                ))}
-              </AccordionDetails>
-            </Accordion>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-3">
+                  {group.settings.map((setting) => (
+                    <SettingField
+                      key={setting.key}
+                      setting={setting}
+                      onUpdated={handleUpdated}
+                    />
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           );
         })}
-      </CardContent>
-    </Card>
+      </Accordion>
+    </SettingsPanel>
   );
 }

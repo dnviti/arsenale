@@ -1,41 +1,59 @@
 import { useState } from 'react';
-import {
-  Card, CardContent, Typography, TextField, Button, Alert, Box,
-} from '@mui/material';
-import { useAuthStore } from '../../store/authStore';
-import {
-  changePassword, initiatePasswordChange,
-  type VerificationMethod,
-} from '../../api/user.api';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import IdentityVerification from '../common/IdentityVerification';
 import PasswordStrengthMeter from '../common/PasswordStrengthMeter';
 import RecoveryKeyConfirmDialog from '../common/RecoveryKeyConfirmDialog';
+import { SettingsButtonRow, SettingsFieldGroup, SettingsPanel } from './settings-ui';
+import { useAuthStore } from '../../store/authStore';
+import {
+  changePassword,
+  initiatePasswordChange,
+  type VerificationMethod,
+} from '../../api/user.api';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 interface ChangePasswordSectionProps {
   hasPassword: boolean;
 }
 
-type Phase = 'idle' | 'verifying-identity' | 'entering-password' | 'showing-recovery-key';
+type Phase =
+  | 'idle'
+  | 'verifying-identity'
+  | 'entering-password'
+  | 'showing-recovery-key';
 
-export default function ChangePasswordSection({ hasPassword }: ChangePasswordSectionProps) {
-  const authLogout = useAuthStore((s) => s.logout);
-
+export default function ChangePasswordSection({
+  hasPassword,
+}: ChangePasswordSectionProps) {
+  const authLogout = useAuthStore((state) => state.logout);
   const [phase, setPhase] = useState<Phase>('idle');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const { loading, error, setError, run } = useAsyncAction();
   const [recoveryKey, setRecoveryKey] = useState('');
-
-  // Identity verification state
   const [skipVerification, setSkipVerification] = useState(false);
   const [verificationId, setVerificationId] = useState('');
-  const [verificationMethod, setVerificationMethod] = useState<VerificationMethod>('password');
-  const [verificationMetadata, setVerificationMetadata] = useState<Record<string, unknown>>();
-  const [completedVerificationId, setCompletedVerificationId] = useState<string>();
+  const [verificationMethod, setVerificationMethod] =
+    useState<VerificationMethod>('password');
+  const [verificationMetadata, setVerificationMetadata] =
+    useState<Record<string, unknown>>();
+  const [completedVerificationId, setCompletedVerificationId] = useState<
+    string | undefined
+  >();
+  const { loading, error, setError, run } = useAsyncAction();
 
   if (!hasPassword) return null;
+
+  const resetForm = () => {
+    setPhase('idle');
+    setOldPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setCompletedVerificationId(undefined);
+    setError('');
+  };
 
   const handleStartPasswordChange = async () => {
     await run(async () => {
@@ -43,24 +61,19 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
       if (result.skipVerification) {
         setSkipVerification(true);
         setPhase('entering-password');
-      } else {
-        setSkipVerification(false);
-        setVerificationId(result.verificationId ?? '');
-        setVerificationMethod(result.method ?? 'password');
-        setVerificationMetadata(result.metadata);
-        setPhase('verifying-identity');
+        return;
       }
+
+      setSkipVerification(false);
+      setVerificationId(result.verificationId ?? '');
+      setVerificationMethod(result.method ?? 'password');
+      setVerificationMetadata(result.metadata);
+      setPhase('verifying-identity');
     }, 'Failed to initiate password change');
   };
 
-  const handleIdentityVerified = (vId: string) => {
-    setCompletedVerificationId(vId);
-    setPhase('entering-password');
-  };
-
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handlePasswordChange = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match');
       return;
@@ -74,37 +87,26 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
       );
       setRecoveryKey(result.recoveryKey);
     }, 'Failed to change password');
+
     if (ok) {
       setPhase('showing-recovery-key');
     }
   };
 
-  const handleCancel = () => {
-    setPhase('idle');
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setError('');
-    setCompletedVerificationId(undefined);
-  };
-
   return (
-    <Card>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>Change Password</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          Changing your password will lock your vault and sign you out of all devices.
-        </Typography>
-
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+    <SettingsPanel
+      title="Change Password"
+      description="Changing your password locks the vault and signs you out on every device."
+    >
+      <div className="space-y-4">
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {phase === 'idle' && (
-          <Button
-            variant="contained"
-            color="warning"
-            onClick={handleStartPasswordChange}
-            disabled={loading}
-          >
+          <Button type="button" onClick={() => void handleStartPasswordChange()} disabled={loading}>
             {loading ? 'Loading...' : 'Change Password'}
           </Button>
         )}
@@ -114,52 +116,70 @@ export default function ChangePasswordSection({ hasPassword }: ChangePasswordSec
             verificationId={verificationId}
             method={verificationMethod}
             metadata={verificationMetadata}
-            onVerified={handleIdentityVerified}
-            onCancel={handleCancel}
+            onVerified={(verifiedId) => {
+              setCompletedVerificationId(verifiedId);
+              setPhase('entering-password');
+            }}
+            onCancel={resetForm}
           />
         )}
 
         {phase === 'entering-password' && (
-          <Box component="form" onSubmit={handlePasswordChange}>
-            {skipVerification && (
-              <TextField
-                fullWidth label="Current Password" type="password"
-                value={oldPassword} onChange={(e) => setOldPassword(e.target.value)}
-                margin="normal" required
+          <form className="space-y-4" onSubmit={handlePasswordChange}>
+            <SettingsFieldGroup>
+              {skipVerification && (
+                <Input
+                  type="password"
+                  value={oldPassword}
+                  onChange={(event) => setOldPassword(event.target.value)}
+                  placeholder="Current password"
+                  required
+                />
+              )}
+              <div className="space-y-2">
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  placeholder="New password"
+                  minLength={10}
+                  autoFocus={!skipVerification}
+                  required
+                />
+                <p className="text-xs text-muted-foreground">
+                  Minimum 10 characters.
+                </p>
+                <PasswordStrengthMeter password={newPassword} />
+              </div>
+              <Input
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Confirm new password"
+                required
               />
-            )}
-            <TextField
-              fullWidth label="New Password" type="password"
-              value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-              margin="normal" required
-              helperText="Minimum 10 characters"
-              autoFocus={!skipVerification}
-              error={Boolean(newPassword) && newPassword.length > 0 && newPassword.length < 10}
-              inputProps={{ minLength: 10 }}
-            />
-            <PasswordStrengthMeter password={newPassword} />
-            <TextField
-              fullWidth label="Confirm New Password" type="password"
-              value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-              margin="normal" required
-            />
-            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
-              <Button
-                type="submit" variant="contained" color="warning"
-                disabled={loading}
-              >
+            </SettingsFieldGroup>
+
+            <SettingsButtonRow>
+              <Button type="submit" disabled={loading}>
                 {loading ? 'Changing...' : 'Change Password'}
               </Button>
-              <Button variant="outlined" onClick={handleCancel}>Cancel</Button>
-            </Box>
-          </Box>
+              <Button type="button" variant="outline" onClick={resetForm}>
+                Cancel
+              </Button>
+            </SettingsButtonRow>
+          </form>
         )}
-      </CardContent>
+      </div>
+
       <RecoveryKeyConfirmDialog
         open={phase === 'showing-recovery-key'}
         recoveryKey={recoveryKey}
-        onConfirmed={() => { setRecoveryKey(''); authLogout(); }}
+        onConfirmed={() => {
+          setRecoveryKey('');
+          authLogout();
+        }}
       />
-    </Card>
+    </SettingsPanel>
   );
 }

@@ -17,7 +17,7 @@
   "tag_prefix": "v",
   "github_repo_url": "https://github.com/dnviti/arsenale",
   "release_branch": "main",
-  "show_generated_footer": true,
+  "show_generated_footer": false,
   "python_command": "",
   "memory_consistency": {
     "gc_ttl_days": 30,
@@ -85,7 +85,7 @@
     ]
   },
   "worktrees": {
-    "enabled": true
+    "enabled": false
   },
   "ollama": {
     "enabled": false,

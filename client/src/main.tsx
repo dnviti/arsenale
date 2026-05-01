@@ -1,24 +1,30 @@
 /* eslint-disable react-refresh/only-export-components */
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ThemeProvider, CssBaseline } from '@mui/material';
 import App from './App';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { useThemeStore } from './store/themeStore';
 import { themes } from './theme/index';
+import { applyDocumentTheme } from './theme/documentTheme';
+import './fonts';
 import './global.css';
 
 function Root() {
   const themeName = useThemeStore((s) => s.themeName);
   const mode = useThemeStore((s) => s.mode);
+  const theme = themes[themeName][mode];
+
+  useEffect(() => {
+    applyDocumentTheme(theme, themeName, mode);
+  }, [mode, theme, themeName]);
 
   return (
-    <ThemeProvider theme={themes[themeName][mode]}>
-      <CssBaseline />
+    <TooltipProvider>
       <BrowserRouter>
         <App />
       </BrowserRouter>
-    </ThemeProvider>
+    </TooltipProvider>
   );
 }
 

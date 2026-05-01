@@ -1,8 +1,14 @@
 import { useState, useEffect } from 'react';
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField,
-  FormControl, InputLabel, Select, MenuItem, Box, Alert,
-} from '@mui/material';
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Alert } from '@/components/ui/alert';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '@/components/ui/select';
 import { createVaultFolder, updateVaultFolder } from '../../api/vault-folders.api';
 import type { VaultFolderData } from '../../api/vault-folders.api';
 import { useSecretStore } from '../../store/secretStore';
@@ -154,79 +160,84 @@ export default function VaultFolderDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{isEditMode ? 'Rename Folder' : 'New Folder'}</DialogTitle>
-      <DialogContent>
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
-          <TextField
-            label="Folder Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            fullWidth
-            required
-            autoFocus
-          />
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{isEditMode ? 'Rename Folder' : 'New Folder'}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {isEditMode ? 'Rename an existing folder' : 'Create a new vault folder'}
+          </DialogDescription>
+        </DialogHeader>
 
-          {/* Scope selector — only on create */}
+        <div className="flex flex-col gap-4">
+          {error && <Alert variant="destructive">{error}</Alert>}
+
+          <div className="space-y-1.5">
+            <Label>Folder Name *</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          {/* Scope selector -- only on create */}
           {!isEditMode && (
-            <FormControl fullWidth>
-              <InputLabel>Scope</InputLabel>
-              <Select
-                value={selectedScope}
-                label="Scope"
-                onChange={(e) => setSelectedScope(e.target.value as 'PERSONAL' | 'TEAM' | 'TENANT')}
-              >
-                <MenuItem value="PERSONAL">Personal</MenuItem>
-                {canSelectTeam && <MenuItem value="TEAM">Team</MenuItem>}
-                {canSelectTenant && (
-                  <MenuItem value="TENANT" disabled={!tenantVaultReady}>
-                    Organization{!tenantVaultReady ? ' (vault not initialized)' : ''}
-                  </MenuItem>
-                )}
+            <div className="space-y-1.5">
+              <Label>Scope</Label>
+              <Select value={selectedScope} onValueChange={(v) => setSelectedScope(v as 'PERSONAL' | 'TEAM' | 'TENANT')}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="PERSONAL">Personal</SelectItem>
+                  {canSelectTeam && <SelectItem value="TEAM">Team</SelectItem>}
+                  {canSelectTenant && (
+                    <SelectItem value="TENANT" disabled={!tenantVaultReady}>
+                      Organization{!tenantVaultReady ? ' (vault not initialized)' : ''}
+                    </SelectItem>
+                  )}
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           )}
 
-          {/* Team selector — only on create + TEAM scope */}
+          {/* Team selector -- only on create + TEAM scope */}
           {!isEditMode && selectedScope === 'TEAM' && (
-            <FormControl fullWidth>
-              <InputLabel>Team</InputLabel>
-              <Select
-                value={selectedTeamId}
-                label="Team"
-                onChange={(e) => setSelectedTeamId(e.target.value)}
-              >
-                {teams.map((t) => (
-                  <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>
-                ))}
+            <div className="space-y-1.5">
+              <Label>Team</Label>
+              <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </FormControl>
+            </div>
           )}
 
-          <FormControl fullWidth>
-            <InputLabel>Parent Folder</InputLabel>
-            <Select
-              value={selectedParentId}
-              label="Parent Folder"
-              onChange={(e) => setSelectedParentId(e.target.value)}
-            >
-              <MenuItem value="">None (root level)</MenuItem>
-              {availableParents.map((f) => (
-                <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>
-              ))}
+          <div className="space-y-1.5">
+            <Label>Parent Folder</Label>
+            <Select value={selectedParentId || '__root__'} onValueChange={(v) => setSelectedParentId(v === '__root__' ? '' : v)}>
+              <SelectTrigger><SelectValue placeholder="None (root level)" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__root__">None (root level)</SelectItem>
+                {availableParents.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-          </FormControl>
-        </Box>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={handleClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={loading}>
+            {loading
+              ? (isEditMode ? 'Saving...' : 'Creating...')
+              : (isEditMode ? 'Save' : 'Create')}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={loading}>
-          {loading
-            ? (isEditMode ? 'Saving...' : 'Creating...')
-            : (isEditMode ? 'Save' : 'Create')}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 }

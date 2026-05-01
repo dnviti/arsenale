@@ -1,0 +1,199 @@
+---
+- name: Refresh selected development services
+  hosts: localhost
+  connection: local
+  become: false
+  gather_facts: true
+
+  vars:
+    _repo_root: "{{ playbook_dir + '/../../..' }}"
+    _xdg_state_home: "{{ lookup('env', 'XDG_STATE_HOME') | default((lookup('env', 'HOME') ~ '/.local/state'), true) }}"
+    _dev_home: "{{ arsenale_dev_home | default(lookup('env', 'ARSENALE_DEV_HOME') | default(_xdg_state_home ~ '/arsenale-dev', true), true) }}"
+    _home: "{{ _dev_home }}"
+    installer_scripts_dir: "{{ playbook_dir }}/../scripts"
+    installer_artifacts_dir: "{{ _home }}/install"
+    installer_tmp_dir: "{{ _home }}/.installer-tmp"
+    installer_artifact_owner: "{{ lookup('env', 'USER') | default(ansible_user_id, true) }}"
+    installer_artifact_group: "{{ lookup('env', 'USER') | default(ansible_user_id, true) }}"
+    arsenale_source_root: "{{ _repo_root }}"
+    container_runtime: podman
+    _is_dev: true
+    _state: present
+    _build: true
+
+  tasks:
+    - name: Prompt for installer password
+      pause:
+        prompt: "Technician password"
+        echo: false
+      register: installer_password_prompt
+      when:
+        - installer_password is not defined
+        - install_password_file is not defined
+      no_log: true
+
+    - name: Resolve installer password
+      set_fact:
+        installer_password_value: >-
+          {{
+            installer_password
+            | default(
+                (
+                  lookup('file', install_password_file) | trim
+                )
+                if (install_password_file is defined)
+                else installer_password_prompt.user_input
+              )
+          }}
+      no_log: true
+
+    - name: Validate requested refresh targets
+      assert:
+        that:
+          - (dev_refresh_targets_csv | default('') | trim | length) > 0
+        fail_msg: "Pass one or more refresh selectors such as 'make dev client' or 'make dev control-plane'."
+
+    - name: Ensure installer temp root exists
+      file:
+        path: "{{ installer_tmp_dir }}"
+        state: directory
+        owner: "{{ installer_artifact_owner }}"
+        group: "{{ installer_artifact_group }}"
+        mode: "0750"
+
+    - name: Create installer session temp directory
+      tempfile:
+        state: directory
+        path: "{{ installer_tmp_dir }}"
+        prefix: run-
+      register: installer_tmp_session
+
+    - name: Override installer temp dir for this refresh
+      set_fact:
+        installer_tmp_dir: "{{ installer_tmp_session.path }}"
+
+    - block:
+        - name: Read encrypted installer artifacts
+          include_role:
+            name: install_artifacts
+          vars:
+            install_artifacts_action: read
+            installer_password: "{{ installer_password_value }}"
+
+        - name: Validate saved development installer profile
+          assert:
+            that:
+              - installer_loaded_artifacts.profile is defined
+              - installer_loaded_artifacts.profile.mode | default('') == 'development'
+              - installer_loaded_artifacts.profile.backend | default('') == 'podman'
+            fail_msg: "No development installer state was found. Run 'make dev' first."
+
+        - name: Validate saved rendered compose artifacts
+          assert:
+            that:
+              - ((installer_loaded_artifacts.rendered | default({})).get('artifacts') or {}).get('docker-compose.yml', {}).get('content', '') | length > 0
+              - ((installer_loaded_artifacts.rendered | default({})).get('artifacts') or {}).get('runtime.env', {}).get('content', '') | length > 0
+            fail_msg: "The saved development render artifacts are missing. Run 'make dev' first."
+
+        - name: Load active development services from installer state
+          set_fact:
+            installer_services: >-
+              {{
+                (
+                  ((installer_loaded_artifacts.state | default({})).get('resources') or {}).get('activeServices')
+                  or (installer_loaded_artifacts.rendered | default({})).get('activeServices')
+                  or []
+                )
+              }}
+
+        - name: Validate active development services
+          assert:
+            that:
+              - installer_services | length > 0
+            fail_msg: "The saved development installer state does not include active services. Run 'make dev' first."
+
+        - name: Resolve requested development refresh plan
+          command:
+            argv:
+              - "{{ installer_scripts_dir }}/install_model.py"
+              - resolve-dev-refresh
+              - --targets
+              - "{{ dev_refresh_targets_csv }}"
+              - --active-services
+              - "{{ installer_services | join(',') }}"
+              - --output
+              - "{{ installer_tmp_dir }}/dev-refresh.json"
+          changed_when: false
+
+        - name: Load development refresh plan
+          slurp:
+            src: "{{ installer_tmp_dir }}/dev-refresh.json"
+          register: dev_refresh_plan_payload
+
+        - name: Publish development refresh plan
+          set_fact:
+            dev_refresh_plan: "{{ dev_refresh_plan_payload.content | b64decode | from_json }}"
+            installer_compose_env_file: "{{ installer_tmp_dir }}/runtime.env"
+
+        - name: Show development refresh plan
+          debug:
+            msg: |
+              Targets:    {{ dev_refresh_plan.requestedTargets | join(', ') }}
+              Build:      {{ dev_refresh_plan.buildServices | join(', ') if dev_refresh_plan.buildServices else 'none' }}
+              Restart:    {{ dev_refresh_plan.restartServices | join(', ') if dev_refresh_plan.restartServices else 'none' }}
+              Migrations: {{ dev_refresh_plan.runMigrations }}
+
+        - name: Restore rendered development compose file
+          copy:
+            dest: "{{ _home }}/docker-compose.yml"
+            content: "{{ installer_loaded_artifacts.rendered.artifacts['docker-compose.yml'].content }}"
+            owner: "{{ installer_artifact_owner }}"
+            group: "{{ installer_artifact_group }}"
+            mode: "0640"
+
+        - name: Restore rendered development environment file
+          copy:
+            dest: "{{ installer_compose_env_file }}"
+            content: "{{ installer_loaded_artifacts.rendered.artifacts['runtime.env'].content }}"
+            owner: "{{ installer_artifact_owner }}"
+            group: "{{ installer_artifact_group }}"
+            mode: "0640"
+
+        - name: Build selected development images
+          include_role:
+            name: deploy
+            tasks_from: build.yml
+          vars:
+            compose_build_target_services: "{{ dev_refresh_plan.buildServices }}"
+
+        - name: Refresh selected development services
+          include_role:
+            name: deploy
+            tasks_from: apply.yml
+          vars:
+            compose_force_recreate: true
+            compose_run_migrations: "{{ dev_refresh_plan.runMigrations }}"
+            compose_target_services: "{{ dev_refresh_plan.restartServices }}"
+
+        - name: Wait for refreshed services to report healthy or running
+          command:
+            argv:
+              - "{{ container_runtime }}"
+              - inspect
+              - "arsenale-{{ item }}"
+              - --format
+              - "{{ '{{if .State.Health}}{{.State.Health.Status}}{{else if .State.Running}}running{{else}}stopped{{end}}' }}"
+          loop: "{{ dev_refresh_plan.restartServices }}"
+          loop_control:
+            label: "{{ item }}"
+          register: dev_refresh_service_probe
+          changed_when: false
+          retries: 30
+          delay: 2
+          until: dev_refresh_service_probe.stdout in ['healthy', 'running']
+      always:
+        - name: Remove session temp directory
+          file:
+            path: "{{ installer_tmp_session.path }}"
+            state: absent
+          when: installer_tmp_session is defined

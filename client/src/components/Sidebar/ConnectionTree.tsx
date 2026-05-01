@@ -1,56 +1,72 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Box, Typography, List,
-  Collapse, Divider, IconButton, TextField, InputAdornment,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions, Button,
-  FormControl, InputLabel, Select, MenuItem,
-} from '@mui/material';
-import type { SelectChangeEvent } from '@mui/material';
-import {
-  Computer as RdpIcon,
-  Terminal as SshIcon,
-  DesktopWindows as VncIcon,
-  ExpandMore,
-  ChevronRight,
-  Share as ShareIcon,
-  CreateNewFolder as CreateNewFolderIcon,
-  Add as AddIcon,
-  Search as SearchIcon,
-  Clear as ClearIcon,
-  Star as StarIcon,
-  AccessTime as RecentIcon,
-  ViewList as ViewListIcon,
-  ViewCompact as ViewCompactIcon,
-} from '@mui/icons-material';
-import { useConnectionsStore, Folder } from '../../store/connectionsStore';
-import { useTabsStore } from '../../store/tabsStore';
-import { useAuthStore } from '../../store/authStore';
-import { useNotificationStore } from '../../store/notificationStore';
-import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
-import { ConnectionData, deleteConnection, updateConnection } from '../../api/connections.api';
-import { deleteFolder } from '../../api/folders.api';
-import { getRecentConnectionIds } from '../../utils/recentConnections';
+  DatabaseZap,
+  FolderPlus,
+  Monitor,
+  Plus,
+  Rows3,
+  SearchX,
+  Share2,
+  Star,
+  TerminalSquare,
+  TimerReset,
+} from 'lucide-react';
 import {
   DndContext,
   DragOverlay,
+  PointerSensor,
   pointerWithin,
+  useDroppable,
   useSensor,
   useSensors,
-  PointerSensor,
-  useDroppable,
 } from '@dnd-kit/core';
-import type { DragStartEvent, DragEndEvent } from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
+import { Button } from '@/components/ui/button';
 import {
-  matchesSearch, buildFolderTree, pruneFolderTree,
-  collectFolderConnections, folderHasSubfolders,
-  ConnectionItem, FolderItem,
-} from './treeHelpers';
-import { extractApiError } from '../../utils/apiError';
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
+import type { ConnectionData } from '@/api/connections.api';
+import { deleteConnection, updateConnection } from '@/api/connections.api';
+import { deleteFolder } from '@/api/folders.api';
+import { useAuthStore } from '@/store/authStore';
+import { useConnectionsStore, type Folder } from '@/store/connectionsStore';
+import { useNotificationStore } from '@/store/notificationStore';
+import { useTabsStore } from '@/store/tabsStore';
+import { useUiPreferencesStore } from '@/store/uiPreferencesStore';
+import { extractApiError } from '@/utils/apiError';
+import { getRecentConnectionIds } from '@/utils/recentConnections';
 import TeamConnectionSection from './TeamConnectionSection';
-
-// --- ConnectionTree ---
+import {
+  buildFolderTree,
+  collectFolderConnections,
+  ConnectionItem,
+  FolderItem,
+  folderHasSubfolders,
+  matchesSearch,
+  pruneFolderTree,
+} from './treeHelpers';
+import {
+  SidebarConfirmDialog,
+  SidebarIconButton,
+  SidebarSearchInput,
+  SidebarSectionHeader,
+} from './sidebarUi';
 
 interface ConnectionTreeProps {
+  typeFilter?: ConnectionData['type'][];
   onEditConnection: (conn: ConnectionData) => void;
   onShareConnection: (conn: ConnectionData) => void;
   onConnectAsConnection: (conn: ConnectionData) => void;
@@ -61,34 +77,67 @@ interface ConnectionTreeProps {
   onViewAuditLog?: (conn: ConnectionData) => void;
 }
 
-export default function ConnectionTree({ onEditConnection, onShareConnection, onConnectAsConnection, onCreateConnection, onCreateFolder, onEditFolder, onShareFolder, onViewAuditLog }: ConnectionTreeProps) {
-  const ownConnections = useConnectionsStore((s) => s.ownConnections);
-  const sharedConnections = useConnectionsStore((s) => s.sharedConnections);
-  const teamConnections = useConnectionsStore((s) => s.teamConnections);
-  const folders = useConnectionsStore((s) => s.folders);
-  const teamFolders = useConnectionsStore((s) => s.teamFolders);
-  const fetchConnections = useConnectionsStore((s) => s.fetchConnections);
-  const toggleFav = useConnectionsStore((s) => s.toggleFavorite);
-  const moveConn = useConnectionsStore((s) => s.moveConnection);
-  const userId = useAuthStore((s) => s.user?.id);
-  const recentTick = useTabsStore((s) => s.recentTick);
-  const notify = useNotificationStore((s) => s.notify);
+function dragIcon(type: ConnectionData['type']) {
+  if (type === 'SSH') {
+    return <TerminalSquare className="size-4 text-muted-foreground" />;
+  }
+  if (type === 'DATABASE') {
+    return <DatabaseZap className="size-4 text-muted-foreground" />;
+  }
+  return <Monitor className="size-4 text-muted-foreground" />;
+}
 
-  // Persisted sidebar preferences
-  const favoritesOpen = useUiPreferencesStore((s) => s.sidebarFavoritesOpen);
-  const recentsOpen = useUiPreferencesStore((s) => s.sidebarRecentsOpen);
-  const sharedOpen = useUiPreferencesStore((s) => s.sidebarSharedOpen);
-  const compact = useUiPreferencesStore((s) => s.sidebarCompact);
-  const togglePref = useUiPreferencesStore((s) => s.toggle);
+export default function ConnectionTree({
+  typeFilter,
+  onEditConnection,
+  onShareConnection,
+  onConnectAsConnection,
+  onCreateConnection,
+  onCreateFolder,
+  onEditFolder,
+  onShareFolder,
+  onViewAuditLog,
+}: ConnectionTreeProps) {
+  const rawOwnConnections = useConnectionsStore((state) => state.ownConnections);
+  const rawSharedConnections = useConnectionsStore((state) => state.sharedConnections);
+  const rawTeamConnections = useConnectionsStore((state) => state.teamConnections);
+
+  // Apply type filter when provided
+  const typeSet = useMemo(() => typeFilter ? new Set(typeFilter) : null, [typeFilter]);
+  const ownConnections = useMemo(() => typeSet ? rawOwnConnections.filter((c) => typeSet.has(c.type)) : rawOwnConnections, [rawOwnConnections, typeSet]);
+  const sharedConnections = useMemo(() => typeSet ? rawSharedConnections.filter((c) => typeSet.has(c.type)) : rawSharedConnections, [rawSharedConnections, typeSet]);
+  const teamConnections = useMemo(() => typeSet ? rawTeamConnections.filter((c) => typeSet.has(c.type)) : rawTeamConnections, [rawTeamConnections, typeSet]);
+  const folders = useConnectionsStore((state) => state.folders);
+  const teamFolders = useConnectionsStore((state) => state.teamFolders);
+  const fetchConnections = useConnectionsStore((state) => state.fetchConnections);
+  const toggleFavorite = useConnectionsStore((state) => state.toggleFavorite);
+  const moveConnection = useConnectionsStore((state) => state.moveConnection);
+  const userId = useAuthStore((state) => state.user?.id);
+  const recentTick = useTabsStore((state) => state.recentTick);
+  const notify = useNotificationStore((state) => state.notify);
+  const openTab = useTabsStore((state) => state.openTab);
+  const favoritesOpen = useUiPreferencesStore((state) => state.sidebarFavoritesOpen);
+  const recentsOpen = useUiPreferencesStore((state) => state.sidebarRecentsOpen);
+  const sharedOpen = useUiPreferencesStore((state) => state.sidebarSharedOpen);
+  const compact = useUiPreferencesStore((state) => state.sidebarCompact);
+  const togglePreference = useUiPreferencesStore((state) => state.toggle);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<ConnectionData | null>(null);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<Folder | null>(null);
   const [moveTarget, setMoveTarget] = useState<ConnectionData | null>(null);
   const [moveDestination, setMoveDestination] = useState('');
-
-  // --- Drag and drop ---
   const [activeConnection, setActiveConnection] = useState<ConnectionData | null>(null);
+  const [bulkOpenTarget, setBulkOpenTarget] = useState<{
+    folderId: string;
+    connections: ConnectionData[];
+  } | null>(null);
+  const [bulkOpenSubfolderPrompt, setBulkOpenSubfolderPrompt] = useState<{
+    folderId: string;
+    thisOnly: number;
+    withSubs: number;
+  } | null>(null);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
   );
@@ -98,174 +147,58 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
     data: { type: 'root', folderId: null },
   });
 
-  const handleDragStart = (event: DragStartEvent) => {
-    const conn = event.active.data.current?.connection as ConnectionData | undefined;
-    if (conn) setActiveConnection(conn);
-  };
+  const allFolders = useMemo(() => [...folders, ...teamFolders], [folders, teamFolders]);
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveConnection(null);
-    const { active, over } = event;
-    if (!over) return;
+  const { filteredRootConnections, filteredFolderMap, filteredFolderTree, filteredSharedConnections } =
+    useMemo(() => {
+      const isSearching = searchQuery.trim().length > 0;
+      const filteredOwn = isSearching
+        ? ownConnections.filter((connection) => matchesSearch(connection, searchQuery))
+        : ownConnections;
+      const filteredShared = isSearching
+        ? sharedConnections.filter((connection) => matchesSearch(connection, searchQuery))
+        : sharedConnections;
 
-    const connection = active.data.current?.connection as ConnectionData | undefined;
-    if (!connection) return;
-
-    const targetFolderId = (over.data.current?.folderId as string | null) ?? null;
-    if (targetFolderId === (connection.folderId ?? null)) return;
-
-    try {
-      await moveConn(connection.id, targetFolderId);
-    } catch (err) {
-      notify(extractApiError(err, 'Failed to move connection'));
-    }
-  };
-
-  const handleToggleFavorite = async (conn: ConnectionData) => {
-    await toggleFav(conn.id);
-  };
-
-  const handleOpenMoveDialog = (conn: ConnectionData) => {
-    setMoveTarget(conn);
-    setMoveDestination(conn.folderId || '');
-  };
-
-  const handleConfirmMove = async () => {
-    if (!moveTarget) return;
-    const newFolderId = moveDestination || null;
-    if (newFolderId === moveTarget.folderId) {
-      setMoveTarget(null);
-      return;
-    }
-    try {
-      await updateConnection(moveTarget.id, { folderId: newFolderId });
-      await fetchConnections();
-    } catch (err) {
-      notify(extractApiError(err, 'Failed to move connection'));
-    }
-    setMoveTarget(null);
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
-    try {
-      await deleteConnection(deleteTarget.id);
-      await fetchConnections();
-    } catch (err) {
-      notify(extractApiError(err, 'Failed to delete connection'));
-    }
-    setDeleteTarget(null);
-  };
-
-  // --- Bulk Open ---
-  const openTab = useTabsStore((s) => s.openTab);
-  const [bulkOpenTarget, setBulkOpenTarget] = useState<{ folderId: string; connections: ConnectionData[] } | null>(null);
-  const [bulkOpenSubfolderPrompt, setBulkOpenSubfolderPrompt] = useState<{
-    folderId: string;
-    thisOnly: number;
-    withSubs: number;
-  } | null>(null);
-
-  const handleBulkOpen = (folderId: string) => {
-    const directConns = collectFolderConnections(folderId, filteredFolderMap, folders, false);
-    const hasSubs = folderHasSubfolders(folderId, folders);
-
-    if (hasSubs) {
-      const allConns = collectFolderConnections(folderId, filteredFolderMap, folders, true);
-      setBulkOpenSubfolderPrompt({
-        folderId,
-        thisOnly: directConns.length,
-        withSubs: allConns.length,
+      const rootConnections = filteredOwn.filter((connection) => !connection.folderId);
+      const folderMap = new Map<string, ConnectionData[]>();
+      filteredOwn.forEach((connection) => {
+        if (!connection.folderId) {
+          return;
+        }
+        const group = folderMap.get(connection.folderId) || [];
+        group.push(connection);
+        folderMap.set(connection.folderId, group);
       });
-    } else if (directConns.length > 5) {
-      setBulkOpenTarget({ folderId, connections: directConns });
-    } else {
-      directConns.forEach((conn) => bulkOpenOne(conn));
-    }
-  };
 
-  const bulkOpenOne = (conn: ConnectionData) => {
-    if (conn.defaultCredentialMode === 'domain') {
-      openTab(conn, { username: '', password: '', credentialMode: 'domain' });
-    } else {
-      openTab(conn);
-    }
-  };
+      const fullTree = buildFolderTree(folders);
+      const filteredTree = isSearching ? pruneFolderTree(fullTree, folderMap) : fullTree;
 
-  const handleBulkOpenChoice = (recursive: boolean) => {
-    if (!bulkOpenSubfolderPrompt) return;
-    const conns = collectFolderConnections(
-      bulkOpenSubfolderPrompt.folderId, filteredFolderMap, folders, recursive
-    );
-    setBulkOpenSubfolderPrompt(null);
-    if (conns.length > 5) {
-      setBulkOpenTarget({ folderId: bulkOpenSubfolderPrompt.folderId, connections: conns });
-    } else {
-      conns.forEach((conn) => bulkOpenOne(conn));
-    }
-  };
+      return {
+        filteredRootConnections: rootConnections,
+        filteredFolderMap: folderMap,
+        filteredFolderTree: filteredTree,
+        filteredSharedConnections: filteredShared,
+      };
+    }, [folders, ownConnections, searchQuery, sharedConnections]);
 
-  const handleConfirmBulkOpen = () => {
-    if (!bulkOpenTarget) return;
-    bulkOpenTarget.connections.forEach((conn) => bulkOpenOne(conn));
-    setBulkOpenTarget(null);
-  };
-
-  const handleConfirmDeleteFolder = async () => {
-    if (!deleteFolderTarget) return;
-    try {
-      await deleteFolder(deleteFolderTarget.id);
-      await fetchConnections();
-    } catch (err) {
-      notify(extractApiError(err, 'Failed to delete folder'));
-    }
-    setDeleteFolderTarget(null);
-  };
-
-  // Filter and group connections by folder
-  const { filteredRootConnections, filteredFolderMap, filteredFolderTree, filteredSharedConnections } = useMemo(() => {
-    const isSearching = searchQuery.trim().length > 0;
-    const filteredOwn = isSearching ? ownConnections.filter((c) => matchesSearch(c, searchQuery)) : ownConnections;
-    const filteredShared = isSearching ? sharedConnections.filter((c) => matchesSearch(c, searchQuery)) : sharedConnections;
-
-    const rootConns = filteredOwn.filter((c) => !c.folderId);
-    const fMap = new Map<string, ConnectionData[]>();
-    filteredOwn.forEach((c) => {
-      if (c.folderId) {
-        const list = fMap.get(c.folderId) || [];
-        list.push(c);
-        fMap.set(c.folderId, list);
-      }
-    });
-
-    const fullTree = buildFolderTree(folders);
-    const prunedTree = isSearching ? pruneFolderTree(fullTree, fMap) : fullTree;
-
-    return {
-      filteredRootConnections: rootConns,
-      filteredFolderMap: fMap,
-      filteredFolderTree: prunedTree,
-      filteredSharedConnections: filteredShared,
-    };
-  }, [ownConnections, sharedConnections, folders, searchQuery]);
-
-  const favoriteConnections = useMemo(() => {
-    return ownConnections.filter((c) => c.isFavorite);
-  }, [ownConnections]);
+  const favoriteConnections = useMemo(
+    () => ownConnections.filter((connection) => connection.isFavorite),
+    [ownConnections],
+  );
 
   const recentConnections = useMemo(() => {
-    if (!userId) return [];
+    if (!userId) {
+      return [];
+    }
     const recentIds = getRecentConnectionIds(userId);
-    const allConnections = [...ownConnections, ...sharedConnections];
-    const connectionMap = new Map(allConnections.map((c) => [c.id, c]));
+    const availableConnections = [...ownConnections, ...sharedConnections];
+    const connectionMap = new Map(availableConnections.map((connection) => [connection.id, connection]));
     return recentIds
       .map((id) => connectionMap.get(id))
-      .filter((c): c is ConnectionData => c !== undefined)
+      .filter((connection): connection is ConnectionData => connection !== undefined)
       .slice(0, 5);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownConnections, sharedConnections, userId, recentTick]);
+  }, [ownConnections, recentTick, sharedConnections, userId]);
 
-  // Group team connections/folders by teamId
   const teamGroups = useMemo(() => {
     const groups = new Map<string, {
       teamId: string;
@@ -275,22 +208,26 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
       folders: Folder[];
     }>();
 
-    for (const conn of teamConnections) {
-      if (!conn.teamId) continue;
-      if (!groups.has(conn.teamId)) {
-        groups.set(conn.teamId, {
-          teamId: conn.teamId,
-          teamName: conn.teamName || 'Unknown Team',
-          teamRole: conn.teamRole || 'TEAM_VIEWER',
+    for (const connection of teamConnections) {
+      if (!connection.teamId) {
+        continue;
+      }
+      if (!groups.has(connection.teamId)) {
+        groups.set(connection.teamId, {
+          teamId: connection.teamId,
+          teamName: connection.teamName || 'Unknown Team',
+          teamRole: connection.teamRole || 'TEAM_VIEWER',
           connections: [],
           folders: [],
         });
       }
-      groups.get(conn.teamId)?.connections.push(conn);
+      groups.get(connection.teamId)?.connections.push(connection);
     }
 
     for (const folder of teamFolders) {
-      if (!folder.teamId) continue;
+      if (!folder.teamId) {
+        continue;
+      }
       const group = groups.get(folder.teamId);
       if (group) {
         group.folders.push(folder);
@@ -305,97 +242,193 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
       }
     }
 
-    return Array.from(groups.values()).sort((a, b) =>
-      a.teamName.localeCompare(b.teamName)
-    );
+    return Array.from(groups.values()).sort((left, right) => left.teamName.localeCompare(right.teamName));
   }, [teamConnections, teamFolders]);
 
   const isSearching = searchQuery.trim().length > 0;
   const isDndEnabled = !isSearching;
 
-  return (
-    <Box sx={{ py: 1 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', px: 2, mb: 1 }}>
-        <Typography variant="subtitle2" sx={{
-          flexGrow: 1,
-          textTransform: 'uppercase',
-          letterSpacing: '0.15em',
-          fontSize: '0.6875rem',
-          color: 'text.disabled',
-          fontWeight: 600,
-        }}>
-          My Connections
-        </Typography>
-        <IconButton size="small" onClick={() => togglePref('sidebarCompact')} title={compact ? 'Normal view' : 'Compact view'} sx={{ color: 'text.secondary', '&:hover': { color: 'primary.main', bgcolor: (theme) => `${theme.palette.primary.main}14` } }}>
-          {compact ? <ViewListIcon fontSize="small" /> : <ViewCompactIcon fontSize="small" />}
-        </IconButton>
-        <IconButton size="small" onClick={() => onCreateConnection()} title="New Connection" sx={{ color: 'primary.main', '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}1F` } }}>
-          <AddIcon fontSize="small" />
-        </IconButton>
-        <IconButton size="small" onClick={() => onCreateFolder()} title="New Folder" sx={{ color: 'primary.main', '&:hover': { bgcolor: (theme) => `${theme.palette.primary.main}1F` } }}>
-          <CreateNewFolderIcon fontSize="small" />
-        </IconButton>
-      </Box>
-      <Box sx={{ px: 2, mb: 1 }}>
-        <TextField
-          size="small"
-          fullWidth
-          placeholder="Search connections..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Escape') setSearchQuery(''); }}
-          sx={{
-            '& .MuiOutlinedInput-root': {
-              bgcolor: 'background.default',
-              '& fieldset': { borderColor: 'divider' },
-              '&:hover fieldset': { borderColor: 'primary.main' },
-              '&.Mui-focused fieldset': { borderColor: 'primary.main' },
-            },
-            '& .MuiInputBase-input': { color: 'text.primary', fontSize: '0.8125rem' },
-            '& .MuiInputBase-input::placeholder': { color: 'text.disabled', opacity: 1 },
-          }}
-          slotProps={{
-            input: {
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon fontSize="small" sx={{ color: 'text.disabled' }} />
-                </InputAdornment>
-              ),
-              endAdornment: searchQuery ? (
-                <InputAdornment position="end">
-                  <IconButton size="small" onClick={() => setSearchQuery('')} edge="end" sx={{ color: 'text.secondary' }}>
-                    <ClearIcon fontSize="small" />
-                  </IconButton>
-                </InputAdornment>
-              ) : null,
-            },
-          }}
-        />
-      </Box>
+  const handleDragStart = (event: DragStartEvent) => {
+    const connection = event.active.data.current?.connection as ConnectionData | undefined;
+    if (connection) {
+      setActiveConnection(connection);
+    }
+  };
 
-      {/* Favorites section */}
-      {!isSearching && favoriteConnections.length > 0 && (
-        <>
-          <Box
-            sx={{ display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5, cursor: 'pointer', userSelect: 'none' }}
-            onClick={() => togglePref('sidebarFavoritesOpen')}
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveConnection(null);
+    const connection = event.active.data.current?.connection as ConnectionData | undefined;
+    const targetFolderId = (event.over?.data.current?.folderId as string | null) ?? null;
+
+    if (!connection || !event.over || targetFolderId === (connection.folderId ?? null)) {
+      return;
+    }
+
+    try {
+      await moveConnection(connection.id, targetFolderId);
+    } catch (error) {
+      notify(extractApiError(error, 'Failed to move connection'));
+    }
+  };
+
+  const handleToggleFavorite = async (connection: ConnectionData) => {
+    await toggleFavorite(connection.id);
+  };
+
+  const handleOpenMoveDialog = (connection: ConnectionData) => {
+    setMoveTarget(connection);
+    setMoveDestination(connection.folderId || '__root__');
+  };
+
+  const handleConfirmMove = async () => {
+    if (!moveTarget) {
+      return;
+    }
+
+    const destinationFolderId = moveDestination === '__root__' ? null : moveDestination;
+    if (destinationFolderId === moveTarget.folderId) {
+      setMoveTarget(null);
+      return;
+    }
+
+    try {
+      await updateConnection(moveTarget.id, { folderId: destinationFolderId });
+      await fetchConnections();
+      setMoveTarget(null);
+    } catch (error) {
+      notify(extractApiError(error, 'Failed to move connection'));
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    try {
+      await deleteConnection(deleteTarget.id);
+      await fetchConnections();
+      setDeleteTarget(null);
+    } catch (error) {
+      notify(extractApiError(error, 'Failed to delete connection'));
+    }
+  };
+
+  const handleConfirmDeleteFolder = async () => {
+    if (!deleteFolderTarget) {
+      return;
+    }
+
+    try {
+      await deleteFolder(deleteFolderTarget.id);
+      await fetchConnections();
+      setDeleteFolderTarget(null);
+    } catch (error) {
+      notify(extractApiError(error, 'Failed to delete folder'));
+    }
+  };
+
+  const bulkOpenOne = (connection: ConnectionData) => {
+    if (connection.defaultCredentialMode === 'domain') {
+      openTab(connection, { username: '', password: '', credentialMode: 'domain' });
+      return;
+    }
+    openTab(connection);
+  };
+
+  const handleBulkOpen = (folderId: string) => {
+    const directConnections = collectFolderConnections(folderId, filteredFolderMap, allFolders, false);
+    const hasSubfolders = folderHasSubfolders(folderId, allFolders);
+
+    if (hasSubfolders) {
+      const recursiveConnections = collectFolderConnections(folderId, filteredFolderMap, allFolders, true);
+      setBulkOpenSubfolderPrompt({
+        folderId,
+        thisOnly: directConnections.length,
+        withSubs: recursiveConnections.length,
+      });
+      return;
+    }
+
+    if (directConnections.length > 5) {
+      setBulkOpenTarget({ folderId, connections: directConnections });
+      return;
+    }
+
+    directConnections.forEach(bulkOpenOne);
+  };
+
+  const handleBulkOpenChoice = (recursive: boolean) => {
+    if (!bulkOpenSubfolderPrompt) {
+      return;
+    }
+
+    const connections = collectFolderConnections(
+      bulkOpenSubfolderPrompt.folderId,
+      filteredFolderMap,
+      allFolders,
+      recursive,
+    );
+    setBulkOpenSubfolderPrompt(null);
+
+    if (connections.length > 5) {
+      setBulkOpenTarget({ folderId: bulkOpenSubfolderPrompt.folderId, connections });
+      return;
+    }
+
+    connections.forEach(bulkOpenOne);
+  };
+
+  const showNoResults = searchQuery.trim().length > 0
+    && filteredRootConnections.length === 0
+    && filteredFolderTree.length === 0
+    && filteredSharedConnections.length === 0
+    && teamGroups.every((group) => group.connections.every((connection) => !matchesSearch(connection, searchQuery)));
+
+  return (
+    <div className="space-y-3 py-3">
+      <div className="flex items-center gap-1 px-2">
+        <div className="min-w-0 flex-1 px-2">
+          <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            My Connections
+          </div>
+        </div>
+        <SidebarIconButton title="New Connection" onClick={() => onCreateConnection()}>
+          <Plus className="size-4" />
+        </SidebarIconButton>
+        <SidebarIconButton title="New Folder" onClick={() => onCreateFolder()}>
+          <FolderPlus className="size-4" />
+        </SidebarIconButton>
+      </div>
+
+      <SidebarSearchInput
+        value={searchQuery}
+        onChange={setSearchQuery}
+        trailing={
+          <SidebarIconButton
+            active={compact}
+            title={compact ? 'Normal view' : 'Compact view'}
+            onClick={() => togglePreference('sidebarCompact')}
           >
-            {favoritesOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} />}
-            <StarIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
-            <Typography variant="subtitle2" sx={{
-              textTransform: 'uppercase',
-              letterSpacing: '0.15em',
-              fontSize: '0.6875rem',
-              color: 'text.disabled',
-              fontWeight: 600,
-            }}>Favorites</Typography>
-          </Box>
-          <Collapse in={favoritesOpen}>
-            <List disablePadding>
-              {favoriteConnections.map((conn) => (
+            <Rows3 className="size-4" />
+          </SidebarIconButton>
+        }
+      />
+
+      {!isSearching && favoriteConnections.length > 0 ? (
+        <section className="space-y-1">
+          <SidebarSectionHeader
+            open={favoritesOpen}
+            label="Favorites"
+            icon={<Star className="size-4" />}
+            onToggle={() => togglePreference('sidebarFavoritesOpen')}
+          />
+          {favoritesOpen ? (
+            <div>
+              {favoriteConnections.map((connection) => (
                 <ConnectionItem
-                  key={`fav-${conn.id}`}
-                  conn={conn}
+                  key={`fav-${connection.id}`}
+                  conn={connection}
                   depth={0}
                   compact={compact}
                   onEdit={onEditConnection}
@@ -407,34 +440,25 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
                   onViewAuditLog={onViewAuditLog}
                 />
               ))}
-            </List>
-          </Collapse>
-        </>
-      )}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-      {/* Recent section */}
-      {!isSearching && recentConnections.length > 0 && (
-        <>
-          <Box
-            sx={{ display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5, cursor: 'pointer', userSelect: 'none' }}
-            onClick={() => togglePref('sidebarRecentsOpen')}
-          >
-            {recentsOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} />}
-            <RecentIcon fontSize="small" sx={{ mr: 1, color: 'text.disabled' }} />
-            <Typography variant="subtitle2" sx={{
-              textTransform: 'uppercase',
-              letterSpacing: '0.15em',
-              fontSize: '0.6875rem',
-              color: 'text.disabled',
-              fontWeight: 600,
-            }}>Recent</Typography>
-          </Box>
-          <Collapse in={recentsOpen}>
-            <List disablePadding>
-              {recentConnections.map((conn) => (
+      {!isSearching && recentConnections.length > 0 ? (
+        <section className="space-y-1">
+          <SidebarSectionHeader
+            open={recentsOpen}
+            label="Recent"
+            icon={<TimerReset className="size-4" />}
+            onToggle={() => togglePreference('sidebarRecentsOpen')}
+          />
+          {recentsOpen ? (
+            <div>
+              {recentConnections.map((connection) => (
                 <ConnectionItem
-                  key={`recent-${conn.id}`}
-                  conn={conn}
+                  key={`recent-${connection.id}`}
+                  conn={connection}
                   depth={0}
                   compact={compact}
                   onEdit={onEditConnection}
@@ -442,19 +466,18 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
                   onMove={handleOpenMoveDialog}
                   onShare={onShareConnection}
                   onConnectAs={onConnectAsConnection}
-                  onToggleFavorite={conn.isOwner ? handleToggleFavorite : undefined}
+                  onToggleFavorite={connection.isOwner ? handleToggleFavorite : undefined}
                   onViewAuditLog={onViewAuditLog}
                 />
               ))}
-            </List>
-          </Collapse>
-        </>
-      )}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
-      {/* Divider between quick-access sections and main tree */}
-      {!isSearching && (favoriteConnections.length > 0 || recentConnections.length > 0) && (
-        <Divider sx={{ my: 1, borderColor: 'divider' }} />
-      )}
+      {!isSearching && (favoriteConnections.length > 0 || recentConnections.length > 0) ? (
+        <Separator />
+      ) : null}
 
       <DndContext
         sensors={sensors}
@@ -462,92 +485,63 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <Box
+        <div
           ref={rootDropRef}
-          sx={{
-            ...(isOverRoot && {
-              bgcolor: (theme) => `${theme.palette.primary.main}0A`,
-              transition: 'background-color 0.15s ease',
-            }),
-            minHeight: 40,
-          }}
+          className={isOverRoot ? 'rounded-xl bg-primary/5' : undefined}
         >
-          <List disablePadding>
-            {filteredFolderTree.map((node) => (
-              <FolderItem
-                key={node.folder.id}
-                node={node}
-                connections={filteredFolderMap.get(node.folder.id) || []}
-                folderMap={filteredFolderMap}
-                depth={0}
-                compact={compact}
-                isDndEnabled={isDndEnabled}
-                onEditConnection={onEditConnection}
-                onDeleteConnection={setDeleteTarget}
-                onMoveConnection={handleOpenMoveDialog}
-                onShareConnection={onShareConnection}
-                onConnectAsConnection={onConnectAsConnection}
-                onToggleFavorite={handleToggleFavorite}
-                onViewAuditLog={onViewAuditLog}
-                onCreateConnection={onCreateConnection}
-                onCreateFolder={onCreateFolder}
-                onEditFolder={onEditFolder}
-                onDeleteFolder={setDeleteFolderTarget}
-                onBulkOpen={handleBulkOpen}
-                onShareFolder={onShareFolder}
-              />
-            ))}
-            {filteredRootConnections.map((conn) => (
-              <ConnectionItem
-                key={conn.id}
-                conn={conn}
-                depth={0}
-                compact={compact}
-                draggable={isDndEnabled && conn.isOwner}
-                onEdit={onEditConnection}
-                onDelete={setDeleteTarget}
-                onMove={handleOpenMoveDialog}
-                onShare={onShareConnection}
-                onConnectAs={onConnectAsConnection}
-                onToggleFavorite={handleToggleFavorite}
-                onViewAuditLog={onViewAuditLog}
-              />
-            ))}
-          </List>
-          {isOverRoot && (
-            <Box sx={{ height: 2, bgcolor: 'primary.main', mx: 2, borderRadius: 1 }} />
-          )}
-        </Box>
+          {filteredFolderTree.map((node) => (
+            <FolderItem
+              key={node.folder.id}
+              node={node}
+              connections={filteredFolderMap.get(node.folder.id) || []}
+              folderMap={filteredFolderMap}
+              depth={0}
+              compact={compact}
+              isDndEnabled={isDndEnabled}
+              onEditConnection={onEditConnection}
+              onDeleteConnection={setDeleteTarget}
+              onMoveConnection={handleOpenMoveDialog}
+              onShareConnection={onShareConnection}
+              onConnectAsConnection={onConnectAsConnection}
+              onToggleFavorite={handleToggleFavorite}
+              onViewAuditLog={onViewAuditLog}
+              onCreateConnection={onCreateConnection}
+              onCreateFolder={onCreateFolder}
+              onEditFolder={onEditFolder}
+              onDeleteFolder={setDeleteFolderTarget}
+              onBulkOpen={handleBulkOpen}
+              onShareFolder={onShareFolder}
+            />
+          ))}
+          {filteredRootConnections.map((connection) => (
+            <ConnectionItem
+              key={connection.id}
+              conn={connection}
+              depth={0}
+              compact={compact}
+              draggable={isDndEnabled && connection.isOwner}
+              onEdit={onEditConnection}
+              onDelete={setDeleteTarget}
+              onMove={handleOpenMoveDialog}
+              onShare={onShareConnection}
+              onConnectAs={onConnectAsConnection}
+              onToggleFavorite={handleToggleFavorite}
+              onViewAuditLog={onViewAuditLog}
+            />
+          ))}
+        </div>
 
         <DragOverlay dropAnimation={null}>
-          {activeConnection && (
-            <Box sx={{
-              bgcolor: 'background.default',
-              border: (theme) => `1px solid ${theme.palette.primary.main}33`,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-              borderRadius: 1,
-              px: 2,
-              py: 0.5,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              opacity: 0.95,
-              pointerEvents: 'none',
-              maxWidth: 220,
-            }}>
-              {activeConnection.type === 'SSH'
-                ? <SshIcon fontSize="small" color="secondary" />
-                : activeConnection.type === 'VNC'
-                ? <VncIcon fontSize="small" color="info" />
-                : <RdpIcon fontSize="small" color="primary" />}
-              <Typography variant="body2" noWrap>{activeConnection.name}</Typography>
-            </Box>
-          )}
+          {activeConnection ? (
+            <div className="flex max-w-[14rem] items-center gap-2 rounded-xl border bg-popover px-3 py-2 shadow-lg">
+              {dragIcon(activeConnection.type)}
+              <span className="truncate text-sm text-foreground">{activeConnection.name}</span>
+            </div>
+          ) : null}
         </DragOverlay>
       </DndContext>
 
-      {/* Team sections */}
-      {teamGroups.length > 0 && <Divider sx={{ my: 1, borderColor: 'divider' }} />}
+      {teamGroups.length > 0 ? <Separator /> : null}
       {teamGroups.map((group) => (
         <TeamConnectionSection
           key={group.teamId}
@@ -574,140 +568,151 @@ export default function ConnectionTree({ onEditConnection, onShareConnection, on
         />
       ))}
 
-      {searchQuery.trim() && filteredRootConnections.length === 0 && filteredFolderTree.length === 0 && filteredSharedConnections.length === 0 && teamGroups.every((g) => {
-        const filtered = g.connections.filter((c) => matchesSearch(c, searchQuery));
-        return filtered.length === 0;
-      }) && (
-        <Typography variant="body2" sx={{ px: 2, py: 2, textAlign: 'center', color: 'text.disabled' }}>
-          No connections match your search.
-        </Typography>
-      )}
+      {showNoResults ? (
+        <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+          <SearchX className="size-5 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">No connections match your search.</p>
+        </div>
+      ) : null}
 
-      {/* Shared with me section */}
-      {filteredSharedConnections.length > 0 && (
+      {filteredSharedConnections.length > 0 ? (
         <>
-          <Divider sx={{ my: 1, borderColor: 'divider' }} />
-          <Box
-            sx={{ display: 'flex', alignItems: 'center', px: 2, mt: 1, mb: 0.5, cursor: 'pointer', userSelect: 'none' }}
-            onClick={() => togglePref('sidebarSharedOpen')}
-          >
-            {sharedOpen ? <ExpandMore sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} /> : <ChevronRight sx={{ fontSize: 18, mr: 0.5, color: 'text.disabled' }} />}
-            <ShareIcon fontSize="small" sx={{ mr: 1, color: 'text.disabled' }} />
-            <Typography variant="subtitle2" sx={{
-              textTransform: 'uppercase',
-              letterSpacing: '0.15em',
-              fontSize: '0.6875rem',
-              color: 'text.disabled',
-              fontWeight: 600,
-            }}>Shared with me</Typography>
-          </Box>
-          <Collapse in={sharedOpen}>
-            <List disablePadding>
-              {filteredSharedConnections.map((conn) => (
-                <ConnectionItem
-                  key={conn.id}
-                  conn={conn}
-                  depth={0}
-                  compact={compact}
-                  onEdit={onEditConnection}
-                  onDelete={setDeleteTarget}
-                  onMove={handleOpenMoveDialog}
-                  onShare={onShareConnection}
-                  onConnectAs={onConnectAsConnection}
-                  onToggleFavorite={handleToggleFavorite}
-                  onViewAuditLog={onViewAuditLog}
-                />
-              ))}
-            </List>
-          </Collapse>
+          <Separator />
+          <section className="space-y-1">
+            <SidebarSectionHeader
+              open={sharedOpen}
+              label="Shared With Me"
+              icon={<Share2 className="size-4" />}
+              onToggle={() => togglePreference('sidebarSharedOpen')}
+            />
+            {sharedOpen ? (
+              <div>
+                {filteredSharedConnections.map((connection) => (
+                  <ConnectionItem
+                    key={connection.id}
+                    conn={connection}
+                    depth={0}
+                    compact={compact}
+                    onEdit={onEditConnection}
+                    onDelete={setDeleteTarget}
+                    onMove={handleOpenMoveDialog}
+                    onShare={onShareConnection}
+                    onConnectAs={onConnectAsConnection}
+                    onToggleFavorite={handleToggleFavorite}
+                    onViewAuditLog={onViewAuditLog}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </section>
         </>
-      )}
+      ) : null}
 
-      {/* Move to Folder dialog */}
-      <Dialog open={moveTarget !== null} onClose={() => setMoveTarget(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Move &quot;{moveTarget?.name}&quot;</DialogTitle>
-        <DialogContent>
-          <FormControl fullWidth sx={{ mt: 1 }}>
-            <InputLabel>Destination Folder</InputLabel>
-            <Select
-              value={moveDestination}
-              label="Destination Folder"
-              onChange={(e: SelectChangeEvent) => setMoveDestination(e.target.value)}
-            >
-              <MenuItem value="">Root (no folder)</MenuItem>
-              {folders.map((f) => (
-                <MenuItem key={f.id} value={f.id}>{f.name}</MenuItem>
-              ))}
+      <Dialog open={moveTarget !== null} onOpenChange={(open) => { if (!open) setMoveTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Move &quot;{moveTarget?.name}&quot;</DialogTitle>
+            <DialogDescription>
+              Choose where this connection should live in your tree.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground" htmlFor="move-destination">
+              Destination Folder
+            </label>
+            <Select value={moveDestination} onValueChange={setMoveDestination}>
+              <SelectTrigger id="move-destination">
+                <SelectValue placeholder="Select a folder" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__root__">Root (no folder)</SelectItem>
+                {folders.map((folder) => (
+                  <SelectItem key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
-          </FormControl>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMoveTarget(null)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleConfirmMove()}>
+              Move
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setMoveTarget(null)}>Cancel</Button>
-          <Button onClick={handleConfirmMove} variant="contained">Move</Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Delete connection confirmation */}
-      <Dialog open={deleteTarget !== null} onClose={() => setDeleteTarget(null)}>
-        <DialogTitle>Delete Connection</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
+      <SidebarConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}
+        title="Delete Connection"
+        description={
+          <p className="leading-6">
             Are you sure you want to delete &quot;{deleteTarget?.name}&quot;? This action cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
-          <Button onClick={handleConfirmDelete} color="error" variant="contained">Delete</Button>
-        </DialogActions>
-      </Dialog>
+          </p>
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => void handleConfirmDelete()}
+      />
 
-      {/* Delete folder confirmation */}
-      <Dialog open={deleteFolderTarget !== null} onClose={() => setDeleteFolderTarget(null)}>
-        <DialogTitle>Delete Folder</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
+      <SidebarConfirmDialog
+        open={deleteFolderTarget !== null}
+        onOpenChange={(open) => { if (!open) setDeleteFolderTarget(null); }}
+        title="Delete Folder"
+        description={
+          <p className="leading-6">
             Are you sure you want to delete &quot;{deleteFolderTarget?.name}&quot;?
             Connections in this folder will be moved to the root level.
-          </DialogContentText>
+          </p>
+        }
+        confirmLabel="Delete"
+        destructive
+        onConfirm={() => void handleConfirmDeleteFolder()}
+      />
+
+      <Dialog open={bulkOpenSubfolderPrompt !== null} onOpenChange={(open) => { if (!open) setBulkOpenSubfolderPrompt(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Open All Connections</DialogTitle>
+            <DialogDescription>
+              This folder contains subfolders. Decide which connections should open.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="justify-start sm:justify-between">
+            <Button type="button" variant="outline" onClick={() => setBulkOpenSubfolderPrompt(null)}>
+              Cancel
+            </Button>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button type="button" variant="outline" onClick={() => handleBulkOpenChoice(false)}>
+                This folder only ({bulkOpenSubfolderPrompt?.thisOnly ?? 0})
+              </Button>
+              <Button type="button" onClick={() => handleBulkOpenChoice(true)}>
+                Include subfolders ({bulkOpenSubfolderPrompt?.withSubs ?? 0})
+              </Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteFolderTarget(null)}>Cancel</Button>
-          <Button onClick={handleConfirmDeleteFolder} color="error" variant="contained">Delete</Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Bulk open: subfolder prompt */}
-      <Dialog open={bulkOpenSubfolderPrompt !== null} onClose={() => setBulkOpenSubfolderPrompt(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Open All Connections</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This folder contains subfolders. Which connections would you like to open?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBulkOpenSubfolderPrompt(null)}>Cancel</Button>
-          <Button onClick={() => handleBulkOpenChoice(false)}>
-            This folder only ({bulkOpenSubfolderPrompt?.thisOnly ?? 0})
-          </Button>
-          <Button onClick={() => handleBulkOpenChoice(true)} variant="contained">
-            Include subfolders ({bulkOpenSubfolderPrompt?.withSubs ?? 0})
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Bulk open: confirmation for >5 connections */}
-      <Dialog open={bulkOpenTarget !== null} onClose={() => setBulkOpenTarget(null)}>
-        <DialogTitle>Open {bulkOpenTarget?.connections.length} Connections?</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This will create {bulkOpenTarget?.connections.length} new tabs. Continue?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBulkOpenTarget(null)}>Cancel</Button>
-          <Button onClick={handleConfirmBulkOpen} variant="contained">Open All</Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
+      <SidebarConfirmDialog
+        open={bulkOpenTarget !== null}
+        onOpenChange={(open) => { if (!open) setBulkOpenTarget(null); }}
+        title={`Open ${bulkOpenTarget?.connections.length ?? 0} Connections?`}
+        description={
+          <p className="leading-6">
+            This will create {bulkOpenTarget?.connections.length ?? 0} new tabs.
+          </p>
+        }
+        confirmLabel="Open All"
+        onConfirm={() => {
+          bulkOpenTarget?.connections.forEach(bulkOpenOne);
+          setBulkOpenTarget(null);
+        }}
+      />
+    </div>
   );
 }
