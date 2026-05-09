@@ -99,6 +99,7 @@ function renderLoginPage(initialEntries: string[] = ["/login"]) {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<HomeProbe />} />
+        <Route path="/device" element={<HomeProbe />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -331,6 +332,23 @@ describe("LoginPage", () => {
 
     await waitFor(() => {
       expect(view.getByTestId("home-probe")).toHaveTextContent("/?action=open-settings");
+    });
+  });
+
+  it("preserves device authorization return paths after a successful sign-in", async () => {
+    const view = renderLoginPage(["/login?redirect=%2Fdevice%3Fcode%3DZPFU-C9Q4"]);
+
+    fireEvent.change(await view.findByRole("textbox"), {
+      target: { value: "admin@example.com" },
+    });
+    fireEvent.change(view.container.querySelector('input[type="password"]')!, {
+      target: { value: "ArsenaleTemp91Qx" },
+    });
+
+    fireEvent.click(view.getByRole("button", { name: "Sign In" }));
+
+    await waitFor(() => {
+      expect(view.getByTestId("home-probe")).toHaveTextContent("/device?code=ZPFU-C9Q4");
     });
   });
 });

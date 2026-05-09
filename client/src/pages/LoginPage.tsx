@@ -179,6 +179,11 @@ export default function LoginPage() {
   }, [resendActive]);
 
   const buildRedirect = () => {
+    const redirect = searchParams.get('redirect');
+    if (redirect?.startsWith('/') && !redirect.startsWith('//')) {
+      return redirect;
+    }
+
     const params = new URLSearchParams();
     const autoconnect = searchParams.get('autoconnect');
     const action = searchParams.get('action');

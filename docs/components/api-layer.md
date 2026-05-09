@@ -3,7 +3,7 @@
 > Auto-generated on 2026-03-15 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
-41 API modules in `client/src/api/` provide typed Axios wrappers:
+42 API modules in `client/src/api/` provide typed Axios wrappers:
 
 | Module | Description |
 |--------|-------------|
@@ -14,6 +14,7 @@
 | `audit.api.ts` | Personal, tenant, and connection audit logs, geo data, geo summary |
 | `auth.api.ts` | Passkey-first login, password fallback, MFA flows, browser-session restore/touch, logout, public config |
 | `checkout.api.ts` | Credential checkout/check-in with approval workflow |
+| `cliAuth.api.ts` | CLI device authorization approval for `arsenale login` |
 | `connections.api.ts` | Connection CRUD, favorites, CLI listing |
 | `database.api.ts` | Database session query execution, schema, explain, introspection, history |
 | `dbAudit.api.ts` | Database audit logs, SQL firewall rules, masking policies, rate-limit policies |

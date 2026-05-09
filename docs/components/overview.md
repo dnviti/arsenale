@@ -16,7 +16,7 @@ The client is built with:
 - **XTerm.js** — SSH terminal emulation
 - **guacamole-common-js** — RDP/VNC remote desktop rendering
 
-**Total**: 12 pages, 90+ components, 17 stores, 15 hooks, 41 API modules.
+**Total**: 13 pages, 90+ components, 17 stores, 15 hooks, 42 API modules.
 
 <!-- manual-start -->
 <!-- manual-end -->
@@ -33,6 +33,7 @@ The client is built with:
 | `RecordingPlayerPage` | `/recordings/:id` | Standalone popup player for session recordings (asciicast or .guac) | authStore |
 | `PublicSharePage` | `/share/:token` | Unauthenticated page for externally shared secrets (optional PIN) | — |
 | `OAuthCallbackPage` | `/oauth/callback` | Handles OAuth redirects, extracts tokens, redirects to dashboard or vault setup | authStore |
+| `DeviceAuthorizationPage` | `/device` | Authenticated approval page for CLI device authorization codes | authStore |
 | `VaultSetupPage` | `/vault-setup` | Post-OAuth vault password setup for OAuth-only users | authStore |
 | `ForgotPasswordPage` | `/forgot-password` | Password reset email request form | — |
 | `ResetPasswordPage` | `/reset-password` | Multi-step password reset (token validation, optional SMS, new password) | — |

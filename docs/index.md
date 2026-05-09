@@ -77,7 +77,7 @@ In addition to the generated docs above, the following hand-authored references 
 | [components/ui-components.md](components/ui-components.md) | 88+ component catalog organized by function |
 | [components/stores.md](components/stores.md) | 17 Zustand store definitions with fields and actions |
 | [components/hooks.md](components/hooks.md) | 15 custom hook signatures and purposes |
-| [components/api-layer.md](components/api-layer.md) | 40 API module inventory |
+| [components/api-layer.md](components/api-layer.md) | 42 API module inventory |
 
 ### Guides
 | File | Description |
