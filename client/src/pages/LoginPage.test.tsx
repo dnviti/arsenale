@@ -47,6 +47,10 @@ const { switchTenant } = vi.hoisted(() => ({
   switchTenant: vi.fn(),
 }));
 
+const { navigateBrowserTo } = vi.hoisted(() => ({
+  navigateBrowserTo: vi.fn(),
+}));
+
 const { browserSupportsWebAuthn, startAuthentication } = vi.hoisted(() => ({
   browserSupportsWebAuthn: vi.fn(),
   startAuthentication: vi.fn(),
@@ -77,6 +81,10 @@ vi.mock("../api/email.api", () => ({
 
 vi.mock("../api/tenant.api", () => ({
   switchTenant,
+}));
+
+vi.mock("../utils/browserNavigation", () => ({
+  navigateBrowserTo,
 }));
 
 vi.mock("@simplewebauthn/browser", () => ({
@@ -348,7 +356,8 @@ describe("LoginPage", () => {
     fireEvent.click(view.getByRole("button", { name: "Sign In" }));
 
     await waitFor(() => {
-      expect(view.getByTestId("home-probe")).toHaveTextContent("/device?code=ZPFU-C9Q4");
+      expect(navigateBrowserTo).toHaveBeenCalledWith("/device?code=ZPFU-C9Q4");
     });
+    expect(view.queryByTestId("home-probe")).not.toBeInTheDocument();
   });
 });
