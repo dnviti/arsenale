@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Native `arsenale connect` launch flow for SSH, RDP, and VNC, including one-time browser viewer grants for desktop sessions.
+- GitHub Actions CLI binary build workflow for PR, branch, and manual validation.
+
+### Removed
+- Legacy RDGW service, CLI command, settings UI, API routes, and deployment wiring.
+
 ## [1.8.0] - 2026-05-01
 
 ### Added

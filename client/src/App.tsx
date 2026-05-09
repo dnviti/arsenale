@@ -17,6 +17,7 @@ const OAuthCallbackPage = lazy(() => import('./pages/OAuthCallbackPage'));
 const VaultSetupPage = lazy(() => import('./pages/VaultSetupPage'));
 const PublicSharePage = lazy(() => import('./pages/PublicSharePage'));
 const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage'));
+const CliDesktopLaunchPage = lazy(() => import('./pages/CliDesktopLaunchPage'));
 
 function LazyFallback() {
   return (
@@ -96,6 +97,7 @@ export default function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+        <Route path="/cli/desktop-launch" element={<CliDesktopLaunchPage />} />
         <Route
           path="/oauth/vault-setup"
           element={

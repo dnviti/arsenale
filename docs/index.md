@@ -178,7 +178,6 @@ arsenale/
 ├── client/                    # React SPA, API clients, dialogs, database UI, settings
 ├── gateways/
 │   ├── gateway-core/          # Shared gateway library
-│   ├── rdgw/                  # RD Gateway protocol handler
 │   ├── db-proxy/              # DB proxy container with bundled tunnel agent
 │   ├── ssh-gateway/           # SSH bastion + gRPC key management
 │   ├── guacd/                 # RDP/VNC daemon with optional tunnel agent

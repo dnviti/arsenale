@@ -40,6 +40,5 @@ run_module "gateway-core build" "gateways/gateway-core" go build ./...
 build_binary "tunnel-agent build" "gateways/tunnel-agent" "tunnel-agent" "."
 run_module "db-proxy package build" "gateways/db-proxy" env GOWORK=off go build ./...
 build_binary "guacenc build" "gateways/guacenc" "guacenc" "."
-build_binary "rdgw build" "gateways/rdgw" "rdgw" "."
 build_binary "ssh-gateway grpc build" "gateways/ssh-gateway/grpc-server" "ssh-gateway-grpc-server" "." env GOWORK=off
 build_binary "arsenale-cli build" "tools/arsenale-cli" "arsenale-cli" "."

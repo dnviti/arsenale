@@ -85,6 +85,12 @@ func (d *apiDependencies) registerSessionRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /api/sessions/ssh/{sessionId}/end", d.authenticatedUserID(func(w http.ResponseWriter, r *http.Request, userID string) {
 			d.handleOwnedSessionEnd(w, r, userID, "client_disconnect")
 		}))
+		if d.features.CLIEnabled {
+			mux.HandleFunc("POST /api/cli/connect/desktop/launch", d.authenticator.Middleware(d.desktopSessionService.HandleCreateDesktopLaunch))
+			mux.HandleFunc("POST /api/cli/connect/desktop/redeem", d.desktopSessionService.HandleRedeemDesktopLaunch)
+			mux.HandleFunc("POST /api/cli/connect/desktop/{sessionId}/heartbeat", d.desktopSessionService.HandleDesktopViewerHeartbeat)
+			mux.HandleFunc("POST /api/cli/connect/desktop/{sessionId}/end", d.desktopSessionService.HandleDesktopViewerEnd)
+		}
 	}
 	if databasesEnabled {
 		mux.HandleFunc("POST /api/sessions/database", d.authenticated(func(w http.ResponseWriter, r *http.Request, claims authn.Claims) {

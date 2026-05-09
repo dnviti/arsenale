@@ -2,7 +2,7 @@
 title: Getting Started
 description: Installation, prerequisites, and first-run instructions for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-04T21:15:00Z
+generated-at: 2026-05-09T22:10:46Z
 source-files:
   - README.md
   - AGENT.md
@@ -134,6 +134,26 @@ The development install flow seeds an admin and tenant automatically:
 Email:    admin@example.com
 Password: ArsenaleTemp91Qx
 Tenant:   Development Environment
+```
+
+## 💻 Install The CLI
+
+Released CLI archives are attached to GitHub releases as `arsenale-cli_<version>_<os>_<arch>`.
+For Linux and macOS, install the latest released binary as `arsenale` with:
+
+```bash
+VERSION="$(curl -fsSL https://api.github.com/repos/dnviti/arsenale/releases/latest | sed -nE 's/.*"tag_name": "v?([^"]*)".*/\1/p' | head -1)"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
+curl -fsSL "https://github.com/dnviti/arsenale/releases/latest/download/arsenale-cli_${VERSION}_${OS}_${ARCH}.tar.gz" |
+  sudo tar -xz -C /usr/local/bin arsenale
+```
+
+From a source checkout, use the local build path when you want to test current changes:
+
+```bash
+mkdir -p ./build/go
+go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ```
 
 ## 🔧 Capability Selection In Dev

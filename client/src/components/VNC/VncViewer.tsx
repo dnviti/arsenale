@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import * as Guacamole from '@glokon/guacamole-common-js';
 import api from '../../api/client';
+import { endCliDesktopSession, heartbeatCliDesktopSession, type CliDesktopLaunchSession } from '../../api/cliDesktopLaunch.api';
 import type { CredentialOverride } from '../../store/tabsStore';
 import type { ResolvedDlpPolicy } from '../../api/connections.api';
 import DockedToolbar from '../shared/DockedToolbar';
@@ -17,9 +18,10 @@ interface VncViewerProps {
   tabId: string;
   isActive?: boolean;
   credentials?: CredentialOverride;
+  launchSession?: CliDesktopLaunchSession;
 }
 
-export default function VncViewer({ connectionId, tabId, isActive = true, credentials }: VncViewerProps) {
+export default function VncViewer({ connectionId, tabId, isActive = true, credentials, launchSession }: VncViewerProps) {
   const displayRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<Guacamole.Client | null>(null);
@@ -43,8 +45,24 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
 
   const credentialsRef = useRef(credentials);
   useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
+  const launchSessionRef = useRef(launchSession);
+  const launchSessionUsedRef = useRef(false);
+  const controlTokenRef = useRef<string | null>(launchSession?.controlToken ?? null);
+  useEffect(() => { launchSessionRef.current = launchSession; }, [launchSession]);
 
   const STABLE_THRESHOLD_MS = 5_000;
+
+  const heartbeatSession = useCallback((sessionId: string) => {
+    const controlToken = controlTokenRef.current;
+    if (controlToken) return heartbeatCliDesktopSession(sessionId, controlToken);
+    return api.post(`/sessions/vnc/${sessionId}/heartbeat`).then(() => {});
+  }, []);
+
+  const endSession = useCallback((sessionId: string) => {
+    const controlToken = controlTokenRef.current;
+    if (controlToken) return endCliDesktopSession(sessionId, controlToken);
+    return api.post(`/sessions/vnc/${sessionId}/end`).then(() => {});
+  }, []);
 
   const connectSession = useCallback(async () => {
     if (!displayRef.current) return;
@@ -69,7 +87,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
     innerCleanupRef.current?.();
     innerCleanupRef.current = null;
     if (sessionIdRef.current) {
-      api.post(`/sessions/vnc/${sessionIdRef.current}/end`).catch(() => {});
+      endSession(sessionIdRef.current).catch(() => {});
       sessionIdRef.current = null;
     }
     if (displayRef.current) {
@@ -78,16 +96,33 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
 
     const creds = credentialsRef.current;
 
-    const res = await api.post('/sessions/vnc', {
-      connectionId,
-      ...(creds && {
-        password: creds.password,
-      }),
-    });
-    const { token, sessionId, dlpPolicy: resDlp } = res.data;
+    let sessionData: CliDesktopLaunchSession | {
+      token: string;
+      sessionId: string;
+      dlpPolicy?: ResolvedDlpPolicy;
+    };
+    const launch = launchSessionRef.current;
+    if (launch) {
+      if (launchSessionUsedRef.current) {
+        throw new Error('CLI desktop launch sessions cannot reconnect. Start a new launch from the CLI.');
+      }
+      launchSessionUsedRef.current = true;
+      controlTokenRef.current = launch.controlToken;
+      sessionData = launch;
+    } else {
+      const res = await api.post('/sessions/vnc', {
+        connectionId,
+        ...(creds && {
+          password: creds.password,
+        }),
+      });
+      controlTokenRef.current = null;
+      sessionData = res.data;
+    }
+    const { token, sessionId, dlpPolicy: resDlp } = sessionData;
 
     if (connectionGenRef.current !== gen) {
-      if (sessionId) api.post(`/sessions/vnc/${sessionId}/end`).catch(() => {});
+      if (sessionId) endSession(sessionId).catch(() => {});
       return;
     }
 
@@ -145,7 +180,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
           if (sessionIdRef.current && !heartbeatRef.current) {
             heartbeatRef.current = setInterval(() => {
               if (sessionIdRef.current) {
-                api.post(`/sessions/vnc/${sessionIdRef.current}/heartbeat`).catch((err) => {
+                heartbeatSession(sessionIdRef.current).catch((err) => {
                   if (err?.response?.status === 410) {
                     permanentErrorRef.current = true;
                     setStatus('error');
@@ -257,7 +292,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
       keyboard.onkeyup = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials tracked via ref
-  }, [connectionId]);
+  }, [connectionId, endSession, heartbeatSession]);
 
   const { reconnectState, attempt, maxRetries, triggerReconnect, cancelReconnect, resetReconnect } = useAutoReconnect(
     connectSession,
@@ -346,7 +381,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
         clientRef.current.disconnect();
       }
       if (sessionIdRef.current) {
-        api.post(`/sessions/vnc/${sessionIdRef.current}/end`).catch(() => {});
+        endSession(sessionIdRef.current).catch(() => {});
         sessionIdRef.current = null;
       }
       if (displayEl) {
@@ -355,7 +390,7 @@ export default function VncViewer({ connectionId, tabId, isActive = true, creden
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials excluded; connectionGenRef write in cleanup is intentional
-  }, [connectionId]);
+  }, [connectionId, endSession]);
 
   return (
     <div ref={containerRef} className="flex flex-1 flex-row relative overflow-hidden">

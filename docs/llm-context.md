@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-17T18:30:00Z
+generated-at: 2026-05-09T22:10:46Z
 source-files:
   - README.md
   - AGENT.md
@@ -191,7 +191,7 @@ Interactive query protocols currently supported:
 
 DB2 metadata fields exist in the connection schema, but DB2 is not active in the current query protocol switch.
 
-Standalone gateway installs live beside each gateway image under `gateways/*/compose.yml`. Tunnel-backed installs (`ssh-gateway`, `guacd`, `db-proxy`, and standalone `tunnel-agent`) require a CLI-generated bundle from `arsenale gateway tunnel-token create <id> --bundle-dir <dir>`, because the tunnel broker requires both token and gateway client certificate material. Tunnel runtimes normalize Arsenale HTTP(S) base URLs to the WebSocket broker endpoint and accept inline PEM or matching `_FILE` PEM variables for CA/client certificate material. `guacenc` and `rdgw` are direct HTTPS services with their own auth tokens and TLS cert/key mounts.
+Standalone gateway installs live beside each gateway image under `gateways/*/compose.yml`. Tunnel-backed installs (`ssh-gateway`, `guacd`, `db-proxy`, and standalone `tunnel-agent`) require a CLI-generated bundle from `arsenale gateway tunnel-token create <id> --bundle-dir <dir>`, because the tunnel broker requires both token and gateway client certificate material. Tunnel runtimes normalize Arsenale HTTP(S) base URLs to the WebSocket broker endpoint and accept inline PEM or matching `_FILE` PEM variables for CA/client certificate material. `guacenc` remains the direct HTTPS recording conversion service with its own auth token and TLS cert/key mounts.
 
 ## ⚙️ Configuration Truth
 
@@ -219,6 +219,11 @@ make deploy
 make recover
 npm run verify
 npm run dev:api-acceptance
+VERSION="$(curl -fsSL https://api.github.com/repos/dnviti/arsenale/releases/latest | sed -nE 's/.*"tag_name": "v?([^"]*)".*/\1/p' | head -1)"
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
+curl -fsSL "https://github.com/dnviti/arsenale/releases/latest/download/arsenale-cli_${VERSION}_${OS}_${ARCH}.tar.gz" |
+  sudo tar -xz -C /usr/local/bin arsenale
 mkdir -p ./build/go
 go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health

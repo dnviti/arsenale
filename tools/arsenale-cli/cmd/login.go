@@ -149,7 +149,11 @@ func openBrowser(url string) error {
 	case "windows":
 		c = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
 	default:
-		c = exec.Command("xdg-open", url)
+		if _, err := exec.LookPath("xdg-open"); err == nil {
+			c = exec.Command("xdg-open", url)
+		} else {
+			c = exec.Command("sensible-browser", url)
+		}
 	}
 	return c.Start()
 }

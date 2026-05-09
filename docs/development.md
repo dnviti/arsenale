@@ -111,7 +111,6 @@ The backend, gateway modules, and CLI are all first-class test targets. `scripts
 - `gateways/gateway-core`
 - `gateways/db-proxy`
 - `gateways/guacenc`
-- `gateways/rdgw`
 - `gateways/ssh-gateway/grpc-server`
 - `tools/arsenale-cli`
 
@@ -164,7 +163,8 @@ That rule has practical consequences:
 
 - if API contracts change, the CLI must be updated in the same change set,
 - CLI smoke tests are part of the acceptance bar,
-- `arsenale health`, `login`, `whoami`, `connection`, `gateway`, `session`, `rdgw`, `vault`, and `connect` are the highest-value commands to keep aligned.
+- `arsenale health`, `login`, `whoami`, `connection`, `gateway`, `session`, `vault`, and `connect` are the highest-value commands to keep aligned.
+- `arsenale connect ssh <connection> -- <command>` exercises the native OpenSSH path; `arsenale connect rdp|vnc <connection> --no-open -o json` exercises viewer launch grants without opening a browser.
 
 Typical smoke sequence:
 
@@ -186,7 +186,7 @@ The React SPA in `client/` follows a layered architecture:
 
 | Layer | Location | Count |
 |-------|----------|-------|
-| Pages | `client/src/pages/` | 11 pages |
+| Pages | `client/src/pages/` | 12 pages |
 | Components | `client/src/components/` | 90+ components across 20+ directories |
 | Stores | `client/src/store/` | 17 Zustand stores |
 | Hooks | `client/src/hooks/` | 15 custom hooks |

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
 import * as Guacamole from '@glokon/guacamole-common-js';
 import api from '../../api/client';
+import { endCliDesktopSession, heartbeatCliDesktopSession, type CliDesktopLaunchSession } from '../../api/cliDesktopLaunch.api';
 import type { CredentialOverride } from '../../store/tabsStore';
 import { useTabsStore } from '../../store/tabsStore';
 import type { ResolvedDlpPolicy } from '../../api/connections.api';
@@ -20,9 +21,10 @@ interface RdpViewerProps {
   isActive?: boolean;
   enableDrive?: boolean;
   credentials?: CredentialOverride;
+  launchSession?: CliDesktopLaunchSession;
 }
 
-export default function RdpViewer({ connectionId, tabId, isActive = true, enableDrive = false, credentials }: RdpViewerProps) {
+export default function RdpViewer({ connectionId, tabId, isActive = true, enableDrive = false, credentials, launchSession }: RdpViewerProps) {
   const displayRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<Guacamole.Client | null>(null);
   const activeRef = useRef(isActive);
@@ -32,6 +34,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
   const [status, setStatus] = useState<'connecting' | 'connected' | 'unstable' | 'error'>('connecting');
   const [error, setError] = useState('');
   const [fileBrowserOpen, setFileBrowserOpen] = useState(false);
+  const [sessionEnableDrive, setSessionEnableDrive] = useState(enableDrive);
   const [dlpPolicy, setDlpPolicy] = useState<ResolvedDlpPolicy | null>(null);
   const dlpPolicyRef = useRef<ResolvedDlpPolicy | null>(null);
   useEffect(() => { dlpPolicyRef.current = dlpPolicy; }, [dlpPolicy]);
@@ -48,8 +51,25 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
 
   const credentialsRef = useRef(credentials);
   useEffect(() => { credentialsRef.current = credentials; }, [credentials]);
+  const launchSessionRef = useRef(launchSession);
+  const launchSessionUsedRef = useRef(false);
+  const controlTokenRef = useRef<string | null>(launchSession?.controlToken ?? null);
+  useEffect(() => { launchSessionRef.current = launchSession; }, [launchSession]);
+  useEffect(() => { setSessionEnableDrive(enableDrive); }, [enableDrive]);
 
   const STABLE_THRESHOLD_MS = 5_000;
+
+  const heartbeatSession = useCallback((sessionId: string) => {
+    const controlToken = controlTokenRef.current;
+    if (controlToken) return heartbeatCliDesktopSession(sessionId, controlToken);
+    return api.post(`/sessions/rdp/${sessionId}/heartbeat`).then(() => {});
+  }, []);
+
+  const endSession = useCallback((sessionId: string) => {
+    const controlToken = controlTokenRef.current;
+    if (controlToken) return endCliDesktopSession(sessionId, controlToken);
+    return api.post(`/sessions/rdp/${sessionId}/end`).then(() => {});
+  }, []);
 
   const connectSession = useCallback(async () => {
     if (!displayRef.current) return;
@@ -74,7 +94,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
     innerCleanupRef.current?.();
     innerCleanupRef.current = null;
     if (sessionIdRef.current) {
-      api.post(`/sessions/rdp/${sessionIdRef.current}/end`).catch(() => {});
+      endSession(sessionIdRef.current).catch(() => {});
       sessionIdRef.current = null;
     }
     if (displayRef.current) {
@@ -83,26 +103,47 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
 
     const creds = credentialsRef.current;
 
-    const res = await api.post('/sessions/rdp', {
-      connectionId,
-      ...(creds?.credentialMode === 'domain'
-        ? { credentialMode: 'domain' }
-        : creds && {
-            username: creds.username,
-            password: creds.password,
-            ...(creds.domain ? { domain: creds.domain } : {}),
-          }
-      ),
-    });
-    const { token, sessionId, dlpPolicy: resDlp, resolvedUsername, resolvedDomain } = res.data;
+    let sessionData: CliDesktopLaunchSession | {
+      token: string;
+      sessionId: string;
+      dlpPolicy?: ResolvedDlpPolicy;
+      resolvedUsername?: string;
+      resolvedDomain?: string;
+      enableDrive?: boolean;
+    };
+    const launch = launchSessionRef.current;
+    if (launch) {
+      if (launchSessionUsedRef.current) {
+        throw new Error('CLI desktop launch sessions cannot reconnect. Start a new launch from the CLI.');
+      }
+      launchSessionUsedRef.current = true;
+      controlTokenRef.current = launch.controlToken;
+      sessionData = launch;
+    } else {
+      const res = await api.post('/sessions/rdp', {
+        connectionId,
+        ...(creds?.credentialMode === 'domain'
+          ? { credentialMode: 'domain' }
+          : creds && {
+              username: creds.username,
+              password: creds.password,
+              ...(creds.domain ? { domain: creds.domain } : {}),
+            }
+        ),
+      });
+      controlTokenRef.current = null;
+      sessionData = res.data;
+    }
+    const { token, sessionId, dlpPolicy: resDlp, resolvedUsername, resolvedDomain, enableDrive: resEnableDrive } = sessionData;
 
     if (connectionGenRef.current !== gen) {
-      if (sessionId) api.post(`/sessions/rdp/${sessionId}/end`).catch(() => {});
+      if (sessionId) endSession(sessionId).catch(() => {});
       return;
     }
 
     sessionIdRef.current = sessionId ?? null;
     if (resDlp) { setDlpPolicy(resDlp); dlpPolicyRef.current = resDlp; }
+    if (typeof resEnableDrive === 'boolean') setSessionEnableDrive(resEnableDrive);
     setRdpIdentity(tabId, resolvedUsername, resolvedDomain);
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -156,7 +197,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
           if (sessionIdRef.current && !heartbeatRef.current) {
             heartbeatRef.current = setInterval(() => {
               if (sessionIdRef.current) {
-                api.post(`/sessions/rdp/${sessionIdRef.current}/heartbeat`).catch((err) => {
+                heartbeatSession(sessionIdRef.current).catch((err) => {
                   if (err?.response?.status === 410) {
                     permanentErrorRef.current = true;
                     setStatus('error');
@@ -270,7 +311,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
       keyboard.onkeyup = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials tracked via ref
-  }, [connectionId, setRdpIdentity, tabId]);
+  }, [connectionId, endSession, heartbeatSession, setRdpIdentity, tabId]);
 
   const { reconnectState, attempt, maxRetries, triggerReconnect, cancelReconnect, resetReconnect } = useAutoReconnect(
     connectSession,
@@ -313,7 +354,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
     dlpPolicy,
     isFullscreen,
     toggleFullscreen,
-    enableDrive,
+    enableDrive: sessionEnableDrive,
     fileBrowserOpen,
     onToggleDrive: () => setFileBrowserOpen((prev) => !prev),
   });
@@ -359,7 +400,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
         clientRef.current.disconnect();
       }
       if (sessionIdRef.current) {
-        api.post(`/sessions/rdp/${sessionIdRef.current}/end`).catch(() => {});
+        endSession(sessionIdRef.current).catch(() => {});
         sessionIdRef.current = null;
       }
       if (displayEl) {
@@ -368,7 +409,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- credentials intentionally excluded; connect once on mount
-  }, [connectionId]);
+  }, [connectionId, endSession]);
 
   return (
     <div ref={containerRef} className="flex flex-1 flex-row relative overflow-hidden">
@@ -412,7 +453,7 @@ export default function RdpViewer({ connectionId, tabId, isActive = true, enable
             tabIndex={-1}
             className={`flex-1 overflow-hidden outline-none ${status === 'connected' ? 'cursor-none' : 'cursor-default'} [&>div]:!w-full [&>div]:!h-full`}
           />
-          {enableDrive && !(dlpPolicy?.disableDownload && dlpPolicy?.disableUpload) && (
+          {sessionEnableDrive && !(dlpPolicy?.disableDownload && dlpPolicy?.disableUpload) && (
             <FileBrowser
               open={fileBrowserOpen}
               onClose={() => setFileBrowserOpen(false)}

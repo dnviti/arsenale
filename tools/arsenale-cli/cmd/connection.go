@@ -391,10 +391,20 @@ func findConnectionByName(name string, cfg *CLIConfig) (*Connection, error) {
 		return nil, fmt.Errorf("parse connections: %w", err)
 	}
 
+	var nameMatches []Connection
 	for _, c := range connections {
-		if c.Name == name || c.ID == name {
+		if c.ID == name {
 			return &c, nil
 		}
+		if c.Name == name {
+			nameMatches = append(nameMatches, c)
+		}
+	}
+	if len(nameMatches) == 1 {
+		return &nameMatches[0], nil
+	}
+	if len(nameMatches) > 1 {
+		return nil, fmt.Errorf("connection name '%s' is ambiguous (%d matches). Use the connection ID instead", name, len(nameMatches))
 	}
 	return nil, fmt.Errorf("connection '%s' not found. Run 'arsenale connection list' to see available connections", name)
 }

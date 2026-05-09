@@ -1802,6 +1802,34 @@ type DbRateLimitPolicy struct {
 	UpdatedAt   time.Time
 }
 
+type DesktopLaunchGrant struct {
+	ID                string
+	SecretHash        string
+	TenantId          pgtype.Text
+	UserId            string
+	ConnectionId      string
+	Protocol          SessionProtocol
+	ExpiresAt         time.Time
+	ConsumedAt        pgtype.Timestamp
+	ConsumedSessionId pgtype.Text
+	CreatedAt         time.Time
+	CreatedIpAddress  pgtype.Text
+	ConsumedIpAddress pgtype.Text
+	CreatedUserAgent  pgtype.Text
+}
+
+type DesktopViewerControlToken struct {
+	ID         string
+	SecretHash string
+	TenantId   pgtype.Text
+	UserId     string
+	SessionId  string
+	Protocol   SessionProtocol
+	ExpiresAt  time.Time
+	RevokedAt  pgtype.Timestamp
+	CreatedAt  time.Time
+}
+
 type DeviceAuthCode struct {
 	ID         string
 	DeviceCode string
@@ -2104,6 +2132,21 @@ type RefreshToken struct {
 	TokenFamily     string
 	IpUaHash        pgtype.Text
 	FamilyCreatedAt time.Time
+}
+
+type SSHProxyGrant struct {
+	ID                string
+	SecretHash        string
+	TenantId          pgtype.Text
+	UserId            string
+	ConnectionId      string
+	ExpiresAt         time.Time
+	ConsumedAt        pgtype.Timestamp
+	ConsumedSessionId pgtype.Text
+	ConsumedIpAddress pgtype.Text
+	CreatedAt         time.Time
+	CreatedIpAddress  pgtype.Text
+	CreatedUserAgent  pgtype.Text
 }
 
 type SecretCheckoutRequest struct {

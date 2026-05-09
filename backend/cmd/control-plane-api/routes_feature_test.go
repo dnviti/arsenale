@@ -33,6 +33,7 @@ func TestRegisterFeatureGatedRoutes(t *testing.T) {
 	expectRouteAbsent(t, mux, "GET", "/api/secrets")
 	expectRouteAbsent(t, mux, "GET", "/api/recordings")
 	expectRouteAbsent(t, mux, "GET", "/api/gateways")
+	expectRouteAbsent(t, mux, "GET", "/api/rdgw/config")
 	expectRouteAbsent(t, mux, "GET", "/api/geoip/8.8.8.8")
 	expectRouteAbsent(t, mux, "GET", "/api/audit/tenant/geo-summary")
 	expectRouteAbsent(t, mux, "POST", "/api/tenants")

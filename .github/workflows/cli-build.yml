@@ -1,0 +1,136 @@
+name: CLI — Build
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - "tools/arsenale-cli/**"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/cli-build.yml"
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - "tools/arsenale-cli/**"
+      - "go.work"
+      - "go.work.sum"
+      - ".github/workflows/cli-build.yml"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test CLI
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.8"
+          cache-dependency-path: |
+            go.work
+            go.work.sum
+            tools/arsenale-cli/go.mod
+            tools/arsenale-cli/go.sum
+
+      - name: Run CLI tests
+        run: go test ./tools/arsenale-cli/...
+
+  build:
+    name: Build CLI (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+            archive_ext: tar.gz
+          - goos: linux
+            goarch: arm64
+            ext: ""
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: amd64
+            ext: ""
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: arm64
+            ext: ""
+            archive_ext: tar.gz
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+            archive_ext: zip
+          - goos: windows
+            goarch: arm64
+            ext: ".exe"
+            archive_ext: zip
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.8"
+          cache-dependency-path: |
+            go.work
+            go.work.sum
+            tools/arsenale-cli/go.mod
+            tools/arsenale-cli/go.sum
+
+      - name: Derive build version
+        id: version
+        run: |
+          set -euo pipefail
+          short_sha="$(git rev-parse --short=12 HEAD)"
+          printf 'version=ci-%s\n' "$short_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Build CLI binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build \
+            -ldflags "-s -w -X github.com/dnviti/arsenale/tools/arsenale-cli/cmd.Version=${{ steps.version.outputs.version }}" \
+            -o "dist/arsenale${{ matrix.ext }}" \
+            ./tools/arsenale-cli/
+
+      - name: Package CLI artifact
+        run: |
+          set -euo pipefail
+          cd dist
+          archive="arsenale-cli_${{ steps.version.outputs.version }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+            zip "${archive}.zip" "arsenale${{ matrix.ext }}"
+          else
+            tar czf "${archive}.tar.gz" "arsenale${{ matrix.ext }}"
+          fi
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arsenale-cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/arsenale-cli_*
+          if-no-files-found: error

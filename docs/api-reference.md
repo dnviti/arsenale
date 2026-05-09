@@ -45,7 +45,7 @@ One architectural change matters more than any raw endpoint count: the surface i
 
 | Capability | Public effect |
 |------------|---------------|
-| `connectionsEnabled` | Enables connection CRUD, folders, SSH/RDP/VNC sessions, RDGW, and active-session streaming |
+| `connectionsEnabled` | Enables connection CRUD, folders, SSH/RDP/VNC sessions, native SSH proxying, CLI desktop launch grants, and active-session streaming |
 | `databaseProxyEnabled` | Enables database sessions, DB tunnels, DB audit, and AI SQL helpers |
 | `keychainEnabled` | Enables vault, secrets, files, vault folders, and external vault providers |
 | `recordingsEnabled` | Enables recording list, playback, analysis, and export |
@@ -294,6 +294,17 @@ Operational session endpoints:
 
 Active-session list, count, and stream payloads surface the persisted `status` field directly. Session states now include `PAUSED` alongside `ACTIVE`, `IDLE`, and `CLOSED`. Tenant members with `canViewSessions` still see tenant-wide activity. Tenant members without `canViewSessions` now fall back to their own active sessions for `GET /api/sessions/active`, `GET /api/sessions/count`, and `GET /api/sessions/active/stream` instead of being hard-blocked. `GET /api/sessions/console` is the broader unified console feed: tenant-wide viewers get tenant-scoped rows, own-scope members are limited to their own active rows, and every row includes recording summary metadata (`exists`, `id`, `status`, `format`, `completedAt`, `fileSize`, `duration`) keyed by session id. `POST /api/sessions/ssh/{sessionId}/observe` returns a short-lived read-only observer grant for the existing `/ws/terminal` runtime instead of starting a second SSH connection. `POST /api/sessions/{rdp|vnc}/{sessionId}/observe` returns short-lived read-only desktop observer grants that join the existing Guacamole connection instead of opening a second remote desktop session. The stable client contract is the relative `webSocketPath`; browsers compose same-origin WebSocket URLs locally.
 
+CLI launch endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/api/cli/connect/desktop/launch` | Authenticated CLI request that mints a one-time RDP/VNC viewer launch URL |
+| `POST` | `/api/cli/connect/desktop/redeem` | Viewer-only grant redemption that creates the desktop session without a full browser login |
+| `POST` | `/api/cli/connect/desktop/{sessionId}/heartbeat` | Viewer-control-token heartbeat scoped to the redeemed session |
+| `POST` | `/api/cli/connect/desktop/{sessionId}/end` | Viewer-control-token session close scoped to the redeemed session |
+
+`arsenale connect rdp|vnc <connection>` uses these endpoints to open the Arsenale viewer in the browser. `--no-open -o json` returns the launch URL and expiry for smoke assertions.
+
 ## 🗄 Database Query And Audit APIs
 
 Database sessions are the most gateway-sensitive part of the platform. The public control plane handles auth, tenancy, and audit, but the actual query work is forwarded to a DB proxy gateway.
@@ -369,7 +380,6 @@ Operational domains under `routes_operations.go` include:
 | `/api/access-policies` | Access policy CRUD |
 | `/api/keystroke-policies` | Keystroke policy CRUD |
 | `/api/gateways` | Gateway CRUD, tunnel overview, templates, scaling, deploy, tunnel controls, and gateway egress policy |
-| `/api/rdgw/*` | RD Gateway config and RDP file generation |
 | `/api/recordings/*` | Recording list, metadata, stream, audit trail, and video export with session-visibility RBAC |
 | `/api/ldap/*` | LDAP status, test, and sync |
 | `/api/notifications` | Notification list, preference management, and read state |

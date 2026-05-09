@@ -29,7 +29,7 @@
 | `notifications.api.ts` | Notification listing, preferences, read state, and management |
 | `oauth.api.ts` | OAuth providers, linked accounts, vault setup |
 | `passwordReset.api.ts` | Password reset flow |
-| `rdGateway.api.ts` | RD Gateway (MS-TSGU) config and RDP file generation |
+| `cliDesktopLaunch.api.ts` | CLI desktop launch redemption and viewer-control-token heartbeat/end calls |
 | `recordings.api.ts` | Session recording listing, streaming, analysis, and video export |
 | `secrets.api.ts` | Keychain CRUD, versioning, sharing, external shares, tenant vault, password rotation |
 | `sessions.api.ts` | Session monitoring (active, count, terminate), SSH proxy tokens |

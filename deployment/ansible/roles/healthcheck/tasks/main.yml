@@ -174,5 +174,5 @@
     msg: |
       Arsenale deployed successfully!
       Web UI: {{ _public_ui_url }}
-      SSH Gateway: ssh -p {{ arsenale_ssh_port }} tunnel@{{ arsenale_domain }}
+      SSH Proxy: arsenale connect ssh <connection> --server {{ _public_ui_url }}
       Secrets: Managed via Podman secrets (not in container env)

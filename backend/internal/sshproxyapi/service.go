@@ -14,26 +14,28 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/internal/connectionaccess"
 	"github.com/dnviti/arsenale/backend/internal/connections"
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/dnviti/arsenale/backend/internal/desktopbroker"
+	"github.com/dnviti/arsenale/backend/internal/sessions"
+	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	DB          *pgxpool.Pool
-	JWTSecret   []byte
-	Connections connections.Service
-}
-
-type tokenClaims struct {
-	UserID       string `json:"userId"`
-	ConnectionID string `json:"connectionId"`
-	Purpose      string `json:"purpose"`
-	jwt.RegisteredClaims
+	DB                 *pgxpool.Pool
+	Connections        connections.Service
+	ConnectionResolver connectionaccess.FileResolver
+	SessionStore       *sessions.Store
+	TenantAuth         tenantauth.Service
 }
 
 func (s Service) HandleCreateToken(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
+	if s.DB == nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, "database is unavailable")
+		return
+	}
 	var body struct {
 		ConnectionID string `json:"connectionId"`
 	}
@@ -55,21 +57,41 @@ func (s Service) HandleCreateToken(w http.ResponseWriter, r *http.Request, claim
 		app.ErrorJSON(w, http.StatusBadRequest, "SSH proxy tokens can only be issued for SSH connections")
 		return
 	}
+	if strings.TrimSpace(claims.TenantID) != "" {
+		membership, err := s.TenantAuth.ResolveMembership(r.Context(), claims.UserID, claims.TenantID)
+		if err != nil {
+			app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		if membership == nil || !membership.Permissions[tenantauth.CanConnect] {
+			app.ErrorJSON(w, http.StatusForbidden, "Not allowed to start sessions in this tenant")
+			return
+		}
+	}
 
 	expiresIn := parsePositiveInt(getenv("SSH_PROXY_TOKEN_TTL_SECONDS", "300"), 300)
-	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, tokenClaims{
-		UserID:       claims.UserID,
-		ConnectionID: body.ConnectionID,
-		Purpose:      "ssh-proxy",
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expiresAt),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-	})
-	signed, err := token.SignedString(s.JWTSecret)
+	expiresAt := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
+	grantID, grantSecret, grantValue, err := newProxyGrant()
 	if err != nil {
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	if _, err := s.DB.Exec(r.Context(), `
+INSERT INTO "SSHProxyGrant" (
+  id, "secretHash", "tenantId", "userId", "connectionId", "expiresAt", "createdIpAddress", "createdUserAgent"
+) VALUES (
+  $1, $2, NULLIF($3, ''), $4, $5, $6, $7, NULLIF($8, '')
+)`,
+		grantID,
+		desktopbroker.HashToken(grantSecret),
+		claims.TenantID,
+		claims.UserID,
+		body.ConnectionID,
+		expiresAt,
+		requestIP(r),
+		r.UserAgent(),
+	); err != nil {
+		app.ErrorJSON(w, http.StatusServiceUnavailable, fmt.Errorf("store SSH proxy token: %w", err).Error())
 		return
 	}
 
@@ -81,10 +103,10 @@ func (s Service) HandleCreateToken(w http.ResponseWriter, r *http.Request, claim
 	proxyPort := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
 
 	app.WriteJSON(w, http.StatusOK, map[string]any{
-		"token":     signed,
+		"token":     grantValue,
 		"expiresIn": expiresIn,
 		"connectionInstructions": map[string]any{
-			"command": fmt.Sprintf(`echo "<token>" | nc %s %d`, serverHost, proxyPort),
+			"command": fmt.Sprintf(`sh -c 'printf "%%s\n" "$1"; cat' arsenale-token "<token>" | nc %s %d`, serverHost, proxyPort),
 			"port":    proxyPort,
 			"host":    serverHost,
 			"note":    fmt.Sprintf("Present this token as the first line when connecting to the SSH proxy port. The token expires in %d seconds.", expiresIn),
