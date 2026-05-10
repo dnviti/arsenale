@@ -101,7 +101,7 @@ function Add-ProfileBlock {
         return
     }
 
-    Add-Content -Path $ProfilePath -Value $Lines
+    Add-Content -Path $ProfilePath -Value $Lines -Encoding UTF8
 }
 
 function Install-PowerShellCompletion {
@@ -115,7 +115,11 @@ function Install-PowerShellCompletion {
     $completionDir = Join-Path $HOME ".arsenale\completions"
     $completionPath = Join-Path $completionDir "arsenale.ps1"
     New-Item -ItemType Directory -Path $completionDir -Force | Out-Null
-    & $ArsenalePath completion powershell | Set-Content -Path $completionPath -Encoding UTF8
+    $completionOutput = & $ArsenalePath completion powershell
+    if ($LASTEXITCODE -ne 0) {
+        throw "failed to generate PowerShell completion with $ArsenalePath (exit code $LASTEXITCODE)"
+    }
+    $completionOutput | Set-Content -Path $completionPath -Encoding UTF8
 
     $profilePath = $PROFILE.CurrentUserAllHosts
     if ([string]::IsNullOrWhiteSpace($profilePath)) {

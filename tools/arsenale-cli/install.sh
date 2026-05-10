@@ -127,6 +127,22 @@ install_shell_completions() {
     printf 'Skipped shell completion installation.\n'
     return
   fi
+  local completion_status
+  set +e
+  ( set -e; install_shell_completions_once "$binary" )
+  completion_status=$?
+  set -e
+  if [ "$completion_status" -ne 0 ]; then
+    if [ "${ARSENALE_STRICT_COMPLETIONS:-0}" = "1" ]; then
+      return "$completion_status"
+    fi
+    printf 'warning: shell completion installation failed; arsenale binary is installed. Set ARSENALE_STRICT_COMPLETIONS=1 to make this fatal.\n' >&2
+  fi
+}
+
+install_shell_completions_once() {
+  local binary="$1"
+
   if [ -z "${HOME:-}" ]; then
     printf 'Skipping shell completion installation because HOME is not set.\n' >&2
     return
