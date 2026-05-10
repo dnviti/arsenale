@@ -170,9 +170,9 @@ func runNotificationPreferencesGet(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	printer().PrintSingle(body, []Column{
+	printer().Print(body, []Column{
+		{Header: "TYPE", Field: "type"},
 		{Header: "EMAIL", Field: "email"},
-		{Header: "PUSH", Field: "push"},
 		{Header: "IN_APP", Field: "inApp"},
 	})
 }
@@ -184,6 +184,10 @@ func runNotificationPreferencesSet(cmd *cobra.Command, args []string) {
 	}
 
 	data, err := readResourceFromFileOrStdin(notificationPrefsFromFile)
+	if err != nil {
+		fatal("%v", err)
+	}
+	data, err = normalizeNotificationPreferencesPayload(data)
 	if err != nil {
 		fatal("%v", err)
 	}
@@ -209,6 +213,10 @@ func runNotificationPreferencesSetType(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fatal("%v", err)
 	}
+	data, err = normalizeNotificationPreferencePayload(data)
+	if err != nil {
+		fatal("%v", err)
+	}
 
 	body, status, err := apiPut(fmt.Sprintf("/api/notifications/preferences/%s", args[0]), json.RawMessage(data), cfg)
 	if err != nil {
@@ -219,4 +227,74 @@ func runNotificationPreferencesSetType(cmd *cobra.Command, args []string) {
 	if !quiet {
 		fmt.Printf("Notification preferences for type %q updated\n", args[0])
 	}
+}
+
+func normalizeNotificationPreferencesPayload(data []byte) ([]byte, error) {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, fmt.Errorf("parse notification preferences: %w", err)
+	}
+	switch typed := value.(type) {
+	case []any:
+		preferences := make([]any, 0, len(typed))
+		for _, item := range typed {
+			normalized, err := normalizeNotificationPreferenceValue(item)
+			if err != nil {
+				return nil, err
+			}
+			preferences = append(preferences, normalized)
+		}
+		return json.Marshal(map[string]any{"preferences": preferences})
+	case map[string]any:
+		rawPrefs, ok := typed["preferences"]
+		if !ok {
+			normalized, err := normalizeNotificationPreferenceValue(typed)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(map[string]any{"preferences": []any{normalized}})
+		}
+		prefs, ok := rawPrefs.([]any)
+		if !ok {
+			return nil, fmt.Errorf("preferences must be an array")
+		}
+		normalizedPrefs := make([]any, 0, len(prefs))
+		for _, item := range prefs {
+			normalized, err := normalizeNotificationPreferenceValue(item)
+			if err != nil {
+				return nil, err
+			}
+			normalizedPrefs = append(normalizedPrefs, normalized)
+		}
+		typed["preferences"] = normalizedPrefs
+		return json.Marshal(typed)
+	default:
+		return nil, fmt.Errorf("notification preferences must be an object or array")
+	}
+}
+
+func normalizeNotificationPreferencePayload(data []byte) ([]byte, error) {
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, fmt.Errorf("parse notification preference: %w", err)
+	}
+	normalized, err := normalizeNotificationPreferenceValue(value)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(normalized)
+}
+
+func normalizeNotificationPreferenceValue(value any) (map[string]any, error) {
+	preference, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("notification preference must be an object")
+	}
+	if push, ok := preference["push"]; ok {
+		if _, hasInApp := preference["inApp"]; !hasInApp {
+			preference["inApp"] = push
+		}
+		delete(preference, "push")
+	}
+	return preference, nil
 }

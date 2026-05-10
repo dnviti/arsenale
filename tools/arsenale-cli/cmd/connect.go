@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -19,23 +18,43 @@ var connectCmd = &cobra.Command{
 }
 
 var connectSSHCmd = &cobra.Command{
-	Use:   "ssh <connection-name>",
+	Use:   "ssh <connection-name-or-id> [-- remote-command...]",
 	Short: "Connect to an SSH target via Arsenale proxy",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MinimumNArgs(1),
 	Run:   runConnectSSH,
 }
 
 var connectRDPCmd = &cobra.Command{
-	Use:   "rdp <connection-name>",
-	Short: "Connect to an RDP target via RD Gateway",
+	Use:   "rdp <connection-name-or-id>",
+	Short: "Open an RDP target in the Arsenale desktop viewer",
 	Args:  cobra.ExactArgs(1),
 	Run:   runConnectRDP,
+}
+
+var connectVNCCmd = &cobra.Command{
+	Use:   "vnc <connection-name-or-id>",
+	Short: "Open a VNC target in the Arsenale desktop viewer",
+	Args:  cobra.ExactArgs(1),
+	Run:   runConnectVNC,
+}
+
+var connectNoOpen bool
+
+var connectDesktopLaunchColumns = []Column{
+	{Header: "PROTOCOL", Field: "protocol"},
+	{Header: "CONNECTION_ID", Field: "connectionId"},
+	{Header: "LAUNCH_URL", Field: "launchUrl"},
+	{Header: "EXPIRES_AT", Field: "expiresAt"},
+	{Header: "EXPIRES_IN", Field: "expiresIn"},
 }
 
 func init() {
 	rootCmd.AddCommand(connectCmd)
 	connectCmd.AddCommand(connectSSHCmd)
 	connectCmd.AddCommand(connectRDPCmd)
+	connectCmd.AddCommand(connectVNCCmd)
+	connectRDPCmd.Flags().BoolVar(&connectNoOpen, "no-open", false, "Print the viewer launch URL without opening a browser")
+	connectVNCCmd.Flags().BoolVar(&connectNoOpen, "no-open", false, "Print the viewer launch URL without opening a browser")
 }
 
 func runConnectSSH(cmd *cobra.Command, args []string) {
@@ -92,7 +111,12 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 	sshConfig := fmt.Sprintf(`Host arsenale-target
     HostName %s
     Port %d
-    ProxyCommand echo '%s' | nc %s %d
+    User %s
+    PreferredAuthentications none
+    PubkeyAuthentication no
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    ProxyCommand nc %s %d
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
     LogLevel ERROR
@@ -107,7 +131,8 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 	fmt.Printf("Connecting to %s (%s:%d) via Arsenale SSH proxy...\n", name, conn.Host, conn.Port)
 	fmt.Printf("Proxy: %s:%d (token expires in %ds)\n\n", proxyHost, proxyPort, tokenResp.ExpiresIn)
 
-	sshCmd := exec.Command("ssh", "-F", sshConfigPath, "arsenale-target")
+	sshArgs := buildOpenSSHArgs(sshConfigPath, args[1:])
+	sshCmd := exec.Command("ssh", sshArgs...)
 	sshCmd.Stdin = os.Stdin
 	sshCmd.Stdout = os.Stdout
 	sshCmd.Stderr = os.Stderr
@@ -129,90 +154,63 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 	}
 }
 
+func buildOpenSSHArgs(sshConfigPath string, remoteArgs []string) []string {
+	sshArgs := []string{"-F", sshConfigPath, "arsenale-target"}
+	return append(sshArgs, remoteArgs...)
+}
+
 func runConnectRDP(cmd *cobra.Command, args []string) {
-	name := args[0]
+	runConnectDesktop("RDP", args[0])
+}
+
+func runConnectVNC(cmd *cobra.Command, args []string) {
+	runConnectDesktop("VNC", args[0])
+}
+
+func runConnectDesktop(protocol, connectionRef string) {
 	cfg := getCfg()
 
 	if err := ensureAuthenticated(cfg); err != nil {
 		fatal("%v", err)
 	}
 
-	conn, err := findConnectionByName(name, cfg)
+	conn, err := findConnectionByName(connectionRef, cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
-
-	if conn.Type != "RDP" {
-		fatal("connection '%s' is type %s, not RDP", name, conn.Type)
+	if conn.Type != protocol {
+		fatal("connection %q is type %s, not %s", conn.Name, conn.Type, protocol)
 	}
 
-	respBody, status, err := apiGet(fmt.Sprintf("/api/rdgw/connections/%s/rdpfile", conn.ID), cfg)
+	respBody, status, err := apiPost("/api/cli/connect/desktop/launch", map[string]string{
+		"protocol":     protocol,
+		"connectionId": conn.ID,
+	}, cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
 	checkAPIError(status, respBody)
 
-	tmpDir, err := os.MkdirTemp("", "arsenale-rdp-*")
-	if err != nil {
-		fatal("%v", err)
+	var launch struct {
+		LaunchURL string `json:"launchUrl"`
 	}
-	defer os.RemoveAll(tmpDir)
-
-	safeName := sanitizeFilename(name)
-	rdpFilePath := filepath.Join(tmpDir, safeName+".rdp")
-
-	if err := os.WriteFile(rdpFilePath, respBody, 0600); err != nil {
-		fatal("failed to write .rdp file: %v", err)
+	if err := json.Unmarshal(respBody, &launch); err != nil {
+		fatal("failed to parse launch response: %v", err)
+	}
+	if launch.LaunchURL == "" {
+		fatal("server response did not include launchUrl")
 	}
 
-	fmt.Printf("Connecting to %s (%s:%d) via RD Gateway...\n", name, conn.Host, conn.Port)
-	fmt.Printf("RDP file: %s\n\n", rdpFilePath)
-
-	var rdpCmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		rdpCmd = exec.Command("mstsc.exe", rdpFilePath)
-	case "darwin":
-		rdpCmd = exec.Command("open", rdpFilePath)
-	default:
-		if _, err := exec.LookPath("xfreerdp"); err == nil {
-			rdpCmd = exec.Command("xfreerdp", rdpFilePath)
-		} else if _, err := exec.LookPath("rdesktop"); err == nil {
-			rdpCmd = exec.Command("rdesktop", "-r", "rdpfile:"+rdpFilePath)
-		} else {
-			fmt.Println("RDP file saved to:", rdpFilePath)
-			fmt.Println("No RDP client found. Install xfreerdp or rdesktop, or open the file manually.")
-			return
+	if connectNoOpen || outputFormat != "table" {
+		if err := printer().PrintSingle(respBody, connectDesktopLaunchColumns); err != nil {
+			fatal("%v", err)
 		}
+		return
 	}
 
-	rdpCmd.Stdin = os.Stdin
-	rdpCmd.Stdout = os.Stdout
-	rdpCmd.Stderr = os.Stderr
-
-	if err := rdpCmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: failed to launch RDP client: %v\n", err)
-		fmt.Println("RDP file saved to:", rdpFilePath)
-		os.Exit(1)
+	fmt.Printf("Opening %s viewer for %s (%s:%d)...\n", protocol, conn.Name, conn.Host, conn.Port)
+	fmt.Printf("Launch URL: %s\n", launch.LaunchURL)
+	if err := openBrowser(launch.LaunchURL); err != nil {
+		fatal("failed to open browser: %v", err)
 	}
-
-	fmt.Println("RDP client launched. The connection file will be cleaned up when this process exits.")
-
-	if err := rdpCmd.Wait(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-	}
-}
-
-func sanitizeFilename(name string) string {
-	result := make([]byte, 0, len(name))
-	for _, c := range []byte(name) {
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' {
-			result = append(result, c)
-		} else {
-			result = append(result, '_')
-		}
-	}
-	return string(result)
 }

@@ -59,6 +59,7 @@ type Service struct {
 	RecordingPath      string
 	DriveBasePath      string
 	RecordingEnabled   bool
+	ClientURL          string
 }
 
 type requestError struct {

@@ -589,7 +589,7 @@ Installs and configures nftables firewall rules. Only runs in production mode wh
 
 | Direction | Ports | Policy |
 |-----------|-------|--------|
-| Inbound | 22 (SSH), `arsenale_client_port` (web), `arsenale_ssh_port` (gateway) | Allow |
+| Inbound | 22 (SSH), `arsenale_client_port` (web), `arsenale_ssh_port` (Arsenale SSH proxy) | Allow |
 | Container egress | 53 (DNS), 443 (HTTPS), 25/465/587 (SMTP) | Allow |
 | All other inbound | -- | Drop |
 | All forwarded | -- | Drop |
@@ -687,7 +687,7 @@ Comprehensive post-deploy validation for Compose backends.
 4. **Secret isolation**: Verifies `JWT_SECRET`, `GUACAMOLE_SECRET`, and `SERVER_ENCRYPTION_KEY` are **not** present in container environment variables.
 5. **Secret mounting**: Verifies Podman secrets are mounted at `/run/secrets/` in the control-plane-api container.
 6. **Postgres isolation**: Verifies the postgres container only has `postgres_password` mounted, not other application secrets.
-7. **Deployment summary**: Displays the public URL and SSH gateway connection string.
+7. **Deployment summary**: Displays the public URL and CLI SSH proxy entry point.
 
 ### Role: install_artifacts
 
@@ -973,7 +973,7 @@ All non-secret configuration is in `inventory/group_vars/all/vars.yml`.
 |----------|---------|-------------|
 | `arsenale_domain` | `arsenale.home.arpa.viti` | Domain name for the deployment |
 | `arsenale_client_port` | `3000` | Web UI port (host-side) |
-| `arsenale_ssh_port` | `2222` | SSH gateway port (host-side) |
+| `arsenale_ssh_port` | `2222` | Arsenale SSH proxy port (host-side) |
 | `arsenale_public_url` | `https://arsenale_domain:3000` | Public URL for the web UI |
 | `arsenale_trust_proxy` | `false` | Trust X-Forwarded-* headers |
 | `arsenale_allow_local_network` | `true` | Allow local network access |
@@ -1140,8 +1140,8 @@ table inet arsenale {
     # Allow web UI from configured sources
     tcp dport <arsenale_client_port> ip saddr { <arsenale_allowed_web_sources> } accept
 
-    # Allow SSH gateway from configured sources
-    tcp dport <arsenale_ssh_port> ip saddr { <arsenale_allowed_web_sources> } accept
+    # Allow Arsenale SSH proxy from configured sources
+    tcp dport <arsenale_ssh_port> ip saddr { <arsenale_allowed_ssh_sources> } accept
   }
 
   chain forward {

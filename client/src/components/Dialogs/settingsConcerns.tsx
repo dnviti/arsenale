@@ -36,7 +36,6 @@ import OAuthProvidersAdminSection from '../Settings/OAuthProvidersAdminSection';
 import VaultProvidersSection from '../Settings/VaultProvidersSection';
 import AccessPolicySection from '../Settings/AccessPolicySection';
 import NativeSshSection from '../Settings/NativeSshSection';
-import RdGatewayConfigSection from '../Settings/RdGatewayConfigSection';
 import AiQueryConfigSection from '../Settings/AiQueryConfigSection';
 import AppearanceSection from '../Settings/AppearanceSection';
 import SqlEditorSection from '../Settings/SqlEditorSection';
@@ -294,7 +293,7 @@ export function buildSettingsConcerns(context: SettingsConcernContext): Settings
     label: 'Infrastructure',
     description: 'Gateways, tunnels, and transport-level connectivity settings.',
     icon: <Network className="size-4" />,
-    keywords: ['gateways', 'tunnel', 'rd gateway', 'ssh', 'infrastructure'],
+    keywords: ['gateways', 'tunnel', 'ssh', 'infrastructure'],
     sections: [
       {
         id: 'gateways',
@@ -318,13 +317,6 @@ export function buildSettingsConcerns(context: SettingsConcernContext): Settings
         description: 'System-level SSH bridge controls.',
         keywords: ['ssh', 'native ssh'],
         content: context.isAdmin && context.connectionsEnabled ? <NativeSshSection /> : null,
-      },
-      {
-        id: 'rd-gateway',
-        label: 'RD Gateway',
-        description: 'Remote Desktop gateway integration options.',
-        keywords: ['rd gateway', 'rdp'],
-        content: context.isAdmin && context.connectionsEnabled ? <RdGatewayConfigSection /> : null,
       },
     ].filter((section) => section.content !== null) as SettingsSection[],
   });

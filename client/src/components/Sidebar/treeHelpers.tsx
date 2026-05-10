@@ -20,7 +20,6 @@ import {
 } from 'lucide-react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { downloadRdpFile } from '@/api/rdGateway.api';
 import type { ConnectionData } from '@/api/connections.api';
 import type { Folder as FolderData } from '@/store/connectionsStore';
 import { useTabsStore } from '@/store/tabsStore';
@@ -130,15 +129,6 @@ export function ConnectionItem({
       icon: <ExternalLink className="size-4" />,
       onSelect: () => openConnectionWindow(conn.id),
     },
-    ...(conn.type === 'RDP'
-      ? [{
-          label: 'Open with Native Client',
-          icon: <ExternalLink className="size-4" />,
-          onSelect: () => {
-            void downloadRdpFile(conn.id, conn.name).catch(() => {});
-          },
-        }]
-      : []),
     ...(conn.isOwner && onToggleFavorite
       ? [{
           label: conn.isFavorite ? 'Remove from Favorites' : 'Add to Favorites',

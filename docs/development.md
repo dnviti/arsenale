@@ -111,7 +111,6 @@ The backend, gateway modules, and CLI are all first-class test targets. `scripts
 - `gateways/gateway-core`
 - `gateways/db-proxy`
 - `gateways/guacenc`
-- `gateways/rdgw`
 - `gateways/ssh-gateway/grpc-server`
 - `tools/arsenale-cli`
 
@@ -164,7 +163,8 @@ That rule has practical consequences:
 
 - if API contracts change, the CLI must be updated in the same change set,
 - CLI smoke tests are part of the acceptance bar,
-- `arsenale health`, `login`, `whoami`, `connection`, `gateway`, `session`, `rdgw`, `vault`, and `connect` are the highest-value commands to keep aligned.
+- `arsenale health`, `login`, `whoami`, `connection`, `gateway`, `session`, `vault`, and `connect` are the highest-value commands to keep aligned.
+- `arsenale connect ssh <connection> -- <command>` exercises the native OpenSSH path; `arsenale connect rdp|vnc <connection> --no-open -o json` exercises viewer launch grants without opening a browser.
 
 Typical smoke sequence:
 
@@ -180,17 +180,28 @@ go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 
 For the local installer stack, the CLI automatically trusts `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/client/ca.pem` when you target `https://localhost:3000`. Set `ARSENALE_CA_CERT` if you need to point the CLI at a different private CA bundle.
 
+For headless agents, store a writable credential file outside the repo. The CLI uses `./config.yaml` automatically when it exists, after checking `--config` and `ARSENALE_CONFIG`:
+
+```bash
+mkdir -p "$HOME/.config/arsenale"
+cd "$HOME/.config/arsenale"
+arsenale login --server https://localhost:3000 --no-browser
+arsenale whoami
+```
+
+`ARSENALE_CONFIG` behaves like `KUBECONFIG` when you need an explicit path: the CLI reads and writes tokens through that file instead of local `config.yaml` or `~/.arsenale/config.yaml`. Keep one file per automation identity because refresh tokens are persistent but rotate on use.
+
 ## 🖥 Frontend Architecture
 
 The React SPA in `client/` follows a layered architecture:
 
 | Layer | Location | Count |
 |-------|----------|-------|
-| Pages | `client/src/pages/` | 11 pages |
+| Pages | `client/src/pages/` | 13 pages |
 | Components | `client/src/components/` | 90+ components across 20+ directories |
 | Stores | `client/src/store/` | 17 Zustand stores |
 | Hooks | `client/src/hooks/` | 15 custom hooks |
-| API modules | `client/src/api/` | 41 Axios-based modules |
+| API modules | `client/src/api/` | 42 Axios-based modules |
 
 Key stores and their purposes:
 

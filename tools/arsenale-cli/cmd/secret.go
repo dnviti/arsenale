@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -91,7 +92,7 @@ var secretCountsCmd = &cobra.Command{
 var secretShareCmd = &cobra.Command{
 	Use:   "share <id>",
 	Short: "Share a secret with a user",
-	Long:  `Share a secret: arsenale secret share <id> --user-id <userId> --permission <read|write>`,
+	Long:  `Share a secret: arsenale secret share <id> --user-id <userId> --permission <read|write|READ_ONLY|FULL_ACCESS>`,
 	Args:  cobra.ExactArgs(1),
 	Run:   runSecretShare,
 }
@@ -217,14 +218,16 @@ var secretRotationTriggerCmd = &cobra.Command{
 }
 
 var secretRotationStatusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Get rotation status for all secrets",
+	Use:   "status <id>",
+	Short: "Get rotation status for a secret",
+	Args:  cobra.ExactArgs(1),
 	Run:   runSecretRotationStatus,
 }
 
 var secretRotationHistoryCmd = &cobra.Command{
-	Use:   "history",
-	Short: "Get rotation history",
+	Use:   "history <id>",
+	Short: "Get rotation history for a secret",
+	Args:  cobra.ExactArgs(1),
 	Run:   runSecretRotationHistory,
 }
 
@@ -233,12 +236,13 @@ var secretRotationHistoryCmd = &cobra.Command{
 // ---------------------------------------------------------------------------
 
 var (
-	secretFromFile          string
-	secretShareUserID       string
-	secretSharePerm         string
-	secretUpdateSharePerm   string
-	secretExtShareFromFile  string
-	secretRotationFromFile  string
+	secretFromFile         string
+	secretShareUserID      string
+	secretSharePerm        string
+	secretUpdateSharePerm  string
+	secretExtShareFromFile string
+	secretRotationFromFile string
+	secretRotationLimit    int
 )
 
 // ---------------------------------------------------------------------------
@@ -304,6 +308,7 @@ func init() {
 	// Flags: rotation
 	secretRotationEnableCmd.Flags().StringVarP(&secretRotationFromFile, "from-file", "f", "", "JSON/YAML rotation config file (- for stdin)")
 	secretRotationEnableCmd.MarkFlagRequired("from-file")
+	secretRotationHistoryCmd.Flags().IntVar(&secretRotationLimit, "limit", 20, "Maximum history entries")
 }
 
 // ---------------------------------------------------------------------------
@@ -419,7 +424,7 @@ func runSecretShare(cmd *cobra.Command, args []string) {
 
 	payload := map[string]string{
 		"userId":     secretShareUserID,
-		"permission": secretSharePerm,
+		"permission": normalizeSecretSharePermission(secretSharePerm),
 	}
 
 	body, status, err := apiPost(fmt.Sprintf("/api/secrets/%s/share", args[0]), payload, cfg)
@@ -427,7 +432,7 @@ func runSecretShare(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	fmt.Println("Secret shared successfully")
+	printer().PrintCreated(body, "id")
 }
 
 func runSecretUnshare(cmd *cobra.Command, args []string) {
@@ -441,7 +446,7 @@ func runSecretUnshare(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	fmt.Println("Share removed")
+	printer().PrintDeleted("Share", args[1])
 }
 
 func runSecretUpdateShare(cmd *cobra.Command, args []string) {
@@ -451,7 +456,7 @@ func runSecretUpdateShare(cmd *cobra.Command, args []string) {
 	}
 
 	payload := map[string]string{
-		"permission": secretUpdateSharePerm,
+		"permission": normalizeSecretSharePermission(secretUpdateSharePerm),
 	}
 
 	body, status, err := apiPut(fmt.Sprintf("/api/secrets/%s/share/%s", args[0], args[1]), payload, cfg)
@@ -459,7 +464,11 @@ func runSecretUpdateShare(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	fmt.Println("Share permission updated")
+	printer().PrintSingle(body, []Column{
+		{Header: "ID", Field: "id"},
+		{Header: "PERMISSION", Field: "permission"},
+		{Header: "SHARED_WITH", Field: "sharedWith"},
+	})
 }
 
 func runSecretShares(cmd *cobra.Command, args []string) {
@@ -680,16 +689,16 @@ func runSecretRotationStatus(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 
-	body, status, err := apiPost("/api/secrets/rotation/status", nil, cfg)
+	body, status, err := apiPost("/api/secrets/rotation/status", buildSecretRotationStatusPayload(args[0]), cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	printer().Print(body, []Column{
-		{Header: "SECRET_ID", Field: "secretId"},
+	printer().PrintSingle(body, []Column{
 		{Header: "ENABLED", Field: "enabled"},
-		{Header: "LAST_ROTATED", Field: "lastRotated"},
-		{Header: "NEXT_ROTATION", Field: "nextRotation"},
+		{Header: "INTERVAL_DAYS", Field: "intervalDays"},
+		{Header: "LAST_ROTATED_AT", Field: "lastRotatedAt"},
+		{Header: "NEXT_ROTATION_AT", Field: "nextRotationAt"},
 	})
 }
 
@@ -699,15 +708,38 @@ func runSecretRotationHistory(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 
-	body, status, err := apiPost("/api/secrets/rotation/history", nil, cfg)
+	body, status, err := apiPost("/api/secrets/rotation/history", buildSecretRotationHistoryPayload(args[0], secretRotationLimit), cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
 	printer().Print(body, []Column{
-		{Header: "SECRET_ID", Field: "secretId"},
-		{Header: "VERSION", Field: "version"},
-		{Header: "ROTATED_AT", Field: "rotatedAt"},
+		{Header: "ID", Field: "id"},
 		{Header: "STATUS", Field: "status"},
+		{Header: "TRIGGER", Field: "trigger"},
+		{Header: "TARGET_OS", Field: "targetOS"},
+		{Header: "CREATED_AT", Field: "createdAt"},
 	})
+}
+
+func buildSecretRotationStatusPayload(secretID string) map[string]string {
+	return map[string]string{"secretId": secretID}
+}
+
+func buildSecretRotationHistoryPayload(secretID string, limit int) map[string]any {
+	return map[string]any{
+		"secretId": secretID,
+		"limit":    limit,
+	}
+}
+
+func normalizeSecretSharePermission(permission string) string {
+	switch strings.ToUpper(strings.TrimSpace(permission)) {
+	case "READ", "READ_ONLY":
+		return "READ_ONLY"
+	case "WRITE", "FULL", "FULL_ACCESS":
+		return "FULL_ACCESS"
+	default:
+		return permission
+	}
 }

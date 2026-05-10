@@ -139,6 +139,9 @@ func (s Service) Refresh(ctx context.Context, refreshToken, ipAddress, userAgent
 		return issuedLogin{}, fmt.Errorf("revoke refresh token: %w", err)
 	}
 
+	if isCLIRefreshTokenFamily(stored.TokenFamily) {
+		return s.issueTokensForFamilyWithLifetime(ctx, user, ipAddress, userAgent, stored.TokenFamily, stored.FamilyCreatedAt, cliRefreshTokenLifetime())
+	}
 	return s.issueTokensForFamily(ctx, user, ipAddress, userAgent, stored.TokenFamily, stored.FamilyCreatedAt)
 }
 
@@ -214,7 +217,7 @@ func (s Service) IssueDeviceAuthTokens(ctx context.Context, userID, ipAddress, u
 		return nil, 0, err
 	}
 
-	result, err := s.issueTokens(ctx, user, ipAddress, userAgent)
+	result, err := s.issueCLITokens(ctx, user, ipAddress, userAgent)
 	if err != nil {
 		return nil, 0, err
 	}

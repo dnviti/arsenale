@@ -291,6 +291,9 @@ services:
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
+      SSH_PROXY_ENABLED: "${SSH_PROXY_ENABLED:-true}"
+      SSH_PROXY_PORT: "2222"
+      SSH_PROXY_TOKEN_TTL_SECONDS: "${SSH_PROXY_TOKEN_TTL_SECONDS:-300}"
       RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
@@ -308,6 +311,7 @@ services:
 {% endif %}
     ports:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_control_plane_api_port | default(18080) }}:8080"
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_ssh_port }}:2222"
     depends_on:
       postgres:
         condition: service_healthy
@@ -651,6 +655,9 @@ services:
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
+      SSH_PROXY_ENABLED: "${SSH_PROXY_ENABLED:-true}"
+      SSH_PROXY_PORT: "2222"
+      SSH_PROXY_TOKEN_TTL_SECONDS: "${SSH_PROXY_TOKEN_TTL_SECONDS:-300}"
       RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
@@ -674,6 +681,7 @@ services:
       GATEWAY_GRPC_SERVER_KEY: /certs/ssh-gateway/server-key.pem
     ports:
       - "127.0.0.1:{{ arsenale_control_plane_api_port | default(18080) }}:8080"
+      - "127.0.0.1:{{ arsenale_ssh_port }}:2222"
     depends_on:
       postgres:
         condition: service_healthy
@@ -1449,10 +1457,6 @@ services:
       GATEWAY_GRPC_TLS_CERT: /certs/server-cert.pem
       GATEWAY_GRPC_TLS_KEY: /certs/server-key.pem
       GATEWAY_GRPC_EXPECTED_SPIFFE_ID: "spiffe://{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}/service/control-plane-api"
-{% if not (_is_dev | default(false) | bool) %}
-    ports:
-      - "{{ arsenale_ssh_port }}:2222"
-{% endif %}
     volumes:
       - {{ _home }}/config/ssh-gateway/authorized_keys:/config/authorized_keys:ro
       - {{ arsenale_cert_dir }}/ssh-gateway:/certs:ro

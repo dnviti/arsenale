@@ -37,7 +37,6 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/passwordrotationapi"
 	"github.com/dnviti/arsenale/backend/internal/publicconfig"
 	"github.com/dnviti/arsenale/backend/internal/publicshareapi"
-	"github.com/dnviti/arsenale/backend/internal/rdgatewayapi"
 	"github.com/dnviti/arsenale/backend/internal/recordingsapi"
 	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/dnviti/arsenale/backend/internal/secretsmeta"
@@ -152,6 +151,7 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 			RecordingPath:      getenv("RECORDING_PATH", "/recordings"),
 			DriveBasePath:      getenv("DRIVE_BASE_PATH", "/guacd-drive"),
 			RecordingEnabled:   recordingRuntimeEnabled,
+			ClientURL:          getenv("CLIENT_URL", "https://localhost:3000"),
 		},
 		databaseSessionService: dbsessions.Service{
 			Store:               sessionStore,
@@ -264,9 +264,6 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		},
 		geoIPService: &geoipapi.Service{},
 		ldapService:  ldapapi.Service{DB: db},
-		rdGatewayService: rdgatewayapi.Service{
-			DB: db,
-		},
 		recordingService: recordingsapi.Service{
 			DB:                    db,
 			TenantAuth:            tenantAuthService,
@@ -344,8 +341,10 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		},
 		sshSessionService: sshSessionService,
 		sshProxyService: sshproxyapi.Service{
-			DB:        db,
-			JWTSecret: []byte(strings.TrimSpace(secrets.JWTSecret)),
+			DB:                 db,
+			ConnectionResolver: sshSessionService,
+			SessionStore:       sessionStore,
+			TenantAuth:         tenantAuthService,
 		},
 		modelGatewayService: modelgatewayapi.Service{
 			Store:      modelGatewayStore,
@@ -376,9 +375,17 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 		ServerEncryptionKey: serverEncryptionKey,
 		Connections:         &deps.connectionService,
 	}
-	deps.rdGatewayService.Connections = deps.connectionService
 	deps.tabsService.Connections = deps.connectionService
 	deps.sshProxyService.Connections = deps.connectionService
+
+	stopSSHProxy, err := deps.sshProxyService.Start(ctx)
+	if err != nil {
+		closeRuntimeResources(closeFns)
+		return nil, err
+	}
+	if stopSSHProxy != nil {
+		closeFns = append(closeFns, stopSSHProxy)
+	}
 
 	authenticator, err := authn.NewAuthenticator()
 	if err != nil {

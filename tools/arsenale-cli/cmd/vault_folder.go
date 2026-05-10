@@ -47,6 +47,9 @@ var vaultFolderDeleteCmd = &cobra.Command{
 var (
 	vaultFolderFromFile string
 	vaultFolderName     string
+	vaultFolderScope    string
+	vaultFolderTeamID   string
+	vaultFolderParentID string
 )
 
 func init() {
@@ -59,9 +62,13 @@ func init() {
 
 	vaultFolderCreateCmd.Flags().StringVarP(&vaultFolderFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	vaultFolderCreateCmd.Flags().StringVar(&vaultFolderName, "name", "", "Vault folder name")
+	vaultFolderCreateCmd.Flags().StringVar(&vaultFolderScope, "scope", "PERSONAL", "Vault folder scope (PERSONAL, TEAM, TENANT)")
+	vaultFolderCreateCmd.Flags().StringVar(&vaultFolderTeamID, "team-id", "", "Team ID for TEAM scope")
+	vaultFolderCreateCmd.Flags().StringVar(&vaultFolderParentID, "parent-id", "", "Parent vault folder ID")
 
 	vaultFolderUpdateCmd.Flags().StringVarP(&vaultFolderFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	vaultFolderUpdateCmd.Flags().StringVar(&vaultFolderName, "name", "", "Vault folder name")
+	vaultFolderUpdateCmd.Flags().StringVar(&vaultFolderParentID, "parent-id", "", "Parent vault folder ID, or empty to clear")
 }
 
 func runVaultFolderList(cmd *cobra.Command, args []string) {
@@ -96,8 +103,15 @@ func runVaultFolderCreate(cmd *cobra.Command, args []string) {
 		if vaultFolderName == "" {
 			fatal("provide --from-file or --name")
 		}
+		scope := vaultFolderScope
+		if scope == "" {
+			scope = "PERSONAL"
+		}
 		data, err = buildJSONBody(map[string]interface{}{
-			"name": vaultFolderName,
+			"name":     vaultFolderName,
+			"scope":    scope,
+			"teamId":   emptyStringToNil(vaultFolderTeamID),
+			"parentId": emptyStringToNil(vaultFolderParentID),
 		})
 		if err != nil {
 			fatal("%v", err)
@@ -131,7 +145,8 @@ func runVaultFolderUpdate(cmd *cobra.Command, args []string) {
 			fatal("provide --from-file or --name")
 		}
 		data, err = buildJSONBody(map[string]interface{}{
-			"name": vaultFolderName,
+			"name":     vaultFolderName,
+			"parentId": emptyStringToNil(vaultFolderParentID),
 		})
 		if err != nil {
 			fatal("%v", err)
@@ -158,4 +173,11 @@ func runVaultFolderDelete(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, body)
 	printer().PrintDeleted("Vault folder", args[0])
+}
+
+func emptyStringToNil(value string) interface{} {
+	if value == "" {
+		return nil
+	}
+	return value
 }

@@ -14,6 +14,7 @@ var (
 	verbose      bool
 	serverFlag   string
 	tenantFlag   string
+	configFlag   string
 )
 
 var rootCmd = &cobra.Command{
@@ -51,6 +52,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&noHeaders, "no-headers", false, "Omit table headers (table format only)")
 	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "Minimal output (IDs only)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Verbose error output")
+	rootCmd.PersistentFlags().StringVar(&configFlag, "config", "", "Path to CLI credential config file")
 	rootCmd.PersistentFlags().StringVar(&serverFlag, "server", "", "Override server URL")
 	rootCmd.PersistentFlags().StringVar(&tenantFlag, "tenant", "", "Override tenant ID")
 }

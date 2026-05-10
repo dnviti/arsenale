@@ -39,7 +39,7 @@ The CLI stores config and auth in `~/.arsenale/config.yaml`:
 ./build/go/arsenale-cli config set server_url https://localhost:3000
 ```
 
-Common entry points: `health`, `login`, `whoami`, `config`, `connection`, `gateway`, `session`, `rdgw`, `vault`, `connect`.
+Common entry points: `health`, `login`, `whoami`, `config`, `connection`, `gateway`, `session`, `vault`, `connect`.
 
 Use `arsenale [command] --help` before assuming flags or subcommands. Prefer `-o json` for assertions and `--quiet` when only IDs matter.
 
@@ -51,7 +51,7 @@ Use `arsenale [command] --help` before assuming flags or subcommands. Prefer `-o
 4. `arsenale connection list` and `arsenale gateway list`
 5. `arsenale session list` and `arsenale gateway instances <id>`
 6. `arsenale gateway test <id>`
-7. Only then try `arsenale connect ssh <name>` or `arsenale connect rdp <name>`
+7. Only then try `arsenale connect ssh <name>`, `arsenale connect rdp <name> --no-open -o json`, or `arsenale connect vnc <name> --no-open -o json`
 
 Useful debugging commands:
 
@@ -59,7 +59,6 @@ Useful debugging commands:
 ./build/go/arsenale-cli --server https://localhost:3000 gateway tunnel-overview
 ./build/go/arsenale-cli --server https://localhost:3000 gateway instances <gateway-id>
 ./build/go/arsenale-cli --server https://localhost:3000 session count
-./build/go/arsenale-cli --server https://localhost:3000 rdgw status
 ```
 
 ### Red/Green On Real Infrastructure

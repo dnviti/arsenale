@@ -30,10 +30,18 @@ var configGetCmd = &cobra.Command{
 	Run:   runConfigGet,
 }
 
+var configExportCmd = &cobra.Command{
+	Use:   "export <path>",
+	Short: "Write the current CLI credential config to a file",
+	Args:  cobra.ExactArgs(1),
+	Run:   runConfigExport,
+}
+
 func init() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
+	configCmd.AddCommand(configExportCmd)
 }
 
 func runConfigShow(cmd *cobra.Command, args []string) {
@@ -88,11 +96,22 @@ func runConfigGet(cmd *cobra.Command, args []string) {
 		fmt.Println(valueOrDash(cfg.TenantID))
 	case "cache_ttl":
 		fmt.Println(cfg.CacheTTL)
+	case "config_path":
+		fmt.Println(cfg.ConfigPath)
 	case "access_token":
 		fmt.Println(valueOrDash(cfg.AccessToken))
 	default:
 		fatal("unknown config key: %s", args[0])
 	}
+}
+
+func runConfigExport(cmd *cobra.Command, args []string) {
+	cfg := loadConfig()
+	path := args[0]
+	if err := saveConfigToPath(cfg, path); err != nil {
+		fatal("export config: %v", err)
+	}
+	fmt.Printf("Credential config written to %s\n", path)
 }
 
 func valueOrDash(s string) string {

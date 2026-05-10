@@ -10,7 +10,7 @@ import (
 var profileColumns = []Column{
 	{Header: "ID", Field: "id"},
 	{Header: "EMAIL", Field: "email"},
-	{Header: "NAME", Field: "name"},
+	{Header: "USERNAME", Field: "username"},
 	{Header: "ROLE", Field: "role"},
 }
 
@@ -28,7 +28,7 @@ var profileGetCmd = &cobra.Command{
 var profileUpdateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update your profile",
-	Long:  `Update your profile from a JSON/YAML file or with flags: arsenale profile update --name "New Name"`,
+	Long:  `Update your profile from a JSON/YAML file or with flags: arsenale profile update --username "new-name"`,
 	Run:   runProfileUpdate,
 }
 
@@ -88,13 +88,13 @@ var profileMFAStatusCmd = &cobra.Command{
 }
 
 var (
-	profileFromFile     string
-	profileName         string
-	profileCurrentPwd   string
-	profileNewPwd       string
-	profileSSHFile      string
-	profileRDPFile      string
-	profileDomainFile   string
+	profileFromFile   string
+	profileName       string
+	profileCurrentPwd string
+	profileNewPwd     string
+	profileSSHFile    string
+	profileRDPFile    string
+	profileDomainFile string
 )
 
 func init() {
@@ -115,7 +115,8 @@ func init() {
 	profileMFACmd.AddCommand(profileMFAStatusCmd)
 
 	profileUpdateCmd.Flags().StringVarP(&profileFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
-	profileUpdateCmd.Flags().StringVar(&profileName, "name", "", "Display name")
+	profileUpdateCmd.Flags().StringVar(&profileName, "username", "", "Username")
+	profileUpdateCmd.Flags().StringVar(&profileName, "name", "", "Deprecated alias for --username")
 
 	profileChangePasswordCmd.Flags().StringVar(&profileCurrentPwd, "current-password", "", "Current password")
 	profileChangePasswordCmd.Flags().StringVar(&profileNewPwd, "new-password", "", "New password")
@@ -158,12 +159,16 @@ func runProfileUpdate(cmd *cobra.Command, args []string) {
 		if err != nil {
 			fatal("%v", err)
 		}
+		data, err = normalizeProfileUpdatePayload(data)
+		if err != nil {
+			fatal("%v", err)
+		}
 	} else {
 		if profileName == "" {
-			fatal("provide --from-file or --name")
+			fatal("provide --from-file or --username")
 		}
 		data, err = buildJSONBody(map[string]interface{}{
-			"name": profileName,
+			"username": profileName,
 		})
 		if err != nil {
 			fatal("%v", err)
@@ -290,6 +295,10 @@ func runProfileDomainSet(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fatal("%v", err)
 	}
+	data, err = normalizeDomainProfilePayload(data)
+	if err != nil {
+		fatal("%v", err)
+	}
 
 	body, status, err := apiPut("/api/user/domain-profile", json.RawMessage(data), cfg)
 	if err != nil {
@@ -334,4 +343,40 @@ func runProfileMFAStatus(cmd *cobra.Command, args []string) {
 		{Header: "ENABLED", Field: "enabled"},
 		{Header: "METHOD", Field: "method"},
 	})
+}
+
+func normalizeProfileUpdatePayload(data []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("profile payload must be a JSON/YAML object: %w", err)
+	}
+	if raw, ok := payload["name"]; ok {
+		if _, exists := payload["username"]; !exists {
+			payload["username"] = raw
+		}
+		delete(payload, "name")
+	}
+	return json.Marshal(payload)
+}
+
+func normalizeDomainProfilePayload(data []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("domain profile payload must be a JSON/YAML object: %w", err)
+	}
+	aliasField(payload, "domain", "domainName")
+	aliasField(payload, "username", "domainUsername")
+	aliasField(payload, "password", "domainPassword")
+	return json.Marshal(payload)
+}
+
+func aliasField(payload map[string]json.RawMessage, oldKey, newKey string) {
+	raw, ok := payload[oldKey]
+	if !ok {
+		return
+	}
+	if _, exists := payload[newKey]; !exists {
+		payload[newKey] = raw
+	}
+	delete(payload, oldKey)
 }
