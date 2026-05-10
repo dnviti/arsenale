@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 const sshProxyTargetTimeout = 30 * time.Second
@@ -102,12 +105,54 @@ func sshClientConfig(endpoint contracts.TerminalEndpoint) (*ssh.ClientConfig, er
 	if len(authMethods) == 0 {
 		return nil, errors.New("SSH credentials are required")
 	}
+	hostKeyCallback, err := sshHostKeyCallback()
+	if err != nil {
+		return nil, err
+	}
 	return &ssh.ClientConfig{
 		User:            username,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         sshProxyTargetTimeout,
 	}, nil
+}
+
+func sshHostKeyCallback() (ssh.HostKeyCallback, error) {
+	paths := sshKnownHostsPaths()
+	if len(paths) == 0 {
+		return nil, errors.New("SSH proxy target host key verification requires a known_hosts file; set SSH_PROXY_KNOWN_HOSTS_FILE")
+	}
+	callback, err := knownhosts.New(paths...)
+	if err != nil {
+		return nil, fmt.Errorf("load SSH proxy known_hosts file: %w", err)
+	}
+	return callback, nil
+}
+
+func sshKnownHostsPaths() []string {
+	if configured := strings.TrimSpace(os.Getenv("SSH_PROXY_KNOWN_HOSTS_FILE")); configured != "" {
+		return compactExistingPaths(filepath.SplitList(configured))
+	}
+
+	candidates := []string{"/etc/ssh/ssh_known_hosts"}
+	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
+		candidates = append(candidates, filepath.Join(home, ".ssh", "known_hosts"))
+	}
+	return compactExistingPaths(candidates)
+}
+
+func compactExistingPaths(paths []string) []string {
+	result := make([]string, 0, len(paths))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			result = append(result, path)
+		}
+	}
+	return result
 }
 
 func sshAuthMethods(endpoint contracts.TerminalEndpoint) ([]ssh.AuthMethod, error) {

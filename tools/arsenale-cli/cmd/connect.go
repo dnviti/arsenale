@@ -111,12 +111,12 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 	sshConfig := fmt.Sprintf(`Host arsenale-target
     HostName %s
     Port %d
-    User arsenale
+    User %s
     PreferredAuthentications none
     PubkeyAuthentication no
     PasswordAuthentication no
     KbdInteractiveAuthentication no
-    ProxyCommand sh -c 'printf "%%%%s\n" "$1"; cat' arsenale-token '%s' | nc %s %d
+    ProxyCommand nc %s %d
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
     LogLevel ERROR

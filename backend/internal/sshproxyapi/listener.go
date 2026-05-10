@@ -1,7 +1,6 @@
 package sshproxyapi
 
 import (
-	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -11,15 +10,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dnviti/arsenale/backend/internal/connectionaccess"
 	"github.com/dnviti/arsenale/backend/internal/sessions"
 	"github.com/dnviti/arsenale/backend/internal/tenantauth"
 	"golang.org/x/crypto/ssh"
 )
-
-const sshProxyTokenReadTimeout = 10 * time.Second
 
 func (s Service) Start(ctx context.Context) (func(), error) {
 	if !strings.EqualFold(getenv("SSH_PROXY_ENABLED", "false"), "true") {
@@ -96,18 +92,17 @@ func (s Service) handleProxyConnection(parentCtx context.Context, conn net.Conn,
 	defer conn.Close()
 
 	ipAddress := connRemoteIP(conn)
-	reader := bufio.NewReader(conn)
-	_ = conn.SetReadDeadline(time.Now().Add(sshProxyTokenReadTimeout))
-	rawGrant, err := reader.ReadString('\n')
-	_ = conn.SetReadDeadline(time.Time{})
+
+	serverConn, channels, requests, err := ssh.NewServerConn(conn, config)
 	if err != nil {
 		return
 	}
+	defer serverConn.Close()
 
 	ctx, cancel := context.WithCancel(parentCtx)
 	defer cancel()
 
-	grant, err := s.redeemProxyGrant(ctx, rawGrant, ipAddress)
+	grant, err := s.redeemProxyGrant(ctx, serverConn.User(), ipAddress)
 	if err != nil {
 		return
 	}
@@ -138,11 +133,6 @@ func (s Service) handleProxyConnection(parentCtx context.Context, conn net.Conn,
 		_ = s.SessionStore.EndOwnedSession(context.Background(), sessionID, grant.UserID, "ssh_proxy_disconnect")
 	}()
 
-	serverConn, channels, requests, err := ssh.NewServerConn(&bufferedConn{Conn: conn, reader: reader}, config)
-	if err != nil {
-		return
-	}
-	defer serverConn.Close()
 	go ssh.DiscardRequests(requests)
 
 	var wg sync.WaitGroup
@@ -221,13 +211,4 @@ func connRemoteIP(conn net.Conn) string {
 		return host
 	}
 	return strings.TrimSpace(conn.RemoteAddr().String())
-}
-
-type bufferedConn struct {
-	net.Conn
-	reader *bufio.Reader
-}
-
-func (c *bufferedConn) Read(p []byte) (int, error) {
-	return c.reader.Read(p)
 }

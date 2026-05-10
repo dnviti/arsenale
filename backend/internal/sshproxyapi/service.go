@@ -106,10 +106,10 @@ INSERT INTO "SSHProxyGrant" (
 		"token":     grantValue,
 		"expiresIn": expiresIn,
 		"connectionInstructions": map[string]any{
-			"command": fmt.Sprintf(`sh -c 'printf "%%s\n" "$1"; cat' arsenale-token "<token>" | nc %s %d`, serverHost, proxyPort),
+			"command": fmt.Sprintf(`ssh -o ProxyCommand='nc %s %d' -o PreferredAuthentications=none '<token>@arsenale-target'`, serverHost, proxyPort),
 			"port":    proxyPort,
 			"host":    serverHost,
-			"note":    fmt.Sprintf("Present this token as the first line when connecting to the SSH proxy port. The token expires in %d seconds.", expiresIn),
+			"note":    fmt.Sprintf("Use this token as the SSH username when connecting through the Arsenale SSH proxy. The token expires in %d seconds.", expiresIn),
 		},
 	})
 }
@@ -122,7 +122,7 @@ func (s Service) HandleStatus(w http.ResponseWriter, r *http.Request, _ authn.Cl
 	}
 	enabled := getenv("SSH_PROXY_ENABLED", "false") == "true"
 	port := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
-	allowedAuthMethods := parseAllowedAuthMethods(getenv("SSH_PROXY_AUTH_METHODS", "token,keyboard-interactive"))
+	allowedAuthMethods := parseAllowedAuthMethods(getenv("SSH_PROXY_AUTH_METHODS", "token-username"))
 	app.WriteJSON(w, http.StatusOK, map[string]any{
 		"enabled":            enabled,
 		"port":               port,

@@ -73,7 +73,7 @@ verify_checksum() {
   local archive_name="$1"
   local checksums_file="$2"
   local expected
-  expected="$(grep "  ${archive_name}$" "$checksums_file" | awk '{print $1}')"
+  expected="$(awk -v archive="$archive_name" '$2 == archive { print $1; exit }' "$checksums_file")"
   if [ -z "$expected" ]; then
     printf 'error: checksum for %s not found\n' "$archive_name" >&2
     exit 1

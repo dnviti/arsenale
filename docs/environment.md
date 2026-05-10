@@ -209,7 +209,8 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 | `SSH_PROXY_ENABLED` | `false` | Enables the control-plane native SSH proxy listener. Installer-managed deployments default this to `true`. |
 | `SSH_PROXY_PORT` | `2222` | Control-plane SSH proxy listener port inside the container. |
 | `SSH_PROXY_TOKEN_TTL_SECONDS` | `300` | Lifetime for short-lived native SSH launch grants. |
-| `SSH_PROXY_AUTH_METHODS` | `token,keyboard-interactive` | Advertised SSH proxy auth methods in status responses. |
+| `SSH_PROXY_AUTH_METHODS` | `token-username` | Advertised SSH proxy auth methods in status responses. |
+| `SSH_PROXY_KNOWN_HOSTS_FILE` | — | Optional path list for SSH proxy target host key verification. Defaults to existing system and user `known_hosts` files. |
 | `SSH_GATEWAY_PORT` | `2222` | Managed SSH gateway container port for internal routed sessions. |
 | `SSH_AUTHORIZED_KEYS` | — | Authorized public keys (newline-separated) |
 | `GATEWAY_API_TOKEN` | — | Shared secret for gateway API sidecar |

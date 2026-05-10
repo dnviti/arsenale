@@ -128,7 +128,7 @@ Vault secrets of type LOGIN are checked against the HaveIBeenPwned breach databa
 
 ### SSH Proxy
 
-The SSH Protocol Proxy enables native SSH clients (PuTTY, OpenSSH, etc.) to connect through Arsenale. Users obtain a short-lived proxy token via the REST API, which the SSH proxy server validates to inject vault credentials and route the connection through the appropriate gateway. All sessions are audited identically to browser-based SSH sessions.
+The SSH Protocol Proxy enables native SSH clients (PuTTY, OpenSSH, etc.) to connect through Arsenale. Users obtain a short-lived proxy token via the REST API and present it as the SSH username inside the encrypted SSH handshake; the proxy validates it to inject vault credentials and route the connection through the appropriate gateway. Target host keys are verified from configured or default `known_hosts` files. All sessions are audited identically to browser-based SSH sessions.
 
 ### Arsenale Connect CLI
 
