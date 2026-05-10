@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -62,7 +61,8 @@ var vaultProviderTestCmd = &cobra.Command{
 }
 
 var (
-	vaultProviderFromFile string
+	vaultProviderFromFile       string
+	vaultProviderTestSecretPath string
 )
 
 func init() {
@@ -80,6 +80,8 @@ func init() {
 
 	vaultProviderUpdateCmd.Flags().StringVarP(&vaultProviderFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	vaultProviderUpdateCmd.MarkFlagRequired("from-file")
+
+	vaultProviderTestCmd.Flags().StringVar(&vaultProviderTestSecretPath, "secret-path", "", "Optional secret path to include in the provider test audit")
 }
 
 func runVaultProviderList(cmd *cobra.Command, args []string) {
@@ -168,10 +170,17 @@ func runVaultProviderTest(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 
-	body, status, err := apiPost("/api/vault-providers/"+args[0]+"/test", nil, cfg)
+	var payload interface{}
+	if vaultProviderTestSecretPath != "" {
+		payload = map[string]string{"secretPath": vaultProviderTestSecretPath}
+	}
+	body, status, err := apiPost("/api/vault-providers/"+args[0]+"/test", payload, cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	fmt.Println("Vault provider test successful")
+	printer().PrintSingle(body, []Column{
+		{Header: "SUCCESS", Field: "success"},
+		{Header: "ERROR", Field: "error"},
+	})
 }

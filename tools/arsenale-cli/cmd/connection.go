@@ -3,8 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
-	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -69,7 +67,7 @@ var connDeleteCmd = &cobra.Command{
 var connShareCmd = &cobra.Command{
 	Use:   "share <id>",
 	Short: "Share a connection with a user",
-	Long:  `Share a connection: arsenale connection share <id> --user-id <userId> --permission <read|write>`,
+	Long:  `Share a connection: arsenale connection share <id> --user-id <userId> --permission READ_ONLY`,
 	Args:  cobra.ExactArgs(1),
 	Run:   runConnShare,
 }
@@ -123,12 +121,19 @@ var listAliasCmd = &cobra.Command{
 }
 
 var (
-	connFromFile    string
-	connShareUserID string
-	connSharePerm   string
-	connImportFile  string
-	connExportIDs   []string
-	connSearch      string
+	connFromFile                 string
+	connShareUserID              string
+	connShareEmail               string
+	connSharePerm                string
+	connImportFile               string
+	connImportFormat             string
+	connImportDuplicateStrategy  string
+	connImportColumnMapping      string
+	connExportIDs                []string
+	connExportFormat             string
+	connExportIncludeCredentials bool
+	connExportFolderID           string
+	connSearch                   string
 )
 
 func init() {
@@ -154,226 +159,24 @@ func init() {
 	connUpdateCmd.MarkFlagRequired("from-file")
 
 	connShareCmd.Flags().StringVar(&connShareUserID, "user-id", "", "User ID to share with")
-	connShareCmd.Flags().StringVar(&connSharePerm, "permission", "read", "Permission level")
-	connShareCmd.MarkFlagRequired("user-id")
+	connShareCmd.Flags().StringVar(&connShareEmail, "email", "", "Email address to share with")
+	connShareCmd.Flags().StringVar(&connSharePerm, "permission", "READ_ONLY", "Permission level: READ_ONLY|FULL_ACCESS")
 
 	connBatchShareCmd.Flags().StringVarP(&connFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	connBatchShareCmd.MarkFlagRequired("from-file")
 
 	connImportCmd.Flags().StringVar(&connImportFile, "file", "", "File to import")
+	connImportCmd.Flags().StringVar(&connImportFormat, "format", "", "Import format: CSV|JSON|MREMOTENG|RDP (defaults from file extension)")
+	connImportCmd.Flags().StringVar(&connImportDuplicateStrategy, "duplicate-strategy", "SKIP", "Duplicate handling: SKIP|OVERWRITE|RENAME")
+	connImportCmd.Flags().StringVar(&connImportColumnMapping, "column-mapping", "", "JSON object mapping CSV column names")
 	connImportCmd.MarkFlagRequired("file")
 
 	connExportCmd.Flags().StringSliceVar(&connExportIDs, "ids", nil, "Connection IDs to export")
+	connExportCmd.Flags().StringVar(&connExportFormat, "format", "JSON", "Export format: JSON|CSV")
+	connExportCmd.Flags().BoolVar(&connExportIncludeCredentials, "include-credentials", false, "Include decrypted credentials in the export")
+	connExportCmd.Flags().StringVar(&connExportFolderID, "folder-id", "", "Export connections from a folder")
 
 	connListCmd.Flags().StringVar(&connSearch, "search", "", "Search filter")
-}
-
-func runConnList(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	path := "/api/connections"
-	if connSearch != "" {
-		path += "?" + url.Values{"search": {connSearch}}.Encode()
-	}
-
-	body, status, err := apiGet(path, cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	printer().Print(body, connectionColumns)
-}
-
-func runConnGet(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiGet("/api/connections/"+args[0], cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	printer().PrintSingle(body, connectionColumns)
-}
-
-func runConnCreate(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	data, err := readResourceFromFileOrStdin(connFromFile)
-	if err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiPost("/api/connections", json.RawMessage(data), cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	printer().PrintCreated(body, "id")
-}
-
-func runConnUpdate(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	data, err := readResourceFromFileOrStdin(connFromFile)
-	if err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiPut("/api/connections/"+args[0], json.RawMessage(data), cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	printer().PrintSingle(body, connectionColumns)
-}
-
-func runConnDelete(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiDelete("/api/connections/"+args[0], cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	printer().PrintDeleted("Connection", args[0])
-}
-
-func runConnShare(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	payload := map[string]string{
-		"userId":     connShareUserID,
-		"permission": connSharePerm,
-	}
-
-	body, status, err := apiPost(fmt.Sprintf("/api/connections/%s/share", args[0]), payload, cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	fmt.Println("Connection shared successfully")
-}
-
-func runConnUnshare(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiDelete(fmt.Sprintf("/api/connections/%s/share/%s", args[0], args[1]), cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	fmt.Println("Share removed")
-}
-
-func runConnShares(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiGet(fmt.Sprintf("/api/connections/%s/shares", args[0]), cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	printer().Print(body, []Column{
-		{Header: "USER_ID", Field: "userId"},
-		{Header: "EMAIL", Field: "email"},
-		{Header: "PERMISSION", Field: "permission"},
-	})
-}
-
-func runConnBatchShare(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	data, err := readResourceFromFileOrStdin(connFromFile)
-	if err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiPost("/api/connections/batch-share", json.RawMessage(data), cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	fmt.Println("Batch share completed")
-}
-
-func runConnFavorite(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiPatch(fmt.Sprintf("/api/connections/%s/favorite", args[0]), nil, cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	fmt.Println("Favorite toggled")
-}
-
-func runConnExport(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	var payload interface{}
-	if len(connExportIDs) > 0 {
-		payload = map[string]interface{}{"ids": connExportIDs}
-	}
-
-	body, status, err := apiPost("/api/connections/export", payload, cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	// Export always outputs JSON regardless of format flag
-	fmt.Fprintln(os.Stdout, string(body))
-}
-
-func runConnImport(cmd *cobra.Command, args []string) {
-	cfg := getCfg()
-	if err := ensureAuthenticated(cfg); err != nil {
-		fatal("%v", err)
-	}
-
-	data, err := readResourceFromFileOrStdin(connImportFile)
-	if err != nil {
-		fatal("%v", err)
-	}
-
-	body, status, err := apiPost("/api/connections/import", json.RawMessage(data), cfg)
-	if err != nil {
-		fatal("%v", err)
-	}
-	checkAPIError(status, body)
-	fmt.Println("Import completed")
 }
 
 // findConnectionByName looks up a connection by name.

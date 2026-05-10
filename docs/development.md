@@ -180,6 +180,17 @@ go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 
 For the local installer stack, the CLI automatically trusts `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/client/ca.pem` when you target `https://localhost:3000`. Set `ARSENALE_CA_CERT` if you need to point the CLI at a different private CA bundle.
 
+For headless agents, store a writable credential file outside the repo. The CLI uses `./config.yaml` automatically when it exists, after checking `--config` and `ARSENALE_CONFIG`:
+
+```bash
+mkdir -p "$HOME/.config/arsenale"
+cd "$HOME/.config/arsenale"
+arsenale login --server https://localhost:3000 --no-browser
+arsenale whoami
+```
+
+`ARSENALE_CONFIG` behaves like `KUBECONFIG` when you need an explicit path: the CLI reads and writes tokens through that file instead of local `config.yaml` or `~/.arsenale/config.yaml`. Keep one file per automation identity because refresh tokens are persistent but rotate on use.
+
 ## 🖥 Frontend Architecture
 
 The React SPA in `client/` follows a layered architecture:

@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -182,7 +183,15 @@ func runTenantCreate(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	printer().PrintCreated(body, "id")
+	tenantID := applyTenantAuthResponse(cfg, body, "")
+	if err := saveConfig(cfg); err != nil {
+		fatal("save config: %v", err)
+	}
+	if quiet {
+		fmt.Fprintln(os.Stdout, tenantID)
+		return
+	}
+	printer().PrintSingle(body, tenantColumns)
 }
 
 func runTenantUpdate(cmd *cobra.Command, args []string) {
@@ -237,8 +246,7 @@ func runTenantSwitch(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, body)
 
-	// Update local config with the new tenant ID
-	cfg.TenantID = tenantSwitchID
+	applyTenantAuthResponse(cfg, body, tenantSwitchID)
 	if err := saveConfig(cfg); err != nil {
 		fatal("save config: %v", err)
 	}
@@ -303,4 +311,24 @@ func runTenantMFAStats(cmd *cobra.Command, args []string) {
 		{Header: "MFA_ENABLED", Field: "mfaEnabled"},
 		{Header: "MFA_DISABLED", Field: "mfaDisabled"},
 	})
+}
+
+func applyTenantAuthResponse(cfg *CLIConfig, body []byte, fallbackTenantID string) string {
+	var resp struct {
+		AccessToken string `json:"accessToken"`
+		Tenant      struct {
+			ID string `json:"id"`
+		} `json:"tenant"`
+	}
+	_ = json.Unmarshal(body, &resp)
+	if resp.AccessToken != "" {
+		cfg.AccessToken = resp.AccessToken
+		cfg.TokenExpiry = persistentCLITokenExpiry
+	}
+	tenantID := fallbackTenantID
+	if resp.Tenant.ID != "" {
+		tenantID = resp.Tenant.ID
+	}
+	cfg.TenantID = tenantID
+	return tenantID
 }

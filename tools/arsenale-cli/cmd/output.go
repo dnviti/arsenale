@@ -63,11 +63,20 @@ func (p *Printer) PrintSingle(data []byte, columns []Column) error {
 // In quiet mode, only prints the value of idField.
 func (p *Printer) PrintCreated(data []byte, idField string) error {
 	if p.Quiet {
-		var obj map[string]interface{}
-		if err := json.Unmarshal(data, &obj); err != nil {
+		var value interface{}
+		if err := json.Unmarshal(data, &value); err != nil {
 			return err
 		}
-		if v, ok := obj[idField]; ok {
+		obj, ok := value.(map[string]interface{})
+		if !ok {
+			if rows, rowsOK := value.([]interface{}); rowsOK && len(rows) > 0 {
+				obj, _ = rows[0].(map[string]interface{})
+			}
+		}
+		if obj == nil {
+			return nil
+		}
+		if v := extractField(obj, idField); v != nil {
 			fmt.Fprintln(p.writer(), v)
 		}
 		return nil

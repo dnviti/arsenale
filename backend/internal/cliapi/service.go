@@ -111,7 +111,7 @@ func (s Service) HandlePollDeviceToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if refreshToken, ok := result["refresh_token"].(string); ok && refreshToken != "" && s.Auth != nil {
+	if refreshToken, ok := result["refresh_token"].(string); ok && refreshToken != "" && refreshTTL > 0 && s.Auth != nil {
 		s.Auth.ApplyRefreshCookies(w, refreshToken, refreshTTL)
 	}
 	app.WriteJSON(w, statusCode, result)

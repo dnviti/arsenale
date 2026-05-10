@@ -62,7 +62,7 @@ var vaultRecoveryStatusCmd = &cobra.Command{
 
 var vaultRevealPasswordCmd = &cobra.Command{
 	Use:   "reveal-password",
-	Short: "Reveal a secret password (raw output for piping)",
+	Short: "Reveal a connection password (raw output for piping)",
 	Run:   runVaultRevealPassword,
 }
 
@@ -86,7 +86,9 @@ var vaultTenantDistributeCmd = &cobra.Command{
 
 var (
 	vaultAutoLockTimeout int
+	vaultRevealConnID    string
 	vaultRevealSecretID  string
+	vaultRevealPassword  string
 	vaultTenantFromFile  string
 )
 
@@ -110,8 +112,9 @@ func init() {
 	vaultAutoLockSetCmd.Flags().IntVar(&vaultAutoLockTimeout, "timeout", 0, "Auto-lock timeout in seconds")
 	vaultAutoLockSetCmd.MarkFlagRequired("timeout")
 
-	vaultRevealPasswordCmd.Flags().StringVar(&vaultRevealSecretID, "secret-id", "", "Secret ID to reveal")
-	vaultRevealPasswordCmd.MarkFlagRequired("secret-id")
+	vaultRevealPasswordCmd.Flags().StringVar(&vaultRevealConnID, "connection-id", "", "Connection ID to reveal")
+	vaultRevealPasswordCmd.Flags().StringVar(&vaultRevealPassword, "password", "", "Vault password when the vault is locked")
+	vaultRevealPasswordCmd.Flags().StringVar(&vaultRevealSecretID, "secret-id", "", "Deprecated: use --connection-id")
 
 	vaultTenantInitCmd.Flags().StringVarP(&vaultTenantFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	vaultTenantInitCmd.MarkFlagRequired("from-file")
@@ -247,8 +250,16 @@ func runVaultRevealPassword(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 
+	if vaultRevealConnID == "" {
+		if vaultRevealSecretID != "" {
+			fatal("vault reveal-password requires --connection-id; --secret-id is no longer supported by the API")
+		}
+		fatal("connection-id is required")
+	}
+
 	payload := map[string]string{
-		"secretId": vaultRevealSecretID,
+		"connectionId": vaultRevealConnID,
+		"password":     vaultRevealPassword,
 	}
 
 	body, status, err := apiPost("/api/vault/reveal-password", payload, cfg)

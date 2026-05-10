@@ -75,7 +75,10 @@ var syncProfileLogsCmd = &cobra.Command{
 	Run:   runSyncProfileLogs,
 }
 
-var syncProfileFromFile string
+var (
+	syncProfileFromFile string
+	syncProfileDryRun   bool
+)
 
 func init() {
 	rootCmd.AddCommand(syncProfileCmd)
@@ -94,6 +97,8 @@ func init() {
 
 	syncProfileUpdateCmd.Flags().StringVarP(&syncProfileFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	syncProfileUpdateCmd.MarkFlagRequired("from-file")
+
+	syncProfileSyncCmd.Flags().BoolVar(&syncProfileDryRun, "dry-run", false, "Plan the sync without applying changes")
 }
 
 func runSyncProfileList(cmd *cobra.Command, args []string) {
@@ -199,15 +204,17 @@ func runSyncProfileSync(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 
-	body, status, err := apiPost(fmt.Sprintf("/api/sync-profiles/%s/sync", args[0]), nil, cfg)
+	body, status, err := apiPost(fmt.Sprintf("/api/sync-profiles/%s/sync", args[0]), map[string]bool{"dryRun": syncProfileDryRun}, cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-
-	if !quiet {
-		fmt.Println("Sync triggered")
-	}
+	printer().PrintSingle(body, []Column{
+		{Header: "CREATED", Field: "created"},
+		{Header: "UPDATED", Field: "updated"},
+		{Header: "SKIPPED", Field: "skipped"},
+		{Header: "FAILED", Field: "failed"},
+	})
 }
 
 func runSyncProfileLogs(cmd *cobra.Command, args []string) {

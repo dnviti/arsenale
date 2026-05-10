@@ -76,6 +76,10 @@ func runAiConfigSet(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fatal("%v", err)
 	}
+	data, err = normalizeAIConfigPayload(data)
+	if err != nil {
+		fatal("%v", err)
+	}
 
 	body, status, err := apiPut("/api/ai/config", json.RawMessage(data), cfg)
 	if err != nil {
@@ -86,4 +90,44 @@ func runAiConfigSet(cmd *cobra.Command, args []string) {
 	if !quiet {
 		fmt.Println("AI configuration updated")
 	}
+}
+
+func normalizeAIConfigPayload(data []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("parse AI config: %w", err)
+	}
+
+	for _, key := range []string{
+		"provider",
+		"hasApiKey",
+		"modelId",
+		"baseUrl",
+		"maxTokensPerRequest",
+		"dailyRequestLimit",
+		"enabled",
+	} {
+		delete(payload, key)
+	}
+
+	if rawBackends, ok := payload["backends"]; ok && string(rawBackends) != "null" {
+		var backends []map[string]json.RawMessage
+		if err := json.Unmarshal(rawBackends, &backends); err != nil {
+			return nil, fmt.Errorf("parse AI backends: %w", err)
+		}
+		for i := range backends {
+			delete(backends[i], "hasApiKey")
+		}
+		normalizedBackends, err := json.Marshal(backends)
+		if err != nil {
+			return nil, fmt.Errorf("normalize AI backends: %w", err)
+		}
+		payload["backends"] = normalizedBackends
+	}
+
+	normalized, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("normalize AI config: %w", err)
+	}
+	return normalized, nil
 }

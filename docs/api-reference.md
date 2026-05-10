@@ -89,7 +89,7 @@ Representative public endpoints:
 | `POST` | `/api/setup/complete` | Finish first-run bootstrap |
 | `GET` | `/api/auth/config` | Read self-signup state and runtime feature manifest |
 | `POST` | `/api/cli/auth/device` | Start CLI device auth when `cliEnabled` is true |
-| `POST` | `/api/cli/auth/device/token` | Poll device auth token |
+| `POST` | `/api/cli/auth/device/token` | Poll device auth token; successful CLI logins receive a persistent refresh token |
 | `POST` | `/api/cli/auth/device/authorize` | Approve device auth from a signed-in user |
 | `GET` | `/api/share/{token}/info` | Inspect public share metadata when sharing and keychain are enabled |
 | `POST` | `/api/share/{token}` | Access a public share |

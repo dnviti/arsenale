@@ -11,7 +11,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var loginServer string
+var (
+	loginServer    string
+	loginNoBrowser bool
+)
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
@@ -23,6 +26,7 @@ var loginCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(loginCmd)
 	loginCmd.Flags().StringVarP(&loginServer, "server", "s", "", "Server URL to authenticate against")
+	loginCmd.Flags().BoolVar(&loginNoBrowser, "no-browser", false, "Print the device URL without opening a browser")
 }
 
 func runLogin(cmd *cobra.Command, args []string) {
@@ -62,7 +66,9 @@ func runLogin(cmd *cobra.Command, args []string) {
 	fmt.Printf("\n  %s\n\n", deviceResp.VerificationURIComplete)
 	fmt.Printf("Or go to %s and enter code: %s\n\n", deviceResp.VerificationURI, deviceResp.UserCode)
 
-	if err := openBrowser(deviceResp.VerificationURIComplete); err != nil {
+	if loginNoBrowser {
+		fmt.Println("Browser launch skipped. Waiting for authorization...")
+	} else if err := openBrowser(deviceResp.VerificationURIComplete); err != nil {
 		fmt.Println("(Could not open browser automatically, please copy the URL above)")
 	} else {
 		fmt.Println("Browser opened. Waiting for authorization...")
@@ -104,7 +110,7 @@ func runLogin(cmd *cobra.Command, args []string) {
 
 			cfg.AccessToken = tokenResp.AccessToken
 			cfg.RefreshToken = tokenResp.RefreshToken
-			cfg.TokenExpiry = time.Now().Add(14 * time.Minute).Format(time.RFC3339)
+			cfg.TokenExpiry = persistentCLITokenExpiry
 			// Refresh cached tenant context after login so old local state
 			// does not survive a stack reset or tenant switch.
 			cfg.TenantID = ""

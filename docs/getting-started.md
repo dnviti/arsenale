@@ -154,7 +154,28 @@ From a source checkout, use the local build path when you want to test current c
 ```bash
 mkdir -p ./build/go
 go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+install -m 0755 ./build/go/arsenale-cli "$HOME/.local/bin/arsenale"
 ```
+
+### Headless CLI credentials
+
+The CLI resolves credential config in this order: `--config`, `ARSENALE_CONFIG`, `./config.yaml` when present, then `~/.arsenale/config.yaml`. Automation can use a kubeconfig-style credential file without extra flags by keeping a writable `config.yaml` in the working directory:
+
+```bash
+mkdir -p "$HOME/.config/arsenale"
+cd "$HOME/.config/arsenale"
+arsenale login --server https://localhost:3000 --no-browser
+arsenale whoami
+```
+
+You can also export an existing CLI login into an agent-specific file:
+
+```bash
+arsenale config export "$HOME/.config/arsenale/agent.yaml"
+chmod 600 "$HOME/.config/arsenale/agent.yaml"
+```
+
+The credential file contains the server URL, tenant cache, access token, and persistent refresh token. It must remain writable by the process using it because CLI refresh tokens rotate. Use one credential file per automation identity or agent to avoid token-rotation races.
 
 ## 🔧 Capability Selection In Dev
 
