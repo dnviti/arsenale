@@ -1034,9 +1034,9 @@ All non-secret configuration is in `inventory/group_vars/all/vars.yml`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `arsenale_build_images` | `false` | Production/Kubernetes: build from source when `true`, otherwise pull stable-tagged images. Development always builds locally. |
+| `arsenale_build_images` | `false` | Production/Kubernetes: build from source when `true`, otherwise pull images tagged by `arsenale_image_tag`. Development always builds locally. |
 | `arsenale_registry` | `ghcr.io/dnviti/arsenale` | Container image registry |
-| `arsenale_image_tag` | `stable` | Image tag when pulling |
+| `arsenale_image_tag` | `stable` | Image tag when pulling; set to a release tag such as `1.8.0` for pinned installs |
 | `arsenale_component_images` | derived from `arsenale_registry` + `arsenale_image_tag` | Per-service image overrides for standalone installs |
 | `arsenale_postgres_image` | `quay.io/sclorg/postgresql-16-c10s` | PostgreSQL image |
 | `arsenale_guacd_image` | `ghcr.io/dnviti/arsenale/guacd:stable` | Guacamole daemon image |

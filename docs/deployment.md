@@ -273,6 +273,7 @@ Notable facts from the workflow definitions:
 - cli-build runs `go test ./tools/arsenale-cli/...` once, then cross-compiles Linux, macOS, and Windows CLI archives,
 - docker-build publishes `:latest` from `develop`, `:stable` from `main`, and semver tags only for version tags whose commits are on `origin/main` ancestry,
 - gateways-build follows the same channel split for `develop`, `main`, and main-ancestry semver tags,
+- the canonical runtime broker image package is `ghcr.io/dnviti/arsenale/tunnel-broker`; refactor-era broker package names are not used by deployment,
 - release artifacts currently center on the CLI, not full application bundles.
 
 ## 📦 Compose Project Helper
