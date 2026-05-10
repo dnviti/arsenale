@@ -228,6 +228,7 @@ npm run dev:api-acceptance
 curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.sh | bash
 # Windows PowerShell:
 # irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.ps1 | iex
+# installers also set up shell completions; use ARSENALE_SKIP_COMPLETIONS=1 to skip
 mkdir -p ./build/go
 go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health

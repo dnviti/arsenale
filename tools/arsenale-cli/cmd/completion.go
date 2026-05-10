@@ -25,7 +25,10 @@ Examples:
   arsenale completion powershell | Out-String | Invoke-Expression`,
 	Args:      cobra.ExactArgs(1),
 	ValidArgs: []string{"bash", "zsh", "fish", "powershell"},
-	Run:       runCompletion,
+	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+		return []string{"bash", "zsh", "fish", "powershell"}, cobra.ShellCompDirectiveNoFileComp
+	},
+	Run: runCompletion,
 }
 
 func init() {
@@ -33,16 +36,20 @@ func init() {
 }
 
 func runCompletion(cmd *cobra.Command, args []string) {
+	var err error
 	switch args[0] {
 	case "bash":
-		rootCmd.GenBashCompletion(os.Stdout)
+		err = rootCmd.GenBashCompletion(os.Stdout)
 	case "zsh":
-		rootCmd.GenZshCompletion(os.Stdout)
+		err = rootCmd.GenZshCompletion(os.Stdout)
 	case "fish":
-		rootCmd.GenFishCompletion(os.Stdout, true)
+		err = rootCmd.GenFishCompletion(os.Stdout, true)
 	case "powershell":
-		rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
+		err = rootCmd.GenPowerShellCompletionWithDesc(os.Stdout)
 	default:
 		fatal("unsupported shell: %s", args[0])
+	}
+	if err != nil {
+		fatal("failed to generate %s completion: %v", args[0], err)
 	}
 }
