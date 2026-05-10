@@ -157,6 +157,17 @@ irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/in
 
 The installers detect the OS and CPU architecture, download the matching GitHub release archive, verify it against `checksums_sha256.txt`, and install the CLI. Linux and macOS use `/usr/local/bin` when writable, otherwise `$HOME/.local/bin`. Windows installs to `%LOCALAPPDATA%\Programs\Arsenale\bin` and adds that directory to the user `PATH`.
 
+Shell completions are installed automatically. Linux and macOS installs generate Bash, Zsh, and Fish completions and update the matching shell profile when possible. Windows installs generate PowerShell completion and source it from the current-user all-hosts profile. Set `ARSENALE_SKIP_COMPLETIONS=1` to skip completion files, or `ARSENALE_SKIP_SHELL_PROFILE=1` to write completion files without editing shell profile startup files.
+
+Manual completion generation is also available:
+
+```bash
+arsenale completion bash
+arsenale completion zsh
+arsenale completion fish
+arsenale completion powershell
+```
+
 Pin a version or install directory with environment variables:
 
 ```bash

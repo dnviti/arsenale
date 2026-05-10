@@ -68,6 +68,69 @@ function Add-UserPath {
     Write-Host "Added $Directory to the user PATH. Open a new terminal if arsenale is not found."
 }
 
+function ConvertTo-SingleQuotedPowerShellString {
+    param([string]$Value)
+
+    return "'" + ($Value -replace "'", "''") + "'"
+}
+
+function Add-ProfileBlock {
+    param(
+        [string]$ProfilePath,
+        [string]$Marker,
+        [string[]]$Lines
+    )
+
+    if ($env:ARSENALE_SKIP_SHELL_PROFILE -eq "1") {
+        return
+    }
+    if ([string]::IsNullOrWhiteSpace($ProfilePath)) {
+        return
+    }
+
+    $profileDir = Split-Path -Parent $ProfilePath
+    if (-not [string]::IsNullOrWhiteSpace($profileDir)) {
+        New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+    }
+
+    $profileContent = ""
+    if (Test-Path $ProfilePath) {
+        $profileContent = Get-Content -Path $ProfilePath -Raw -ErrorAction SilentlyContinue
+    }
+    if ($profileContent -like "*$Marker*") {
+        return
+    }
+
+    Add-Content -Path $ProfilePath -Value $Lines
+}
+
+function Install-PowerShellCompletion {
+    param([string]$ArsenalePath)
+
+    if ($env:ARSENALE_SKIP_COMPLETIONS -eq "1") {
+        Write-Host "Skipped PowerShell completion installation."
+        return
+    }
+
+    $completionDir = Join-Path $HOME ".arsenale\completions"
+    $completionPath = Join-Path $completionDir "arsenale.ps1"
+    New-Item -ItemType Directory -Path $completionDir -Force | Out-Null
+    & $ArsenalePath completion powershell | Set-Content -Path $completionPath -Encoding UTF8
+
+    $profilePath = $PROFILE.CurrentUserAllHosts
+    if ([string]::IsNullOrWhiteSpace($profilePath)) {
+        $profilePath = $PROFILE
+    }
+    $quotedCompletionPath = ConvertTo-SingleQuotedPowerShellString -Value $completionPath
+    Add-ProfileBlock -ProfilePath $profilePath -Marker "# Arsenale CLI completion" -Lines @(
+        "",
+        "# Arsenale CLI completion",
+        "if (Test-Path $quotedCompletionPath) { . $quotedCompletionPath }"
+    )
+
+    Write-Host "Installed PowerShell completion: $completionPath"
+}
+
 $resolvedVersion = Resolve-Version -RequestedVersion $Version -Repository $Repo
 $arch = Resolve-Arch
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
@@ -98,9 +161,11 @@ try {
 
     Expand-Archive -Path $archivePath -DestinationPath $tempDir -Force
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    Copy-Item -Path (Join-Path $tempDir "arsenale.exe") -Destination (Join-Path $InstallDir "arsenale.exe") -Force
+    $installedPath = Join-Path $InstallDir "arsenale.exe"
+    Copy-Item -Path (Join-Path $tempDir "arsenale.exe") -Destination $installedPath -Force
     Add-UserPath -Directory $InstallDir
-    Write-Host "Installed: $(Join-Path $InstallDir 'arsenale.exe')"
+    Install-PowerShellCompletion -ArsenalePath $installedPath
+    Write-Host "Installed: $installedPath"
 } finally {
     Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 }
