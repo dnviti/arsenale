@@ -321,7 +321,7 @@ func runTeamSetMemberExpiry(cmd *cobra.Command, args []string) {
 	}
 
 	payload := map[string]string{
-		"expiry": teamMemberExpiry,
+		"expiresAt": teamMemberExpiry,
 	}
 
 	body, status, err := apiPatch(fmt.Sprintf("/api/teams/%s/members/%s/expiry", args[0], args[1]), payload, cfg)

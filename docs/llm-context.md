@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-17T18:30:00Z
+generated-at: 2026-05-10T17:14:18Z
 source-files:
   - README.md
   - AGENT.md
@@ -29,6 +29,8 @@ source-files:
   - client/src/hooks/useGatewayMonitor.ts
   - client/src/store/featureFlagsStore.ts
   - tools/arsenale-cli/cmd/root.go
+  - tools/arsenale-cli/install.sh
+  - tools/arsenale-cli/install.ps1
 ---
 
 # Arsenale LLM Context
@@ -191,7 +193,11 @@ Interactive query protocols currently supported:
 
 DB2 metadata fields exist in the connection schema, but DB2 is not active in the current query protocol switch.
 
-Standalone gateway installs live beside each gateway image under `gateways/*/compose.yml`. Tunnel-backed installs (`ssh-gateway`, `guacd`, `db-proxy`, and standalone `tunnel-agent`) require a CLI-generated bundle from `arsenale gateway tunnel-token create <id> --bundle-dir <dir>`, because the tunnel broker requires both token and gateway client certificate material. Tunnel runtimes normalize Arsenale HTTP(S) base URLs to the WebSocket broker endpoint and accept inline PEM or matching `_FILE` PEM variables for CA/client certificate material. `guacenc` and `rdgw` are direct HTTPS services with their own auth tokens and TLS cert/key mounts.
+Standalone gateway installs live beside each gateway image under `gateways/*/compose.yml`. Tunnel-backed installs (`ssh-gateway`, `guacd`, `db-proxy`, and standalone `tunnel-agent`) require a CLI-generated bundle from `arsenale gateway tunnel-token create <id> --bundle-dir <dir>`, because the tunnel broker requires both token and gateway client certificate material. Tunnel runtimes normalize Arsenale HTTP(S) base URLs to the WebSocket broker endpoint and accept inline PEM or matching `_FILE` PEM variables for CA/client certificate material. `guacenc` remains the direct HTTPS recording conversion service with its own auth token and TLS cert/key mounts.
+
+CLI device login uses RFC 8628 at `/api/cli/auth/device*`. The user-code grant is short-lived, but the resulting CLI refresh token is persistent by default and rotates in a tagged CLI token family until explicit revocation, token-binding failure, user disablement, password reset, or membership expiry removes access. Headless agents can use a kubeconfig-style writable credential file selected by `--config`, `ARSENALE_CONFIG`, or an automatically detected `./config.yaml`, and `login --no-browser` prints the device URL without trying to launch a browser. Browser refresh tokens keep the normal `JWT_REFRESH_EXPIRES_IN` lifetime.
+
+CLI connection commands mirror the current web API contracts: list flattens grouped own/shared/team results for table output, import uploads multipart files with duplicate-strategy and format fields, export sends `format` plus `connectionIds`, and share permissions are `READ_ONLY` or `FULL_ACCESS` with legacy aliases normalized by the CLI.
 
 ## ⚙️ Configuration Truth
 
@@ -219,6 +225,9 @@ make deploy
 make recover
 npm run verify
 npm run dev:api-acceptance
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.sh | bash
+# Windows PowerShell:
+# irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.ps1 | iex
 mkdir -p ./build/go
 go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health

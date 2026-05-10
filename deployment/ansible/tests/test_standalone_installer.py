@@ -176,6 +176,10 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["ssh-gateway"]["image"], "ghcr.io/dnviti/arsenale/ssh-gateway:stable")
         self.assertNotIn("build", services["control-plane-api"])
         self.assertNotIn("build", services["migrate"])
+        self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_ENABLED"], "${SSH_PROXY_ENABLED:-true}")
+        self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PORT"], "2222")
+        self.assertIn("0.0.0.0:2222:2222", services["control-plane-api"]["ports"])
+        self.assertNotIn("ports", services["ssh-gateway"])
 
         postgres_volumes = services["postgres"]["volumes"]
         self.assertIn(
@@ -218,8 +222,11 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             services["control-plane-api"]["environment"]["RECORDING_ENABLED"],
             "${FEATURE_RECORDINGS_ENABLED:-true}",
         )
+        self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_ENABLED"], "${SSH_PROXY_ENABLED:-true}")
+        self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PORT"], "2222")
         self.assertEqual(services["control-plane-api"]["environment"]["SHARED_FILES_S3_BUCKET"], "${SHARED_FILES_S3_BUCKET:-}")
         self.assertEqual(services["control-plane-api"]["environment"]["SHARED_FILES_S3_ENDPOINT"], "${SHARED_FILES_S3_ENDPOINT:-}")
+        self.assertIn("127.0.0.1:2222:2222", services["control-plane-api"]["ports"])
         self.assertIn("shared-files-s3", services)
         self.assertEqual(services["shared-files-s3"]["image"], "quay.io/minio/minio:latest")
         self.assertEqual(services["shared-files-s3"]["volumes"], ["shared_files_s3_data:/data"])

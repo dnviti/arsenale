@@ -1,6 +1,7 @@
 package gateways
 
 import (
+	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -76,7 +77,7 @@ func generateClientCertificate(caCertPEM, caKeyPEM, commonName, spiffeID string)
 	if caKeyBlock == nil {
 		return "", "", time.Time{}, errors.New("decode CA private key PEM")
 	}
-	caKey, err := x509.ParsePKCS8PrivateKey(caKeyBlock.Bytes)
+	caKey, err := parseTunnelCAPrivateKey(caKeyBlock)
 	if err != nil {
 		return "", "", time.Time{}, fmt.Errorf("parse CA private key: %w", err)
 	}
@@ -117,6 +118,26 @@ func generateClientCertificate(caCertPEM, caKeyPEM, commonName, spiffeID string)
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	return string(certPEM), string(keyPEM), expiry, nil
+}
+
+func parseTunnelCAPrivateKey(block *pem.Block) (crypto.Signer, error) {
+	if block == nil {
+		return nil, errors.New("decode CA private key PEM")
+	}
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		signer, ok := key.(crypto.Signer)
+		if !ok {
+			return nil, fmt.Errorf("PKCS#8 private key does not implement crypto.Signer")
+		}
+		return signer, nil
+	}
+	if key, err := x509.ParseECPrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	return nil, fmt.Errorf("unsupported private key format")
 }
 
 func certificateFingerprint(certPEM string) (string, error) {

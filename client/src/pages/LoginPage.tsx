@@ -28,6 +28,7 @@ import {
 } from '@simplewebauthn/browser';
 import { useAuthStore } from '@/store/authStore';
 import { useUiPreferencesStore } from '@/store/uiPreferencesStore';
+import { navigateBrowserTo } from '@/utils/browserNavigation';
 import { extractApiError } from '@/utils/apiError';
 import {
   CodeVerificationPanel,
@@ -179,6 +180,11 @@ export default function LoginPage() {
   }, [resendActive]);
 
   const buildRedirect = () => {
+    const redirect = searchParams.get('redirect');
+    if (redirect?.startsWith('/') && !redirect.startsWith('//')) {
+      return redirect;
+    }
+
     const params = new URLSearchParams();
     const autoconnect = searchParams.get('autoconnect');
     const action = searchParams.get('action');
@@ -192,6 +198,14 @@ export default function LoginPage() {
 
     const query = params.toString();
     return query ? `/?${query}` : '/';
+  };
+
+  const navigateAfterLogin = (target: string) => {
+    if (target === '/device' || target.startsWith('/device?')) {
+      navigateBrowserTo(target);
+      return;
+    }
+    navigate(target);
   };
 
   const completeLogin = (data: AuthSuccessResponse) => {
@@ -219,7 +233,7 @@ export default function LoginPage() {
     if (activeMembership) {
       useUiPreferencesStore.getState().set('lastActiveTenantId', activeMembership.tenantId);
     }
-    navigate(buildRedirect());
+    navigateAfterLogin(buildRedirect());
   };
 
   const handleTenantConfirm = async () => {
@@ -243,7 +257,7 @@ export default function LoginPage() {
       }
 
       useUiPreferencesStore.getState().set('lastActiveTenantId', selectedTenantId);
-      navigate(buildRedirect());
+      navigateAfterLogin(buildRedirect());
     } catch (err: unknown) {
       setError(extractApiError(err, 'Failed to select organization'));
     } finally {

@@ -3,7 +3,7 @@
 > Auto-generated on 2026-03-15 by /docs create components.
 > Source of truth is the codebase. Run /docs update components after code changes.
 
-41 API modules in `client/src/api/` provide typed Axios wrappers:
+42 API modules in `client/src/api/` provide typed Axios wrappers:
 
 | Module | Description |
 |--------|-------------|
@@ -14,6 +14,7 @@
 | `audit.api.ts` | Personal, tenant, and connection audit logs, geo data, geo summary |
 | `auth.api.ts` | Passkey-first login, password fallback, MFA flows, browser-session restore/touch, logout, public config |
 | `checkout.api.ts` | Credential checkout/check-in with approval workflow |
+| `cliAuth.api.ts` | CLI device authorization approval for `arsenale login` |
 | `connections.api.ts` | Connection CRUD, favorites, CLI listing |
 | `database.api.ts` | Database session query execution, schema, explain, introspection, history |
 | `dbAudit.api.ts` | Database audit logs, SQL firewall rules, masking policies, rate-limit policies |
@@ -29,7 +30,7 @@
 | `notifications.api.ts` | Notification listing, preferences, read state, and management |
 | `oauth.api.ts` | OAuth providers, linked accounts, vault setup |
 | `passwordReset.api.ts` | Password reset flow |
-| `rdGateway.api.ts` | RD Gateway (MS-TSGU) config and RDP file generation |
+| `cliDesktopLaunch.api.ts` | CLI desktop launch redemption and viewer-control-token heartbeat/end calls |
 | `recordings.api.ts` | Session recording listing, streaming, analysis, and video export |
 | `secrets.api.ts` | Keychain CRUD, versioning, sharing, external shares, tenant vault, password rotation |
 | `sessions.api.ts` | Session monitoring (active, count, terminate), SSH proxy tokens |

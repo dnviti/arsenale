@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-17T17:56:02Z
+generated-at: 2026-05-09T22:10:46Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -24,6 +24,7 @@ source-files:
   - .github/workflows/gateways-build.yml
   - .github/workflows/security.yml
   - .github/workflows/verify.yml
+  - .github/workflows/cli-build.yml
   - .github/workflows/release.yml
   - .compose-project/install.sh
   - .compose-project/manage.sh
@@ -262,12 +263,14 @@ This makes the dev stack suitable for full-stack session, gateway, and DB proxy 
 | `.github/workflows/security.yml` | CodeQL and Trivy filesystem scanning |
 | `.github/workflows/docker-build.yml` | Backend and client verify, image build, scan, and push |
 | `.github/workflows/gateways-build.yml` | Gateway Go tests, image build, scan, and push |
+| `.github/workflows/cli-build.yml` | CLI tests and cross-platform binary artifacts for PR, branch, and manual builds |
 | `.github/workflows/release.yml` | Cross-platform CLI build, checksums, and GitHub release draft |
 
 Notable facts from the workflow definitions:
 
 - backend verification includes `go vet` and `go test -race`,
 - gateway verification runs `go vet` and `go test -race` for the Go modules under `gateways/`,
+- cli-build runs `go test ./tools/arsenale-cli/...` once, then cross-compiles Linux, macOS, and Windows CLI archives,
 - docker-build publishes `:latest` from `develop`, `:stable` from `main`, and semver tags only for version tags whose commits are on `origin/main` ancestry,
 - gateways-build follows the same channel split for `develop`, `main`, and main-ancestry semver tags,
 - release artifacts currently center on the CLI, not full application bundles.

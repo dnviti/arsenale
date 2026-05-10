@@ -58,12 +58,6 @@ func (d *apiDependencies) registerOperationsRoutes(mux *http.ServeMux) {
 		}
 		mux.HandleFunc("/api/gateways/", d.authenticator.Middleware(d.handleGatewayRoute))
 	}
-	if d.features.ConnectionsEnabled {
-		mux.HandleFunc("GET /api/rdgw/config", d.authenticator.Middleware(d.rdGatewayService.HandleGetConfig))
-		mux.HandleFunc("PUT /api/rdgw/config", d.authenticator.Middleware(d.rdGatewayService.HandleUpdateConfig))
-		mux.HandleFunc("GET /api/rdgw/status", d.authenticator.Middleware(d.rdGatewayService.HandleStatus))
-		mux.HandleFunc("GET /api/rdgw/connections/{connectionId}/rdpfile", d.authenticator.Middleware(d.rdGatewayService.HandleRDPFile))
-	}
 	if d.features.RecordingsEnabled {
 		mux.HandleFunc("GET /api/recordings", d.authenticator.Middleware(d.recordingService.HandleList))
 		mux.HandleFunc("GET /api/recordings/{id}", d.authenticator.Middleware(d.recordingService.HandleGet))

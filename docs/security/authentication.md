@@ -51,9 +51,10 @@ Tenant admins can enforce a maximum auto-lock duration (`vaultAutoLockMaxMinutes
 - **Access token**: Short-lived (default: 15 minutes, configurable via `JWT_EXPIRES_IN`)
   - Payload: `{ userId, email, tenantId?, tenantRole? }`
   - Signed with `JWT_SECRET` using HS256
-- **Refresh token**: Long-lived (default: 7 days, configurable via `JWT_REFRESH_EXPIRES_IN`)
+- **Refresh token**: Long-lived for browser sessions (default: 7 days, configurable via `JWT_REFRESH_EXPIRES_IN`)
   - Stored as a UUID in the `RefreshToken` database table
   - Delivered via httpOnly, Secure (production), SameSite=strict cookie named `arsenale-rt`
+- **CLI refresh token**: Persistent by default for RFC 8628 device-login sessions; it rotates in the same family and remains valid until explicit revocation, token-binding failure, user disablement, password reset, or tenant membership expiry removes access. Headless CLI use stores the token in a writable credential config selected by `--config`, `ARSENALE_CONFIG`, or an automatically detected `./config.yaml`.
 
 ### Refresh Token Rotation
 

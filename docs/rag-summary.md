@@ -6,7 +6,7 @@
 
 ## What is Arsenale
 
-Arsenale is a modern, web-based remote access management platform designed to replace legacy tools like mRemoteNG, RoyalTS, and standalone Apache Guacamole deployments. It provides a unified interface for managing SSH, RDP, VNC, and database connections through a browser or native clients, eliminating the need for complex jump host configurations. Unlike traditional tools that store credentials locally or rely on unencrypted configuration files, Arsenale encrypts all credentials at rest using a zero-knowledge vault architecture where the server never has access to plaintext passwords.
+Arsenale is a modern, web-based remote access management platform designed to replace legacy tools like mRemoteNG, RoyalTS, and standalone Apache Guacamole deployments. It provides a unified interface for managing SSH, RDP, VNC, and database connections through the browser, plus native OpenSSH access through the Arsenale CLI, eliminating the need for complex jump host configurations. Unlike traditional tools that store credentials locally or rely on unencrypted configuration files, Arsenale encrypts all credentials at rest using a zero-knowledge vault architecture where the server never has access to plaintext passwords.
 
 Arsenale combines the remote access capabilities of Guacamole with enterprise-grade features like multi-tenant organizations, team collaboration, encrypted credential vaults, granular audit logging, and managed container infrastructure. It is designed for teams that need centralized, secure remote access without sacrificing usability.
 
@@ -130,13 +130,13 @@ Vault secrets of type LOGIN are checked against the HaveIBeenPwned breach databa
 
 The SSH Protocol Proxy enables native SSH clients (PuTTY, OpenSSH, etc.) to connect through Arsenale. Users obtain a short-lived proxy token via the REST API, which the SSH proxy server validates to inject vault credentials and route the connection through the appropriate gateway. All sessions are audited identically to browser-based SSH sessions.
 
-### RD Gateway (MS-TSGU)
-
-The RD Gateway (`gateways/rdgw/`) implements the Microsoft Terminal Services Gateway (MS-TSGU) protocol, enabling native Windows RDP clients (mstsc.exe) to connect through Arsenale. The gateway handles TSGU protocol negotiation, retrieves credentials from the vault, and forwards the RDP connection to the target server. Administrators configure the gateway per-tenant with server addresses and ports. Users can download pre-configured .rdp files from the web UI.
-
 ### Arsenale Connect CLI
 
-The Arsenale Connect CLI (`tools/arsenale-cli/`) is a Go-based command-line tool for native client orchestration. It authenticates using RFC 8628 Device Authorization: the CLI displays a verification URL and user code, the user authorizes in the web browser, and the CLI polls for a token. Once authenticated, the CLI can list connections, retrieve vault credentials, generate SSH proxy tokens, download .rdp files, and launch native SSH/RDP clients with credential injection.
+The Arsenale Connect CLI (`tools/arsenale-cli/`) is a Go-based command-line tool for native-entry workflows. It authenticates using RFC 8628 Device Authorization: the CLI displays a verification URL and user code, the user authorizes in the web browser, and the CLI polls for a token. CLI device-login refresh tokens are persistent by default and rotate until explicit revocation, token-binding failure, user disablement, password reset, or membership expiry. Headless automation can use a kubeconfig-style credential file through `--config`, `ARSENALE_CONFIG`, or an automatically detected `./config.yaml`; the file must be writable because token rotation updates it in place. Once authenticated, `arsenale connect ssh <connection>` launches OpenSSH through an Arsenale-managed SSH proxy, while `arsenale connect rdp|vnc <connection>` opens a one-time viewer launch URL in the default browser. RDP and VNC stay inside the Arsenale Guacamole viewer so managed credentials, DLP, recording, observe, pause/resume, terminate, and session audit remain enforceable.
+
+CLI releases can be installed with `tools/arsenale-cli/install.sh` on Linux/macOS or `tools/arsenale-cli/install.ps1` on Windows. The installers detect OS and CPU architecture, download the matching GitHub release archive, verify it with `checksums_sha256.txt`, and install `arsenale` or `arsenale.exe` into a user-writable bin directory.
+
+`arsenale connection list` reads the grouped `/api/connections` response and flattens own/shared/team connections for table and quiet output while preserving grouped JSON/YAML. Connection import uses the multipart `/api/connections/import` contract with duplicate-strategy and format fields, and connection export sends `format`, `connectionIds`, `folderId`, and `includeCredentials` to `/api/connections/export`. Share commands use `READ_ONLY` and `FULL_ACCESS` permissions, with legacy `read` and `write` aliases normalized client-side.
 
 ## Connection Policy Enforcement
 

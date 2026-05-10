@@ -12,10 +12,6 @@ vi.mock('@/store/tabsStore', () => ({
   useTabsStore: (selector: (state: { openTab: typeof openTab }) => unknown) => selector({ openTab }),
 }));
 
-vi.mock('@/api/rdGateway.api', () => ({
-  downloadRdpFile: vi.fn(),
-}));
-
 vi.mock('@/utils/openConnectionWindow', () => ({
   openConnectionWindow: vi.fn(),
 }));

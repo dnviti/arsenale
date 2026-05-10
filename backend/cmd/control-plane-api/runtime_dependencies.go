@@ -28,7 +28,6 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/passwordrotationapi"
 	"github.com/dnviti/arsenale/backend/internal/publicconfig"
 	"github.com/dnviti/arsenale/backend/internal/publicshareapi"
-	"github.com/dnviti/arsenale/backend/internal/rdgatewayapi"
 	"github.com/dnviti/arsenale/backend/internal/recordingsapi"
 	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/dnviti/arsenale/backend/internal/secretsmeta"
@@ -74,7 +73,6 @@ type apiDependencies struct {
 	passwordRotationService passwordrotationapi.Service
 	geoIPService            *geoipapi.Service
 	ldapService             ldapapi.Service
-	rdGatewayService        rdgatewayapi.Service
 	recordingService        recordingsapi.Service
 	secretsMetaService      secretsmeta.Service
 	tenantVaultService      tenantvaultapi.Service

@@ -158,6 +158,19 @@ func apiUpload(path, filePath string, cfg *CLIConfig) ([]byte, int, error) {
 }
 
 func apiUploadWithFields(path, filePath string, fields map[string]string, cfg *CLIConfig) ([]byte, int, error) {
+	respBody, status, err := apiUploadWithFieldsOnce(path, filePath, fields, cfg)
+	if err != nil {
+		return respBody, status, err
+	}
+	if status == http.StatusUnauthorized && cfg.RefreshToken != "" {
+		if refreshErr := refreshAccessToken(cfg); refreshErr == nil {
+			return apiUploadWithFieldsOnce(path, filePath, fields, cfg)
+		}
+	}
+	return respBody, status, nil
+}
+
+func apiUploadWithFieldsOnce(path, filePath string, fields map[string]string, cfg *CLIConfig) ([]byte, int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, 0, fmt.Errorf("open file: %w", err)
@@ -213,6 +226,16 @@ func apiUploadWithFields(path, filePath string, fields map[string]string, cfg *C
 
 // apiDownload downloads a file from the API and saves it to destPath.
 func apiDownload(path, destPath string, cfg *CLIConfig) (int, error) {
+	status, err := apiDownloadOnce(path, destPath, cfg)
+	if status == http.StatusUnauthorized && cfg.RefreshToken != "" {
+		if refreshErr := refreshAccessToken(cfg); refreshErr == nil {
+			return apiDownloadOnce(path, destPath, cfg)
+		}
+	}
+	return status, err
+}
+
+func apiDownloadOnce(path, destPath string, cfg *CLIConfig) (int, error) {
 	reqURL := cfg.ServerURL + path
 	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
@@ -255,6 +278,21 @@ func apiDownload(path, destPath string, cfg *CLIConfig) (int, error) {
 
 // refreshAccessToken attempts to refresh the access token using the refresh token.
 func refreshAccessToken(cfg *CLIConfig) error {
+	if cfg.ConfigPath == "" {
+		cfg.ConfigPath = configPath()
+	}
+	unlock, err := acquireConfigLock(cfg.ConfigPath)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	if adopted, err := adoptConfigRefreshedByAnotherProcess(cfg); err != nil {
+		return err
+	} else if adopted {
+		return nil
+	}
+
 	body := map[string]string{
 		"refreshToken": cfg.RefreshToken,
 	}
@@ -280,13 +318,38 @@ func refreshAccessToken(cfg *CLIConfig) error {
 	if result.RefreshToken != "" {
 		cfg.RefreshToken = result.RefreshToken
 	}
-	cfg.TokenExpiry = time.Now().Add(14 * time.Minute).Format(time.RFC3339)
+	cfg.TokenExpiry = persistentCLITokenExpiry
 
 	if err := saveConfig(cfg); err != nil {
 		return fmt.Errorf("save refreshed config: %w", err)
 	}
 
 	return nil
+}
+
+func adoptConfigRefreshedByAnotherProcess(cfg *CLIConfig) (bool, error) {
+	diskCfg, err := loadConfigFromPath(cfg.ConfigPath)
+	if err != nil {
+		return false, fmt.Errorf("load config before refresh: %w", err)
+	}
+	if diskCfg.AccessToken == "" || diskCfg.RefreshToken == "" || diskCfg.RefreshToken == cfg.RefreshToken {
+		return false, nil
+	}
+
+	cfg.AccessToken = diskCfg.AccessToken
+	cfg.RefreshToken = diskCfg.RefreshToken
+	cfg.TokenExpiry = diskCfg.TokenExpiry
+	cfg.ConfigPath = diskCfg.ConfigPath
+	if serverFlag == "" {
+		cfg.ServerURL = diskCfg.ServerURL
+	}
+	if tenantFlag == "" {
+		cfg.TenantID = diskCfg.TenantID
+	}
+	if diskCfg.CacheTTL != "" {
+		cfg.CacheTTL = diskCfg.CacheTTL
+	}
+	return true, nil
 }
 
 // ensureAuthenticated ensures we have a valid access token.

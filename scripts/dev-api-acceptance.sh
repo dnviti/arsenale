@@ -129,7 +129,6 @@ session_id=""
 rdp_connection_id=""
 rdp_session_id=""
 terminated_session_id=""
-rdgw_original_config_json=""
 team_id=""
 temp_team_member_user_id=""
 checkout_request_id=""
@@ -289,16 +288,6 @@ cleanup() {
       -H "authorization: Bearer ${access_token}" \
       -X DELETE \
       "${api_base}/connections/${connection_id}" >/dev/null || true
-  fi
-
-  if [[ -n "${rdgw_original_config_json}" ]]; then
-    curl --silent --show-error --fail \
-      --cacert "${ca_cert}" \
-      -H "authorization: Bearer ${access_token}" \
-      -H 'content-type: application/json' \
-      -X PUT \
-      -d "${rdgw_original_config_json}" \
-      "${api_base}/rdgw/config" >/dev/null || true
   fi
 
   if [[ -n "${tenant_ip_allowlist_original_json}" ]]; then
@@ -4901,43 +4890,14 @@ create_rdp_connection_json="$(curl --silent --show-error --fail \
 rdp_connection_id="$(printf '%s' "${create_rdp_connection_json}" | jq -r '.id')"
 [[ -n "${rdp_connection_id}" && "${rdp_connection_id}" != "null" ]]
 
-echo '7.0.1 public rdgw config/status/rdpfile flow'
-rdgw_original_config_json="$(curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/rdgw/config")"
-printf '%s' "${rdgw_original_config_json}" | jq -e 'has("enabled") and has("externalHostname") and has("port") and has("idleTimeoutSeconds")' >/dev/null
-
+echo '7.0.1 cli desktop launch grant flow'
 curl --silent --show-error --fail \
   --cacert "${ca_cert}" \
   -H "authorization: Bearer ${access_token}" \
   -H 'content-type: application/json' \
-  -X PUT \
-  -d '{"enabled":true,"externalHostname":"rdgw.acceptance.local","port":443,"idleTimeoutSeconds":1800}' \
-  "${api_base}/rdgw/config" \
-  | jq -e '.enabled == true and .externalHostname == "rdgw.acceptance.local" and .port == 443 and .idleTimeoutSeconds == 1800' >/dev/null
-
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/rdgw/status" \
-  | jq -e '.activeTunnels >= 0 and .activeChannels >= 0' >/dev/null
-
-rdp_file_content="$(curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/rdgw/connections/${rdp_connection_id}/rdpfile")"
-[[ "${rdp_file_content}" == *"gatewayhostname:s:rdgw.acceptance.local:443"* ]]
-[[ "${rdp_file_content}" == *"full address:s:rdp.invalid:3389"* ]]
-
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  -H 'content-type: application/json' \
-  -X PUT \
-  -d "${rdgw_original_config_json}" \
-  "${api_base}/rdgw/config" >/dev/null
-rdgw_original_config_json=""
+  -d "{\"protocol\":\"RDP\",\"connectionId\":\"${rdp_connection_id}\"}" \
+  "${api_base}/cli/connect/desktop/launch" \
+  | jq -e '.protocol == "RDP" and .connectionId == "'"${rdp_connection_id}"'" and (.launchUrl | contains("/cli/desktop-launch?grant=")) and .expiresIn > 0' >/dev/null
 
 create_rdp_session_json="$(curl --silent --show-error --fail \
   --cacert "${ca_cert}" \

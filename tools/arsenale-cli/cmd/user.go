@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -37,14 +38,14 @@ var userGetCmd = &cobra.Command{
 var userCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new user",
-	Long:  `Create a user from a JSON/YAML file or with flags: arsenale user create --email user@example.com --role member`,
+	Long:  `Create a user from a JSON/YAML file or with flags: arsenale user create --email user@example.com --password '...' --role MEMBER`,
 	Run:   runUserCreate,
 }
 
 var userInviteCmd = &cobra.Command{
 	Use:   "invite",
 	Short: "Invite a user by email",
-	Long:  `Invite a user: arsenale user invite --email user@example.com`,
+	Long:  `Invite a user: arsenale user invite --email user@example.com --role MEMBER`,
 	Run:   runUserInvite,
 }
 
@@ -126,7 +127,7 @@ var userPermissionsSetCmd = &cobra.Command{
 var userSearchCmd = &cobra.Command{
 	Use:   "search",
 	Short: "Search users",
-	Long:  `Search users: arsenale user search --query "john"`,
+	Long:  `Search users: arsenale user search --query "john" --scope tenant`,
 	Run:   runUserSearch,
 }
 
@@ -136,7 +137,10 @@ var (
 	userRole          string
 	userExpiry        string
 	userPassword      string
+	userVerification  string
 	userSearchQuery   string
+	userSearchScope   string
+	userSearchTeamID  string
 	userPermsFromFile string
 )
 
@@ -164,8 +168,12 @@ func init() {
 	userCreateCmd.Flags().StringVarP(&userFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	userCreateCmd.Flags().StringVar(&userEmail, "email", "", "User email")
 	userCreateCmd.Flags().StringVar(&userRole, "role", "", "User role")
+	userCreateCmd.Flags().StringVar(&userPassword, "password", "", "Initial password")
+	userCreateCmd.Flags().StringVar(&userExpiry, "expiry", "", "Expiry date (RFC3339)")
 
 	userInviteCmd.Flags().StringVar(&userEmail, "email", "", "Email to invite")
+	userInviteCmd.Flags().StringVar(&userRole, "role", "MEMBER", "Tenant role")
+	userInviteCmd.Flags().StringVar(&userExpiry, "expiry", "", "Expiry date (RFC3339)")
 	userInviteCmd.MarkFlagRequired("email")
 
 	userUpdateRoleCmd.Flags().StringVar(&userRole, "role", "", "New role")
@@ -175,15 +183,19 @@ func init() {
 	userSetExpiryCmd.MarkFlagRequired("expiry")
 
 	userChangeEmailCmd.Flags().StringVar(&userEmail, "email", "", "New email address")
+	userChangeEmailCmd.Flags().StringVar(&userVerification, "verification-id", "", "Admin action verification ID")
 	userChangeEmailCmd.MarkFlagRequired("email")
 
 	userChangePasswordCmd.Flags().StringVar(&userPassword, "password", "", "New password")
+	userChangePasswordCmd.Flags().StringVar(&userVerification, "verification-id", "", "Admin action verification ID")
 	userChangePasswordCmd.MarkFlagRequired("password")
 
 	userPermissionsSetCmd.Flags().StringVarP(&userPermsFromFile, "from-file", "f", "", "JSON/YAML file (- for stdin)")
 	userPermissionsSetCmd.MarkFlagRequired("from-file")
 
 	userSearchCmd.Flags().StringVar(&userSearchQuery, "query", "", "Search query")
+	userSearchCmd.Flags().StringVar(&userSearchScope, "scope", "tenant", "Search scope (tenant or team)")
+	userSearchCmd.Flags().StringVar(&userSearchTeamID, "team-id", "", "Team ID when --scope team")
 	userSearchCmd.MarkFlagRequired("query")
 }
 
@@ -242,13 +254,7 @@ func runUserCreate(cmd *cobra.Command, args []string) {
 			fatal("%v", err)
 		}
 	} else {
-		if userEmail == "" {
-			fatal("provide --from-file or --email")
-		}
-		data, err = buildJSONBody(map[string]interface{}{
-			"email": userEmail,
-			"role":  userRole,
-		})
+		data, err = buildUserCreateBody(userEmail, userRole, userPassword, userExpiry)
 		if err != nil {
 			fatal("%v", err)
 		}
@@ -259,7 +265,7 @@ func runUserCreate(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	printer().PrintCreated(body, "id")
+	printer().PrintCreated(body, "user.id")
 }
 
 func runUserInvite(cmd *cobra.Command, args []string) {
@@ -269,8 +275,9 @@ func runUserInvite(cmd *cobra.Command, args []string) {
 	}
 
 	tid := requireTenantID(cfg)
-	payload := map[string]string{
-		"email": userEmail,
+	payload, err := buildUserInviteBody(userEmail, userRole, userExpiry)
+	if err != nil {
+		fatal("%v", err)
 	}
 
 	body, status, err := apiPost(fmt.Sprintf("/api/tenants/%s/invite", tid), payload, cfg)
@@ -278,10 +285,7 @@ func runUserInvite(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-
-	if !quiet {
-		fmt.Printf("Invitation sent to %q\n", userEmail)
-	}
+	printer().PrintCreated(body, "userId")
 }
 
 func runUserUpdateRole(cmd *cobra.Command, args []string) {
@@ -373,7 +377,7 @@ func runUserSetExpiry(cmd *cobra.Command, args []string) {
 
 	tid := requireTenantID(cfg)
 	payload := map[string]string{
-		"expiry": userExpiry,
+		"expiresAt": userExpiry,
 	}
 
 	body, status, err := apiPatch(fmt.Sprintf("/api/tenants/%s/users/%s/expiry", tid, args[0]), payload, cfg)
@@ -395,7 +399,8 @@ func runUserChangeEmail(cmd *cobra.Command, args []string) {
 
 	tid := requireTenantID(cfg)
 	payload := map[string]string{
-		"email": userEmail,
+		"newEmail":       userEmail,
+		"verificationId": userVerification,
 	}
 
 	body, status, err := apiPut(fmt.Sprintf("/api/tenants/%s/users/%s/email", tid, args[0]), payload, cfg)
@@ -417,7 +422,8 @@ func runUserChangePassword(cmd *cobra.Command, args []string) {
 
 	tid := requireTenantID(cfg)
 	payload := map[string]string{
-		"password": userPassword,
+		"newPassword":    userPassword,
+		"verificationId": userVerification,
 	}
 
 	body, status, err := apiPut(fmt.Sprintf("/api/tenants/%s/users/%s/password", tid, args[0]), payload, cfg)
@@ -478,6 +484,10 @@ func runUserPermissionsSet(cmd *cobra.Command, args []string) {
 	if err != nil {
 		fatal("%v", err)
 	}
+	data, err = normalizeUserPermissionsPayload(data)
+	if err != nil {
+		fatal("%v", err)
+	}
 
 	body, status, err := apiPut(fmt.Sprintf("/api/tenants/%s/users/%s/permissions", tid, args[0]), json.RawMessage(data), cfg)
 	if err != nil {
@@ -496,11 +506,84 @@ func runUserSearch(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 
-	params := url.Values{"q": {userSearchQuery}}
+	params, err := buildUserSearchParams(userSearchQuery, userSearchScope, userSearchTeamID)
+	if err != nil {
+		fatal("%v", err)
+	}
 	body, status, err := apiRequestWithParams("GET", "/api/user/search", params, nil, cfg)
 	if err != nil {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
 	printer().Print(body, userColumns)
+}
+
+func buildUserSearchParams(query, scope, teamID string) (url.Values, error) {
+	if scope == "" {
+		scope = "tenant"
+	}
+	if scope != "tenant" && scope != "team" {
+		return nil, fmt.Errorf("scope must be one of tenant, team")
+	}
+	if scope == "team" && teamID == "" {
+		return nil, fmt.Errorf("team-id is required when scope is team")
+	}
+
+	params := url.Values{"q": {query}, "scope": {scope}}
+	if teamID != "" {
+		params.Set("teamId", teamID)
+	}
+	return params, nil
+}
+
+func buildUserCreateBody(email, role, password, expiry string) ([]byte, error) {
+	email = strings.TrimSpace(email)
+	if email == "" || password == "" {
+		return nil, fmt.Errorf("provide --from-file or --email and --password")
+	}
+	payload := map[string]interface{}{
+		"email":    email,
+		"password": password,
+		"role":     normalizeTenantRole(role),
+	}
+	if value := strings.TrimSpace(expiry); value != "" {
+		payload["expiresAt"] = value
+	}
+	return buildJSONBody(payload)
+}
+
+func buildUserInviteBody(email, role, expiry string) (map[string]interface{}, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+	payload := map[string]interface{}{
+		"email": email,
+		"role":  normalizeTenantRole(role),
+	}
+	if value := strings.TrimSpace(expiry); value != "" {
+		payload["expiresAt"] = value
+	}
+	return payload, nil
+}
+
+func normalizeTenantRole(role string) string {
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return "MEMBER"
+	}
+	return strings.ToUpper(role)
+}
+
+func normalizeUserPermissionsPayload(data []byte) ([]byte, error) {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("permissions payload must be a JSON/YAML object: %w", err)
+	}
+	if _, ok := payload["overrides"]; ok {
+		return data, nil
+	}
+	return json.Marshal(map[string]json.RawMessage{
+		"overrides": json.RawMessage(data),
+	})
 }
