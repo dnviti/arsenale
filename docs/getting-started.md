@@ -2,7 +2,7 @@
 title: Getting Started
 description: Installation, prerequisites, and first-run instructions for Arsenale
 generated-by: claw-docs
-generated-at: 2026-05-09T22:10:46Z
+generated-at: 2026-05-10T17:14:18Z
 source-files:
   - README.md
   - AGENT.md
@@ -17,6 +17,8 @@ source-files:
   - deployment/ansible/playbooks/install.yml
   - deployment/ansible/playbooks/status.yml
   - deployment/ansible/inventory/group_vars/all/vars.yml
+  - tools/arsenale-cli/install.sh
+  - tools/arsenale-cli/install.ps1
 ---
 
 ## Overview
@@ -139,7 +141,36 @@ Tenant:   Development Environment
 ## 💻 Install The CLI
 
 Released CLI archives are attached to GitHub releases as `arsenale-cli_<version>_<os>_<arch>`.
-For Linux and macOS, install the latest released binary as `arsenale` with:
+Use the installer scripts when you want the latest released binary installed as `arsenale`.
+
+Linux and macOS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.ps1 | iex
+```
+
+The installers detect the OS and CPU architecture, download the matching GitHub release archive, verify it against `checksums_sha256.txt`, and install the CLI. Linux and macOS use `/usr/local/bin` when writable, otherwise `$HOME/.local/bin`. Windows installs to `%LOCALAPPDATA%\Programs\Arsenale\bin` and adds that directory to the user `PATH`.
+
+Pin a version or install directory with environment variables:
+
+```bash
+ARSENALE_VERSION=1.8.0 ARSENALE_INSTALL_DIR="$HOME/bin" \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.sh)"
+```
+
+```powershell
+$env:ARSENALE_VERSION = "1.8.0"
+$env:ARSENALE_INSTALL_DIR = "$HOME\bin"
+irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.ps1 | iex
+```
+
+Manual Linux and macOS install:
 
 ```bash
 VERSION="$(curl -fsSL https://api.github.com/repos/dnviti/arsenale/releases/latest | sed -nE 's/.*"tag_name": "v?([^"]*)".*/\1/p' | head -1)"
@@ -148,6 +179,8 @@ ARCH="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
 curl -fsSL "https://github.com/dnviti/arsenale/releases/latest/download/arsenale-cli_${VERSION}_${OS}_${ARCH}.tar.gz" |
   sudo tar -xz -C /usr/local/bin arsenale
 ```
+
+Manual Windows install downloads the `arsenale-cli_<version>_windows_<arch>.zip` release asset and copies `arsenale.exe` into a directory on `PATH`.
 
 From a source checkout, use the local build path when you want to test current changes:
 

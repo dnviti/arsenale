@@ -2,7 +2,7 @@
 title: LLM Context
 description: Consolidated single-file context for LLMs, bots, and operators working on Arsenale
 generated-by: claw-docs
-generated-at: 2026-05-09T22:10:46Z
+generated-at: 2026-05-10T17:14:18Z
 source-files:
   - README.md
   - AGENT.md
@@ -29,6 +29,8 @@ source-files:
   - client/src/hooks/useGatewayMonitor.ts
   - client/src/store/featureFlagsStore.ts
   - tools/arsenale-cli/cmd/root.go
+  - tools/arsenale-cli/install.sh
+  - tools/arsenale-cli/install.ps1
 ---
 
 # Arsenale LLM Context
@@ -223,11 +225,9 @@ make deploy
 make recover
 npm run verify
 npm run dev:api-acceptance
-VERSION="$(curl -fsSL https://api.github.com/repos/dnviti/arsenale/releases/latest | sed -nE 's/.*"tag_name": "v?([^"]*)".*/\1/p' | head -1)"
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
-curl -fsSL "https://github.com/dnviti/arsenale/releases/latest/download/arsenale-cli_${VERSION}_${OS}_${ARCH}.tar.gz" |
-  sudo tar -xz -C /usr/local/bin arsenale
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.sh | bash
+# Windows PowerShell:
+# irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.ps1 | iex
 mkdir -p ./build/go
 go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
