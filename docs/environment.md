@@ -208,7 +208,7 @@ Leave `LDAP_ENABLED=false` to disable. Compatible with FreeIPA, OpenLDAP, 389 Di
 |----------|---------|-------------|
 | `SSH_PROXY_ENABLED` | `false` | Enables the control-plane native SSH proxy listener. Installer-managed deployments default this to `true`. |
 | `SSH_PROXY_PORT` | `2222` | Control-plane SSH proxy listener port inside the container. |
-| `SSH_PROXY_PUBLIC_HOST` | — | Optional host advertised in CLI SSH proxy connection instructions. Development installs default to `localhost` because the proxy port is loopback-bound. |
+| `SSH_PROXY_PUBLIC_HOST` | — | Optional host advertised in CLI SSH proxy connection instructions. Defaults to the API request host. |
 | `SSH_PROXY_PUBLIC_PORT` | — | Optional port advertised in CLI SSH proxy connection instructions. Defaults to `SSH_PROXY_PORT`. |
 | `SSH_PROXY_TOKEN_TTL_SECONDS` | `300` | Lifetime for short-lived native SSH launch grants. |
 | `SSH_PROXY_AUTH_METHODS` | `token-username` | Advertised SSH proxy auth methods in status responses. |

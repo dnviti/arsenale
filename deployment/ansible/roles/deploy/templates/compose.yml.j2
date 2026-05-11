@@ -294,7 +294,7 @@ services:
       CLI_ENABLED: "${CLI_ENABLED:-true}"
       SSH_PROXY_ENABLED: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_ENABLED', 'true') }}"
       SSH_PROXY_PORT: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PORT', '2222') }}"
-      SSH_PROXY_PUBLIC_HOST: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PUBLIC_HOST', 'localhost' if (_is_dev | default(false) | bool) else '') }}"
+      SSH_PROXY_PUBLIC_HOST: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PUBLIC_HOST', '') }}"
       SSH_PROXY_PUBLIC_PORT: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PUBLIC_PORT', '') }}"
       SSH_PROXY_TOKEN_TTL_SECONDS: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_TOKEN_TTL_SECONDS', '300') }}"
       RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
@@ -660,7 +660,7 @@ services:
       CLI_ENABLED: "${CLI_ENABLED:-true}"
       SSH_PROXY_ENABLED: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_ENABLED', 'true') }}"
       SSH_PROXY_PORT: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PORT', '2222') }}"
-      SSH_PROXY_PUBLIC_HOST: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PUBLIC_HOST', 'localhost' if (_is_dev | default(false) | bool) else '') }}"
+      SSH_PROXY_PUBLIC_HOST: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PUBLIC_HOST', '') }}"
       SSH_PROXY_PUBLIC_PORT: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PUBLIC_PORT', '') }}"
       SSH_PROXY_TOKEN_TTL_SECONDS: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_TOKEN_TTL_SECONDS', '300') }}"
       RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
@@ -686,7 +686,7 @@ services:
       GATEWAY_GRPC_SERVER_KEY: /certs/ssh-gateway/server-key.pem
     ports:
       - "127.0.0.1:{{ arsenale_control_plane_api_port | default(18080) }}:8080"
-      - "127.0.0.1:{{ arsenale_ssh_port }}:2222"
+      - "{{ arsenale_ssh_proxy_bind_host | default('0.0.0.0') }}:{{ arsenale_ssh_port }}:2222"
     depends_on:
       postgres:
         condition: service_healthy
