@@ -11,8 +11,27 @@ import (
 var tenantColumns = []Column{
 	{Header: "ID", Field: "id"},
 	{Header: "NAME", Field: "name"},
-	{Header: "ROLE", Field: "role"},
+	{Header: "SLUG", Field: "slug"},
 	{Header: "MFA_REQ", Field: "mfaRequired"},
+	{Header: "USERS", Field: "userCount"},
+	{Header: "TEAMS", Field: "teamCount"},
+}
+
+var tenantCreateColumns = []Column{
+	{Header: "ID", Field: "id"},
+	{Header: "NAME", Field: "name"},
+	{Header: "SLUG", Field: "slug"},
+	{Header: "USERS", Field: "userCount"},
+	{Header: "TEAMS", Field: "teamCount"},
+}
+
+var tenantListColumns = []Column{
+	{Header: "ID", Field: "tenantId"},
+	{Header: "NAME", Field: "name"},
+	{Header: "ROLE", Field: "role"},
+	{Header: "STATUS", Field: "status"},
+	{Header: "ACTIVE", Field: "isActive"},
+	{Header: "PENDING", Field: "pending"},
 }
 
 var tenantCmd = &cobra.Command{
@@ -146,7 +165,7 @@ func runTenantList(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
-	printer().Print(body, tenantColumns)
+	printer().Print(body, tenantListColumns)
 }
 
 func runTenantCreate(cmd *cobra.Command, args []string) {
@@ -191,7 +210,11 @@ func runTenantCreate(cmd *cobra.Command, args []string) {
 		fmt.Fprintln(os.Stdout, tenantID)
 		return
 	}
-	printer().PrintSingle(body, tenantColumns)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		printer().PrintSingle(body, tenantColumns)
+		return
+	}
+	printer().PrintSingle(tenantCreateDisplayBody(body), tenantCreateColumns)
 }
 
 func runTenantUpdate(cmd *cobra.Command, args []string) {
@@ -343,4 +366,15 @@ func applyTenantAuthResponse(cfg *CLIConfig, body []byte, fallbackTenantID strin
 	}
 	cfg.TenantID = tenantID
 	return tenantID
+}
+
+func tenantCreateDisplayBody(body []byte) []byte {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return body
+	}
+	if tenant, ok := payload["tenant"]; ok {
+		return tenant
+	}
+	return body
 }

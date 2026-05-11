@@ -6,8 +6,16 @@ import (
 
 var whoamiCmd = &cobra.Command{
 	Use:   "whoami",
-	Short: "Show current authenticated user and tenant",
+	Short: "Show current authenticated user",
 	Run:   runWhoami,
+}
+
+var whoamiColumns = []Column{
+	{Header: "ID", Field: "id"},
+	{Header: "EMAIL", Field: "email"},
+	{Header: "USERNAME", Field: "username"},
+	{Header: "VAULT_SETUP", Field: "vaultSetupComplete"},
+	{Header: "HAS_PASSWORD", Field: "hasPassword"},
 }
 
 func init() {
@@ -26,11 +34,5 @@ func runWhoami(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, body)
 
-	printer().PrintSingle(body, []Column{
-		{Header: "ID", Field: "id"},
-		{Header: "EMAIL", Field: "email"},
-		{Header: "NAME", Field: "name"},
-		{Header: "ROLE", Field: "role"},
-		{Header: "TENANT", Field: "tenantId"},
-	})
+	printer().PrintSingle(body, whoamiColumns)
 }
