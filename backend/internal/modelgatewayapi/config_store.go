@@ -294,7 +294,7 @@ INSERT INTO "TenantAiConfig" (
 	"updatedAt"
 )
 VALUES (
-	$1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), NULLIF($8, ''),
+	$1, $2, $3, NULLIF($4, ''), NULLIF($5, ''), NULLIF($6, ''), $7, NULLIF($8, ''),
 	$9, $10, $11, NULLIF($12, ''), NULLIF($13, ''), $14, NULLIF($15, ''), NULLIF($16, ''), $17, $18, NOW(), NOW()
 )
 ON CONFLICT ("tenantId") DO UPDATE SET

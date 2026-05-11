@@ -87,6 +87,12 @@ func runAiConfigSet(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, body)
 
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Println("AI configuration updated")
 	}

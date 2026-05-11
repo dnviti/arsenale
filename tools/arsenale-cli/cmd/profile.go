@@ -209,8 +209,8 @@ func runProfileChangePassword(cmd *cobra.Command, args []string) {
 	}
 
 	payload := map[string]string{
-		"currentPassword": currentPwd,
-		"newPassword":     newPwd,
+		"oldPassword": currentPwd,
+		"newPassword": newPwd,
 	}
 
 	body, status, err := apiPut("/api/user/password", payload, cfg)

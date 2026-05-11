@@ -2,11 +2,17 @@ name: Release
 
 on:
   push:
+    branches:
+      - develop
     tags:
       - 'v*'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ── Build CLI binaries ──────────────────────────────────────────
@@ -56,7 +62,18 @@ jobs:
 
       - name: Extract version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+            archive_version="$version"
+          else
+            short_sha="$(git rev-parse --short=12 HEAD)"
+            version="develop-${short_sha}"
+            archive_version="develop"
+          fi
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'archive_version=%s\n' "$archive_version" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
         env:
@@ -72,7 +89,7 @@ jobs:
       - name: Package archive
         run: |
           cd dist
-          ARCHIVE="arsenale-cli_${{ steps.version.outputs.version }}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          ARCHIVE="arsenale-cli_${{ steps.version.outputs.archive_version }}_${{ matrix.goos }}_${{ matrix.goarch }}"
           if [ "${{ matrix.goos }}" = "windows" ]; then
             zip "${ARCHIVE}.zip" arsenale${{ matrix.ext }}
           else
@@ -117,7 +134,7 @@ jobs:
   # ── Create GitHub Release ──────────────────────────────────────
   release:
     name: Create GitHub Release
-    if: ${{ !contains(github.ref_name, '-staging') }}
+    if: ${{ github.ref == 'refs/heads/develop' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-staging')) }}
     needs: [build-cli, checksums]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -130,6 +147,46 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Prepare release metadata
+        id: release_meta
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            prerelease=false
+            if [[ "$GITHUB_REF_NAME" == *-beta* ]]; then
+              prerelease=true
+            fi
+            {
+              printf 'tag_name=%s\n' "$GITHUB_REF_NAME"
+              printf 'name=%s\n' "$GITHUB_REF_NAME"
+              printf 'draft=true\n'
+              printf 'prerelease=%s\n' "$prerelease"
+              printf 'generate_release_notes=true\n'
+              printf 'make_latest=legacy\n'
+              printf 'body<<EOF\nEOF\n'
+            } >> "$GITHUB_OUTPUT"
+          else
+            {
+              printf 'tag_name=cli-dev\n'
+              printf 'name=CLI development build\n'
+              printf 'draft=false\n'
+              printf 'prerelease=true\n'
+              printf 'generate_release_notes=false\n'
+              printf 'make_latest=false\n'
+              printf 'body<<EOF\n'
+              printf 'Latest CLI build from `develop` at commit `%s`.\n' "$GITHUB_SHA"
+              printf '\nArchive names are stable so download links always resolve to the newest dev CLI build.\n'
+              printf 'EOF\n'
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Move development release tag
+        if: ${{ github.ref == 'refs/heads/develop' }}
+        run: |
+          set -euo pipefail
+          git tag --force "${{ steps.release_meta.outputs.tag_name }}" "$GITHUB_SHA"
+          git push --force origin "refs/tags/${{ steps.release_meta.outputs.tag_name }}"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -147,10 +204,14 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
-          generate_release_notes: true
-          name: ${{ github.ref_name }}
-          prerelease: ${{ contains(github.ref_name, '-beta') }}
+          tag_name: ${{ steps.release_meta.outputs.tag_name }}
+          draft: ${{ steps.release_meta.outputs.draft }}
+          generate_release_notes: ${{ steps.release_meta.outputs.generate_release_notes }}
+          name: ${{ steps.release_meta.outputs.name }}
+          body: ${{ steps.release_meta.outputs.body }}
+          prerelease: ${{ steps.release_meta.outputs.prerelease }}
+          make_latest: ${{ steps.release_meta.outputs.make_latest }}
+          overwrite_files: true
           files: |
             dist/arsenale-cli_*
             dist/checksums_sha256.txt

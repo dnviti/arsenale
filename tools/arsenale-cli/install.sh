@@ -46,19 +46,44 @@ latest_version() {
     head -1
 }
 
-resolve_version() {
+is_development_version() {
+  case "$1" in
+    dev | develop | development | cli-dev) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+resolve_release() {
   local requested="$1"
-  if [ "$requested" = "latest" ]; then
+  release_tag=""
+  archive_version=""
+  display_version=""
+
+  if [ -z "$requested" ] || [ "$requested" = "latest" ]; then
     local resolved
     resolved="$(latest_version)"
     if [ -z "$resolved" ]; then
       printf 'error: could not resolve latest Arsenale release\n' >&2
       exit 1
     fi
-    printf '%s' "$resolved"
+    release_tag="v${resolved}"
+    archive_version="$resolved"
+    display_version="$resolved"
     return
   fi
-  printf '%s' "${requested#v}"
+
+  if is_development_version "$requested"; then
+    release_tag="cli-dev"
+    archive_version="develop"
+    display_version="develop"
+    return
+  fi
+
+  local normalized
+  normalized="${requested#v}"
+  release_tag="v${normalized}"
+  archive_version="$normalized"
+  display_version="$normalized"
 }
 
 default_install_dir() {
@@ -195,15 +220,18 @@ require_cmd tar
 
 os="$(normalize_os)"
 arch="$(normalize_arch)"
-version="$(resolve_version "$version")"
-download_base="https://github.com/${repo}/releases/download/v${version}"
-archive_name="arsenale-cli_${version}_${os}_${arch}.tar.gz"
+release_tag=""
+archive_version=""
+display_version=""
+resolve_release "$version"
+download_base="https://github.com/${repo}/releases/download/${release_tag}"
+archive_name="arsenale-cli_${archive_version}_${os}_${arch}.tar.gz"
 
 if [ -z "$install_dir" ]; then
   install_dir="$(default_install_dir)"
 fi
 
-printf 'Installing Arsenale CLI %s for %s/%s...\n' "$version" "$os" "$arch"
+printf 'Installing Arsenale CLI %s for %s/%s...\n' "$display_version" "$os" "$arch"
 curl -fsSLo "$tmp_dir/$archive_name" "${download_base}/${archive_name}"
 curl -fsSLo "$tmp_dir/checksums_sha256.txt" "${download_base}/checksums_sha256.txt"
 verify_checksum "$archive_name" "$tmp_dir/checksums_sha256.txt"
