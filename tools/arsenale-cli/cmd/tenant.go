@@ -211,10 +211,14 @@ func runTenantCreate(cmd *cobra.Command, args []string) {
 		return
 	}
 	if outputFormat == "json" || outputFormat == "yaml" {
-		printer().PrintSingle(body, tenantColumns)
+		if err := printer().PrintSingle(body, tenantColumns); err != nil {
+			fatal("%v", err)
+		}
 		return
 	}
-	printer().PrintSingle(tenantCreateDisplayBody(body), tenantCreateColumns)
+	if err := printer().PrintSingle(tenantCreateDisplayBody(body), tenantCreateColumns); err != nil {
+		fatal("%v", err)
+	}
 }
 
 func runTenantUpdate(cmd *cobra.Command, args []string) {
