@@ -264,13 +264,14 @@ This makes the dev stack suitable for full-stack session, gateway, and DB proxy 
 | `.github/workflows/docker-build.yml` | Backend and client verify, image build, scan, and push |
 | `.github/workflows/gateways-build.yml` | Gateway Go tests, image build, scan, and push |
 | `.github/workflows/cli-build.yml` | CLI tests and cross-platform binary artifacts for PR, branch, and manual builds |
-| `.github/workflows/release.yml` | Cross-platform CLI build, checksums, and GitHub release draft |
+| `.github/workflows/release.yml` | Cross-platform CLI build, checksums, tag release drafts, and the moving `cli-dev` prerelease from `develop` |
 
 Notable facts from the workflow definitions:
 
 - backend verification includes `go vet` and `go test -race`,
 - gateway verification runs `go vet` and `go test -race` for the Go modules under `gateways/`,
 - cli-build runs `go test ./tools/arsenale-cli/...` once, then cross-compiles Linux, macOS, and Windows CLI archives,
+- release publishes draft CLI releases for `v*` tags and refreshes the `cli-dev` prerelease on every `develop` push with stable `arsenale-cli_develop_<os>_<arch>` assets,
 - docker-build publishes `:latest` from `develop`, `:stable` from `main`, and semver tags only for version tags whose commits are on `origin/main` ancestry,
 - gateways-build follows the same channel split for `develop`, `main`, and main-ancestry semver tags,
 - the canonical runtime broker image package is `ghcr.io/dnviti/arsenale/tunnel-broker`; refactor-era broker package names are not used by deployment,

@@ -86,8 +86,28 @@ func (p *Printer) PrintCreated(data []byte, idField string) error {
 
 // PrintDeleted outputs confirmation of a delete operation.
 func (p *Printer) PrintDeleted(resource, id string) {
-	if !p.Quiet {
-		fmt.Fprintf(p.writer(), "%s %q deleted\n", resource, id)
+	switch p.Format {
+	case "json", "yaml":
+		payload, err := json.Marshal(map[string]any{
+			"deleted":  true,
+			"resource": resource,
+			"id":       id,
+		})
+		if err == nil {
+			if p.Format == "yaml" {
+				_ = p.printYAML(payload)
+			} else {
+				_ = p.printJSON(payload)
+			}
+		}
+	case "table":
+		if !p.Quiet {
+			fmt.Fprintf(p.writer(), "%s %q deleted\n", resource, id)
+		}
+	default:
+		if !p.Quiet {
+			fmt.Fprintf(p.writer(), "%s %q deleted\n", resource, id)
+		}
 	}
 }
 

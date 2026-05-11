@@ -157,6 +157,20 @@ irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/in
 
 The installers detect the OS and CPU architecture, download the matching GitHub release archive, verify it against `checksums_sha256.txt`, and install the CLI. Linux and macOS use `/usr/local/bin` when writable, otherwise `$HOME/.local/bin`. Windows installs to `%LOCALAPPDATA%\Programs\Arsenale\bin` and adds that directory to the user `PATH`.
 
+Development CLI builds are attached to the moving `cli-dev` prerelease from the `develop` branch. Use `ARSENALE_VERSION=develop` when you want the latest dev CLI instead of the latest stable release:
+
+```bash
+ARSENALE_VERSION=develop \
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/develop/tools/arsenale-cli/install.sh)"
+```
+
+```powershell
+$env:ARSENALE_VERSION = "develop"
+irm https://raw.githubusercontent.com/dnviti/arsenale/develop/tools/arsenale-cli/install.ps1 | iex
+```
+
+The development release uses stable asset names such as `arsenale-cli_develop_linux_amd64.tar.gz`, while the installed binary reports a commit-specific version like `develop-141ba052c1d7`.
+
 Shell completions are installed automatically. Linux and macOS installs generate Bash, Zsh, and Fish completions and update the matching shell profile when possible. Windows installs generate PowerShell completion and source it from the current-user all-hosts profile. Set `ARSENALE_SKIP_COMPLETIONS=1` to skip completion files, or `ARSENALE_SKIP_SHELL_PROFILE=1` to write completion files without editing shell profile startup files. Linux and macOS completion setup is best-effort after the binary is installed; set `ARSENALE_STRICT_COMPLETIONS=1` when completion setup should fail the installer.
 
 Manual completion generation is also available:

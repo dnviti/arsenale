@@ -26,15 +26,40 @@ function Resolve-Arch {
     }
 }
 
-function Resolve-Version {
+function Resolve-ReleaseInfo {
     param([string]$RequestedVersion, [string]$Repository)
 
     if ([string]::IsNullOrWhiteSpace($RequestedVersion) -or $RequestedVersion -eq "latest") {
         $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ "User-Agent" = "arsenale-cli-installer" }
-        return ($release.tag_name -replace '^v', '')
+        $version = ($release.tag_name -replace '^v', '')
+        return [pscustomobject]@{
+            ReleaseTag = "v$version"
+            ArchiveVersion = $version
+            DisplayVersion = $version
+        }
     }
 
-    return ($RequestedVersion -replace '^v', '')
+    switch ($RequestedVersion.ToLowerInvariant()) {
+        "dev" {
+            return [pscustomobject]@{ ReleaseTag = "cli-dev"; ArchiveVersion = "develop"; DisplayVersion = "develop" }
+        }
+        "develop" {
+            return [pscustomobject]@{ ReleaseTag = "cli-dev"; ArchiveVersion = "develop"; DisplayVersion = "develop" }
+        }
+        "development" {
+            return [pscustomobject]@{ ReleaseTag = "cli-dev"; ArchiveVersion = "develop"; DisplayVersion = "develop" }
+        }
+        "cli-dev" {
+            return [pscustomobject]@{ ReleaseTag = "cli-dev"; ArchiveVersion = "develop"; DisplayVersion = "develop" }
+        }
+    }
+
+    $version = ($RequestedVersion -replace '^v', '')
+    return [pscustomobject]@{
+        ReleaseTag = "v$version"
+        ArchiveVersion = $version
+        DisplayVersion = $version
+    }
 }
 
 function Get-DefaultInstallDir {
@@ -135,21 +160,21 @@ function Install-PowerShellCompletion {
     Write-Host "Installed PowerShell completion: $completionPath"
 }
 
-$resolvedVersion = Resolve-Version -RequestedVersion $Version -Repository $Repo
+$releaseInfo = Resolve-ReleaseInfo -RequestedVersion $Version -Repository $Repo
 $arch = Resolve-Arch
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     $InstallDir = Get-DefaultInstallDir
 }
 
-$archiveName = "arsenale-cli_${resolvedVersion}_windows_${arch}.zip"
-$downloadBase = "https://github.com/$Repo/releases/download/v$resolvedVersion"
+$archiveName = "arsenale-cli_$($releaseInfo.ArchiveVersion)_windows_${arch}.zip"
+$downloadBase = "https://github.com/$Repo/releases/download/$($releaseInfo.ReleaseTag)"
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("arsenale-cli-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempDir | Out-Null
 
 try {
     $archivePath = Join-Path $tempDir $archiveName
     $checksumsPath = Join-Path $tempDir "checksums_sha256.txt"
-    Write-Host "Installing Arsenale CLI $resolvedVersion for windows/$arch..."
+    Write-Host "Installing Arsenale CLI $($releaseInfo.DisplayVersion) for windows/$arch..."
     Invoke-WebRequest -Uri "$downloadBase/$archiveName" -OutFile $archivePath -Headers @{ "User-Agent" = "arsenale-cli-installer" }
     Invoke-WebRequest -Uri "$downloadBase/checksums_sha256.txt" -OutFile $checksumsPath -Headers @{ "User-Agent" = "arsenale-cli-installer" }
 

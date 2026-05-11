@@ -27,6 +27,12 @@ func runGwInstanceRestart(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Instance %q restarted on gateway %q\n", args[1], args[0])
 	}

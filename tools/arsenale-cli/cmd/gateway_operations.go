@@ -16,6 +16,12 @@ func runGwDeploy(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Gateway %q deployed\n", args[0])
 	}
@@ -72,6 +78,12 @@ func runGwUndeploy(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Gateway %q undeployed\n", args[0])
 	}
@@ -89,6 +101,12 @@ func runGwScale(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Gateway %q scaled to %d replicas\n", args[0], gwScaleReplicas)
 	}
@@ -117,6 +135,12 @@ func runGwPushKey(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, body)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("SSH key pushed to gateway %q\n", args[0])
 	}

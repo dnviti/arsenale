@@ -98,6 +98,13 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 		fatal("failed to parse token response: %v", err)
 	}
 
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(respBody, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
+
 	tmpDir, err := os.MkdirTemp("", "arsenale-ssh-*")
 	if err != nil {
 		fatal("%v", err)
