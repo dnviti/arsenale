@@ -163,8 +163,9 @@ func (s Service) handleProxyConnection(parentCtx context.Context, conn net.Conn,
 			wg.Add(1)
 			go func(ch ssh.NewChannel) {
 				defer wg.Done()
-				handleProxyChannel(control.ctx, ch, targetClient.client, control)
-				notifyChannelDone.Do(func() { close(channelDone) })
+				if handleProxyChannel(control.ctx, ch, targetClient.client, control) {
+					notifyChannelDone.Do(func() { close(channelDone) })
+				}
 			}(newChannel)
 		}
 	}()

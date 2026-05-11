@@ -281,8 +281,15 @@ func (s Service) watchProxySessionState(control *proxySessionControl) {
 		case <-control.done():
 			return
 		case <-ticker.C:
-			state, err := s.loadProxySessionState(context.Background(), control.sessionID)
+			queryCtx, cancel := context.WithTimeout(control.ctx, 3*time.Second)
+			state, err := s.loadProxySessionState(queryCtx, control.sessionID)
+			cancel()
 			if err != nil {
+				select {
+				case <-control.done():
+					return
+				default:
+				}
 				slog.Default().Warn("load SSH proxy session state failed", "session_id", control.sessionID, "error", err)
 				continue
 			}

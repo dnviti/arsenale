@@ -15,22 +15,22 @@ const (
 	proxyStreamOutput
 )
 
-func handleProxyChannel(ctx context.Context, newChannel ssh.NewChannel, target *ssh.Client, control *proxySessionControl) {
+func handleProxyChannel(ctx context.Context, newChannel ssh.NewChannel, target *ssh.Client, control *proxySessionControl) bool {
 	if newChannel.ChannelType() != "session" {
 		_ = newChannel.Reject(ssh.UnknownChannelType, "only session channels are supported")
-		return
+		return false
 	}
 
 	channel, requests, err := newChannel.Accept()
 	if err != nil {
-		return
+		return true
 	}
 	defer channel.Close()
 
 	targetSession, err := target.NewSession()
 	if err != nil {
 		_ = channel.Close()
-		return
+		return true
 	}
 	defer targetSession.Close()
 	unregisterActive := control.registerActiveSSH(channel, targetSession)
@@ -38,15 +38,15 @@ func handleProxyChannel(ctx context.Context, newChannel ssh.NewChannel, target *
 
 	stdin, err := targetSession.StdinPipe()
 	if err != nil {
-		return
+		return true
 	}
 	stdout, err := targetSession.StdoutPipe()
 	if err != nil {
-		return
+		return true
 	}
 	stderr, err := targetSession.StderrPipe()
 	if err != nil {
-		return
+		return true
 	}
 
 	go func() {
@@ -90,13 +90,13 @@ func handleProxyChannel(ctx context.Context, newChannel ssh.NewChannel, target *
 				_ = req.Reply(ok, nil)
 			}
 		case "shell":
-			if startedFlag {
+			if proxyStartBlocked(startedFlag, control) {
 				_ = req.Reply(false, nil)
 				continue
 			}
 			startAndWait(targetSession.Shell, req)
 		case "exec":
-			if startedFlag {
+			if proxyStartBlocked(startedFlag, control) {
 				_ = req.Reply(false, nil)
 				continue
 			}
@@ -119,6 +119,11 @@ func handleProxyChannel(ctx context.Context, newChannel ssh.NewChannel, target *
 			}
 		}
 	}
+	return true
+}
+
+func proxyStartBlocked(started bool, control *proxySessionControl) bool {
+	return started || (control != nil && control.isPaused())
 }
 
 func copyProxyStream(ctx context.Context, dst io.Writer, src io.Reader, control *proxySessionControl, kind proxyStreamKind) {
