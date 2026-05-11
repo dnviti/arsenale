@@ -251,6 +251,12 @@ func runTenantSwitch(cmd *cobra.Command, args []string) {
 		fatal("save config: %v", err)
 	}
 
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, tenantColumns); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Switched to tenant %q\n", tenantSwitchID)
 	}
@@ -290,6 +296,12 @@ func runTenantIPAllowlistSet(cmd *cobra.Command, args []string) {
 	}
 	checkAPIError(status, body)
 
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(body, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Println("IP allowlist updated")
 	}

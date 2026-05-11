@@ -165,6 +165,12 @@ func runSSHFileMkdir(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, respBody)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(respBody, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Directory %q created\n", cleanPath)
 	}
@@ -191,6 +197,12 @@ func runSSHFileDelete(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, respBody)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(respBody, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Sandbox path %q deleted\n", cleanPath)
 	}
@@ -222,6 +234,12 @@ func runSSHFileRename(cmd *cobra.Command, args []string) {
 		fatal("%v", err)
 	}
 	checkAPIError(status, respBody)
+	if outputFormat == "json" || outputFormat == "yaml" {
+		if err := printer().PrintSingle(respBody, nil); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 	if !quiet {
 		fmt.Printf("Sandbox path %q renamed to %q\n", cleanOldPath, cleanNewPath)
 	}
