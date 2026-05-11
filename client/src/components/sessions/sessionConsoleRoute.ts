@@ -2,6 +2,14 @@ import type { SessionConsoleStatus, SessionProtocol } from '@/api/sessions.api';
 
 export const DEFAULT_SESSION_STATUS_FILTERS: SessionConsoleStatus[] = ['ACTIVE', 'PAUSED'];
 const ALLOWED_SESSION_STATUS_FILTERS = new Set<SessionConsoleStatus>(['ACTIVE', 'IDLE', 'PAUSED', 'CLOSED']);
+const ALLOWED_SESSION_PROTOCOL_FILTERS = new Set<SessionProtocol>([
+  'SSH',
+  'SSH_PROXY',
+  'RDP',
+  'VNC',
+  'DATABASE',
+  'DB_TUNNEL',
+]);
 
 export interface SessionsRouteState {
   q: string;
@@ -46,8 +54,8 @@ export function readSessionsRouteState(searchParams: URLSearchParams): SessionsR
 
   return {
     q: searchParams.get('q') ?? DEFAULT_SESSIONS_ROUTE_STATE.q,
-    protocol: protocol === 'SSH' || protocol === 'RDP' || protocol === 'VNC'
-      ? protocol
+    protocol: ALLOWED_SESSION_PROTOCOL_FILTERS.has(protocol as SessionProtocol)
+      ? (protocol as SessionProtocol)
       : DEFAULT_SESSIONS_ROUTE_STATE.protocol,
     status: statuses,
     gatewayId: gatewayId?.trim() ? gatewayId : DEFAULT_SESSIONS_ROUTE_STATE.gatewayId,

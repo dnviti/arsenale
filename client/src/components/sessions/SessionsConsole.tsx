@@ -166,7 +166,8 @@ export function ControlledSessionsConsole({
   }, [routeState.status, updateRoute]);
 
   const handleObserve = useCallback((session: SessionConsoleSession) => {
-    const route = `/session-observer/${session.protocol.toLowerCase()}/${session.id}`;
+    const protocol = session.protocol === 'SSH_PROXY' ? 'ssh' : session.protocol.toLowerCase();
+    const route = `/session-observer/${protocol}/${session.id}`;
     window.open(route, '_blank', 'noopener,noreferrer,width=1600,height=960');
   }, []);
 
@@ -325,8 +326,11 @@ export function ControlledSessionsConsole({
               <SelectContent>
                 <SelectItem value="all">All protocols</SelectItem>
                 <SelectItem value="SSH">SSH</SelectItem>
+                <SelectItem value="SSH_PROXY">SSH Proxy</SelectItem>
                 <SelectItem value="RDP">RDP</SelectItem>
                 <SelectItem value="VNC">VNC</SelectItem>
+                <SelectItem value="DATABASE">Database</SelectItem>
+                <SelectItem value="DB_TUNNEL">DB Tunnel</SelectItem>
               </SelectContent>
             </Select>
             <DropdownMenu>

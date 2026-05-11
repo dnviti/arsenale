@@ -118,9 +118,19 @@ func sshClientConfig(endpoint contracts.TerminalEndpoint) (*ssh.ClientConfig, er
 }
 
 func sshHostKeyCallback() (ssh.HostKeyCallback, error) {
-	paths := sshKnownHostsPaths()
+	return sshHostKeyCallbackForPaths(strings.TrimSpace(os.Getenv("SSH_PROXY_KNOWN_HOSTS_FILE")), defaultSSHKnownHostsPaths())
+}
+
+func sshHostKeyCallbackForPaths(configured string, defaultPaths []string) (ssh.HostKeyCallback, error) {
+	paths := compactExistingPaths(defaultPaths)
+	if configured != "" {
+		paths = compactExistingPaths(filepath.SplitList(configured))
+	}
 	if len(paths) == 0 {
-		return nil, errors.New("SSH proxy target host key verification requires a known_hosts file; set SSH_PROXY_KNOWN_HOSTS_FILE")
+		if configured != "" {
+			return nil, errors.New("configured SSH proxy known_hosts file does not exist")
+		}
+		return ssh.InsecureIgnoreHostKey(), nil
 	}
 	callback, err := knownhosts.New(paths...)
 	if err != nil {
@@ -129,16 +139,12 @@ func sshHostKeyCallback() (ssh.HostKeyCallback, error) {
 	return callback, nil
 }
 
-func sshKnownHostsPaths() []string {
-	if configured := strings.TrimSpace(os.Getenv("SSH_PROXY_KNOWN_HOSTS_FILE")); configured != "" {
-		return compactExistingPaths(filepath.SplitList(configured))
-	}
-
+func defaultSSHKnownHostsPaths() []string {
 	candidates := []string{"/etc/ssh/ssh_known_hosts"}
 	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
 		candidates = append(candidates, filepath.Join(home, ".ssh", "known_hosts"))
 	}
-	return compactExistingPaths(candidates)
+	return candidates
 }
 
 func compactExistingPaths(paths []string) []string {

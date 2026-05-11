@@ -2,7 +2,7 @@ import api from './client';
 import type { ResolvedDlpPolicy } from './connections.api';
 import type { SshTerminalConfig } from '../constants/terminalThemes';
 
-export type SessionProtocol = 'SSH' | 'RDP' | 'VNC';
+export type SessionProtocol = 'SSH' | 'SSH_PROXY' | 'RDP' | 'VNC' | 'DATABASE' | 'DB_TUNNEL';
 export type SessionConsoleStatus = 'ACTIVE' | 'IDLE' | 'PAUSED' | 'CLOSED';
 
 export interface GatewaySessionCount {

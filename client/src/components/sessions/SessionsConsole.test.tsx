@@ -187,6 +187,56 @@ describe('SessionsConsole', () => {
     expect(screen.getByRole('button', { name: 'Delete recording', hidden: true })).toBeInTheDocument();
   });
 
+  it('opens native SSH proxy sessions through the SSH observer route', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
+    sessionsApiMocks.getSessionConsole.mockResolvedValue({
+      scope: 'tenant',
+      total: 1,
+      sessions: [
+        {
+          id: 'session-proxy-1',
+          userId: 'user-1',
+          username: 'alice',
+          email: 'alice@example.com',
+          connectionId: 'conn-1',
+          connectionName: 'Native SSH',
+          connectionHost: '10.10.10.20',
+          connectionPort: 22,
+          gatewayId: null,
+          gatewayName: null,
+          instanceId: null,
+          instanceName: null,
+          protocol: 'SSH_PROXY',
+          status: 'ACTIVE',
+          startedAt: '2026-04-17T10:00:00.000Z',
+          lastActivityAt: '2026-04-17T10:05:00.000Z',
+          endedAt: null,
+          durationFormatted: '5m',
+          recording: { exists: false },
+        },
+      ],
+    });
+
+    render(
+      <TooltipProvider>
+        <MemoryRouter initialEntries={['/sessions?status=ACTIVE']}>
+          <Routes>
+            <Route path="/sessions" element={<SessionsConsole />} />
+          </Routes>
+        </MemoryRouter>
+      </TooltipProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('Loading sessions')).not.toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Observe session', hidden: true }));
+
+    expect(openSpy).toHaveBeenCalledWith('/session-observer/ssh/session-proxy-1', '_blank', 'noopener,noreferrer,width=1600,height=960');
+    openSpy.mockRestore();
+  });
+
   it('defaults the status filter to active and paused', async () => {
     render(
       <TooltipProvider>

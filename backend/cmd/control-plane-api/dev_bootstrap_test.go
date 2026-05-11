@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
@@ -67,6 +68,9 @@ func TestBuildDevGatewaySpecsAddsTunnelFixturesWhenEnabled(t *testing.T) {
 	}
 	if !specs[2].TunnelEnabled || specs[2].DeploymentMode != "MANAGED_GROUP" {
 		t.Fatalf("unexpected tunnel managed SSH spec: %+v", specs[2])
+	}
+	if !strings.Contains(specs[2].EgressPolicy, "192.168.0.0/16") {
+		t.Fatalf("expected tunnel managed SSH egress policy to allow development local networks: %s", specs[2].EgressPolicy)
 	}
 	if !specs[4].TunnelEnabled || specs[4].Type != "DB_PROXY" {
 		t.Fatalf("unexpected tunnel DB proxy spec: %+v", specs[4])

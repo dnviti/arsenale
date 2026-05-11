@@ -138,7 +138,7 @@ func (s Service) pushSSHKeyToGateway(ctx context.Context, tenantID, gatewayID st
 		return nil, err
 	}
 
-	targets, err := s.listGatewayKeyTargets(ctx, gateway.ID, gateway.Host, gateway.APIPort)
+	targets, err := s.listGatewayKeyTargets(ctx, gateway)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,22 @@ func (s Service) pushSSHKeyToGateway(ctx context.Context, tenantID, gatewayID st
 	return results, nil
 }
 
-func (s Service) listGatewayKeyTargets(ctx context.Context, gatewayID, directHost string, directPort *int) ([]gatewayKeyTarget, error) {
+func (s Service) listGatewayKeyTargets(ctx context.Context, gateway gatewayRecord) ([]gatewayKeyTarget, error) {
+	if gateway.TunnelEnabled {
+		host := strings.TrimSpace(gateway.Host)
+		if host == "" || gateway.APIPort == nil || *gateway.APIPort <= 0 {
+			return nil, &requestError{status: http.StatusBadRequest, message: "Tunnel-enabled managed SSH gateways require a host and API port for key push"}
+		}
+		return []gatewayKeyTarget{{
+			InstanceID: "tunnel",
+			Host:       host,
+			Port:       *gateway.APIPort,
+		}}, nil
+	}
+	return s.listManagedGatewayKeyTargets(ctx, gateway.ID, gateway.Host, gateway.APIPort)
+}
+
+func (s Service) listManagedGatewayKeyTargets(ctx context.Context, gatewayID, directHost string, directPort *int) ([]gatewayKeyTarget, error) {
 	rows, err := s.DB.Query(ctx, `
 SELECT id, COALESCE(NULLIF("containerName", ''), host) AS host
 FROM "ManagedGatewayInstance"

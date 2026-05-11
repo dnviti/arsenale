@@ -40,6 +40,12 @@ var connectVNCCmd = &cobra.Command{
 
 var connectNoOpen bool
 
+type openSSHConfigOptions struct {
+	ProxyHost string
+	ProxyPort int
+	Token     string
+}
+
 var connectDesktopLaunchColumns = []Column{
 	{Header: "PROTOCOL", Field: "protocol"},
 	{Header: "CONNECTION_ID", Field: "connectionId"},
@@ -115,21 +121,11 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 	proxyHost := tokenResp.ConnectionInstructions.Host
 	proxyPort := tokenResp.ConnectionInstructions.Port
 
-	sshConfig := fmt.Sprintf(`Host arsenale-target
-    HostName %s
-    Port %d
-    User %s
-    PreferredAuthentications none
-    PubkeyAuthentication no
-    PasswordAuthentication no
-    KbdInteractiveAuthentication no
-    ProxyCommand nc %s %d
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-    LogLevel ERROR
-`,
-		conn.Host, conn.Port, tokenResp.Token, proxyHost, proxyPort,
-	)
+	sshConfig := buildOpenSSHConfig(openSSHConfigOptions{
+		ProxyHost: proxyHost,
+		ProxyPort: proxyPort,
+		Token:     tokenResp.Token,
+	})
 
 	if err := os.WriteFile(sshConfigPath, []byte(sshConfig), 0600); err != nil {
 		fatal("failed to write SSH config: %v", err)
@@ -164,6 +160,21 @@ func runConnectSSH(cmd *cobra.Command, args []string) {
 func buildOpenSSHArgs(sshConfigPath string, remoteArgs []string) []string {
 	sshArgs := []string{"-F", sshConfigPath, "arsenale-target"}
 	return append(sshArgs, remoteArgs...)
+}
+
+func buildOpenSSHConfig(opts openSSHConfigOptions) string {
+	return fmt.Sprintf(`Host arsenale-target
+    HostName %s
+    Port %d
+    User %s
+    PreferredAuthentications none
+    PubkeyAuthentication no
+    PasswordAuthentication no
+    KbdInteractiveAuthentication no
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+`, opts.ProxyHost, opts.ProxyPort, opts.Token)
 }
 
 func runConnectRDP(cmd *cobra.Command, args []string) {
