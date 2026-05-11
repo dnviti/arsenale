@@ -126,7 +126,7 @@ func (s Service) HandleStatus(w http.ResponseWriter, r *http.Request, _ authn.Cl
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	enabled := getenv("SSH_PROXY_ENABLED", "false") == "true"
+	enabled := boolEnv("SSH_PROXY_ENABLED", false)
 	port := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
 	allowedAuthMethods := parseAllowedAuthMethods(getenv("SSH_PROXY_AUTH_METHODS", "token-username"))
 	app.WriteJSON(w, http.StatusOK, map[string]any{
@@ -290,6 +290,34 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	normalized := normalizeEnvDefaultExpression(strings.TrimSpace(value))
+	if normalized == "" {
+		return fallback
+	}
+	switch strings.ToLower(normalized) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func normalizeEnvDefaultExpression(value string) string {
+	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
+		if defaultStart := strings.LastIndex(value, ":-"); defaultStart >= 0 {
+			return strings.TrimSpace(value[defaultStart+2 : len(value)-1])
+		}
+	}
+	return value
 }
 
 func parsePositiveInt(raw string, fallback int) int {

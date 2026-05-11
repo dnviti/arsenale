@@ -377,6 +377,8 @@ func newAPIRuntime(ctx context.Context) (*apiRuntime, error) {
 	}
 	deps.tabsService.Connections = deps.connectionService
 	deps.sshProxyService.Connections = deps.connectionService
+	deps.sessionAdminService.SSHProxyObserverGrants = deps.sshProxyService
+	deps.sessionAdminService.LiveSessionController = deps.sshProxyService
 
 	stopSSHProxy, err := deps.sshProxyService.Start(ctx)
 	if err != nil {

@@ -66,6 +66,18 @@ func TestSSHProxyInstructionEndpointHonorsPublicPort(t *testing.T) {
 	}
 }
 
+func TestBoolEnvParsesComposeDefaultExpressions(t *testing.T) {
+	t.Setenv("SSH_PROXY_ENABLED", "${SSH_PROXY_ENABLED:-true}")
+	if !boolEnv("SSH_PROXY_ENABLED", false) {
+		t.Fatal("expected compose default expression with true default to enable SSH proxy")
+	}
+
+	t.Setenv("SSH_PROXY_ENABLED", "${SSH_PROXY_ENABLED:-false}")
+	if boolEnv("SSH_PROXY_ENABLED", true) {
+		t.Fatal("expected compose default expression with false default to disable SSH proxy")
+	}
+}
+
 func TestPreflightProxyTargetSurfacesResolveError(t *testing.T) {
 	resolveErr := &connectionaccess.ResolveError{
 		Status:  http.StatusForbidden,

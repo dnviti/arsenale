@@ -22,6 +22,7 @@ func TestRegisterSessionRoutesIncludesPauseAndResume(t *testing.T) {
 	expectRoutePattern(t, mux, http.MethodPost, "/api/sessions/sess-1/pause", "POST /api/sessions/{sessionId}/pause")
 	expectRoutePattern(t, mux, http.MethodPost, "/api/sessions/sess-1/resume", "POST /api/sessions/{sessionId}/resume")
 	expectRoutePattern(t, mux, http.MethodPost, "/api/sessions/sess-1/terminate", "POST /api/sessions/{sessionId}/terminate")
+	expectRoutePattern(t, mux, http.MethodGet, "/api/sessions/ssh-proxy/observe/ws", "GET /api/sessions/ssh-proxy/observe/ws")
 }
 
 func TestRegisterSessionRoutesIncludesCLIDesktopLaunchWhenCLIEnabled(t *testing.T) {

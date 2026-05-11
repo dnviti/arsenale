@@ -1,13 +1,21 @@
 package sshproxyapi
 
 import (
+	"context"
 	"io"
 	"sync"
 
 	"golang.org/x/crypto/ssh"
 )
 
-func handleProxyChannel(newChannel ssh.NewChannel, target *ssh.Client) {
+type proxyStreamKind int
+
+const (
+	proxyStreamInput proxyStreamKind = iota
+	proxyStreamOutput
+)
+
+func handleProxyChannel(ctx context.Context, newChannel ssh.NewChannel, target *ssh.Client, control *proxySessionControl) {
 	if newChannel.ChannelType() != "session" {
 		_ = newChannel.Reject(ssh.UnknownChannelType, "only session channels are supported")
 		return
@@ -25,6 +33,8 @@ func handleProxyChannel(newChannel ssh.NewChannel, target *ssh.Client) {
 		return
 	}
 	defer targetSession.Close()
+	unregisterActive := control.registerActiveSSH(channel, targetSession)
+	defer unregisterActive()
 
 	stdin, err := targetSession.StdinPipe()
 	if err != nil {
@@ -40,11 +50,11 @@ func handleProxyChannel(newChannel ssh.NewChannel, target *ssh.Client) {
 	}
 
 	go func() {
-		_, _ = io.Copy(stdin, channel)
+		copyProxyStream(ctx, stdin, channel, control, proxyStreamInput)
 		_ = stdin.Close()
 	}()
-	go func() { _, _ = io.Copy(channel, stdout) }()
-	go func() { _, _ = io.Copy(channel.Stderr(), stderr) }()
+	go func() { copyProxyStream(ctx, channel, stdout, control, proxyStreamOutput) }()
+	go func() { copyProxyStream(ctx, channel.Stderr(), stderr, control, proxyStreamOutput) }()
 
 	var started sync.Once
 	startedFlag := false
@@ -69,6 +79,12 @@ func handleProxyChannel(newChannel ssh.NewChannel, target *ssh.Client) {
 			ok := handlePTYRequest(targetSession, req.Payload)
 			_ = req.Reply(ok, nil)
 		case "window-change":
+			if control != nil && control.isPaused() {
+				if req.WantReply {
+					_ = req.Reply(false, nil)
+				}
+				continue
+			}
 			ok := handleWindowChange(targetSession, req.Payload)
 			if req.WantReply {
 				_ = req.Reply(ok, nil)
@@ -87,6 +103,12 @@ func handleProxyChannel(newChannel ssh.NewChannel, target *ssh.Client) {
 			command := parseExecCommand(req.Payload)
 			startAndWait(func() error { return targetSession.Start(command) }, req)
 		case "signal":
+			if control != nil && control.isPaused() {
+				if req.WantReply {
+					_ = req.Reply(false, nil)
+				}
+				continue
+			}
 			ok := handleSignalRequest(targetSession, req.Payload)
 			if req.WantReply {
 				_ = req.Reply(ok, nil)
@@ -95,6 +117,40 @@ func handleProxyChannel(newChannel ssh.NewChannel, target *ssh.Client) {
 			if req.WantReply {
 				_ = req.Reply(false, nil)
 			}
+		}
+	}
+}
+
+func copyProxyStream(ctx context.Context, dst io.Writer, src io.Reader, control *proxySessionControl, kind proxyStreamKind) {
+	buffer := make([]byte, 32*1024)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		n, err := src.Read(buffer)
+		if n > 0 {
+			chunk := buffer[:n]
+			if kind == proxyStreamInput && control != nil && control.isPaused() {
+				if err != nil {
+					return
+				}
+				continue
+			}
+			if kind == proxyStreamOutput && control != nil && !control.waitUntilResumed() {
+				return
+			}
+			if _, writeErr := dst.Write(chunk); writeErr != nil {
+				return
+			}
+			if kind == proxyStreamOutput && control != nil {
+				control.observeOutput(chunk)
+			}
+		}
+		if err != nil {
+			return
 		}
 	}
 }

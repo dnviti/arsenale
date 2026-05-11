@@ -292,6 +292,7 @@ PostgreSQL 16 with versioned SQL migrations in `backend/migrations/`. Key entity
 ## 🌐 WebSocket Protocols
 
 - SSH terminal: `/ws/terminal` (port 8090) — JSON text frames for `ready`/`data`/`error`/`closed`; one controlling SSH client can fan out live read-only output to observer sockets on the same runtime
+- Native SSH proxy observer: `/api/sessions/ssh-proxy/observe/ws` — same observer envelope for external OpenSSH proxy sessions; pause/terminate state is enforced by the proxy transport
 - Desktop (RDP/VNC): `/guacamole` (port 8091) — Guacamole wire protocol
 - SSE streams: gateway status, notifications, vault status, active sessions, audit, DB audit
 

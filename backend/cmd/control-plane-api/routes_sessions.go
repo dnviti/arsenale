@@ -133,6 +133,7 @@ func (d *apiDependencies) registerSessionRoutes(mux *http.ServeMux) {
 	if connectionsEnabled {
 		mux.HandleFunc("POST /api/sessions/ssh-proxy/token", d.authenticator.Middleware(d.sshProxyService.HandleCreateToken))
 		mux.HandleFunc("GET /api/sessions/ssh-proxy/status", d.authenticator.Middleware(d.sshProxyService.HandleStatus))
+		mux.HandleFunc("GET /api/sessions/ssh-proxy/observe/ws", d.sshProxyService.HandleObserveWebSocket)
 	}
 	if databasesEnabled {
 		mux.HandleFunc("GET /api/sessions/database/{sessionId}/history", d.authenticatedUserID(d.databaseSessionService.HandleHistory))

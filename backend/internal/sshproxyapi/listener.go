@@ -18,7 +18,7 @@ import (
 )
 
 func (s Service) Start(ctx context.Context) (func(), error) {
-	if !strings.EqualFold(getenv("SSH_PROXY_ENABLED", "false"), "true") {
+	if !boolEnv("SSH_PROXY_ENABLED", false) {
 		return nil, nil
 	}
 	if s.DB == nil || s.ConnectionResolver == nil || s.SessionStore == nil {
@@ -129,20 +129,53 @@ func (s Service) handleProxyConnection(parentCtx context.Context, conn net.Conn,
 		return
 	}
 	_ = s.attachProxyGrantSession(ctx, grant.ID, sessionID)
+	observedSession := defaultProxyObserverHub.register(sessionID)
+	control := newProxySessionControl(ctx, sessionID, observedSession, func() {
+		_ = serverConn.Close()
+		_ = conn.Close()
+		targetClient.Close()
+	})
+	defaultProxyRuntimeRegistry.register(sessionID, control)
 	defer func() {
+		control.finish()
+		defaultProxyRuntimeRegistry.unregister(sessionID, control)
+		defaultProxyObserverHub.unregister(sessionID, observedSession)
 		_ = s.SessionStore.EndOwnedSession(context.Background(), sessionID, grant.UserID, "ssh_proxy_disconnect")
 	}()
 
 	go ssh.DiscardRequests(requests)
+	go s.watchProxySessionState(control)
+	go s.runProxySessionHeartbeat(control)
 
 	var wg sync.WaitGroup
-	for newChannel := range channels {
-		wg.Add(1)
-		go func(ch ssh.NewChannel) {
-			defer wg.Done()
-			handleProxyChannel(ch, targetClient.client)
-		}(newChannel)
+	channelDone := make(chan struct{})
+	channelsClosed := make(chan struct{})
+	var notifyChannelDone sync.Once
+	go func() {
+		defer close(channelsClosed)
+		for newChannel := range channels {
+			select {
+			case <-control.done():
+				_ = newChannel.Reject(ssh.ConnectionFailed, "SSH proxy session closed")
+				continue
+			default:
+			}
+			wg.Add(1)
+			go func(ch ssh.NewChannel) {
+				defer wg.Done()
+				handleProxyChannel(control.ctx, ch, targetClient.client, control)
+				notifyChannelDone.Do(func() { close(channelDone) })
+			}(newChannel)
+		}
+	}()
+
+	select {
+	case <-control.done():
+	case <-channelDone:
+	case <-channelsClosed:
+	case <-parentCtx.Done():
 	}
+	control.stopTransport()
 	wg.Wait()
 }
 

@@ -182,6 +182,7 @@ export default defineConfig({
       '/api': {
         target: apiTarget,
         changeOrigin: true,
+        ws: true,
         secure: false, // accept self-signed certs from backend
       },
       '/guacamole': {
