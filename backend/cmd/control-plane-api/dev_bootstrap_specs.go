@@ -89,7 +89,7 @@ func buildDevGatewaySpecs(certDir string, runtime devBootstrapRuntime) []devGate
 }
 
 func devTunnelManagedSSHEgressPolicy() string {
-	return `{"rules":[{"description":"Development SSH fixtures","protocols":["SSH"],"hosts":["terminal-target","dev-debian-target","dev-debian-ssh-target"],"ports":[22,2224]}]}`
+	return `{"rules":[{"description":"Development SSH fixtures","protocols":["SSH"],"hosts":["terminal-target","dev-debian-target","dev-debian-ssh-target"],"ports":[22,2224]},{"description":"Development local SSH networks","protocols":["SSH"],"cidrs":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"],"ports":[22]}]}`
 }
 
 func devTunnelGuacdEgressPolicy() string {

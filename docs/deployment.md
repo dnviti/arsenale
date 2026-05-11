@@ -251,6 +251,10 @@ Tunneled gateway fixtures:
 | `arsenale-dev-tunnel-guacd` | Desktop proxy via tunnel broker |
 | `arsenale-dev-tunnel-db-proxy` | Database proxy via tunnel broker |
 
+The development managed SSH tunnel policy allows the seeded SSH fixture hosts
+and RFC1918 local-network SSH targets on port `22`, so local lab devices can be
+used for native SSH proxy smoke tests without changing production defaults.
+
 Each demo database now exposes the same richer baseline shape with `demo_customers`, `demo_products`, `demo_orders`, `demo_order_items`, `demo_purchase_orders`, `demo_invoices`, and related supporting tables/collections. The seeded counts are intentionally substantial enough for join-heavy SQL, AI query generation, and execution-plan testing.
 
 This makes the dev stack suitable for full-stack session, gateway, and DB proxy testing without touching the application's own PostgreSQL data.
