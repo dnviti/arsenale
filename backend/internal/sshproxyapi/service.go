@@ -68,6 +68,13 @@ func (s Service) HandleCreateToken(w http.ResponseWriter, r *http.Request, claim
 			return
 		}
 	}
+	if err := s.preflightProxyTarget(r.Context(), claims.UserID, claims.TenantID, body.ConnectionID); err != nil {
+		_ = s.insertAuditLog(r.Context(), claims.UserID, "SSH_PROXY_AUTH_FAILURE", body.ConnectionID, map[string]any{
+			"reason": err.Error(),
+		}, requestIP(r))
+		app.ErrorJSON(w, proxyResolveHTTPStatus(err), err.Error())
+		return
+	}
 
 	expiresIn := parsePositiveInt(getenv("SSH_PROXY_TOKEN_TTL_SECONDS", "300"), 300)
 	expiresAt := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
@@ -99,14 +106,13 @@ INSERT INTO "SSHProxyGrant" (
 		"expiresIn": expiresIn,
 	}, requestIP(r))
 
-	serverHost := sanitizeHost(r.Host)
-	proxyPort := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
+	serverHost, proxyPort := sshProxyInstructionEndpoint(r.Host)
 
 	app.WriteJSON(w, http.StatusOK, map[string]any{
 		"token":     grantValue,
 		"expiresIn": expiresIn,
 		"connectionInstructions": map[string]any{
-			"command": fmt.Sprintf(`ssh -o ProxyCommand='nc %s %d' -o PreferredAuthentications=none '<token>@arsenale-target'`, serverHost, proxyPort),
+			"command": buildSSHProxyCommand(serverHost, proxyPort),
 			"port":    proxyPort,
 			"host":    serverHost,
 			"note":    fmt.Sprintf("Use this token as the SSH username when connecting through the Arsenale SSH proxy. The token expires in %d seconds.", expiresIn),
@@ -120,7 +126,7 @@ func (s Service) HandleStatus(w http.ResponseWriter, r *http.Request, _ authn.Cl
 		app.ErrorJSON(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	enabled := getenv("SSH_PROXY_ENABLED", "false") == "true"
+	enabled := boolEnv("SSH_PROXY_ENABLED", false)
 	port := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
 	allowedAuthMethods := parseAllowedAuthMethods(getenv("SSH_PROXY_AUTH_METHODS", "token-username"))
 	app.WriteJSON(w, http.StatusOK, map[string]any{
@@ -183,6 +189,48 @@ func parseAllowedAuthMethods(raw string) []string {
 	return result
 }
 
+func buildSSHProxyCommand(host string, port int) string {
+	return fmt.Sprintf(`ssh -p %d -o PreferredAuthentications=none '<token>@%s'`, port, host)
+}
+
+func sshProxyInstructionEndpoint(requestHost string) (string, int) {
+	proxyPort := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
+	publicPort := parsePositiveInt(getenv("SSH_PROXY_PUBLIC_PORT", ""), proxyPort)
+	publicHost := strings.TrimSpace(os.Getenv("SSH_PROXY_PUBLIC_HOST"))
+	if publicHost == "" {
+		publicHost = requestHost
+	}
+	return sanitizeHost(publicHost), publicPort
+}
+
+func (s Service) preflightProxyTarget(ctx context.Context, userID, tenantID, connectionID string) error {
+	if s.ConnectionResolver == nil {
+		return errors.New("connection resolver is unavailable")
+	}
+	target, err := s.ConnectionResolver.ResolveFileTransferTarget(ctx, userID, tenantID, connectionID, connectionaccess.ResolveConnectionOptions{
+		ExpectedType: "SSH",
+	})
+	if err != nil {
+		return err
+	}
+	return validateResolvedProxyTarget(target)
+}
+
+func validateResolvedProxyTarget(target connectionaccess.ResolvedFileTransferTarget) error {
+	if strings.TrimSpace(target.Target.Host) == "" || target.Target.Port <= 0 || strings.TrimSpace(target.Target.Username) == "" {
+		return errors.New("SSH target is incomplete")
+	}
+	return nil
+}
+
+func proxyResolveHTTPStatus(err error) int {
+	var resolveErr *connectionaccess.ResolveError
+	if errors.As(err, &resolveErr) && resolveErr.Status > 0 {
+		return resolveErr.Status
+	}
+	return http.StatusBadRequest
+}
+
 func sanitizeHost(hostport string) string {
 	host := strings.TrimSpace(hostport)
 	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
@@ -242,6 +290,34 @@ func getenv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func boolEnv(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	normalized := normalizeEnvDefaultExpression(strings.TrimSpace(value))
+	if normalized == "" {
+		return fallback
+	}
+	switch strings.ToLower(normalized) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	case "0", "false", "f", "no", "n", "off":
+		return false
+	default:
+		return fallback
+	}
+}
+
+func normalizeEnvDefaultExpression(value string) string {
+	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
+		if defaultStart := strings.LastIndex(value, ":-"); defaultStart >= 0 {
+			return strings.TrimSpace(value[defaultStart+2 : len(value)-1])
+		}
+	}
+	return value
 }
 
 func parsePositiveInt(raw string, fallback int) int {

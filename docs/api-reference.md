@@ -283,16 +283,17 @@ Operational session endpoints:
 | `POST` | `/api/sessions/{sessionId}/pause` | Persist `PAUSED` session state and freeze SSH or desktop transport until resumed |
 | `POST` | `/api/sessions/{sessionId}/resume` | Clear `PAUSED` state and resume SSH or desktop transport |
 | `POST` | `/api/sessions/{sessionId}/terminate` | Terminate a session centrally |
-| `POST` | `/api/sessions/ssh/{sessionId}/observe` | Issue a read-only observer terminal token for an active tenant-scoped SSH session when the caller has `canObserveSessions` |
+| `POST` | `/api/sessions/ssh/{sessionId}/observe` | Issue a read-only observer terminal token for an active tenant-scoped SSH or native SSH proxy session when the caller has `canObserveSessions` |
 | `POST` | `/api/sessions/rdp/{sessionId}/observe` | Issue a read-only desktop observer token that joins an active tenant-scoped RDP session when the caller has `canObserveSessions` |
 | `POST` | `/api/sessions/vnc/{sessionId}/observe` | Issue a read-only desktop observer token that joins an active tenant-scoped VNC session when the caller has `canObserveSessions` |
 | `POST` | `/api/sessions/ssh-proxy/token` | Mint SSH proxy token |
 | `GET` | `/api/sessions/ssh-proxy/status` | SSH proxy health and status |
+| `GET` | `/api/sessions/ssh-proxy/observe/ws` | WebSocket endpoint for read-only observation of live native SSH proxy sessions |
 | `GET` | `/api/sessions/db-tunnel` | List active DB tunnels |
 | `POST` | `/api/sessions/db-tunnel/{tunnelId}/heartbeat` | Keep DB tunnel alive |
 | `DELETE` | `/api/sessions/db-tunnel/{tunnelId}` | Close a DB tunnel |
 
-Active-session list, count, and stream payloads surface the persisted `status` field directly. Session states now include `PAUSED` alongside `ACTIVE`, `IDLE`, and `CLOSED`. Tenant members with `canViewSessions` still see tenant-wide activity. Tenant members without `canViewSessions` now fall back to their own active sessions for `GET /api/sessions/active`, `GET /api/sessions/count`, and `GET /api/sessions/active/stream` instead of being hard-blocked. `GET /api/sessions/console` is the broader unified console feed: tenant-wide viewers get tenant-scoped rows, own-scope members are limited to their own active rows, and every row includes recording summary metadata (`exists`, `id`, `status`, `format`, `completedAt`, `fileSize`, `duration`) keyed by session id. `POST /api/sessions/ssh/{sessionId}/observe` returns a short-lived read-only observer grant for the existing `/ws/terminal` runtime instead of starting a second SSH connection. `POST /api/sessions/{rdp|vnc}/{sessionId}/observe` returns short-lived read-only desktop observer grants that join the existing Guacamole connection instead of opening a second remote desktop session. The stable client contract is the relative `webSocketPath`; browsers compose same-origin WebSocket URLs locally.
+Active-session list, count, and stream payloads surface the persisted `status` field directly. Session states now include `PAUSED` alongside `ACTIVE`, `IDLE`, and `CLOSED`. Tenant members with `canViewSessions` still see tenant-wide activity. Tenant members without `canViewSessions` now fall back to their own active sessions for `GET /api/sessions/active`, `GET /api/sessions/count`, and `GET /api/sessions/active/stream` instead of being hard-blocked. `GET /api/sessions/console` is the broader unified console feed: tenant-wide viewers get tenant-scoped rows, own-scope members are limited to their own active rows, and every row includes recording summary metadata (`exists`, `id`, `status`, `format`, `completedAt`, `fileSize`, `duration`) keyed by session id. `POST /api/sessions/ssh/{sessionId}/observe` returns a short-lived read-only observer grant for either the existing `/ws/terminal` runtime or the native SSH proxy observer socket at `/api/sessions/ssh-proxy/observe/ws`. `POST /api/sessions/{rdp|vnc}/{sessionId}/observe` returns short-lived read-only desktop observer grants that join the existing Guacamole connection instead of opening a second remote desktop session. The stable client contract is the relative `webSocketPath`; browsers compose same-origin WebSocket URLs locally.
 
 CLI launch endpoints:
 
@@ -476,6 +477,8 @@ The terminal broker exposes a WebSocket endpoint at `/ws/terminal` (port 8090 in
 | `close` | Client → Server | Close the controlling terminal session, or disconnect one observer socket without ending the shared SSH runtime |
 
 Observer-mode grants receive the same `ready`, `data`, `error`, and `closed` events as the controlling client, but `input` and `resize` messages are rejected with `READ_ONLY` and do not touch SSH stdin or the PTY. SSH file browsing is no longer multiplexed over `/ws/terminal`. The browser uses authenticated REST endpoints under `/api/files/ssh/*` for remote listing and staged upload/download, while `/ws/terminal` carries terminal I/O only.
+
+Native SSH proxy sessions use the same observer message shapes on `/api/sessions/ssh-proxy/observe/ws?token=...`. The proxy fan-out sends recent buffered output after `ready`, streams live target stdout/stderr to read-only observers, rejects observer `input` and `resize` messages with `READ_ONLY`, and closes the underlying OpenSSH proxy transport when the persisted session state changes to `CLOSED`. When the state changes to `PAUSED`, target output is held and user input received during the pause is dropped.
 
 ### Desktop WebSocket (Guacamole)
 

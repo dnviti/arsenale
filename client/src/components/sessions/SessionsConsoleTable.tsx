@@ -87,6 +87,10 @@ function ActionIconButton({
   );
 }
 
+function canObserveProtocol(protocol: SessionConsoleSession['protocol']) {
+  return protocol === 'SSH' || protocol === 'SSH_PROXY' || protocol === 'RDP' || protocol === 'VNC';
+}
+
 export default function SessionsConsoleTable({
   sessions,
   loading,
@@ -144,6 +148,7 @@ export default function SessionsConsoleTable({
               const liveAction = busySessionIds[session.id];
               const isLive = session.status !== 'CLOSED';
               const canPlayRecording = session.status === 'CLOSED' && session.recording.exists && recordingId;
+              const canObserveLive = isLive && canObserveSessions && canObserveProtocol(session.protocol);
 
               return (
                 <TableRow key={session.id}>
@@ -207,7 +212,7 @@ export default function SessionsConsoleTable({
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-wrap items-center justify-end gap-1">
-                      {isLive && canObserveSessions ? (
+                      {canObserveLive ? (
                         <ActionIconButton label="Observe session" onClick={() => onObserve(session)}>
                           <Eye className="size-3.5" />
                         </ActionIconButton>

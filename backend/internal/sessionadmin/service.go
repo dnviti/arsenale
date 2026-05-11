@@ -29,11 +29,19 @@ type membershipResolver interface {
 	ResolveSessionVisibility(ctx context.Context, userID, tenantID string) (*tenantauth.SessionVisibility, error)
 }
 
+type liveSessionController interface {
+	TerminateLiveSession(sessionID string) bool
+	PauseLiveSession(sessionID string) bool
+	ResumeLiveSession(sessionID string) bool
+}
+
 type Service struct {
-	Store                 sessionStore
-	TenantAuth            membershipResolver
-	SSHObserverGrants     sshObserverGrantIssuer
-	DesktopObserverGrants desktopObserverGrantIssuer
+	Store                  sessionStore
+	TenantAuth             membershipResolver
+	SSHObserverGrants      sshObserverGrantIssuer
+	SSHProxyObserverGrants sshProxyObserverGrantIssuer
+	DesktopObserverGrants  desktopObserverGrantIssuer
+	LiveSessionController  liveSessionController
 }
 
 func (s Service) HandleList(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
@@ -108,6 +116,7 @@ func (s Service) HandleTerminate(w http.ResponseWriter, r *http.Request, claims 
 		"protocol":   result.Protocol,
 		"terminated": true,
 	})
+	s.notifyLiveSessionTerminated(result)
 	return nil
 }
 
@@ -127,6 +136,7 @@ func (s Service) HandlePause(w http.ResponseWriter, r *http.Request, claims auth
 		"status":    result.Status,
 		"paused":    result.Status == sessions.SessionStatusPaused,
 	})
+	s.notifyLiveSessionPaused(result)
 	return nil
 }
 
@@ -146,7 +156,29 @@ func (s Service) HandleResume(w http.ResponseWriter, r *http.Request, claims aut
 		"status":    result.Status,
 		"paused":    result.Status == sessions.SessionStatusPaused,
 	})
+	s.notifyLiveSessionResumed(result)
 	return nil
+}
+
+func (s Service) notifyLiveSessionTerminated(result *sessions.TerminatedSession) {
+	if result == nil || result.Protocol != "SSH_PROXY" || s.LiveSessionController == nil {
+		return
+	}
+	s.LiveSessionController.TerminateLiveSession(result.ID)
+}
+
+func (s Service) notifyLiveSessionPaused(result *sessions.SessionControlResult) {
+	if result == nil || result.Protocol != "SSH_PROXY" || s.LiveSessionController == nil {
+		return
+	}
+	s.LiveSessionController.PauseLiveSession(result.ID)
+}
+
+func (s Service) notifyLiveSessionResumed(result *sessions.SessionControlResult) {
+	if result == nil || result.Protocol != "SSH_PROXY" || s.LiveSessionController == nil {
+		return
+	}
+	s.LiveSessionController.ResumeLiveSession(result.ID)
 }
 
 func (s Service) writeLifecycleError(w http.ResponseWriter, err error) {

@@ -28,6 +28,16 @@ Connected via a plain WebSocket at `/ws/terminal`. Authentication is handled wit
 
 Observer clients receive the same `ready`, `data`, `error`, and `closed` events as the controlling client, but `input` and `resize` messages return a `READ_ONLY` error and do not reach SSH stdin or PTY resize handling. SSH file browsing is not part of the terminal WebSocket protocol anymore. The SPA calls `/api/files/ssh/list`, `/api/files/ssh/mkdir`, `/api/files/ssh/delete`, `/api/files/ssh/rename`, `/api/files/ssh/upload`, and `/api/files/ssh/download` over REST, and those payload transfers are staged through shared object storage.
 
+## Native SSH Proxy Observer WebSocket (`/api/sessions/ssh-proxy/observe/ws`)
+
+Native OpenSSH proxy sessions are observed through the control-plane API with the same JSON message envelope as `/ws/terminal`. Authentication is handled with a short-lived observer token in the query string. The controlling client is the external `ssh` process, so this endpoint is always read-only.
+
+**Client -> Server Events:** `ping`, `close`; `input` and `resize` are rejected with `READ_ONLY`.
+
+**Server -> Client Events:** `ready`, `data`, `pong`, `closed`, `error`.
+
+The proxy sends recent buffered output after `ready`, fans out live target stdout/stderr, holds target output while the persisted session status is `PAUSED`, and closes the OpenSSH transport when the status becomes `CLOSED`.
+
 ## Socket.IO — Notifications (`/notifications`)
 
 Real-time notification delivery. Authentication via `auth.token` in handshake.

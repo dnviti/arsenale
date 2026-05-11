@@ -27,6 +27,7 @@ type stubSessionStore struct {
 	observeErr        error
 	pauseResult       *sessions.SessionControlResult
 	pauseErr          error
+	resumeResult      *sessions.SessionControlResult
 	resumeErr         error
 	termResult        *sessions.TerminatedSession
 	termErr           error
@@ -77,6 +78,9 @@ func (s *stubSessionStore) ResumeTenantSession(_ context.Context, _, _, _ string
 	if s.resumeErr != nil {
 		return nil, s.resumeErr
 	}
+	if s.resumeResult != nil {
+		return s.resumeResult, nil
+	}
 	return &sessions.SessionControlResult{ID: "sess-1", Protocol: "SSH", Status: sessions.SessionStatusActive}, nil
 }
 
@@ -108,6 +112,7 @@ type stubObserverGrantIssuer struct {
 	response       SSHObserveGrantResponse
 	err            error
 	called         bool
+	proxyCalled    bool
 	lastSessionID  string
 	lastObserverID string
 }
@@ -117,6 +122,34 @@ func (s *stubObserverGrantIssuer) IssueSSHObserverGrant(_ context.Context, sessi
 	s.lastSessionID = sessionID
 	s.lastObserverID = observerUserID
 	return s.response, s.err
+}
+
+func (s *stubObserverGrantIssuer) IssueSSHProxyObserverGrant(_ context.Context, sessionID, observerUserID string, _ *http.Request) (SSHObserveGrantResponse, error) {
+	s.proxyCalled = true
+	s.lastSessionID = sessionID
+	s.lastObserverID = observerUserID
+	return s.response, s.err
+}
+
+type stubLiveSessionController struct {
+	terminated string
+	paused     string
+	resumed    string
+}
+
+func (s *stubLiveSessionController) TerminateLiveSession(sessionID string) bool {
+	s.terminated = sessionID
+	return true
+}
+
+func (s *stubLiveSessionController) PauseLiveSession(sessionID string) bool {
+	s.paused = sessionID
+	return true
+}
+
+func (s *stubLiveSessionController) ResumeLiveSession(sessionID string) bool {
+	s.resumed = sessionID
+	return true
 }
 
 func TestHandlePauseWritesPausedResponse(t *testing.T) {
@@ -148,6 +181,66 @@ func TestHandlePauseWritesPausedResponse(t *testing.T) {
 	}
 	if store.lastIP == nil || *store.lastIP != "198.51.100.10:1234" {
 		t.Fatalf("HandlePause() IP = %#v", store.lastIP)
+	}
+}
+
+func TestHandleTerminateNotifiesSSHProxyLiveController(t *testing.T) {
+	t.Parallel()
+
+	controller := &stubLiveSessionController{}
+	service := Service{
+		Store:                 &stubSessionStore{termResult: &sessions.TerminatedSession{ID: "sess-proxy-1", Protocol: "SSH_PROXY"}},
+		LiveSessionController: controller,
+		TenantAuth: stubMembershipResolver{membership: &tenantauth.Membership{
+			Role:        "ADMIN",
+			Permissions: map[tenantauth.PermissionFlag]bool{tenantauth.CanControlSessions: true},
+		}},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/sess-proxy-1/terminate", nil)
+	req.SetPathValue("sessionId", "sess-proxy-1")
+	rec := httptest.NewRecorder()
+
+	if err := service.HandleTerminate(rec, req, authn.Claims{UserID: "admin-1", TenantID: "tenant-1"}); err != nil {
+		t.Fatalf("HandleTerminate() error = %v", err)
+	}
+	if controller.terminated != "sess-proxy-1" {
+		t.Fatalf("terminated = %q, want sess-proxy-1", controller.terminated)
+	}
+}
+
+func TestHandlePauseAndResumeNotifySSHProxyLiveController(t *testing.T) {
+	t.Parallel()
+
+	controller := &stubLiveSessionController{}
+	service := Service{
+		Store: &stubSessionStore{
+			pauseResult:  &sessions.SessionControlResult{ID: "sess-proxy-1", Protocol: "SSH_PROXY", Status: sessions.SessionStatusPaused},
+			resumeResult: &sessions.SessionControlResult{ID: "sess-proxy-1", Protocol: "SSH_PROXY", Status: sessions.SessionStatusActive},
+		},
+		TenantAuth: stubMembershipResolver{membership: &tenantauth.Membership{
+			Role:        "ADMIN",
+			Permissions: map[tenantauth.PermissionFlag]bool{tenantauth.CanControlSessions: true},
+		}},
+		LiveSessionController: controller,
+	}
+
+	pauseReq := httptest.NewRequest(http.MethodPost, "/api/sessions/sess-proxy-1/pause", nil)
+	pauseReq.SetPathValue("sessionId", "sess-proxy-1")
+	if err := service.HandlePause(httptest.NewRecorder(), pauseReq, authn.Claims{UserID: "admin-1", TenantID: "tenant-1"}); err != nil {
+		t.Fatalf("HandlePause() error = %v", err)
+	}
+	if controller.paused != "sess-proxy-1" {
+		t.Fatalf("paused = %q, want sess-proxy-1", controller.paused)
+	}
+
+	resumeReq := httptest.NewRequest(http.MethodPost, "/api/sessions/sess-proxy-1/resume", nil)
+	resumeReq.SetPathValue("sessionId", "sess-proxy-1")
+	if err := service.HandleResume(httptest.NewRecorder(), resumeReq, authn.Claims{UserID: "admin-1", TenantID: "tenant-1"}); err != nil {
+		t.Fatalf("HandleResume() error = %v", err)
+	}
+	if controller.resumed != "sess-proxy-1" {
+		t.Fatalf("resumed = %q, want sess-proxy-1", controller.resumed)
 	}
 }
 
@@ -502,6 +595,43 @@ func TestHandleObserveSSHAllowsObservePermissionWithoutControl(t *testing.T) {
 		t.Fatalf("unexpected issuer inputs: session=%q observer=%q", issuer.lastSessionID, issuer.lastObserverID)
 	}
 	if !strings.Contains(rec.Body.String(), `"readOnly":true`) {
+		t.Fatalf("HandleObserveSSH() body = %s", rec.Body.String())
+	}
+}
+
+func TestHandleObserveSSHRoutesProxySessionsToProxyIssuer(t *testing.T) {
+	t.Parallel()
+
+	terminalIssuer := &stubObserverGrantIssuer{}
+	issuer := &stubObserverGrantIssuer{response: SSHObserveGrantResponse{SessionID: "sess-1", Token: "observer-token", WebSocketPath: "/api/sessions/ssh-proxy/observe/ws", ReadOnly: true}}
+	service := Service{
+		Store: &stubSessionStore{observeItem: &sessions.TenantSessionSummary{ID: "sess-1", UserID: "user-1", Protocol: "SSH_PROXY", Status: sessions.SessionStatusActive}},
+		TenantAuth: stubMembershipResolver{membership: &tenantauth.Membership{
+			Role: "AUDITOR",
+			Permissions: map[tenantauth.PermissionFlag]bool{
+				tenantauth.CanObserveSessions: true,
+			},
+		}},
+		SSHObserverGrants:      terminalIssuer,
+		SSHProxyObserverGrants: issuer,
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions/ssh/sess-1/observe", nil)
+	req.SetPathValue("sessionId", "sess-1")
+	rec := httptest.NewRecorder()
+
+	service.HandleObserveSSH(rec, req, authn.Claims{UserID: "auditor-1", TenantID: "tenant-1"})
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HandleObserveSSH() status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if !issuer.proxyCalled {
+		t.Fatal("HandleObserveSSH() did not issue SSH proxy observer grant")
+	}
+	if terminalIssuer.called {
+		t.Fatal("HandleObserveSSH() used terminal SSH issuer for SSH proxy session")
+	}
+	if !strings.Contains(rec.Body.String(), `/api/sessions/ssh-proxy/observe/ws`) {
 		t.Fatalf("HandleObserveSSH() body = %s", rec.Body.String())
 	}
 }

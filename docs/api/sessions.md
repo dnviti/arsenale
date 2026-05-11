@@ -27,9 +27,15 @@ Start an SSH session through the terminal broker and return the browser WebSocke
 
 ### `POST /api/sessions/ssh/{sessionId}/observe`
 
-Issue a read-only observer grant for another active SSH session in the same tenant. The returned token connects to the existing `/ws/terminal` runtime instead of starting a second SSH connection.
+Issue a read-only observer grant for another active SSH or native SSH proxy session in the same tenant. Terminal-broker SSH sessions return `/ws/terminal`; native OpenSSH proxy sessions return `/api/sessions/ssh-proxy/observe/ws`.
 
 **Auth**: Any tenant member with `canObserveSessions` | **Response**: `{ sessionId, token, expiresAt, webSocketPath, mode: "observe", readOnly: true }`
+
+### `GET /api/sessions/ssh-proxy/observe/ws`
+
+Read-only WebSocket endpoint for native SSH proxy observers. The short-lived token is passed as `?token=...` and is issued by `POST /api/sessions/ssh/{sessionId}/observe` for `SSH_PROXY` sessions.
+
+**Server events**: `ready`, `data`, `pong`, `closed`, `error` | **Read-only behavior**: `input` and `resize` return `READ_ONLY`
 
 ### `POST /api/sessions/rdp/{sessionId}/observe`
 

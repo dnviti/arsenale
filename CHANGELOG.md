@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - Legacy RDGW service, CLI command, settings UI, API routes, and deployment wiring.
 
+## [1.8.1] - 2026-05-11
+
+### Changed
+- Release metadata, CLI version output, browser extension manifest, and package manifests now target `1.8.1`.
+
+### Fixed
+- Native `arsenale connect ssh` now invokes the SSH proxy command with the requested target and exits cleanly after the remote session closes.
+- SSH proxy instructions now advertise a host that is reachable from the CLI client instead of an internal container-only hostname.
+- Development installs expose the SSH proxy on all interfaces so `arsenale.home.arpa.viti:2222` accepts native SSH proxy connections.
+- Development tunnel-managed SSH bootstrap policy now allows RFC1918 local-network targets on port `22` for local lab smoke tests.
+- Session manager state now tracks SSH proxy sessions through close, pause, and stop events so admin controls and cleanup reflect the real session lifecycle.
+
 ## [1.8.0] - 2026-05-01
 
 ### Added
@@ -339,7 +351,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/dnviti/arsenale/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/dnviti/arsenale/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/dnviti/arsenale/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/dnviti/arsenale/compare/v1.6.0...v1.7.0
