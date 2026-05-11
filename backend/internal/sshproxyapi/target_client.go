@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -130,6 +131,7 @@ func sshHostKeyCallbackForPaths(configured string, defaultPaths []string) (ssh.H
 		if configured != "" {
 			return nil, errors.New("configured SSH proxy known_hosts file does not exist")
 		}
+		slog.Default().Warn("SSH proxy target host key verification disabled because no known_hosts files exist", "default_paths", defaultPaths)
 		return ssh.InsecureIgnoreHostKey(), nil
 	}
 	callback, err := knownhosts.New(paths...)
