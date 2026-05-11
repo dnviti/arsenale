@@ -106,8 +106,7 @@ INSERT INTO "SSHProxyGrant" (
 		"expiresIn": expiresIn,
 	}, requestIP(r))
 
-	serverHost := sanitizeHost(r.Host)
-	proxyPort := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
+	serverHost, proxyPort := sshProxyInstructionEndpoint(r.Host)
 
 	app.WriteJSON(w, http.StatusOK, map[string]any{
 		"token":     grantValue,
@@ -192,6 +191,16 @@ func parseAllowedAuthMethods(raw string) []string {
 
 func buildSSHProxyCommand(host string, port int) string {
 	return fmt.Sprintf(`ssh -p %d -o PreferredAuthentications=none '<token>@%s'`, port, host)
+}
+
+func sshProxyInstructionEndpoint(requestHost string) (string, int) {
+	proxyPort := parsePositiveInt(getenv("SSH_PROXY_PORT", "2222"), 2222)
+	publicPort := parsePositiveInt(getenv("SSH_PROXY_PUBLIC_PORT", ""), proxyPort)
+	publicHost := strings.TrimSpace(os.Getenv("SSH_PROXY_PUBLIC_HOST"))
+	if publicHost == "" {
+		publicHost = requestHost
+	}
+	return sanitizeHost(publicHost), publicPort
 }
 
 func (s Service) preflightProxyTarget(ctx context.Context, userID, tenantID, connectionID string) error {

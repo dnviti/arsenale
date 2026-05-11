@@ -45,6 +45,27 @@ func TestBuildSSHProxyCommandUsesDirectProxyEndpoint(t *testing.T) {
 	}
 }
 
+func TestSSHProxyInstructionEndpointHonorsPublicHost(t *testing.T) {
+	t.Setenv("SSH_PROXY_PORT", "2222")
+	t.Setenv("SSH_PROXY_PUBLIC_HOST", "localhost")
+
+	host, port := sshProxyInstructionEndpoint("arsenale.home.arpa.viti")
+	if host != "localhost" || port != 2222 {
+		t.Fatalf("endpoint = %s:%d; want localhost:2222", host, port)
+	}
+}
+
+func TestSSHProxyInstructionEndpointHonorsPublicPort(t *testing.T) {
+	t.Setenv("SSH_PROXY_PORT", "2222")
+	t.Setenv("SSH_PROXY_PUBLIC_HOST", "ssh.example.test")
+	t.Setenv("SSH_PROXY_PUBLIC_PORT", "22022")
+
+	host, port := sshProxyInstructionEndpoint("arsenale.home.arpa.viti")
+	if host != "ssh.example.test" || port != 22022 {
+		t.Fatalf("endpoint = %s:%d; want ssh.example.test:22022", host, port)
+	}
+}
+
 func TestPreflightProxyTargetSurfacesResolveError(t *testing.T) {
 	resolveErr := &connectionaccess.ResolveError{
 		Status:  http.StatusForbidden,
