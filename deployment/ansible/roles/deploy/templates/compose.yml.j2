@@ -21,6 +21,7 @@ localhost/{{ _compose_project_name }}_{{ service_name }}:latest
 {% macro compose_service_source(service_name, dockerfile, image_service_name='', context='', build_args=None) -%}
 {% set _context = context if context else _compose_repo_root %}
 {% if _build | bool %}
+image: {{ local_image(service_name) }}
 build:
   context: {{ _context }}
   dockerfile: {{ dockerfile }}
@@ -291,9 +292,9 @@ services:
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
-      SSH_PROXY_ENABLED: "${SSH_PROXY_ENABLED:-true}"
-      SSH_PROXY_PORT: "2222"
-      SSH_PROXY_TOKEN_TTL_SECONDS: "${SSH_PROXY_TOKEN_TTL_SECONDS:-300}"
+      SSH_PROXY_ENABLED: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_ENABLED', 'true') }}"
+      SSH_PROXY_PORT: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PORT', '2222') }}"
+      SSH_PROXY_TOKEN_TTL_SECONDS: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_TOKEN_TTL_SECONDS', '300') }}"
       RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
@@ -655,9 +656,9 @@ services:
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
-      SSH_PROXY_ENABLED: "${SSH_PROXY_ENABLED:-true}"
-      SSH_PROXY_PORT: "2222"
-      SSH_PROXY_TOKEN_TTL_SECONDS: "${SSH_PROXY_TOKEN_TTL_SECONDS:-300}"
+      SSH_PROXY_ENABLED: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_ENABLED', 'true') }}"
+      SSH_PROXY_PORT: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_PORT', '2222') }}"
+      SSH_PROXY_TOKEN_TTL_SECONDS: "{{ (installer_runtime_env | default({})).get('SSH_PROXY_TOKEN_TTL_SECONDS', '300') }}"
       RECORDING_ENABLED: "${FEATURE_RECORDINGS_ENABLED:-true}"
       RECORDING_PATH: "/recordings"
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret

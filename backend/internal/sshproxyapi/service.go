@@ -68,6 +68,13 @@ func (s Service) HandleCreateToken(w http.ResponseWriter, r *http.Request, claim
 			return
 		}
 	}
+	if err := s.preflightProxyTarget(r.Context(), claims.UserID, claims.TenantID, body.ConnectionID); err != nil {
+		_ = s.insertAuditLog(r.Context(), claims.UserID, "SSH_PROXY_AUTH_FAILURE", body.ConnectionID, map[string]any{
+			"reason": err.Error(),
+		}, requestIP(r))
+		app.ErrorJSON(w, proxyResolveHTTPStatus(err), err.Error())
+		return
+	}
 
 	expiresIn := parsePositiveInt(getenv("SSH_PROXY_TOKEN_TTL_SECONDS", "300"), 300)
 	expiresAt := time.Now().UTC().Add(time.Duration(expiresIn) * time.Second)
@@ -106,7 +113,7 @@ INSERT INTO "SSHProxyGrant" (
 		"token":     grantValue,
 		"expiresIn": expiresIn,
 		"connectionInstructions": map[string]any{
-			"command": fmt.Sprintf(`ssh -o ProxyCommand='nc %s %d' -o PreferredAuthentications=none '<token>@arsenale-target'`, serverHost, proxyPort),
+			"command": buildSSHProxyCommand(serverHost, proxyPort),
 			"port":    proxyPort,
 			"host":    serverHost,
 			"note":    fmt.Sprintf("Use this token as the SSH username when connecting through the Arsenale SSH proxy. The token expires in %d seconds.", expiresIn),
@@ -181,6 +188,38 @@ func parseAllowedAuthMethods(raw string) []string {
 		}
 	}
 	return result
+}
+
+func buildSSHProxyCommand(host string, port int) string {
+	return fmt.Sprintf(`ssh -p %d -o PreferredAuthentications=none '<token>@%s'`, port, host)
+}
+
+func (s Service) preflightProxyTarget(ctx context.Context, userID, tenantID, connectionID string) error {
+	if s.ConnectionResolver == nil {
+		return errors.New("connection resolver is unavailable")
+	}
+	target, err := s.ConnectionResolver.ResolveFileTransferTarget(ctx, userID, tenantID, connectionID, connectionaccess.ResolveConnectionOptions{
+		ExpectedType: "SSH",
+	})
+	if err != nil {
+		return err
+	}
+	return validateResolvedProxyTarget(target)
+}
+
+func validateResolvedProxyTarget(target connectionaccess.ResolvedFileTransferTarget) error {
+	if strings.TrimSpace(target.Target.Host) == "" || target.Target.Port <= 0 || strings.TrimSpace(target.Target.Username) == "" {
+		return errors.New("SSH target is incomplete")
+	}
+	return nil
+}
+
+func proxyResolveHTTPStatus(err error) int {
+	var resolveErr *connectionaccess.ResolveError
+	if errors.As(err, &resolveErr) && resolveErr.Status > 0 {
+		return resolveErr.Status
+	}
+	return http.StatusBadRequest
 }
 
 func sanitizeHost(hostport string) string {

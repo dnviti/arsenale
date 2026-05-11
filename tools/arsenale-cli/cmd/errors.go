@@ -17,9 +17,12 @@ func handleAPIError(status int, body []byte) {
 	msg := parseErrorMessage(body)
 
 	switch {
-	case status == 401 || status == 403:
+	case status == 401:
 		fmt.Fprintf(os.Stderr, "Error: %s\nRun 'arsenale login' to authenticate.\n", msg)
 		os.Exit(exitAuth)
+	case status == 403:
+		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
+		os.Exit(exitGeneral)
 	case status == 404:
 		fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
 		os.Exit(exitNotFound)

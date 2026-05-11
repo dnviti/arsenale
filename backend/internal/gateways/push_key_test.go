@@ -38,6 +38,25 @@ func TestExecutePushKeyTargets(t *testing.T) {
 	}
 }
 
+func TestListGatewayKeyTargetsUsesTunnelEndpoint(t *testing.T) {
+	apiPort := 9022
+	targets, err := (Service{}).listGatewayKeyTargets(context.Background(), gatewayRecord{
+		ID:            "gateway-1",
+		Host:          "dev-tunnel-ssh-gateway",
+		APIPort:       &apiPort,
+		TunnelEnabled: true,
+	})
+	if err != nil {
+		t.Fatalf("list targets error = %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("targets length = %d; want 1", len(targets))
+	}
+	if targets[0] != (gatewayKeyTarget{InstanceID: "tunnel", Host: "dev-tunnel-ssh-gateway", Port: 9022}) {
+		t.Fatalf("target = %#v", targets[0])
+	}
+}
+
 func TestSummarizePushKeyResults(t *testing.T) {
 	results := []pushKeyInstanceResult{
 		{InstanceID: "a", OK: true},

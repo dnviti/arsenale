@@ -118,7 +118,7 @@ func (s Service) handleProxyConnection(parentCtx context.Context, conn net.Conn,
 	targetClient, err := connectSSHProxyTarget(ctx, target.Target, target.Bastion)
 	if err != nil {
 		_ = s.insertAuditLog(ctx, grant.UserID, "SSH_PROXY_AUTH_FAILURE", grant.ConnectionID, map[string]any{
-			"reason": "target_connect_failed",
+			"reason": targetConnectFailureReason(err),
 		}, stringToPtr(ipAddress))
 		return
 	}
@@ -171,8 +171,8 @@ func (s Service) resolveProxyTarget(ctx context.Context, grant proxyGrantRecord,
 	if err != nil {
 		return connectionaccess.ResolvedFileTransferTarget{}, err
 	}
-	if strings.TrimSpace(target.Target.Host) == "" || target.Target.Port <= 0 || strings.TrimSpace(target.Target.Username) == "" {
-		return connectionaccess.ResolvedFileTransferTarget{}, errors.New("SSH target is incomplete")
+	if err := validateResolvedProxyTarget(target); err != nil {
+		return connectionaccess.ResolvedFileTransferTarget{}, err
 	}
 	return target, nil
 }
@@ -211,4 +211,12 @@ func connRemoteIP(conn net.Conn) string {
 		return host
 	}
 	return strings.TrimSpace(conn.RemoteAddr().String())
+}
+
+func targetConnectFailureReason(err error) string {
+	reason := strings.TrimSpace(err.Error())
+	if reason == "" {
+		return "target_connect_failed"
+	}
+	return "target_connect_failed: " + reason
 }

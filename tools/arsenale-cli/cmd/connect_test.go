@@ -3,6 +3,7 @@ package cmd
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +34,28 @@ func TestBuildOpenSSHArgsPreservesRemoteCommand(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("args[%d] = %q; want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestBuildOpenSSHConfigConnectsDirectlyToProxy(t *testing.T) {
+	got := buildOpenSSHConfig(openSSHConfigOptions{
+		ProxyHost: "arsenale.example.test",
+		ProxyPort: 2222,
+		Token:     "grant.secret",
+	})
+
+	for _, want := range []string{
+		"HostName arsenale.example.test",
+		"Port 2222",
+		"User grant.secret",
+		"PreferredAuthentications none",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("config missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "ProxyCommand") || strings.Contains(got, " nc ") {
+		t.Fatalf("config must not depend on netcat proxy command:\n%s", got)
 	}
 }
 
