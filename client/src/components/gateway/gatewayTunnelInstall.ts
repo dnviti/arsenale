@@ -17,6 +17,7 @@ interface BuildTunnelInstallBundleOptions {
 interface GatewayRuntimeInstall {
   serviceName: string;
   image: string;
+  localPort: number;
   extraEnvironment: string[];
   volumes: string[];
 }
@@ -33,7 +34,7 @@ export function buildTunnelInstallBundle({
 }: BuildTunnelInstallBundleOptions): TunnelInstallBundle {
   const runtime = gatewayRuntimeInstall(gateway.type);
   const localHost = tokenBundle.tunnelLocalHost || '127.0.0.1';
-  const localPort = tokenBundle.tunnelLocalPort || gateway.port;
+  const localPort = runtime.localPort || tokenBundle.tunnelLocalPort || gateway.port;
   const envContent = [
     envLine('TUNNEL_SERVER_URL', trimServerUrl(serverUrl)),
     envLine('TUNNEL_TOKEN', tokenBundle.token),
@@ -62,6 +63,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
       return {
         serviceName: 'ssh-gateway',
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
+        localPort: 2222,
         extraEnvironment: ['SSH_PORT: "${SSH_PORT:-2222}"'],
         volumes: [],
       };
@@ -69,14 +71,16 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
       return {
         serviceName: 'db-proxy',
         image: 'ghcr.io/dnviti/arsenale/db-proxy:stable',
+        localPort: 5432,
         extraEnvironment: ['DB_LISTEN_PORT: "${DB_LISTEN_PORT:-5432}"'],
         volumes: [],
       };
     case 'SSH_BASTION':
       return {
-        serviceName: 'tunnel-agent',
-        image: 'ghcr.io/dnviti/arsenale/tunnel-agent:stable',
-        extraEnvironment: [],
+        serviceName: 'ssh-gateway',
+        image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
+        localPort: 2222,
+        extraEnvironment: ['SSH_PORT: "${SSH_PORT:-2222}"'],
         volumes: [],
       };
     case 'GUACD':
@@ -84,6 +88,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
       return {
         serviceName: 'guacd',
         image: 'ghcr.io/dnviti/arsenale/guacd:stable',
+        localPort: 4822,
         extraEnvironment: ['GUACD_SSL: "${GUACD_SSL:-false}"'],
         volumes: ['guacd-drive:/guacd-drive', 'guacd-recordings:/recordings'],
       };
@@ -138,6 +143,7 @@ function buildInstallCommands(
   dockerCompose: string,
 ): string {
   return [
+    'umask 077',
     'mkdir -p arsenale-gateway/certs',
     'cd arsenale-gateway',
     `cat > ${certPath} <<'EOF'`,
@@ -150,6 +156,7 @@ function buildInstallCommands(
     "cat > tunnel.env <<'EOF'",
     stringsTrimWithNewline(envContent),
     'EOF',
+    'chmod 600 tunnel.env',
     "cat > docker-compose.yml <<'EOF'",
     stringsTrimWithNewline(dockerCompose),
     'EOF',

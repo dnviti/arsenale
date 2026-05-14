@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - The `Enable Zero-Trust Tunnel` action now works while creating a gateway and automatically generates the remote gateway enrollment bundle after creation.
 - Gateway creation remains retryable without creating duplicates if tunnel token generation fails after the gateway record is saved.
+- Remote install commands now lock down `tunnel.env` because it contains the tunnel connection token.
+- Generated SSH bastion bundles now deploy the `ssh-gateway` runtime instead of a standalone tunnel agent with no SSH listener.
+- Generated GUACD and CLI tunnel bundles now target the embedded gateway listener port instead of a configured external host port.
 
 ## [1.8.3] - 2026-05-14
 

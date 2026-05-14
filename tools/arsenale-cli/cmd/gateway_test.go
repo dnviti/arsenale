@@ -131,6 +131,23 @@ func TestTunnelTokenEnvContentUsesGatewayDefinitionFallback(t *testing.T) {
 	}
 }
 
+func TestTunnelTokenEnvContentPrefersRuntimePortOverResponsePort(t *testing.T) {
+	bundle := tunnelTokenBundle{
+		Token:            "tok",
+		GatewayID:        "gw-guacd",
+		GatewayType:      "GUACD",
+		TunnelLocalHost:  "127.0.0.1",
+		TunnelLocalPort:  14822,
+		TunnelClientCert: "cert",
+		TunnelClientKey:  "key",
+	}
+
+	got := tunnelTokenEnvContent(bundle, "https://arsenale.example.com", "./certs/client.pem", "./certs/client.key")
+	if !strings.Contains(got, `TUNNEL_LOCAL_PORT="4822"`) {
+		t.Fatalf("expected GUACD runtime listener port in env content, got:\n%s", got)
+	}
+}
+
 func TestWriteTunnelTokenBundle(t *testing.T) {
 	tempDir := t.TempDir()
 	bundle := tunnelTokenBundle{
