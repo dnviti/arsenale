@@ -21,3 +21,6 @@ class ClientNginxConfigTest(unittest.TestCase):
                 self.assertIn("set $map_assets_upstream http://${MAP_ASSETS_UPSTREAM_HOST}:8096;", config)
                 self.assertIn("proxy_pass $map_assets_upstream;", config)
                 self.assertNotIn("proxy_pass http://${MAP_ASSETS_UPSTREAM_HOST}:8096;", config)
+                self.assertIn("location = /api/tunnel/connect", config)
+                self.assertIn("set $tunnel_broker_upstream http://tunnel-broker:8092$request_uri;", config)
+                self.assertIn("proxy_pass $tunnel_broker_upstream;", config)

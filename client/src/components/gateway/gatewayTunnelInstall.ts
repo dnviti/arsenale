@@ -118,11 +118,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
           `chmod 644 ${guacdCertPath}`,
           `chmod 600 ${guacdKeyPath}`,
         ],
-        extraEnvironment: [
-          'GUACD_SSL: "${GUACD_SSL:-true}"',
-          `GUACD_SSL_CERT: ${containerGuacdCertPath}`,
-          `GUACD_SSL_KEY: ${containerGuacdKeyPath}`,
-        ],
+        extraEnvironment: ['GUACD_SSL: "true"', `GUACD_SSL_CERT: ${containerGuacdCertPath}`, `GUACD_SSL_KEY: ${containerGuacdKeyPath}`],
         volumes: [
           'guacd-drive:/guacd-drive',
           'guacd-recordings:/recordings',
@@ -133,18 +129,8 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
   }
 }
 
-function buildDockerCompose(runtime: GatewayRuntimeInstall, localPort: number): string {
-  const environmentLines = [
-    'TUNNEL_SERVER_URL: "${TUNNEL_SERVER_URL}"',
-    'TUNNEL_TOKEN: "${TUNNEL_TOKEN}"',
-    'TUNNEL_GATEWAY_ID: "${TUNNEL_GATEWAY_ID}"',
-    'TUNNEL_LOCAL_HOST: "${TUNNEL_LOCAL_HOST}"',
-    'TUNNEL_LOCAL_PORT: "${TUNNEL_LOCAL_PORT}"',
-    'TUNNEL_CLIENT_CERT_FILE: "${TUNNEL_CLIENT_CERT_FILE}"',
-    'TUNNEL_CLIENT_KEY_FILE: "${TUNNEL_CLIENT_KEY_FILE}"',
-    `${runtime.listenerEnvKey}: "\${${runtime.listenerEnvKey}:-${localPort}}"`,
-    ...runtime.extraEnvironment,
-  ];
+function buildDockerCompose(runtime: GatewayRuntimeInstall, _localPort: number): string {
+  const environmentLines = runtime.extraEnvironment;
   const volumeLines = [
     `${certPath}:${containerCertPath}:ro`,
     `${keyPath}:${containerKeyPath}:ro`,
@@ -158,11 +144,11 @@ function buildDockerCompose(runtime: GatewayRuntimeInstall, localPort: number): 
     '    restart: unless-stopped',
     '    env_file:',
     '      - tunnel.env',
-    '    environment:',
-    ...environmentLines.map((line) => `      ${line}`),
-    '    volumes:',
-    ...volumeLines.map((line) => `      - ${line}`),
   ];
+  if (environmentLines.length > 0) {
+    compose.push('    environment:', ...environmentLines.map((line) => `      ${line}`));
+  }
+  compose.push('    volumes:', ...volumeLines.map((line) => `      - ${line}`));
 
   const namedVolumes = collectNamedVolumeMounts(runtime.volumes);
   if (namedVolumes.length > 0) {
@@ -207,7 +193,7 @@ function buildInstallCommands(
     `cat > ${keyPath} <<'EOF'`,
     stringsTrimWithNewline(tokenBundle.tunnelClientKey),
     'EOF',
-    "chmod 600 ./certs/tunnel-client-*.pem",
+    "chmod 644 ./certs/tunnel-client-*.pem",
     "cat > tunnel.env <<'EOF'",
     stringsTrimWithNewline(envContent),
     'EOF',

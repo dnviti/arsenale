@@ -272,7 +272,58 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
-        for service_name in ["client", "guacd", "guacenc", "ssh-gateway"]:
+        for service_name in [
+            "client",
+            "desktop-broker",
+            "guacd",
+            "guacenc",
+            "migrate",
+            "query-runner",
+            "ssh-gateway",
+            "terminal-broker",
+            "tunnel-broker",
+        ]:
+            self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
+
+    def test_production_compose_renders_selected_extended_runtime_services(self) -> None:
+        selected_services = [
+            "postgres",
+            "migrate",
+            "redis",
+            "control-plane-api",
+            "authz-pdp",
+            "client",
+            "guacd",
+            "desktop-broker",
+            "terminal-broker",
+            "ssh-gateway",
+            "shared-files-s3",
+            "map-assets",
+            "guacenc",
+            "query-runner",
+            "model-gateway",
+            "tool-gateway",
+            "memory-service",
+            "tunnel-broker",
+            "control-plane-controller",
+            "runtime-agent",
+            "agent-orchestrator",
+        ]
+        compose = _render_compose(installer_services=selected_services)
+        services = compose["services"]
+
+        self.assertEqual(set(selected_services), set(services))
+        self.assertEqual(services["client"]["depends_on"]["map-assets"]["condition"], "service_started")
+        for service_name in [
+            "agent-orchestrator",
+            "control-plane-controller",
+            "desktop-broker",
+            "memory-service",
+            "model-gateway",
+            "query-runner",
+            "terminal-broker",
+            "tunnel-broker",
+        ]:
             self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_production_compose_honors_pinned_release_image_tag(self) -> None:
@@ -412,7 +463,24 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
-        for service_name in ["client", "guacd", "guacenc", "ssh-gateway", "dev-tunnel-ssh-gateway", "dev-tunnel-guacd", "dev-tunnel-db-proxy"]:
+        for service_name in [
+            "agent-orchestrator",
+            "client",
+            "control-plane-controller",
+            "desktop-broker",
+            "guacd",
+            "guacenc",
+            "memory-service",
+            "migrate",
+            "model-gateway",
+            "query-runner",
+            "ssh-gateway",
+            "terminal-broker",
+            "tunnel-broker",
+            "dev-tunnel-ssh-gateway",
+            "dev-tunnel-guacd",
+            "dev-tunnel-db-proxy",
+        ]:
             self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_development_compose_can_disable_dev_fixtures(self) -> None:
@@ -505,6 +573,7 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         )
         deploy_section = apply_text[apply_text.index("name: Deploy Arsenale stack") :]
         deploy_section = deploy_section[: deploy_section.index("- name: Refresh selected Arsenale services")]
+        self.assertIn("reversed(list(services.items()))", apply_text)
         self.assertIn("{{ _compose_cmd }} up -d --remove-orphans", deploy_section)
         self.assertNotIn("--force-recreate", deploy_section)
 

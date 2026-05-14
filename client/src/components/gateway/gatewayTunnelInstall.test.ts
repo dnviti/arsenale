@@ -37,11 +37,14 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.envContent).toContain('TUNNEL_GATEWAY_ID="gateway-1"');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
     expect(bundle.envContent).toContain('SSH_PORT="2222"');
+    expect(bundle.dockerCompose).toContain('env_file:');
+    expect(bundle.dockerCompose).not.toContain('TUNNEL_SERVER_URL: "${TUNNEL_SERVER_URL}"');
     expect(bundle.dockerCompose).not.toContain('container_name:');
     expect(bundle.installCommands).toContain('umask 077');
     expect(bundle.installCommands).toContain("mkdir -p 'arsenale-gateway-gateway-1/certs'");
     expect(bundle.installCommands).toContain("cd 'arsenale-gateway-gateway-1'");
     expect(bundle.installCommands).toContain('chmod 600 tunnel.env');
+    expect(bundle.installCommands).toContain('chmod 644 ./certs/tunnel-client-*.pem');
     expect(bundle.installCommands).toContain('docker compose --env-file tunnel.env up -d');
     expect(bundle.installCommands).toContain('-----BEGIN CERTIFICATE-----');
     expect(bundle.installCommands).toContain('-----BEGIN PRIVATE KEY-----');
@@ -57,7 +60,7 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.serviceName).toBe('ssh-gateway');
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/ssh-gateway:stable');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/ssh-gateway:stable');
-    expect(bundle.dockerCompose).toContain('SSH_PORT: "${SSH_PORT:-2022}"');
+    expect(bundle.dockerCompose).not.toContain('SSH_PORT: "${SSH_PORT:-2022}"');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2022"');
     expect(bundle.envContent).toContain('SSH_PORT="2022"');
   });
@@ -86,8 +89,8 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="14822"');
     expect(bundle.envContent).toContain('GUACD_PORT="14822"');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/guacd:stable');
-    expect(bundle.dockerCompose).toContain('GUACD_PORT: "${GUACD_PORT:-14822}"');
-    expect(bundle.dockerCompose).toContain('GUACD_SSL: "${GUACD_SSL:-true}"');
+    expect(bundle.dockerCompose).not.toContain('GUACD_PORT: "${GUACD_PORT:-14822}"');
+    expect(bundle.dockerCompose).toContain('GUACD_SSL: "true"');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-cert.pem:/certs/guacd-server-cert.pem:ro');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-key.pem:/certs/guacd-server-key.pem:ro');
     const topLevelVolumes = bundle.dockerCompose.split('\nvolumes:\n')[1] ?? '';
