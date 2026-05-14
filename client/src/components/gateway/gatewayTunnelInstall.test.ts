@@ -36,8 +36,37 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.envContent).toContain('TUNNEL_TOKEN="tok-secret"');
     expect(bundle.envContent).toContain('TUNNEL_GATEWAY_ID="gateway-1"');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
+    expect(bundle.installCommands).toContain('umask 077');
+    expect(bundle.installCommands).toContain('chmod 600 tunnel.env');
     expect(bundle.installCommands).toContain('docker compose --env-file tunnel.env up -d');
     expect(bundle.installCommands).toContain('-----BEGIN CERTIFICATE-----');
     expect(bundle.installCommands).toContain('-----BEGIN PRIVATE KEY-----');
+  });
+
+  it('uses the SSH gateway runtime for SSH bastion bundles', () => {
+    const bundle = buildTunnelInstallBundle({
+      gateway: { ...gateway, type: 'SSH_BASTION', port: 2022 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'SSH_BASTION', tunnelLocalPort: 2022 },
+      serverUrl: 'https://arsenale.example.com',
+    });
+
+    expect(bundle.serviceName).toBe('ssh-gateway');
+    expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/ssh-gateway:stable');
+    expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/ssh-gateway:stable');
+    expect(bundle.dockerCompose).toContain('SSH_PORT: "${SSH_PORT:-2222}"');
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
+  });
+
+  it('points GUACD bundles at the embedded container listener', () => {
+    const bundle = buildTunnelInstallBundle({
+      gateway: { ...gateway, type: 'GUACD', port: 14822 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 14822 },
+      serverUrl: 'https://arsenale.example.com',
+    });
+
+    expect(bundle.serviceName).toBe('guacd');
+    expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/guacd:stable');
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="4822"');
+    expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/guacd:stable');
   });
 });

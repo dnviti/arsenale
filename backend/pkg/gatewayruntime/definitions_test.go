@@ -39,12 +39,15 @@ func TestDefinitionsCoverGatewayRuntimePorts(t *testing.T) {
 	}
 }
 
-func TestTunnelLocalPortPrefersConfiguredPort(t *testing.T) {
-	if got := TunnelLocalPort(TypeGuacd, 14822); got != 14822 {
-		t.Fatalf("TunnelLocalPort = %d, want 14822", got)
+func TestTunnelLocalPortUsesRuntimePrimaryPort(t *testing.T) {
+	if got := TunnelLocalPort(TypeGuacd, 14822); got != 4822 {
+		t.Fatalf("TunnelLocalPort = %d, want 4822", got)
 	}
 	if got := TunnelLocalPort(TypeDBProxy, 0); got != 5432 {
 		t.Fatalf("TunnelLocalPort fallback = %d, want 5432", got)
+	}
+	if got := TunnelLocalPort("OTHER", 15432); got != 15432 {
+		t.Fatalf("TunnelLocalPort unknown type = %d, want 15432", got)
 	}
 }
 

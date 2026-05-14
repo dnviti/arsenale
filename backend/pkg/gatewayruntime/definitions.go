@@ -100,8 +100,12 @@ func TunnelLocalHost(gatewayType string) string {
 }
 
 func TunnelLocalPort(gatewayType string, configuredPort int) int {
+	def, ok := Lookup(gatewayType)
+	if ok {
+		return def.PrimaryPort
+	}
 	if configuredPort > 0 {
 		return configuredPort
 	}
-	return PrimaryPort(gatewayType)
+	return 0
 }
