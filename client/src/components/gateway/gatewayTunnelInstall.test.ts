@@ -68,5 +68,10 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/guacd:stable');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="4822"');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/guacd:stable');
+    expect(bundle.dockerCompose).toContain('GUACD_SSL: "${GUACD_SSL:-true}"');
+    expect(bundle.dockerCompose).toContain('./certs/guacd-server-cert.pem:/certs/guacd-server-cert.pem:ro');
+    expect(bundle.dockerCompose).toContain('./certs/guacd-server-key.pem:/certs/guacd-server-key.pem:ro');
+    expect(bundle.installCommands).toContain('openssl req -x509');
+    expect(bundle.installCommands).toContain('chmod 600 ./certs/guacd-server-key.pem');
   });
 });

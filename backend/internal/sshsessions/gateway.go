@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access connectionAccess, ipAddress string) (map[string]any, string, string, error) {
@@ -58,7 +59,11 @@ func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access
 		if err := s.enforceTunnelEgress(ctx, claims.UserID, gateway, access.Connection.ID, access.Connection.Host, access.Connection.Port, "SSH", ipAddress); err != nil {
 			return nil, "", "", err
 		}
-		proxy, err := s.createTunnelProxy(ctx, gateway.ID, "127.0.0.1", port)
+		tunnelPort := gatewayruntime.TunnelLocalPort(gateway.Type, port)
+		if tunnelPort <= 0 {
+			tunnelPort = port
+		}
+		proxy, err := s.createTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPort)
 		if err != nil {
 			return nil, "", "", err
 		}
