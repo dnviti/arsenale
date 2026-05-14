@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -30,23 +31,21 @@ import {
 import {
   Save,
   Lock,
-  Copy,
   RefreshCw,
   Trash2,
   Power,
   History,
   Gauge,
-  Rocket,
   Loader2,
 } from 'lucide-react';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
-import { useCopyToClipboard } from '../../hooks/useCopyToClipboard';
 import type {
   GatewayData,
   GatewayDeploymentMode,
   TunnelEventData,
   TunnelMetricsData,
+  TunnelTokenResponse,
 } from '../../api/gateway.api';
 import {
   forceDisconnectTunnel as forceDisconnectApi,
@@ -58,6 +57,7 @@ import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { extractApiError } from '../../utils/apiError';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import GatewayEgressPolicyEditor from './GatewayEgressPolicyEditor';
+import GatewayTunnelInstallPanel from './GatewayTunnelInstallPanel';
 
 interface GatewayDialogProps {
   open: boolean;
@@ -88,7 +88,9 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const [publishPorts, setPublishPorts] = useState(false);
   const [lbStrategy, setLbStrategy] = useState<'ROUND_ROBIN' | 'LEAST_CONNECTIONS'>('ROUND_ROBIN');
 
-  const [tunnelToken, setTunnelToken] = useState<string | null>(null);
+  const [tunnelBundle, setTunnelBundle] = useState<TunnelTokenResponse | null>(null);
+  const [enableTunnelOnCreate, setEnableTunnelOnCreate] = useState(false);
+  const [createdGateway, setCreatedGateway] = useState<GatewayData | null>(null);
   const [tunnelDeploying, setTunnelDeploying] = useState(false);
   const [tunnelError, setTunnelError] = useState('');
   const [rotateConfirmOpen, setRotateConfirmOpen] = useState(false);
@@ -112,18 +114,14 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
   const tunnelSectionOpen = useUiPreferencesStore((s) => s.tunnelSectionOpen);
   const tunnelEventLogOpen = useUiPreferencesStore((s) => s.tunnelEventLogOpen);
-  const tunnelDeployGuidesOpen = useUiPreferencesStore((s) => s.tunnelDeployGuidesOpen);
   const tunnelMetricsOpen = useUiPreferencesStore((s) => s.tunnelMetricsOpen);
   const setUiPref = useUiPreferencesStore((s) => s.set);
 
-  const { copied: tokenCopied, copy: copyToken } = useCopyToClipboard();
-  const { copied: cmdCopied, copy: copyCmd } = useCopyToClipboard();
-  const { copied: composeCopied, copy: copyCompose } = useCopyToClipboard();
-  const { copied: systemdCopied, copy: copySystemd } = useCopyToClipboard();
-
   const isEditMode = Boolean(gateway);
-  const isTunnelEnabled = gateway?.tunnelEnabled ?? false;
-  const isTunnelConnected = gateway?.tunnelConnected ?? false;
+  const activeGateway = gateway ?? createdGateway;
+  const gatewayCreatedWithTunnel = !gateway && createdGateway != null;
+  const isTunnelEnabled = activeGateway?.tunnelEnabled ?? enableTunnelOnCreate;
+  const isTunnelConnected = activeGateway?.tunnelConnected ?? false;
   const supportsGroupMode = type === 'MANAGED_SSH' || type === 'GUACD' || type === 'DB_PROXY';
   const isGroupMode = deploymentMode === 'MANAGED_GROUP';
 
@@ -150,7 +148,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       setAutoScaleEnabled(false); setMinReplicasVal('0'); setMaxReplicasVal('5');
       setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
     }
-    setError(''); setTunnelToken(null); setTunnelError(''); setTunnelDeploying(false);
+    setError(''); setTunnelBundle(null); setTunnelError(''); setTunnelDeploying(false);
+    setEnableTunnelOnCreate(false); setCreatedGateway(null);
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
     setTunnelEvents([]); setTunnelMetrics(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -202,7 +201,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
         await updateGateway(gateway.id, data);
       } else {
         const apiPortNum = apiPort ? parseInt(apiPort, 10) : undefined;
-        await createGateway({
+        const created = await createGateway({
           name: name.trim(), type, deploymentMode,
           host: isGroupMode ? '' : host.trim(), port: portNum,
           description: description.trim() || undefined, isDefault: isDefault || undefined,
@@ -215,43 +214,86 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           ...(supportsGroupMode && publishPorts ? { publishPorts } : {}),
           ...(supportsGroupMode ? { lbStrategy } : {}),
         });
+        if (enableTunnelOnCreate) {
+          setCreatedGateway(created);
+          setUiPref('tunnelSectionOpen', true);
+          try {
+            const bundle = await generateTunnelTokenAction(created.id);
+            setTunnelBundle(bundle);
+            setCreatedGateway({
+              ...created,
+              tunnelEnabled: bundle.tunnelEnabled,
+              tunnelConnected: bundle.tunnelConnected,
+              tunnelClientCertExp: bundle.tunnelClientCertExp ?? created.tunnelClientCertExp,
+            });
+          } catch (err) {
+            setEnableTunnelOnCreate(false);
+            setTunnelError(extractApiError(err, 'Gateway was created, but tunnel activation failed'));
+          }
+        }
       }
     }, isEditMode ? 'Failed to update gateway' : 'Failed to create gateway');
-    if (ok) handleClose();
+    if (ok && (isEditMode || !enableTunnelOnCreate)) handleClose();
   };
 
+  const updateCreatedGatewayTunnelState = useCallback((id: string, updates: Partial<GatewayData>) => {
+    setCreatedGateway((current) => (current?.id === id ? { ...current, ...updates } : current));
+  }, []);
+
   const handleEnableTunnel = async () => {
-    if (!gateway) return;
+    if (!activeGateway) {
+      setTunnelError('');
+      setEnableTunnelOnCreate(true);
+      setUiPref('tunnelSectionOpen', true);
+      return;
+    }
     setTunnelError(''); setTunnelDeploying(true);
     const ok = await runTunnelAction(async () => {
-      const result = await generateTunnelTokenAction(gateway.id);
-      setTunnelToken(result.token);
+      const result = await generateTunnelTokenAction(activeGateway.id);
+      setTunnelBundle(result);
+      updateCreatedGatewayTunnelState(activeGateway.id, {
+        tunnelEnabled: result.tunnelEnabled,
+        tunnelConnected: result.tunnelConnected,
+        tunnelClientCertExp: result.tunnelClientCertExp ?? activeGateway.tunnelClientCertExp,
+      });
     }, 'Failed to enable tunnel');
     setTunnelDeploying(false);
     if (!ok) setTunnelError('Failed to generate tunnel token');
   };
 
   const handleRotateTunnel = async () => {
-    if (!gateway) return;
+    if (!activeGateway) return;
     setRotateConfirmOpen(false); setTunnelError('');
     const ok = await runTunnelAction(async () => {
-      const result = await generateTunnelTokenAction(gateway.id);
-      setTunnelToken(result.token);
+      const result = await generateTunnelTokenAction(activeGateway.id);
+      setTunnelBundle(result);
+      updateCreatedGatewayTunnelState(activeGateway.id, {
+        tunnelEnabled: result.tunnelEnabled,
+        tunnelConnected: result.tunnelConnected,
+        tunnelClientCertExp: result.tunnelClientCertExp ?? activeGateway.tunnelClientCertExp,
+      });
     }, 'Failed to rotate tunnel token');
     if (!ok) setTunnelError('Failed to rotate tunnel token');
   };
 
   const handleRevokeTunnel = async () => {
-    if (!gateway) return;
+    if (!activeGateway) return;
     setRevokeConfirmOpen(false); setTunnelError('');
     const ok = await runTunnelAction(async () => {
-      await revokeTunnelTokenAction(gateway.id);
-      setTunnelToken(null);
+      await revokeTunnelTokenAction(activeGateway.id);
+      setTunnelBundle(null);
+      setTunnelMetrics(null);
+      updateCreatedGatewayTunnelState(activeGateway.id, {
+        tunnelEnabled: false,
+        tunnelConnected: false,
+        tunnelConnectedAt: null,
+        tunnelClientCertExp: null,
+      });
     }, 'Failed to revoke tunnel token');
     if (!ok) setTunnelError('Failed to revoke tunnel token');
   };
 
-  const gatewayId = gateway?.id;
+  const gatewayId = activeGateway?.id;
 
   const fetchTunnelEvents = useCallback(async () => {
     if (!gatewayId) return;
@@ -284,20 +326,6 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   }, [gatewayId, runTunnelAction]);
 
   const serverUrl = window.location.origin;
-  const dockerCommand = useMemo(() => {
-    if (!tunnelToken) return '';
-    return `docker run -d --restart=unless-stopped \\\n  -e TUNNEL_TOKEN="${tunnelToken}" \\\n  -e TUNNEL_SERVER_URL="${serverUrl}" \\\n  -e TUNNEL_GATEWAY_ID="${gatewayId ?? ''}" \\\n  arsenale/tunnel-agent:latest`;
-  }, [tunnelToken, serverUrl, gatewayId]);
-
-  const dockerCompose = useMemo(() => {
-    if (!tunnelToken) return '';
-    return `services:\n  arsenale-gateway:\n    image: arsenale/tunnel-agent:latest\n    restart: always\n    environment:\n      TUNNEL_SERVER_URL: "${serverUrl}"\n      TUNNEL_TOKEN: "${tunnelToken}"\n      TUNNEL_GATEWAY_ID: "${gatewayId ?? ''}"\n      TUNNEL_LOCAL_PORT: "4822"`;
-  }, [tunnelToken, serverUrl, gatewayId]);
-
-  const systemdUnit = useMemo(() => {
-    if (!tunnelToken) return '';
-    return `[Unit]\nDescription=Arsenale Tunnel Agent\nAfter=network-online.target\nWants=network-online.target\n\n[Service]\nType=simple\nRestart=always\nRestartSec=5\nEnvironment=TUNNEL_SERVER_URL=${serverUrl}\nEnvironment=TUNNEL_TOKEN=${tunnelToken}\nEnvironment=TUNNEL_GATEWAY_ID=${gatewayId ?? ''}\nEnvironment=TUNNEL_LOCAL_PORT=4822\nExecStart=/usr/local/bin/arsenale-tunnel-agent\n\n[Install]\nWantedBy=multi-user.target`;
-  }, [tunnelToken, serverUrl, gatewayId]);
 
   const formatUptime = (connectedAt: string): string => {
     const diff = Date.now() - new Date(connectedAt).getTime();
@@ -307,8 +335,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   };
 
   const certExpDisplay = (): string | null => {
-    if (!gateway?.tunnelClientCertExp) return null;
-    const exp = new Date(gateway.tunnelClientCertExp); const now = new Date();
+    if (!activeGateway?.tunnelClientCertExp) return null;
+    const exp = new Date(activeGateway.tunnelClientCertExp); const now = new Date();
     const diffDays = Math.ceil((exp.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     const expStr = exp.toLocaleDateString();
     if (diffDays <= 0) return `Expired on ${expStr}`;
@@ -323,7 +351,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     setMonitoringEnabled(true); setMonitorIntervalMs('5000'); setInactivityTimeout('60');
     setAutoScaleEnabled(false); setMinReplicasVal('0'); setMaxReplicasVal('5');
     setSessPerInstance('10'); setCooldownVal('300'); setPublishPorts(false); setLbStrategy('ROUND_ROBIN');
-    setError(''); setTunnelToken(null); setTunnelError(''); setTunnelDeploying(false);
+    setError(''); setTunnelBundle(null); setTunnelError(''); setTunnelDeploying(false);
+    setEnableTunnelOnCreate(false); setCreatedGateway(null);
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
     setTunnelEvents([]); setTunnelMetrics(null);
     onClose();
@@ -333,6 +362,9 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
   const renderTunnelStatusChip = () => {
     if (!isTunnelEnabled) return null;
+    if (!activeGateway && enableTunnelOnCreate) {
+      return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/30">Enabled on create</Badge>;
+    }
     if (tunnelDeploying || tunnelActionLoading) {
       return <span className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" />Deploying...</span>;
     }
@@ -345,12 +377,17 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
       <DialogContent className="flex max-h-[min(88vh,calc(100vh-2rem))] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden sm:w-[90vw] sm:max-w-[90vw]">
         <DialogHeader>
-          <DialogTitle>{isEditMode ? 'Edit Gateway' : 'New Gateway'}</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Gateway' : gatewayCreatedWithTunnel ? 'Gateway Created' : 'New Gateway'}</DialogTitle>
+          <DialogDescription>
+            {gatewayCreatedWithTunnel
+              ? 'Use the enrollment bundle below to install the remote gateway container.'
+              : 'Configure gateway routing, health checks, and optional zero-trust tunnel enrollment.'}
+          </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden pr-1">
           {error && <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">{error}</div>}
           <div className="space-y-4">
-          <div className="space-y-1.5"><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} required autoFocus maxLength={100} /></div>
+          <div className="space-y-1.5"><Label htmlFor="gateway-name">Name</Label><Input id="gateway-name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus maxLength={100} /></div>
           <div className="space-y-1.5">
             <Label>Type</Label>
             <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)} disabled={isEditMode}>
@@ -397,12 +434,12 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           {isGroupMode ? (
             <>
               <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">This gateway is a logical group. The port below is the service port used by deployed instances.</div>
-              <div className="space-y-1.5"><Label>Service Port</Label><Input value={port} onChange={(e) => setPort(e.target.value)} type="number" />{publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}</div>
+              <div className="space-y-1.5"><Label htmlFor="gateway-service-port">Service Port</Label><Input id="gateway-service-port" value={port} onChange={(e) => setPort(e.target.value)} type="number" />{publishPorts && <p className="text-xs text-muted-foreground">External host ports are assigned per instance at deploy time.</p>}</div>
             </>
           ) : (
             <div className="flex gap-3">
-              <div className="flex-1 space-y-1.5"><Label>Host</Label><Input value={host} onChange={(e) => setHost(e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
-              <div className="w-[120px] space-y-1.5"><Label>Port</Label><Input value={port} onChange={(e) => setPort(e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
+              <div className="flex-1 space-y-1.5"><Label htmlFor="gateway-host">Host</Label><Input id="gateway-host" value={host} onChange={(e) => setHost(e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
+              <div className="w-[120px] space-y-1.5"><Label htmlFor="gateway-port">Port</Label><Input id="gateway-port" value={port} onChange={(e) => setPort(e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
             </div>
           )}
           {type === 'SSH_BASTION' && (
@@ -443,9 +480,13 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
             </Accordion>
           )}
 
-          {/* Zero-Trust Tunnel */}
-          {gateway && zeroTrustEnabled && (
-            <Accordion type="single" collapsible value={tunnelSectionOpen ? 'tunnel' : ''} onValueChange={(v) => setUiPref('tunnelSectionOpen', v === 'tunnel')}>
+          {zeroTrustEnabled && (
+            <Accordion
+              type="single"
+              collapsible
+              value={tunnelSectionOpen || !isEditMode ? 'tunnel' : ''}
+              onValueChange={(v) => setUiPref('tunnelSectionOpen', v === 'tunnel')}
+            >
               <AccordionItem value="tunnel">
                 <AccordionTrigger>
                   <div className="flex items-center gap-2 w-full">
@@ -458,12 +499,15 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                   <div className="space-y-3">
                     {tunnelError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400 flex justify-between"><span>{tunnelError}</span><button onClick={() => setTunnelError('')} className="text-xs">dismiss</button></div>}
 
-                    <GatewayEgressPolicyEditor
-                      gatewayId={gateway.id}
-                      policy={gateway.egressPolicy}
-                    />
-
-                    <Separator />
+                    {activeGateway && (
+                      <>
+                        <GatewayEgressPolicyEditor
+                          gatewayId={activeGateway.id}
+                          policy={activeGateway.egressPolicy}
+                        />
+                        <Separator />
+                      </>
+                    )}
 
                     {!isTunnelEnabled ? (
                       <>
@@ -473,40 +517,37 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                           {tunnelDeploying || tunnelActionLoading ? 'Enabling...' : 'Enable Zero-Trust Tunnel'}
                         </Button>
                       </>
+                    ) : !activeGateway ? (
+                      <div className="space-y-3">
+                        <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
+                          Tunnel will be enabled when the gateway is created. The one-time token and remote install commands will appear after creation.
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => setEnableTunnelOnCreate(false)}>
+                          Disable Before Create
+                        </Button>
+                      </div>
                     ) : (
                       <>
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-muted-foreground">Status:</span>
                           {renderTunnelStatusChip()}
-                          {gateway?.tunnelConnectedAt && isTunnelConnected && <span className="text-xs text-muted-foreground">since {new Date(gateway.tunnelConnectedAt).toLocaleString()}</span>}
+                          {activeGateway.tunnelConnectedAt && isTunnelConnected && <span className="text-xs text-muted-foreground">since {new Date(activeGateway.tunnelConnectedAt).toLocaleString()}</span>}
                         </div>
                         {certInfo && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">{certInfo}</div>}
                         <Separator />
 
-                        {isGroupMode && tunnelToken && (
-                          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-400 space-y-2">
-                            Token generated — copy it now, it will not be shown again.
-                            <Input value={tunnelToken} readOnly className="font-mono text-xs" />
-                            <Button size="sm" onClick={() => copyToken(tunnelToken)}><Copy className="h-3.5 w-3.5 mr-1" />{tokenCopied ? 'Copied!' : 'Copy Token'}</Button>
+                        {tunnelBundle ? (
+                          <GatewayTunnelInstallPanel
+                            gateway={activeGateway}
+                            tokenBundle={tunnelBundle}
+                            serverUrl={serverUrl}
+                          />
+                        ) : (
+                          <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">
+                            Tunnel is enabled. Rotate the token to get a fresh remote install bundle.
                           </div>
                         )}
 
-                        {!isGroupMode && (
-                          <>
-                            <p className="text-sm text-muted-foreground">Run the following Docker command on the gateway machine:</p>
-                            {tunnelToken ? (
-                              <>
-                                <Textarea value={dockerCommand} readOnly rows={3} className="font-mono text-xs" />
-                                <Button size="sm" onClick={() => copyCmd(dockerCommand)}><Copy className="h-3.5 w-3.5 mr-1" />{cmdCopied ? 'Copied!' : 'Copy Docker Command'}</Button>
-                                <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-sm text-yellow-400">Copy this command now — the token will not be shown again after closing.</div>
-                              </>
-                            ) : (
-                              <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-1 text-sm text-blue-400">Tunnel is enabled. Rotate the token to get a new docker run command.</div>
-                            )}
-                          </>
-                        )}
-
-                        {/* Token management */}
                         <div className="flex gap-2 flex-wrap">
                           {isTunnelConnected && (
                             !disconnectConfirmOpen ? (
@@ -531,7 +572,6 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                           )}
                         </div>
 
-                        {/* Live Metrics */}
                         {isTunnelConnected && (
                           <Accordion type="single" collapsible value={tunnelMetricsOpen ? 'metrics' : ''} onValueChange={(v) => setUiPref('tunnelMetricsOpen', v === 'metrics')}>
                             <AccordionItem value="metrics">
@@ -552,7 +592,6 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                           </Accordion>
                         )}
 
-                        {/* Event Log */}
                         <Accordion type="single" collapsible value={tunnelEventLogOpen ? 'events' : ''} onValueChange={(v) => setUiPref('tunnelEventLogOpen', v === 'events')}>
                           <AccordionItem value="events">
                             <AccordionTrigger><div className="flex items-center gap-2"><History className="h-4 w-4" /><span className="text-sm font-medium">Connection Event Log</span></div></AccordionTrigger>
@@ -578,21 +617,6 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                             </AccordionContent>
                           </AccordionItem>
                         </Accordion>
-
-                        {/* Deploy Guides */}
-                        {!isGroupMode && tunnelToken && (
-                          <Accordion type="single" collapsible value={tunnelDeployGuidesOpen ? 'guides' : ''} onValueChange={(v) => setUiPref('tunnelDeployGuidesOpen', v === 'guides')}>
-                            <AccordionItem value="guides">
-                              <AccordionTrigger><div className="flex items-center gap-2"><Rocket className="h-4 w-4" /><span className="text-sm font-medium">Deployment Guides</span></div></AccordionTrigger>
-                              <AccordionContent>
-                                <div className="space-y-4">
-                                  <div><p className="text-xs font-medium mb-1">Docker Compose</p><Textarea value={dockerCompose} readOnly rows={3} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copyCompose(dockerCompose)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{composeCopied ? 'Copied!' : 'Copy'}</Button></div>
-                                  <div><p className="text-xs font-medium mb-1">Systemd Unit</p><Textarea value={systemdUnit} readOnly rows={3} className="font-mono text-[0.7rem]" /><Button size="sm" variant="ghost" onClick={() => copySystemd(systemdUnit)} className="mt-1"><Copy className="h-3.5 w-3.5 mr-1" />{systemdCopied ? 'Copied!' : 'Copy'}</Button></div>
-                                </div>
-                              </AccordionContent>
-                            </AccordionItem>
-                          </Accordion>
-                        )}
                       </>
                     )}
                   </div>
@@ -603,10 +627,14 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={loading}>
-            {loading ? (isEditMode ? 'Saving...' : 'Creating...') : (isEditMode ? 'Save' : 'Create')}
-          </Button>
+          <Button variant="outline" onClick={handleClose}>{gatewayCreatedWithTunnel ? 'Close' : 'Cancel'}</Button>
+          {!gatewayCreatedWithTunnel && (
+            <Button onClick={handleSubmit} disabled={loading}>
+              {loading
+                ? (isEditMode ? 'Saving...' : 'Creating...')
+                : (isEditMode ? 'Save' : enableTunnelOnCreate ? 'Create and Enable Tunnel' : 'Create')}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

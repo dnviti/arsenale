@@ -62,8 +62,8 @@ func (s Service) ResolveConnection(ctx context.Context, userID, tenantID, connec
 	}, nil
 }
 
-func (s Service) CreateTunnelProxy(ctx context.Context, gatewayID, targetHost string, targetPort int) (contracts.TunnelProxyResponse, error) {
-	proxy, err := s.createTunnelProxy(ctx, gatewayID, targetHost, targetPort)
+func (s Service) CreateTunnelProxy(ctx context.Context, gatewayID, targetHost string, targetPort int, fallbackPorts ...int) (contracts.TunnelProxyResponse, error) {
+	proxy, err := s.createTunnelProxy(ctx, gatewayID, targetHost, targetPort, fallbackPorts...)
 	if err != nil {
 		return contracts.TunnelProxyResponse{}, mapResolveError(err)
 	}

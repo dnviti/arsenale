@@ -13,6 +13,7 @@ type Definition struct {
 	Type                string
 	Managed             bool
 	PrimaryPort         int
+	ListenerEnvVar      string
 	TunnelLocalHost     string
 	StandaloneDirectory string
 	ComposeService      string
@@ -23,6 +24,7 @@ var definitions = []Definition{
 		Type:                TypeGuacd,
 		Managed:             true,
 		PrimaryPort:         4822,
+		ListenerEnvVar:      "GUACD_PORT",
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/guacd",
 		ComposeService:      "guacd",
@@ -31,6 +33,7 @@ var definitions = []Definition{
 		Type:                TypeSSHBastion,
 		Managed:             false,
 		PrimaryPort:         2222,
+		ListenerEnvVar:      "SSH_PORT",
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/ssh-gateway",
 		ComposeService:      "ssh-gateway",
@@ -39,6 +42,7 @@ var definitions = []Definition{
 		Type:                TypeManagedSSH,
 		Managed:             true,
 		PrimaryPort:         2222,
+		ListenerEnvVar:      "SSH_PORT",
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/ssh-gateway",
 		ComposeService:      "ssh-gateway",
@@ -47,6 +51,7 @@ var definitions = []Definition{
 		Type:                TypeDBProxy,
 		Managed:             true,
 		PrimaryPort:         5432,
+		ListenerEnvVar:      "DB_LISTEN_PORT",
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/db-proxy",
 		ComposeService:      "db-proxy",
@@ -91,6 +96,14 @@ func PrimaryPort(gatewayType string) int {
 	return def.PrimaryPort
 }
 
+func ListenerEnvVar(gatewayType string) string {
+	def, ok := Lookup(gatewayType)
+	if !ok {
+		return ""
+	}
+	return def.ListenerEnvVar
+}
+
 func TunnelLocalHost(gatewayType string) string {
 	def, ok := Lookup(gatewayType)
 	if !ok || strings.TrimSpace(def.TunnelLocalHost) == "" {
@@ -100,8 +113,21 @@ func TunnelLocalHost(gatewayType string) string {
 }
 
 func TunnelLocalPort(gatewayType string, configuredPort int) int {
-	if configuredPort > 0 {
-		return configuredPort
+	ports := TunnelLocalPortCandidates(gatewayType, configuredPort)
+	if len(ports) == 0 {
+		return 0
 	}
-	return PrimaryPort(gatewayType)
+	return ports[0]
+}
+
+func TunnelLocalPortCandidates(gatewayType string, configuredPort int) []int {
+	ports := make([]int, 0, 2)
+	if configuredPort > 0 {
+		ports = append(ports, configuredPort)
+	}
+	def, ok := Lookup(gatewayType)
+	if ok && def.PrimaryPort > 0 && def.PrimaryPort != configuredPort {
+		ports = append(ports, def.PrimaryPort)
+	}
+	return ports
 }

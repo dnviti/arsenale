@@ -19,6 +19,7 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/tunnelegress"
 	"github.com/dnviti/arsenale/backend/pkg/contracts"
 	"github.com/dnviti/arsenale/backend/pkg/egresspolicy"
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 const dbProxyRequestTimeout = 30 * time.Second
@@ -190,7 +191,11 @@ func (s Service) dbProxyBaseURL(ctx context.Context, gatewayID, instanceID strin
 		return "", &requestError{status: http.StatusBadGateway, message: "database session gateway port is unavailable"}
 	}
 	if gateway.TunnelEnabled {
-		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", port)
+		tunnelPorts := gatewayruntime.TunnelLocalPortCandidates(gateway.Type, port)
+		if len(tunnelPorts) == 0 {
+			tunnelPorts = []int{port}
+		}
+		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPorts[0], tunnelPorts[1:]...)
 		if err != nil {
 			return "", err
 		}

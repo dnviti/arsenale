@@ -118,7 +118,8 @@ All full-screen dialogs use the MUI `Dialog` component with `fullScreen` prop an
 
 | Component | Purpose |
 |-----------|---------|
-| `GatewayDialog` | Create/edit gateway (GUACD, SSH Bastion, Managed SSH) with connection test |
+| `GatewayDialog` | Create/edit gateway (GUACD, SSH Bastion, Managed SSH, DB Proxy) with connection test and zero-trust tunnel enrollment |
+| `GatewayTunnelInstallPanel` | One-time tunnel enrollment bundle with remote install commands, token env, Docker Compose, and client certificate material |
 | `GatewayTemplateDialog` | Create/edit gateway template with auto-scaling and LB defaults |
 | `GatewayTemplateSection` | Gateway templates list with create/edit/delete/deploy actions |
 | `OrchestrationSection` | Settings section wrapper for orchestration dashboard |

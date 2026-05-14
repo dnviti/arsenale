@@ -25,6 +25,7 @@ type TunnelProxyRequest struct {
 	GatewayID   string `json:"gatewayId"`
 	TargetHost  string `json:"targetHost"`
 	TargetPort  int    `json:"targetPort"`
+	TargetPorts []int  `json:"targetPorts,omitempty"`
 	TimeoutMs   int    `json:"timeoutMs,omitempty"`
 	IdleTimeout int    `json:"idleTimeoutMs,omitempty"`
 }

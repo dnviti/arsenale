@@ -92,8 +92,14 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 		idleTimer.Stop()
 		defer socket.Close()
 
-		stream, err := b.openStream(req.GatewayID, req.TargetHost, req.TargetPort, timeout)
-		if err != nil {
+		var stream *streamConn
+		for _, targetPort := range targetPortCandidates(req.TargetPort, req.TargetPorts) {
+			stream, err = b.openStream(req.GatewayID, req.TargetHost, targetPort, timeout)
+			if err == nil {
+				break
+			}
+		}
+		if stream == nil {
 			return
 		}
 		defer stream.close(true)
@@ -124,6 +130,22 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 		Port:      address.Port,
 		ExpiresIn: int(idleTimeout / time.Millisecond),
 	}, nil
+}
+
+func targetPortCandidates(primary int, additional []int) []int {
+	seen := map[int]struct{}{}
+	ports := make([]int, 0, len(additional)+1)
+	for _, port := range append([]int{primary}, additional...) {
+		if port <= 0 {
+			continue
+		}
+		if _, ok := seen[port]; ok {
+			continue
+		}
+		seen[port] = struct{}{}
+		ports = append(ports, port)
+	}
+	return ports
 }
 
 func (b *Broker) sendFrame(conn *tunnelConnection, frameType msgType, streamID uint16, payload []byte) error {

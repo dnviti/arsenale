@@ -97,6 +97,9 @@ func tunnelTokenEnvContent(bundle tunnelTokenBundle, serverURL, certFile, keyFil
 		envLine("TUNNEL_CLIENT_CERT_FILE", certFile),
 		envLine("TUNNEL_CLIENT_KEY_FILE", keyFile),
 	}
+	if listenerEnv := gatewayruntime.ListenerEnvVar(bundle.GatewayType); listenerEnv != "" {
+		lines = append(lines, envLine(listenerEnv, strconv.Itoa(localPort)))
+	}
 	return strings.Join(lines, "\n") + "\n"
 }
 

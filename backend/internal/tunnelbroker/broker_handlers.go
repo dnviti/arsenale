@@ -96,7 +96,7 @@ func (b *Broker) HandleCreateTCPProxy(w http.ResponseWriter, r *http.Request) {
 		app.ErrorJSON(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if strings.TrimSpace(req.GatewayID) == "" || strings.TrimSpace(req.TargetHost) == "" || req.TargetPort <= 0 {
+	if strings.TrimSpace(req.GatewayID) == "" || strings.TrimSpace(req.TargetHost) == "" || len(targetPortCandidates(req.TargetPort, req.TargetPorts)) == 0 {
 		app.ErrorJSON(w, http.StatusBadRequest, "gatewayId, targetHost and targetPort are required")
 		return
 	}
