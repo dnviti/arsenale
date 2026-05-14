@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Password self-signup now generates a user ID and sets `updatedAt`, resolving the `null value in column "id" of relation "User"` registration failure.
 - OAuth and LDAP auto-provisioning paths now set `updatedAt` consistently when creating users.
+- Client nginx startup no longer fails when `ip_geolocation` disables the `map-assets` service.
 
 ### Removed
 - Legacy RDGW service, CLI command, settings UI, API routes, and deployment wiring.
