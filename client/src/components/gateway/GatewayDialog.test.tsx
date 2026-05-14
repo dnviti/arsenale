@@ -160,8 +160,8 @@ describe('GatewayDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Revoke Token' }));
     await user.click(screen.getByRole('button', { name: 'Yes, Revoke' }));
 
-    await waitFor(() => expect(revokeTunnelToken).toHaveBeenCalledWith('gateway-1'));
-    expect(screen.getByRole('button', { name: 'Enable Zero-Trust Tunnel' })).toBeInTheDocument();
+    expect(revokeTunnelToken).toHaveBeenCalledWith('gateway-1');
+    expect(await screen.findByRole('button', { name: 'Enable Zero-Trust Tunnel' })).toBeInTheDocument();
     expect(screen.queryByText(/Tunnel is enabled/i)).not.toBeInTheDocument();
   });
 
