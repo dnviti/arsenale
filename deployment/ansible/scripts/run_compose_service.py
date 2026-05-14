@@ -262,6 +262,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.recreate:
+        create_command.insert(2, "--replace")
         remove_container(args.runtime, container_name)
 
     if not container_exists(args.runtime, container_name):

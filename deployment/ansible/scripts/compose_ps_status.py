@@ -40,6 +40,8 @@ def normalize_item(item: dict) -> dict:
         health = "healthy"
     elif not health and "(unhealthy)" in status:
         health = "unhealthy"
+    elif not health and state == "running":
+        health = "healthy"
 
     exit_code = item.get("ExitCode")
     try:

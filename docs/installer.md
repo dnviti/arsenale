@@ -2,7 +2,7 @@
 title: Installer Guide
 description: Installer flow, modes, backends, capabilities, technician password, artifacts, and operational walkthroughs for Arsenale
 generated-by: claw-docs
-generated-at: 2026-04-11T11:45:00Z
+generated-at: 2026-05-13T17:57:43Z
 source-files:
   - Makefile
   - deployment/ansible/README.md
@@ -121,7 +121,9 @@ make deploy     # Non-interactive (uses existing profile or defaults)
 - The `firewall` role configures nftables when enabled.
 - API health endpoints are validated after deployment.
 - Secrets are verified to be mounted via Podman secrets, not environment variables.
-- Shared RDP and SSH file payloads require S3-compatible object storage. Production profiles must set `SHARED_FILES_S3_BUCKET` plus the related endpoint/credential vars before the control plane starts.
+- When `arsenale_public_url` uses `https://`, production Podman mounts the generated client certificate and installer-rendered nginx TLS template so the exposed client port serves HTTPS directly.
+- Shared RDP and SSH file payloads require S3-compatible object storage. Production Podman profiles can include the bundled `shared-files-s3` MinIO service for self-contained installs; otherwise set `SHARED_FILES_S3_BUCKET` plus the related endpoint/credential vars before the control plane starts.
+- Set `arsenale_self_signup_enabled=true` to render `SELF_SIGNUP_ENABLED=true` for the control plane; public registration still also requires the app-level self-signup toggle to be enabled.
 
 ## Backends
 

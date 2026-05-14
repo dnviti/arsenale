@@ -179,7 +179,7 @@ def resolve_profile(profile: dict[str, Any], catalog: dict[str, Any]) -> dict[st
     zero_trust_enabled = bool(routing.get("zeroTrust", False)) and capabilities.get("zero_trust", False)
     service_names = ["postgres", "migrate", "redis", "control-plane-api", "authz-pdp", "client"]
     if capabilities.get("connections"):
-        service_names.extend(["guacd", "desktop-broker", "terminal-broker", "ssh-gateway"])
+        service_names.extend(["guacd", "desktop-broker", "terminal-broker", "ssh-gateway", "shared-files-s3"])
     if capabilities.get("ip_geolocation"):
         service_names.append("map-assets")
     if capabilities.get("recordings"):
@@ -192,7 +192,7 @@ def resolve_profile(profile: dict[str, Any], catalog: dict[str, Any]) -> dict[st
         service_names.extend(["tunnel-broker", "control-plane-controller", "runtime-agent", "agent-orchestrator"])
     if profile["mode"] == "development":
         if capabilities.get("connections"):
-            service_names.extend(["shared-files-s3", "terminal-target", "dev-debian-ssh-target"])
+            service_names.extend(["terminal-target", "dev-debian-ssh-target"])
         if capabilities.get("databases"):
             service_names.extend(
                 [
@@ -336,7 +336,12 @@ def extract_named_mount(entry: Any) -> str | None:
     return source or None
 
 
-def prune_compose(compose_data: dict[str, Any], enabled_services: set[str]) -> dict[str, Any]:
+def prune_compose(
+    compose_data: dict[str, Any],
+    enabled_services: set[str],
+    *,
+    disable_healthchecks: bool = False,
+) -> dict[str, Any]:
     pruned = deepcopy(compose_data)
     services = pruned.get("services", {})
     if not isinstance(services, dict):
@@ -352,6 +357,8 @@ def prune_compose(compose_data: dict[str, Any], enabled_services: set[str]) -> d
     used_secrets: set[str] = set()
 
     for config in pruned["services"].values():
+        if disable_healthchecks:
+            config.pop("healthcheck", None)
         depends_on = config.get("depends_on")
         if isinstance(depends_on, dict):
             config["depends_on"] = {
@@ -433,7 +440,7 @@ def command_prune_compose(args: argparse.Namespace) -> int:
         enabled_services = set(resolved.get("services", []))
     else:
         enabled_services = {name.strip() for name in args.services.split(",") if name.strip()}
-    pruned = prune_compose(compose_data, enabled_services)
+    pruned = prune_compose(compose_data, enabled_services, disable_healthchecks=args.disable_healthchecks)
     output = yaml.safe_dump(pruned, sort_keys=False)
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")
@@ -486,6 +493,7 @@ def build_parser() -> argparse.ArgumentParser:
     prune_compose_parser.add_argument("--resolved")
     prune_compose_parser.add_argument("--services", default="")
     prune_compose_parser.add_argument("--output")
+    prune_compose_parser.add_argument("--disable-healthchecks", action="store_true")
     prune_compose_parser.set_defaults(func=command_prune_compose)
 
     dev_refresh_parser = subparsers.add_parser("resolve-dev-refresh")

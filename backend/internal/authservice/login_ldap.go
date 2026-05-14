@@ -95,8 +95,10 @@ func (s Service) provisionLDAPUser(ctx context.Context, ldapUser ldapapi.AuthUse
 
 	if _, err := tx.Exec(
 		ctx,
-		`INSERT INTO "User" (id, email, username, "vaultSetupComplete", "emailVerified")
-		 VALUES ($1, $2, $3, false, true)`,
+		`
+INSERT INTO "User" (id, email, username, "vaultSetupComplete", "emailVerified", "updatedAt")
+VALUES ($1, $2, $3, false, true, NOW())
+`,
 		userID,
 		strings.ToLower(strings.TrimSpace(ldapUser.Email)),
 		nullableString(username),

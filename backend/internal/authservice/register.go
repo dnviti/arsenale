@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -57,7 +58,7 @@ func (s Service) Register(ctx context.Context, email, password, ipAddress string
 		return registerResult{}, fmt.Errorf("query existing user: %w", err)
 	}
 
-	if err := assertPasswordNotBreached(ctx, password); err != nil {
+	if err := checkPasswordNotBreached(ctx, password); err != nil {
 		return registerResult{}, err
 	}
 
@@ -111,9 +112,10 @@ func (s Service) Register(ctx context.Context, email, password, ipAddress string
 		emailVerifyExpiry = &expiry
 	}
 
-	var userID string
+	userID := uuid.NewString()
 	if err := s.DB.QueryRow(ctx, `
 INSERT INTO "User" (
+	id,
 	email,
 	"passwordHash",
 	"vaultSalt",
@@ -126,11 +128,13 @@ INSERT INTO "User" (
 	"vaultRecoveryKeySalt",
 	"emailVerified",
 	"emailVerifyToken",
-	"emailVerifyExpiry"
+	"emailVerifyExpiry",
+	"updatedAt"
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 RETURNING id
 `,
+		userID,
 		email,
 		string(passwordHash),
 		vaultSalt,

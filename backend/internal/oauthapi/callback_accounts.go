@@ -92,8 +92,8 @@ VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8::jsonb)
 			userID = uuid.NewString()
 			displayName := nullableString(profile.DisplayName)
 			if err := tx.QueryRow(ctx, `
-INSERT INTO "User" (id, email, username, "passwordHash", "vaultSalt", "encryptedVaultKey", "vaultKeyIV", "vaultKeyTag", "vaultSetupComplete", "emailVerified")
-VALUES ($1, $2, $3, NULL, NULL, NULL, NULL, NULL, false, true)
+INSERT INTO "User" (id, email, username, "passwordHash", "vaultSalt", "encryptedVaultKey", "vaultKeyIV", "vaultKeyTag", "vaultSetupComplete", "emailVerified", "updatedAt")
+VALUES ($1, $2, $3, NULL, NULL, NULL, NULL, NULL, false, true, NOW())
 RETURNING username, "avatarData", enabled, NOT COALESCE("vaultSetupComplete", false)
 `, userID, profile.Email, displayName).Scan(&username, &avatarData, &enabled, &needsVaultSetup); err != nil {
 				return oauthLoginResult{}, fmt.Errorf("create oauth user: %w", err)

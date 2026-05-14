@@ -7,6 +7,7 @@
   loop:
     - "{{ installer_runtime_assets_dir | default(_home + '/config/installer-assets') }}"
     - "{{ (installer_runtime_assets_dir | default(_home + '/config/installer-assets')) + '/postgres' }}"
+    - "{{ (installer_runtime_assets_dir | default(_home + '/config/installer-assets')) + '/client' }}"
 
 - name: Render installer-managed PostgreSQL HBA config
   template:
@@ -19,6 +20,12 @@
     src: postgres/entrypoint.sh.j2
     dest: "{{ (installer_runtime_assets_dir | default(_home + '/config/installer-assets')) + '/postgres/entrypoint.sh' }}"
     mode: "0755"
+
+- name: Render installer-managed HTTPS client Nginx config
+  template:
+    src: client/nginx.https.conf.j2
+    dest: "{{ (installer_runtime_assets_dir | default(_home + '/config/installer-assets')) + '/client/nginx.https.conf' }}"
+    mode: "0644"
 
 - name: Template compose file
   template:

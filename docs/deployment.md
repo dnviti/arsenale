@@ -2,7 +2,7 @@
 title: Deployment
 description: Installer flow, container backends, TLS, demo fixtures, and CI/CD for Arsenale
 generated-by: claw-docs
-generated-at: 2026-05-09T22:10:46Z
+generated-at: 2026-05-13T17:57:43Z
 source-files:
   - Makefile
   - backend/Dockerfile
@@ -57,7 +57,7 @@ The checked-in `docker-compose.yml` mirrors the current generated development st
 
 For local code iteration, the root `Makefile` now supports scoped refreshes such as `make dev client`, `make dev gateways`, and `make dev control-plane`. Those commands reuse the saved dev render state and rebuild/restart only the requested services; full `make dev` is still the correct path for installer/profile/cert/secret/compose changes.
 
-RDP shared-drive staging and SSH browser-mediated file transfers now require S3-compatible object storage. The development installer provisions a local `shared-files-s3` MinIO service and injects the `SHARED_FILES_S3_*` runtime env vars automatically. Production and Kubernetes installs must point those env vars at external object storage before the control plane starts.
+RDP shared-drive staging and SSH browser-mediated file transfers now require S3-compatible object storage. The development installer provisions a local `shared-files-s3` MinIO service and injects the `SHARED_FILES_S3_*` runtime env vars automatically. Production Podman profiles can also include the bundled `shared-files-s3` service for self-contained installs; otherwise production and Kubernetes installs must point those env vars at external object storage before the control plane starts.
 
 ## 🔐 Installer Artifacts
 
@@ -168,6 +168,7 @@ The compose template now emits more deployment intent into the running services:
 - `ARSENALE_INSTALL_CAPABILITIES`
 - `FEATURE_*`
 - `CLI_ENABLED`
+- `SELF_SIGNUP_ENABLED`
 - `GATEWAY_ROUTING_MODE`
 - `MAP_ASSETS_UPSTREAM_HOST`
 - `MAP_ASSETS_CACHE_DIR`
@@ -199,6 +200,7 @@ Arsenale deploys with TLS everywhere practical.
 - Dev and production certificate generation are handled by the `certificates` role.
 - Local development writes the generated CA and service certificates under `${XDG_STATE_HOME:-$HOME/.local/state}/arsenale-dev/dev-certs/` by default.
 - Generated certs cover client HTTPS, PostgreSQL TLS, `guacd`, `guacenc`, SSH gateway gRPC, and tunnel identities.
+- Production Podman installs whose `arsenale_public_url` uses `https://` mount the generated client certificate plus an installer-rendered nginx TLS template into the client container, so `arsenale_client_port` serves HTTPS directly.
 
 ### Secrets
 
