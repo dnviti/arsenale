@@ -18,14 +18,19 @@ interface GatewayRuntimeInstall {
   serviceName: string;
   image: string;
   localPort: number;
+  setupCommands: string[];
   extraEnvironment: string[];
   volumes: string[];
 }
 
 const certPath = './certs/tunnel-client-cert.pem';
 const keyPath = './certs/tunnel-client-key.pem';
+const guacdCertPath = './certs/guacd-server-cert.pem';
+const guacdKeyPath = './certs/guacd-server-key.pem';
 const containerCertPath = '/tunnel-certs/client-cert.pem';
 const containerKeyPath = '/tunnel-certs/client-key.pem';
+const containerGuacdCertPath = '/certs/guacd-server-cert.pem';
+const containerGuacdKeyPath = '/certs/guacd-server-key.pem';
 
 export function buildTunnelInstallBundle({
   gateway,
@@ -46,7 +51,12 @@ export function buildTunnelInstallBundle({
   ].join('\n') + '\n';
 
   const dockerCompose = buildDockerCompose(runtime);
-  const installCommands = buildInstallCommands(tokenBundle, envContent, dockerCompose);
+  const installCommands = buildInstallCommands(
+    tokenBundle,
+    envContent,
+    dockerCompose,
+    runtime.setupCommands,
+  );
 
   return {
     envContent,
@@ -64,6 +74,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         serviceName: 'ssh-gateway',
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
         localPort: 2222,
+        setupCommands: [],
         extraEnvironment: ['SSH_PORT: "${SSH_PORT:-2222}"'],
         volumes: [],
       };
@@ -72,6 +83,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         serviceName: 'db-proxy',
         image: 'ghcr.io/dnviti/arsenale/db-proxy:stable',
         localPort: 5432,
+        setupCommands: [],
         extraEnvironment: ['DB_LISTEN_PORT: "${DB_LISTEN_PORT:-5432}"'],
         volumes: [],
       };
@@ -80,6 +92,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         serviceName: 'ssh-gateway',
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
         localPort: 2222,
+        setupCommands: [],
         extraEnvironment: ['SSH_PORT: "${SSH_PORT:-2222}"'],
         volumes: [],
       };
@@ -89,8 +102,25 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         serviceName: 'guacd',
         image: 'ghcr.io/dnviti/arsenale/guacd:stable',
         localPort: 4822,
-        extraEnvironment: ['GUACD_SSL: "${GUACD_SSL:-false}"'],
-        volumes: ['guacd-drive:/guacd-drive', 'guacd-recordings:/recordings'],
+        setupCommands: [
+          `if [ ! -f ${guacdCertPath} ] || [ ! -f ${guacdKeyPath} ]; then`,
+          '  command -v openssl >/dev/null || { echo "openssl is required to generate GUACD TLS certificates" >&2; exit 1; }',
+          `  openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=arsenale-guacd" -keyout ${guacdKeyPath} -out ${guacdCertPath}`,
+          'fi',
+          `chmod 644 ${guacdCertPath}`,
+          `chmod 600 ${guacdKeyPath}`,
+        ],
+        extraEnvironment: [
+          'GUACD_SSL: "${GUACD_SSL:-true}"',
+          `GUACD_SSL_CERT: ${containerGuacdCertPath}`,
+          `GUACD_SSL_KEY: ${containerGuacdKeyPath}`,
+        ],
+        volumes: [
+          'guacd-drive:/guacd-drive',
+          'guacd-recordings:/recordings',
+          `${guacdCertPath}:${containerGuacdCertPath}:ro`,
+          `${guacdKeyPath}:${containerGuacdKeyPath}:ro`,
+        ],
       };
   }
 }
@@ -141,11 +171,13 @@ function buildInstallCommands(
   tokenBundle: TunnelTokenResponse,
   envContent: string,
   dockerCompose: string,
+  setupCommands: string[],
 ): string {
   return [
     'umask 077',
     'mkdir -p arsenale-gateway/certs',
     'cd arsenale-gateway',
+    ...setupCommands,
     `cat > ${certPath} <<'EOF'`,
     stringsTrimWithNewline(tokenBundle.tunnelClientCert),
     'EOF',

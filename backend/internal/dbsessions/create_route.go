@@ -12,6 +12,7 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/sessions"
 	"github.com/dnviti/arsenale/backend/internal/tunnelegress"
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 func (s Service) resolveDatabaseRoute(ctx context.Context, tenantID string, explicitGatewayID *string, targetHost string, targetPort int, userID, connectionID, ipAddress string) (databaseRoute, error) {
@@ -66,7 +67,11 @@ func (s Service) resolveDatabaseRoute(ctx context.Context, tenantID string, expl
 		if err := s.enforceTunnelEgress(ctx, userID, gateway, connectionID, targetHost, targetPort, "DATABASE", ipAddress); err != nil {
 			return databaseRoute{}, err
 		}
-		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", route.ProxyPort)
+		tunnelPort := gatewayruntime.TunnelLocalPort(gateway.Type, route.ProxyPort)
+		if tunnelPort <= 0 {
+			tunnelPort = route.ProxyPort
+		}
+		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPort)
 		if err != nil {
 			return databaseRoute{}, err
 		}

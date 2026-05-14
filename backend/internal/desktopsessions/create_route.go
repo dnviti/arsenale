@@ -12,6 +12,7 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/sessions"
 	"github.com/dnviti/arsenale/backend/internal/tunnelegress"
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -72,7 +73,11 @@ func (s Service) resolveDesktopRoute(ctx context.Context, tenantID string, expli
 		if err := s.enforceTunnelEgress(ctx, userID, gateway, connectionID, targetHost, targetPort, protocol, ipAddress); err != nil {
 			return desktopRoute{}, err
 		}
-		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", route.GuacdPort)
+		tunnelPort := gatewayruntime.TunnelLocalPort(gateway.Type, route.GuacdPort)
+		if tunnelPort <= 0 {
+			tunnelPort = route.GuacdPort
+		}
+		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPort)
 		if err != nil {
 			return desktopRoute{}, err
 		}
