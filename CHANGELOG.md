@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-05-14
+
 ### Added
 - Native `arsenale connect` launch flow for SSH, RDP, and VNC, including one-time browser viewer grants for desktop sessions.
 - GitHub Actions CLI binary build workflow for PR, branch, and manual validation.
+
+### Changed
+- Release metadata, CLI version output, browser extension manifest, and package manifests now target `1.8.2`.
+- The `User.updatedAt` column now has a database default so auto-provisioned identities are protected from timestamp omissions.
+
+### Fixed
+- Password self-signup now generates a user ID and sets `updatedAt`, resolving the `null value in column "id" of relation "User"` registration failure.
+- OAuth and LDAP auto-provisioning paths now set `updatedAt` consistently when creating users.
 
 ### Removed
 - Legacy RDGW service, CLI command, settings UI, API routes, and deployment wiring.
@@ -351,7 +361,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/dnviti/arsenale/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/dnviti/arsenale/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/dnviti/arsenale/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/dnviti/arsenale/compare/v1.7.0...v1.7.1

@@ -18,6 +18,8 @@ const hibpAPIURL = "https://api.pwnedpasswords.com/range/"
 const hibpUserAgent = "Arsenale-PasswordCheck"
 const hibpTimeout = 5 * time.Second
 
+var checkPasswordNotBreached = assertPasswordNotBreached
+
 func generateSalt() string {
 	buf := make([]byte, 32)
 	if _, err := io.ReadFull(rand.Reader, buf); err != nil {
