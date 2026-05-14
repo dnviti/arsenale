@@ -16,6 +16,7 @@ BROWSER_EXTENSION_WORKFLOW = ROOT / ".github" / "workflows" / "browser-extension
 INSTALL_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "install.yml"
 INSTALL_APPLY_TASKS = ROOT / "deployment" / "ansible" / "playbooks" / "tasks" / "install_apply.yml"
 CERTIFICATE_TASKS = ROOT / "deployment" / "ansible" / "roles" / "certificates" / "tasks" / "main.yml"
+PODMAN_SECRETS_TASKS = ROOT / "deployment" / "ansible" / "roles" / "podman_secrets" / "tasks" / "main.yml"
 DEPLOY_APPLY_TASKS = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "tasks" / "apply.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
 DEV_REFRESH_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "dev_refresh.yml"
@@ -271,6 +272,8 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
+        for service_name in ["client", "guacd", "guacenc", "ssh-gateway"]:
+            self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_production_compose_honors_pinned_release_image_tag(self) -> None:
         compose = _render_compose(arsenale_image_tag="1.8.0")
@@ -302,10 +305,14 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
     def test_production_compose_can_render_bundled_shared_file_storage(self) -> None:
         compose = _render_compose(installer_services=["shared-files-s3"])
         services = compose["services"]
+        env = services["shared-files-s3"]["environment"]
 
         self.assertIn("shared-files-s3", services)
         self.assertEqual(services["shared-files-s3"]["image"], "quay.io/minio/minio:latest")
         self.assertEqual(services["shared-files-s3"]["volumes"], ["shared_files_s3_data:/data"])
+        self.assertEqual(services["shared-files-s3"]["secrets"], ["shared_files_s3_secret_access_key"])
+        self.assertEqual(env["MINIO_ROOT_PASSWORD_FILE"], "/run/secrets/shared_files_s3_secret_access_key")
+        self.assertNotIn("MINIO_ROOT_PASSWORD", env)
 
     def test_production_compose_does_not_require_dev_demo_database_vars(self) -> None:
         dev_demo_keys = [
@@ -384,6 +391,8 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("shared-files-s3", services)
         self.assertEqual(services["shared-files-s3"]["image"], "quay.io/minio/minio:latest")
         self.assertEqual(services["shared-files-s3"]["volumes"], ["shared_files_s3_data:/data"])
+        self.assertEqual(services["shared-files-s3"]["secrets"], ["shared_files_s3_secret_access_key"])
+        self.assertNotIn("MINIO_ROOT_PASSWORD", services["shared-files-s3"]["environment"])
         self.assertEqual(
             services["shared-files-s3"]["healthcheck"]["test"],
             ["CMD-SHELL", "curl --silent --fail http://127.0.0.1:9000/minio/health/live >/dev/null || exit 1"],
@@ -398,6 +407,8 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
+        for service_name in ["client", "guacd", "guacenc", "ssh-gateway", "dev-tunnel-ssh-gateway", "dev-tunnel-guacd", "dev-tunnel-db-proxy"]:
+            self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_development_compose_can_disable_dev_fixtures(self) -> None:
         compose = _render_compose(
@@ -432,6 +443,9 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             "true",
         )
 
+    def test_env_file_does_not_render_shared_files_secret(self) -> None:
+        self.assertNotIn("SHARED_FILES_S3_SECRET_ACCESS_KEY", _render_env(installer_services=["shared-files-s3"]))
+
 
 class StandaloneInstallerConfigTest(unittest.TestCase):
     def test_non_dev_playbooks_default_to_prebuilt_images(self) -> None:
@@ -449,13 +463,23 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
 
         self.assertIn("'ip_geolocation': ('ip_geolocation' in installer_capability_selection)", capabilities_section)
 
-    def test_runtime_service_private_keys_are_container_readable(self) -> None:
+    def test_runtime_service_private_keys_stay_group_scoped(self) -> None:
         cert_text = CERTIFICATE_TASKS.read_text(encoding="utf-8")
 
-        self.assertIn('_runtime_key_mode: "0644"', cert_text)
-        self.assertIn("name: Ensure certificate root is traversable by rootless containers", cert_text)
+        self.assertIn('_runtime_key_mode: "0640"', cert_text)
+        self.assertIn('_guacd_runtime_key_mode: "0640"', cert_text)
+        self.assertIn("name: Ensure certificate root is private to the runtime owner", cert_text)
+        self.assertNotIn('_runtime_key_mode: "0644"', cert_text)
         self.assertIn("_client_certificate_host_is_ipv4", cert_text)
         self.assertIn("regex_search('^\\\\d+\\\\.\\\\d+\\\\.\\\\d+\\\\.\\\\d+$')", cert_text)
+
+    def test_bundled_production_shared_files_secret_requires_vault_value(self) -> None:
+        secret_text = PODMAN_SECRETS_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn("name: Require shared-files S3 secret for bundled production storage", secret_text)
+        self.assertIn("Set vault_shared_files_s3_secret_access_key", secret_text)
+        self.assertIn("arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev", secret_text)
+        self.assertNotIn("or ('shared-files-s3' in (installer_services", secret_text)
 
     def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
         apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")

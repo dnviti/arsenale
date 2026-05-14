@@ -145,6 +145,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     healthcheck:
       test: ["CMD-SHELL", "netstat -tln | grep -q ':4822 ' || exit 1"]
       interval: 10s
@@ -182,6 +184,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     healthcheck:
       test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://127.0.0.1:3003/health >/dev/null || exit 1"]
       interval: 10s
@@ -524,9 +528,11 @@ services:
     image: {{ arsenale_dev_shared_files_s3_image | default('quay.io/minio/minio:latest') }}
     container_name: arsenale-shared-files-s3
     command: ["server", "/data", "--console-address", ":9001"]
+    secrets:
+      - shared_files_s3_secret_access_key
     environment:
       MINIO_ROOT_USER: "${SHARED_FILES_S3_ACCESS_KEY_ID:-arsenale}"
-      MINIO_ROOT_PASSWORD: "${SHARED_FILES_S3_SECRET_ACCESS_KEY:-arsenale-dev-shared-files}"
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/shared_files_s3_secret_access_key
       MINIO_REGION_NAME: "${SHARED_FILES_S3_REGION:-us-east-1}"
     volumes:
       - shared_files_s3_data:/data
@@ -1407,6 +1413,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     ports:
       - "{{ _client_bind_host }}:{{ arsenale_client_port }}:8080"
     environment:
@@ -1462,6 +1470,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       GATEWAY_API_TLS_CERT: /certs/server-cert.pem
@@ -1502,6 +1512,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
@@ -1554,6 +1566,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       GUACD_SSL: "true"
       GUACD_SSL_CERT: /certs/server-cert.pem
@@ -1604,6 +1618,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       DB_LISTEN_PORT: "5432"
       TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
