@@ -36,6 +36,7 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.envContent).toContain('TUNNEL_TOKEN="tok-secret"');
     expect(bundle.envContent).toContain('TUNNEL_GATEWAY_ID="gateway-1"');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
+    expect(bundle.envContent).toContain('SSH_PORT="2222"');
     expect(bundle.installCommands).toContain('umask 077');
     expect(bundle.installCommands).toContain('chmod 600 tunnel.env');
     expect(bundle.installCommands).toContain('docker compose --env-file tunnel.env up -d');
@@ -53,11 +54,12 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.serviceName).toBe('ssh-gateway');
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/ssh-gateway:stable');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/ssh-gateway:stable');
-    expect(bundle.dockerCompose).toContain('SSH_PORT: "${SSH_PORT:-2222}"');
-    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
+    expect(bundle.dockerCompose).toContain('SSH_PORT: "${SSH_PORT:-2022}"');
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2022"');
+    expect(bundle.envContent).toContain('SSH_PORT="2022"');
   });
 
-  it('points GUACD bundles at the embedded container listener', () => {
+  it('points GUACD bundles at the configured tunnel listener', () => {
     const bundle = buildTunnelInstallBundle({
       gateway: { ...gateway, type: 'GUACD', port: 14822 },
       tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 14822 },
@@ -66,8 +68,10 @@ describe('buildTunnelInstallBundle', () => {
 
     expect(bundle.serviceName).toBe('guacd');
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/guacd:stable');
-    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="4822"');
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="14822"');
+    expect(bundle.envContent).toContain('GUACD_PORT="14822"');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/guacd:stable');
+    expect(bundle.dockerCompose).toContain('GUACD_PORT: "${GUACD_PORT:-14822}"');
     expect(bundle.dockerCompose).toContain('GUACD_SSL: "${GUACD_SSL:-true}"');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-cert.pem:/certs/guacd-server-cert.pem:ro');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-key.pem:/certs/guacd-server-key.pem:ro');

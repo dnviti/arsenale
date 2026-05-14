@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Gateway creation remains retryable without creating duplicates if tunnel token generation fails after the gateway record is saved.
 - Remote install commands now lock down `tunnel.env` because it contains the tunnel connection token.
 - Generated SSH bastion bundles now deploy the `ssh-gateway` runtime instead of a standalone tunnel agent with no SSH listener.
-- Generated GUACD and CLI tunnel bundles, plus backend tunnel proxy routes, now target the embedded gateway listener port instead of a configured external host port.
+- Generated tunnel bundles, CLI env output, and backend tunnel proxy routes now preserve each gateway's configured listener port, while generated runtime containers set `GUACD_PORT`, `SSH_PORT`, or `DB_LISTEN_PORT` to match.
 - Generated GUACD install bundles now default to TLS and create local guacd certificate material for the remote container.
 - Generated GUACD compose bundles now declare only named persistence volumes at top level while keeping certificate bind mounts scoped to the service.
 - Revoking a tunnel token from the post-create gateway dialog now clears the local enabled state immediately.

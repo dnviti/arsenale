@@ -28,7 +28,15 @@ if [ -z "$guacd_bin" ]; then
   exit 127
 fi
 
-set -- "$guacd_bin" -b 0.0.0.0 -l 4822 -f
+guacd_port="${GUACD_PORT:-4822}"
+case "$guacd_port" in
+  ''|*[!0-9]*)
+    echo "GUACD_PORT must be a valid port number" >&2
+    exit 1
+    ;;
+esac
+
+set -- "$guacd_bin" -b 0.0.0.0 -l "$guacd_port" -f
 
 if [ "${GUACD_SSL:-false}" = "true" ]; then
   tls_cert_path="${GUACD_SSL_CERT:-}"
