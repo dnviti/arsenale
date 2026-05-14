@@ -32,6 +32,7 @@ describe('buildTunnelInstallBundle', () => {
 
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/ssh-gateway:stable');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/ssh-gateway:stable');
+    expect(bundle.dockerCompose).toContain('user: "0:0"');
     expect(bundle.envContent).toContain('TUNNEL_SERVER_URL="https://arsenale.example.com"');
     expect(bundle.envContent).toContain('TUNNEL_TOKEN="tok-secret"');
     expect(bundle.envContent).toContain('TUNNEL_GATEWAY_ID="gateway-1"');
@@ -49,6 +50,7 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.installCommands).not.toContain('chmod 644 ./certs/tunnel-client-*.pem');
     expect(bundle.installCommands).toContain('compose_cmd="docker compose"');
     expect(bundle.installCommands).toContain('compose_cmd="podman-compose"');
+    expect(bundle.installCommands).toContain('podman unshare chown 0:0 "$path" 2>/dev/null || true');
     expect(bundle.installCommands).toContain('podman unshare chown 1000:1000 ./certs/tunnel-client-key.pem');
     expect(bundle.installCommands).toContain('$compose_cmd --env-file tunnel.env up -d');
     expect(bundle.installCommands).toContain('-----BEGIN CERTIFICATE-----');
@@ -94,6 +96,7 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="14822"');
     expect(bundle.envContent).toContain('GUACD_PORT="14822"');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/guacd:stable');
+    expect(bundle.dockerCompose).toContain('user: "0:0"');
     expect(bundle.dockerCompose).not.toContain('GUACD_PORT: "${GUACD_PORT:-14822}"');
     expect(bundle.dockerCompose).toContain('GUACD_SSL: "true"');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-cert.pem:/certs/guacd-server-cert.pem:ro');
@@ -105,5 +108,22 @@ describe('buildTunnelInstallBundle', () => {
     expect(topLevelVolumes).not.toContain('./certs/guacd-server-key.pem');
     expect(bundle.installCommands).toContain('openssl req -x509');
     expect(bundle.installCommands).toContain('chmod 600 ./certs/guacd-server-key.pem');
+    expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/tunnel-client-key.pem');
+    expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/guacd-server-key.pem');
+    expect(bundle.installCommands).not.toContain('podman unshare chown 1000:1000 ./certs/tunnel-client-key.pem');
+  });
+
+  it('uses the DB proxy runtime user for database tunnel bundles', () => {
+    const bundle = buildTunnelInstallBundle({
+      gateway: { ...gateway, type: 'DB_PROXY', port: 15432 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'DB_PROXY', tunnelLocalPort: 15432 },
+      serverUrl: 'https://arsenale.example.com',
+    });
+
+    expect(bundle.serviceName).toBe('db-proxy');
+    expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/db-proxy:stable');
+    expect(bundle.dockerCompose).toContain('user: "0:0"');
+    expect(bundle.envContent).toContain('DB_LISTEN_PORT="15432"');
+    expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/tunnel-client-key.pem');
   });
 });

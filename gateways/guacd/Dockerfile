@@ -34,8 +34,6 @@ RUN GOWORK=off CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64}
 # ── guacd runtime + tunnel agent ─────────────────────────────────────────────
 FROM docker.io/library/alpine:3.21
 
-USER root
-
 LABEL org.opencontainers.image.title="Arsenale guacd"
 LABEL org.opencontainers.image.description="guacd with embedded zero-trust tunnel agent"
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
@@ -49,6 +47,7 @@ RUN apk add --no-cache \
     guacamole-server-libs \
     netcat-openbsd \
     shadow \
+    su-exec \
     && mkdir -p /home/guacd \
     && chown guacd:guacd /home/guacd \
     && usermod -d /home/guacd guacd \

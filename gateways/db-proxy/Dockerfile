@@ -48,7 +48,7 @@ LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
 LABEL org.opencontainers.image.licenses="BUSL-1.1"
 
 RUN apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates && \
+    apk add --no-cache ca-certificates su-exec && \
     addgroup -S dbproxy && adduser -S dbproxy -G dbproxy
 
 COPY --from=proxy-builder /out/db-proxy /usr/local/bin/db-proxy

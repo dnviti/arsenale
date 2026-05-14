@@ -19,8 +19,12 @@ interface GatewayRuntimeInstall {
   image: string;
   defaultLocalPort: number;
   listenerEnvKey: string;
+  containerUid: number;
+  containerGid: number;
   setupCommands: string[];
   extraEnvironment: string[];
+  publicMountPaths: string[];
+  privateMountPaths: string[];
   volumes: string[];
 }
 
@@ -58,7 +62,7 @@ export function buildTunnelInstallBundle({
     tokenBundle,
     envContent,
     dockerCompose,
-    runtime.setupCommands,
+    runtime,
     gatewayInstallDirectory(gatewayID, runtime.serviceName),
   );
 
@@ -79,8 +83,12 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
         defaultLocalPort: 2222,
         listenerEnvKey: 'SSH_PORT',
+        containerUid: 1000,
+        containerGid: 1000,
         setupCommands: [],
         extraEnvironment: [],
+        publicMountPaths: [],
+        privateMountPaths: [],
         volumes: [],
       };
     case 'DB_PROXY':
@@ -89,8 +97,12 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         image: 'ghcr.io/dnviti/arsenale/db-proxy:stable',
         defaultLocalPort: 5432,
         listenerEnvKey: 'DB_LISTEN_PORT',
+        containerUid: 100,
+        containerGid: 101,
         setupCommands: [],
         extraEnvironment: [],
+        publicMountPaths: [],
+        privateMountPaths: [],
         volumes: [],
       };
     case 'SSH_BASTION':
@@ -99,8 +111,12 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
         defaultLocalPort: 2222,
         listenerEnvKey: 'SSH_PORT',
+        containerUid: 1000,
+        containerGid: 1000,
         setupCommands: [],
         extraEnvironment: [],
+        publicMountPaths: [],
+        privateMountPaths: [],
         volumes: [],
       };
     case 'GUACD':
@@ -110,6 +126,8 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         image: 'ghcr.io/dnviti/arsenale/guacd:stable',
         defaultLocalPort: 4822,
         listenerEnvKey: 'GUACD_PORT',
+        containerUid: 100,
+        containerGid: 101,
         setupCommands: [
           `if [ ! -f ${guacdCertPath} ] || [ ! -f ${guacdKeyPath} ]; then`,
           '  command -v openssl >/dev/null || { echo "openssl is required to generate GUACD TLS certificates" >&2; exit 1; }',
@@ -119,6 +137,8 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
           `chmod 600 ${guacdKeyPath}`,
         ],
         extraEnvironment: ['GUACD_SSL: "true"', `GUACD_SSL_CERT: ${containerGuacdCertPath}`, `GUACD_SSL_KEY: ${containerGuacdKeyPath}`],
+        publicMountPaths: [guacdCertPath],
+        privateMountPaths: [guacdKeyPath],
         volumes: [
           'guacd-drive:/guacd-drive',
           'guacd-recordings:/recordings',
@@ -141,6 +161,7 @@ function buildDockerCompose(runtime: GatewayRuntimeInstall, _localPort: number):
     'services:',
     `  ${runtime.serviceName}:`,
     `    image: ${runtime.image}`,
+    '    user: "0:0"',
     '    restart: unless-stopped',
     '    env_file:',
     '      - tunnel.env',
@@ -177,16 +198,19 @@ function buildInstallCommands(
   tokenBundle: TunnelTokenResponse,
   envContent: string,
   dockerCompose: string,
-  setupCommands: string[],
+  runtime: GatewayRuntimeInstall,
   installDirectory: string,
 ): string {
   const quotedInstallDirectory = shellQuote(installDirectory);
   const quotedCertsDirectory = shellQuote(`${installDirectory}/certs`);
+  const publicMountPaths = [certPath, ...runtime.publicMountPaths];
+  const privateMountPaths = [keyPath, ...runtime.privateMountPaths];
   return [
     'umask 077',
     `mkdir -p ${quotedCertsDirectory}`,
     `cd ${quotedInstallDirectory}`,
-    ...setupCommands,
+    ...restorePodmanRootlessOwnershipCommands([...publicMountPaths, ...privateMountPaths]),
+    ...runtime.setupCommands,
     `cat > ${certPath} <<'EOF'`,
     stringsTrimWithNewline(tokenBundle.tunnelClientCert),
     'EOF',
@@ -203,10 +227,7 @@ function buildInstallCommands(
     '  echo "docker compose or podman-compose is required" >&2',
     '  exit 1',
     'fi',
-    'if [ "$compose_cmd" = "podman-compose" ] && command -v podman >/dev/null 2>&1; then',
-    `  podman unshare chown 1000:1000 ${keyPath}`,
-    `  podman unshare chmod 600 ${keyPath}`,
-    'fi',
+    ...podmanRootlessPrivateFileCommands(privateMountPaths, runtime),
     "cat > tunnel.env <<'EOF'",
     stringsTrimWithNewline(envContent),
     'EOF',
@@ -216,6 +237,35 @@ function buildInstallCommands(
     'EOF',
     '$compose_cmd --env-file tunnel.env up -d',
   ].join('\n');
+}
+
+function restorePodmanRootlessOwnershipCommands(paths: string[]): string[] {
+  if (paths.length === 0) {
+    return [];
+  }
+  return [
+    'if command -v podman >/dev/null 2>&1; then',
+    `  for path in ${paths.map(shellQuote).join(' ')}; do`,
+    '    if [ -e "$path" ]; then',
+    '      podman unshare chown 0:0 "$path" 2>/dev/null || true',
+    '    fi',
+    '  done',
+    'fi',
+  ];
+}
+
+function podmanRootlessPrivateFileCommands(paths: string[], runtime: GatewayRuntimeInstall): string[] {
+  if (paths.length === 0) {
+    return [];
+  }
+  return [
+    'if [ "$compose_cmd" = "podman-compose" ] && command -v podman >/dev/null 2>&1; then',
+    ...paths.flatMap((path) => [
+      `  podman unshare chown ${runtime.containerUid}:${runtime.containerGid} ${path}`,
+      `  podman unshare chmod 600 ${path}`,
+    ]),
+    'fi',
+  ];
 }
 
 function gatewayInstallDirectory(gatewayID: string, serviceName: string): string {

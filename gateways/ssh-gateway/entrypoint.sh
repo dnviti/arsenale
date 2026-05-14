@@ -1,6 +1,29 @@
 #!/bin/sh
 set -e
 
+if [ "$(id -u)" = "0" ]; then
+  TUNNEL_RUNTIME_DIR="/tmp/arsenale-tunnel"
+  mkdir -p "$TUNNEL_RUNTIME_DIR"
+  chmod 700 "$TUNNEL_RUNTIME_DIR"
+  chown tunnel:tunnel "$TUNNEL_RUNTIME_DIR"
+
+  if [ -n "${TUNNEL_CLIENT_CERT_FILE:-}" ] && [ -f "$TUNNEL_CLIENT_CERT_FILE" ]; then
+    cp "$TUNNEL_CLIENT_CERT_FILE" "$TUNNEL_RUNTIME_DIR/client-cert.pem"
+    chmod 644 "$TUNNEL_RUNTIME_DIR/client-cert.pem"
+    chown tunnel:tunnel "$TUNNEL_RUNTIME_DIR/client-cert.pem"
+    export TUNNEL_CLIENT_CERT_FILE="$TUNNEL_RUNTIME_DIR/client-cert.pem"
+  fi
+
+  if [ -n "${TUNNEL_CLIENT_KEY_FILE:-}" ] && [ -f "$TUNNEL_CLIENT_KEY_FILE" ]; then
+    cp "$TUNNEL_CLIENT_KEY_FILE" "$TUNNEL_RUNTIME_DIR/client-key.pem"
+    chmod 600 "$TUNNEL_RUNTIME_DIR/client-key.pem"
+    chown tunnel:tunnel "$TUNNEL_RUNTIME_DIR/client-key.pem"
+    export TUNNEL_CLIENT_KEY_FILE="$TUNNEL_RUNTIME_DIR/client-key.pem"
+  fi
+
+  exec su-exec tunnel "$0" "$@"
+fi
+
 # Set up authorized_keys in /tmp (writable tmpfs) for read_only containers
 AUTH_KEYS_DIR="/tmp/.ssh"
 AUTH_KEYS_FILE="${AUTH_KEYS_DIR}/authorized_keys"
