@@ -40,7 +40,7 @@ The tunnel agent runs alongside the gateway service (guacd or sshd) either as an
 ## Prerequisites
 
 - **Arsenale server** reachable over HTTPS (or HTTP for development) from the remote host.
-- **Docker** on the remote host (recommended), or **Go 1.25+** when building a bare-metal agent from source.
+- **Docker Compose** or **Podman with podman-compose** on the remote host, or **Go 1.25+** when building a bare-metal agent from source.
 - An **administrator account** on the Arsenale instance to create gateways and generate tunnel tokens.
 
 ## Quick Start
@@ -94,6 +94,8 @@ Before using the tunnel for production traffic, configure the gateway egress pol
 Tokens are generated automatically when you enable a tunnel or rotate credentials. The token is displayed **once** in a read-only text field with a copy button. Store it securely -- it cannot be retrieved again after closing the dialog.
 
 For managed gateways (containers orchestrated by Arsenale), the token is injected into the container environment automatically and shown in the dialog for reference.
+
+Generated remote install bundles set Compose `pull_policy: always`, keep the public client certificate world-readable, keep private keys restricted, and start embedded gateway images as root only long enough to copy mounted certificate material into container-local files before dropping to the gateway runtime user. This avoids rootless Podman bind-mount permission failures while preserving least-privilege runtime behavior.
 
 ### Revoking / Rotating Tokens
 
