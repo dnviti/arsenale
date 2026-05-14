@@ -55,6 +55,24 @@ func TestTunnelLocalPortPrefersConfiguredPort(t *testing.T) {
 	}
 }
 
+func TestTunnelLocalPortCandidatesIncludeRuntimeFallback(t *testing.T) {
+	got := TunnelLocalPortCandidates(TypeGuacd, 14822)
+	want := []int{14822, 4822}
+	if len(got) != len(want) {
+		t.Fatalf("candidate count = %d, want %d: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("candidate %d = %d, want %d: %#v", i, got[i], want[i], got)
+		}
+	}
+
+	got = TunnelLocalPortCandidates(TypeGuacd, 4822)
+	if len(got) != 1 || got[0] != 4822 {
+		t.Fatalf("default candidate list = %#v, want [4822]", got)
+	}
+}
+
 func TestLookupNormalizesType(t *testing.T) {
 	def, ok := Lookup(" managed_ssh ")
 	if !ok {

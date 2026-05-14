@@ -196,7 +196,7 @@ Generate a new tunnel token for a gateway. The plain token is returned only once
 | `tunnelEnabled` | `boolean` | Whether tunnel is now enabled on the gateway |
 | `tunnelConnected` | `boolean` | Whether a tunnel client is currently connected |
 | `gatewayId` / `gatewayType` | `string` | Gateway identity for compose and agent config |
-| `tunnelLocalHost` / `tunnelLocalPort` | `string` / `number` | Local Arsenale gateway listener the agent should proxy. The port preserves the gateway's configured listener and falls back to runtime defaults (`4822` for GUACD, `2222` for SSH, `5432` for DB proxy). |
+| `tunnelLocalHost` / `tunnelLocalPort` | `string` / `number` | Local Arsenale gateway listener the agent should proxy. The port preserves the gateway's configured listener; session routing also keeps runtime-default fallback candidates (`4822` for GUACD, `2222` for SSH, `5432` for DB proxy) for already-deployed bundles. |
 | `tunnelClientCert` / `tunnelClientKey` | `string` | One-time mTLS client material required by the tunnel broker |
 | `tunnelClientCertExp` | `string` | Client certificate expiration timestamp |
 

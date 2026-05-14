@@ -116,10 +116,23 @@ func (b *Broker) handleData(conn *tunnelConnection, streamID uint16, payload []b
 func (b *Broker) handleClose(conn *tunnelConnection, streamID uint16) {
 	b.mu.Lock()
 	stream := conn.streams[streamID]
-	delete(conn.streams, streamID)
-	b.mu.Unlock()
 	if stream != nil {
+		delete(conn.streams, streamID)
+		b.mu.Unlock()
 		_ = stream.close(false)
+		return
+	}
+	pending := conn.pendingOpens[streamID]
+	if pending != nil {
+		delete(conn.pendingOpens, streamID)
+	}
+	b.mu.Unlock()
+	if pending != nil {
+		pending.timer.Stop()
+		select {
+		case pending.resolve <- nil:
+		default:
+		}
 	}
 }
 

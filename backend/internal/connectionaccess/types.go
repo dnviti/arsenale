@@ -64,7 +64,7 @@ type ResolvedFileTransferTarget struct {
 
 type Resolver interface {
 	ResolveConnection(context.Context, string, string, string, ResolveConnectionOptions) (ResolvedConnection, error)
-	CreateTunnelProxy(context.Context, string, string, int) (contracts.TunnelProxyResponse, error)
+	CreateTunnelProxy(context.Context, string, string, int, ...int) (contracts.TunnelProxyResponse, error)
 }
 
 type FileResolver interface {

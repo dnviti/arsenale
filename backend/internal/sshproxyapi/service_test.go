@@ -20,7 +20,7 @@ func (f fakeProxyTargetResolver) ResolveConnection(context.Context, string, stri
 	return connectionaccess.ResolvedConnection{}, errors.New("unused")
 }
 
-func (f fakeProxyTargetResolver) CreateTunnelProxy(context.Context, string, string, int) (contracts.TunnelProxyResponse, error) {
+func (f fakeProxyTargetResolver) CreateTunnelProxy(context.Context, string, string, int, ...int) (contracts.TunnelProxyResponse, error) {
 	return contracts.TunnelProxyResponse{}, errors.New("unused")
 }
 

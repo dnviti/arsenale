@@ -113,12 +113,21 @@ func TunnelLocalHost(gatewayType string) string {
 }
 
 func TunnelLocalPort(gatewayType string, configuredPort int) int {
+	ports := TunnelLocalPortCandidates(gatewayType, configuredPort)
+	if len(ports) == 0 {
+		return 0
+	}
+	return ports[0]
+}
+
+func TunnelLocalPortCandidates(gatewayType string, configuredPort int) []int {
+	ports := make([]int, 0, 2)
 	if configuredPort > 0 {
-		return configuredPort
+		ports = append(ports, configuredPort)
 	}
 	def, ok := Lookup(gatewayType)
-	if ok {
-		return def.PrimaryPort
+	if ok && def.PrimaryPort > 0 && def.PrimaryPort != configuredPort {
+		ports = append(ports, def.PrimaryPort)
 	}
-	return 0
+	return ports
 }
