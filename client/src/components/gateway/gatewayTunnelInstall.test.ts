@@ -44,8 +44,13 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.installCommands).toContain("mkdir -p 'arsenale-gateway-gateway-1/certs'");
     expect(bundle.installCommands).toContain("cd 'arsenale-gateway-gateway-1'");
     expect(bundle.installCommands).toContain('chmod 600 tunnel.env');
-    expect(bundle.installCommands).toContain('chmod 644 ./certs/tunnel-client-*.pem');
-    expect(bundle.installCommands).toContain('docker compose --env-file tunnel.env up -d');
+    expect(bundle.installCommands).toContain('chmod 644 ./certs/tunnel-client-cert.pem');
+    expect(bundle.installCommands).toContain('chmod 600 ./certs/tunnel-client-key.pem');
+    expect(bundle.installCommands).not.toContain('chmod 644 ./certs/tunnel-client-*.pem');
+    expect(bundle.installCommands).toContain('compose_cmd="docker compose"');
+    expect(bundle.installCommands).toContain('compose_cmd="podman-compose"');
+    expect(bundle.installCommands).toContain('podman unshare chown 1000:1000 ./certs/tunnel-client-key.pem');
+    expect(bundle.installCommands).toContain('$compose_cmd --env-file tunnel.env up -d');
     expect(bundle.installCommands).toContain('-----BEGIN CERTIFICATE-----');
     expect(bundle.installCommands).toContain('-----BEGIN PRIVATE KEY-----');
   });
