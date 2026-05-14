@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.4] - 2026-05-14
+
+### Added
+- Gateway creation now returns a zero-trust tunnel enrollment panel with the one-time tunnel token, client certificate, client key, `tunnel.env`, `docker-compose.yml`, and remote install commands.
+
+### Changed
+- Release metadata, CLI version output, browser extension manifest, and package manifests now target `1.8.4`.
+- Generated remote gateway compose bundles now use published `stable` gateway images.
+
+### Fixed
+- The `Enable Zero-Trust Tunnel` action now works while creating a gateway and automatically generates the remote gateway enrollment bundle after creation.
+- Gateway creation remains retryable without creating duplicates if tunnel token generation fails after the gateway record is saved.
+
 ## [1.8.3] - 2026-05-14
 
 ### Changed
@@ -374,7 +387,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.3...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.4...HEAD
+[1.8.4]: https://github.com/dnviti/arsenale/compare/v1.8.3...v1.8.4
 [1.8.3]: https://github.com/dnviti/arsenale/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/dnviti/arsenale/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/dnviti/arsenale/compare/v1.8.0...v1.8.1
