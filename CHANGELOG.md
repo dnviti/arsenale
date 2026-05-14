@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.3] - 2026-05-14
+
+### Changed
+- Release metadata, CLI version output, browser extension manifest, and package manifests now target `1.8.3`.
+- Organization creation and switching are now core account behavior, independent of the legacy multi-tenancy compatibility flag.
+
+### Fixed
+- Self-signup users can always create additional organizations, switch between memberships, and accept invitations regardless of legacy multi-tenancy feature flag state.
+
 ## [1.8.2] - 2026-05-14
 
 ### Added
@@ -365,7 +374,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Email verification preventing unverified account login
 - ESLint security plugin enforced in CI
 
-[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/dnviti/arsenale/compare/v1.8.3...HEAD
+[1.8.3]: https://github.com/dnviti/arsenale/compare/v1.8.2...v1.8.3
 [1.8.2]: https://github.com/dnviti/arsenale/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/dnviti/arsenale/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/dnviti/arsenale/compare/v1.7.1...v1.8.0

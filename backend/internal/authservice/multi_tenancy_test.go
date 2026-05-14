@@ -1,49 +1,27 @@
 package authservice
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
-func TestSelectSingleTenantMembershipPrefersActiveAccepted(t *testing.T) {
+func TestNormalizeLoginUserForRuntimeKeepsAllMembershipsWhenDisabled(t *testing.T) {
 	t.Parallel()
 
-	selected, ok := selectSingleTenantMembership([]loginMembership{
-		{TenantID: "pending", Status: "PENDING"},
-		{TenantID: "accepted", Status: "ACCEPTED"},
-		{TenantID: "active", Status: "ACCEPTED", IsActive: true},
-	})
-	if !ok {
-		t.Fatal("expected a membership to be selected")
+	user := loginUser{
+		ID: "user-1",
+		Memberships: []loginMembership{
+			{TenantID: "tenant-a", Status: "ACCEPTED", IsActive: true},
+			{TenantID: "tenant-b", Status: "ACCEPTED"},
+			{TenantID: "tenant-c", Status: "PENDING"},
+		},
 	}
-	if selected.TenantID != "active" {
-		t.Fatalf("expected active membership, got %q", selected.TenantID)
-	}
-}
 
-func TestSelectSingleTenantMembershipFallsBackToFirstAccepted(t *testing.T) {
-	t.Parallel()
-
-	selected, ok := selectSingleTenantMembership([]loginMembership{
-		{TenantID: "pending", Status: "PENDING"},
-		{TenantID: "accepted", Status: "ACCEPTED"},
-	})
-	if !ok {
-		t.Fatal("expected a membership to be selected")
+	got, err := (Service{}).normalizeLoginUserForRuntime(context.Background(), user)
+	if err != nil {
+		t.Fatalf("normalizeLoginUserForRuntime() error = %v", err)
 	}
-	if selected.TenantID != "accepted" {
-		t.Fatalf("expected accepted membership, got %q", selected.TenantID)
-	}
-}
-
-func TestSelectSingleTenantMembershipFallsBackToFirstMembership(t *testing.T) {
-	t.Parallel()
-
-	selected, ok := selectSingleTenantMembership([]loginMembership{
-		{TenantID: "pending-a", Status: "PENDING"},
-		{TenantID: "pending-b", Status: "PENDING"},
-	})
-	if !ok {
-		t.Fatal("expected a membership to be selected")
-	}
-	if selected.TenantID != "pending-a" {
-		t.Fatalf("expected first membership, got %q", selected.TenantID)
+	if len(got.Memberships) != len(user.Memberships) {
+		t.Fatalf("expected all memberships, got %#v", got.Memberships)
 	}
 }

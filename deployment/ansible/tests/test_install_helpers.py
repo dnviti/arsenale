@@ -103,7 +103,7 @@ class InstallModelTest(unittest.TestCase):
         )
         self.assertEqual(resolved["environment"]["FEATURE_IP_GEOLOCATION_ENABLED"], "false")
         self.assertEqual(resolved["environment"]["FEATURE_KEYCHAIN_ENABLED"], "true")
-        self.assertEqual(resolved["environment"]["FEATURE_MULTI_TENANCY_ENABLED"], "false")
+        self.assertEqual(resolved["environment"]["FEATURE_MULTI_TENANCY_ENABLED"], "true")
         self.assertFalse(resolved["routing"]["zeroTrust"])
         self.assertFalse(resolved["routing"]["directGateway"])
         self.assertFalse(resolved["devFullStack"])

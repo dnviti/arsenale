@@ -71,7 +71,7 @@ func FromEnv() Manifest {
 		ConnectionsEnabled:      boolEnv("FEATURE_CONNECTIONS_ENABLED", true),
 		IPGeolocationEnabled:    boolEnv("FEATURE_IP_GEOLOCATION_ENABLED", true),
 		KeychainEnabled:         boolEnv("FEATURE_KEYCHAIN_ENABLED", true),
-		MultiTenancyEnabled:     boolEnv("FEATURE_MULTI_TENANCY_ENABLED", true),
+		MultiTenancyEnabled:     true,
 		RecordingsEnabled:       boolEnv("FEATURE_RECORDINGS_ENABLED", boolEnv("RECORDING_ENABLED", true)),
 		ZeroTrustEnabled:        zeroTrustEnabled,
 		AgenticAIEnabled:        boolEnv("FEATURE_AGENTIC_AI_ENABLED", true),

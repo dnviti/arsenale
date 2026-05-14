@@ -219,7 +219,7 @@ def resolve_profile(profile: dict[str, Any], catalog: dict[str, Any]) -> dict[st
         "FEATURE_IP_GEOLOCATION_ENABLED": str(capabilities.get("ip_geolocation", False)).lower(),
         "FEATURE_DATABASE_PROXY_ENABLED": str(capabilities.get("databases", False)).lower(),
         "FEATURE_KEYCHAIN_ENABLED": str(capabilities.get("keychain", False)).lower(),
-        "FEATURE_MULTI_TENANCY_ENABLED": str(capabilities.get("multi_tenancy", False)).lower(),
+        "FEATURE_MULTI_TENANCY_ENABLED": "true",
         "FEATURE_RECORDINGS_ENABLED": str(capabilities.get("recordings", False)).lower(),
         "FEATURE_ZERO_TRUST_ENABLED": str(capabilities.get("zero_trust", False)).lower(),
         "FEATURE_AGENTIC_AI_ENABLED": str(capabilities.get("agentic_ai", False)).lower(),

@@ -322,7 +322,7 @@ These variables are emitted by the Ansible installer and control runtime feature
 | `FEATURE_IP_GEOLOCATION_ENABLED` | boolean | `true` | Enable GeoIP lookups, audit maps, and the `map-assets` tile service |
 | `FEATURE_DATABASE_PROXY_ENABLED` | boolean | `true` | Enable database sessions and DB audit |
 | `FEATURE_KEYCHAIN_ENABLED` | boolean | `true` | Enable vault, secrets, files, and external vault providers |
-| `FEATURE_MULTI_TENANCY_ENABLED` | boolean | `true` | Enable multiple organizations, tenant switching, and self-service organization creation |
+| `FEATURE_MULTI_TENANCY_ENABLED` | boolean | `true` | Compatibility flag; organization creation, tenant switching, and multi-organization memberships remain enabled |
 | `FEATURE_RECORDINGS_ENABLED` | boolean | `true` | Enable recording APIs and UI |
 | `FEATURE_ZERO_TRUST_ENABLED` | boolean | `true` | Enable gateways, tunnel broker, and managed zero-trust routing |
 | `FEATURE_AGENTIC_AI_ENABLED` | boolean | `true` | Enable AI-assisted database tooling |
@@ -331,7 +331,7 @@ These variables are emitted by the Ansible installer and control runtime feature
 | `CLI_ENABLED` | boolean | `false` | Enable CLI device auth and CLI-specific APIs |
 | `GATEWAY_ROUTING_MODE` | string | — | Direct vs gateway-mandatory routing behavior |
 
-These flags are converted to a runtime manifest in `backend/internal/runtimefeatures/manifest.go` and exposed via `GET /api/auth/config`.
+These flags are converted to a runtime manifest in `backend/internal/runtimefeatures/manifest.go` and exposed via `GET /api/auth/config`. The multi-tenancy capability is now a core runtime behavior, so `multiTenancyEnabled` is always reported as `true` for compatibility with older clients.
 
 ## Development Defaults
 

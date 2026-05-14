@@ -73,7 +73,7 @@ The installer now passes install profile context directly into the runtime.
 | `FEATURE_IP_GEOLOCATION_ENABLED` | Enables GeoIP lookups, audit map views, and the `map-assets` OSM tile proxy/cache microservice |
 | `FEATURE_DATABASE_PROXY_ENABLED` | Enables database sessions and DB audit |
 | `FEATURE_KEYCHAIN_ENABLED` | Enables vault, secrets, files, and external vault providers |
-| `FEATURE_MULTI_TENANCY_ENABLED` | Enables multiple organizations, tenant switching, and self-service organization creation |
+| `FEATURE_MULTI_TENANCY_ENABLED` | Compatibility flag; organization creation, tenant switching, and multi-organization memberships remain enabled |
 | `FEATURE_RECORDINGS_ENABLED` | Enables recording APIs, session capture, and recording-ready notifications |
 | `FEATURE_ZERO_TRUST_ENABLED` | Enables gateways, tunnel broker, and managed zero-trust routing |
 | `FEATURE_AGENTIC_AI_ENABLED` | Enables AI-assisted database tooling |
@@ -91,7 +91,7 @@ The installer now passes install profile context directly into the runtime.
 - `connectionsEnabled`
 - `ipGeolocationEnabled`
 - `keychainEnabled`
-- `multiTenancyEnabled`
+- `multiTenancyEnabled` (always `true`; retained for compatibility)
 - `recordingsEnabled`
 - `zeroTrustEnabled`
 - `agenticAIEnabled`

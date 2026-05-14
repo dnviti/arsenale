@@ -97,7 +97,7 @@ That manifest controls:
 - which route families are registered in `backend/cmd/control-plane-api/routes*.go`
 - what the SPA exposes after it loads `GET /api/auth/config`
 - the ordered `enabledCapabilities` list used by clients and operators to inspect the active install profile
-- whether connections, GeoIP, DB proxy, keychain, multi-tenancy, recordings, zero trust, AI, enterprise auth, sharing, and CLI surfaces are active
+- whether connections, GeoIP, DB proxy, keychain, recordings, zero trust, AI, enterprise auth, sharing, and CLI surfaces are active; multi-organization tenant membership is always active
 
 The SPA reads the public config through `client/src/api/auth.api.ts` and stores it in `client/src/store/featureFlagsStore.ts`.
 It also loads the current tenant permission snapshot from `GET /api/user/permissions` into `client/src/store/authStore.ts` so tenant settings surfaces can be hidden when the user lacks edit rights.
@@ -249,7 +249,7 @@ It still seeds:
 - demo databases with a deterministic ERP-style dataset: 60 customers, 72 products, 180 orders, 540 order lines, and 180 invoices per engine
 
 With the default development capabilities, `make dev` includes the demo databases. Tunnel gateway fixtures still require `DEV_ZERO_TRUST=true` and are seeded with narrow egress policies for their demo SSH, desktop, and database targets.
-If `multi_tenancy` is disabled, the seeded tenant remains the platform's only organization and the create/switch organization flows stay off.
+Organization creation, tenant switching, and multi-organization invitations remain available even when older profiles omit the `multi_tenancy` capability.
 
 For code-only iteration, `make dev client`, `make dev gateways`, and `make dev control-plane` reuse the saved dev render artifacts and refresh only those services; installer/profile/cert/secret changes still require a full `make dev`.
 
