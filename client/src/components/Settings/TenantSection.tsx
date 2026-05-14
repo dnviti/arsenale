@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { useAuthStore } from '../../store/authStore';
 import { useFeatureFlagsStore } from '../../store/featureFlagsStore';
 import { useNotificationStore } from '../../store/notificationStore';
@@ -41,6 +38,7 @@ import {
   type TenantExpiryTarget,
 } from './tenantSectionDialogs';
 import { TenantInlineSaveField, TenantPolicySelectField } from './tenantSectionFields';
+import { TenantCreateOrganizationCard, TenantCreateOrganizationForm } from './tenantCreateOrganization';
 import {
   absoluteSessionTimeoutOptions,
   accessTokenExpiryOptions,
@@ -91,7 +89,6 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
   const updateMembershipExpiry = useTenantStore((state) => state.updateMembershipExpiry);
   const notify = useNotificationStore((state) => state.notify);
 
-  const multiTenancyEnabled = useFeatureFlagsStore((state) => state.multiTenancyEnabled);
   const recordingsFeatureEnabled = useFeatureFlagsStore((state) => state.recordingsEnabled);
   const tenantRole = user?.tenantRole;
   const isAdmin = isAdminOrAbove(tenantRole);
@@ -281,6 +278,7 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
     setCreating(true);
     try {
       await createTenant(createName.trim());
+      setCreateName('');
     } catch (err: unknown) {
       setCreateError(extractApiError(err, 'Failed to create organization.'));
     } finally {
@@ -574,43 +572,22 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
   if (!tenant) {
     return (
       <SettingsPanel
-        title={multiTenancyEnabled ? 'Create Your Organization' : 'Organization Required'}
-        description={
-          multiTenancyEnabled
-            ? 'Create a shared workspace before teams, policies, and infrastructure settings become available.'
-            : 'This deployment is running in single-tenant mode. An administrator must provision the workspace organization.'
-        }
+        title="Create Your Organization"
+        description="Create a shared workspace before teams, policies, and infrastructure settings become available."
         contentClassName="space-y-4"
       >
-        {createError ? (
-          <Alert variant="destructive">
-            <AlertDescription>{createError}</AlertDescription>
-          </Alert>
-        ) : null}
-        {multiTenancyEnabled ? (
-          <div className="max-w-lg space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="tenant-create-name">Organization name</Label>
-              <Input
-                id="tenant-create-name"
-                autoFocus
-                value={createName}
-                maxLength={100}
-                onChange={(event) => setCreateName(event.target.value)}
-              />
-            </div>
-            <Button type="button" onClick={handleCreateTenant} disabled={creating || !createName.trim()}>
-              {creating ? 'Creating...' : 'Create Organization'}
-            </Button>
-          </div>
-        ) : (
-          <Alert>
-            <AlertTriangle className="size-4" />
-            <AlertDescription>
-              Single-tenant deployments must be provisioned during setup rather than from the end-user UI.
-            </AlertDescription>
-          </Alert>
-        )}
+        <TenantCreateOrganizationForm
+          id="tenant-create-name"
+          autoFocus
+          creating={creating}
+          error={createError}
+          name={createName}
+          onCreate={handleCreateTenant}
+          onNameChange={(value) => {
+            setCreateName(value);
+            setCreateError('');
+          }}
+        />
       </SettingsPanel>
     );
   }
@@ -634,6 +611,22 @@ export default function TenantSection({ onDeleteRequest, onViewUserProfile }: Te
           <SettingsSummaryItem label="Teams" value={tenant.teamCount} />
           <SettingsSummaryItem label="Default Session Timeout" value={`${Math.floor(tenant.defaultSessionTimeoutSeconds / 60)} min`} />
         </SettingsSummaryGrid>
+
+        <SettingsSectionBlock
+          title="Organizations"
+          description="Create a separate workspace whenever your account needs another organization."
+        >
+          <TenantCreateOrganizationCard
+            creating={creating}
+            error={createError}
+            name={createName}
+            onCreate={handleCreateTenant}
+            onNameChange={(value) => {
+              setCreateName(value);
+              setCreateError('');
+            }}
+          />
+        </SettingsSectionBlock>
 
         <SettingsSectionBlock
           title="Workspace identity"

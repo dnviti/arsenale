@@ -243,50 +243,48 @@ export function buildSettingsConcerns(context: SettingsConcernContext): Settings
     },
   ];
 
-  if (context.hasTenant) {
-    concerns.push({
-      id: 'organization',
-      label: 'Organization',
-      description: 'People, collaboration, and tenant-wide workspace policy.',
-      icon: <Building2 className="size-4" />,
-      keywords: ['organization', 'tenant', 'teams', 'members', 'policy'],
-      sections: [
-        {
-          id: 'organization-profile',
-          label: 'Organization',
-          description: 'Members, roles, and tenant controls.',
-          keywords: ['organization', 'tenant', 'members'],
-          content: (
-            <TenantSection
-              onViewUserProfile={context.onViewUserProfile}
-              onDeleteRequest={(trigger) => context.setDeleteOrgTrigger(trigger)}
-            />
-          ),
-        },
-        {
-          id: 'teams',
-          label: 'Teams',
-          description: 'Team membership and collaboration boundaries.',
-          keywords: ['teams', 'members', 'roles'],
-          content: <TeamSection onNavigateToTab={context.navigateToConcern} />,
-        },
-        {
-          id: 'connection-policy',
-          label: 'Connection Policy',
-          description: 'Tenant-wide connection behavior and safety defaults.',
-          keywords: ['policy', 'connection policy'],
-          content: context.isAdmin && context.anyConnectionFeature ? <TenantConnectionPolicySection /> : null,
-        },
-        {
-          id: 'danger-zone',
-          label: 'Danger Zone',
-          description: 'Irreversible organization-level actions.',
-          keywords: ['delete', 'danger zone'],
-          content: context.isOwner ? <OrganizationDangerZone deleteOrgTrigger={context.deleteOrgTrigger} /> : null,
-        },
-      ].filter((section) => section.content !== null) as SettingsSection[],
-    });
-  }
+  concerns.push({
+    id: 'organization',
+    label: 'Organization',
+    description: 'People, collaboration, and tenant-wide workspace policy.',
+    icon: <Building2 className="size-4" />,
+    keywords: ['organization', 'tenant', 'teams', 'members', 'policy'],
+    sections: [
+      {
+        id: 'organization-profile',
+        label: 'Organization',
+        description: 'Members, roles, and tenant controls.',
+        keywords: ['organization', 'tenant', 'members'],
+        content: (
+          <TenantSection
+            onViewUserProfile={context.onViewUserProfile}
+            onDeleteRequest={(trigger) => context.setDeleteOrgTrigger(trigger)}
+          />
+        ),
+      },
+      {
+        id: 'teams',
+        label: 'Teams',
+        description: 'Team membership and collaboration boundaries.',
+        keywords: ['teams', 'members', 'roles'],
+        content: context.hasTenant ? <TeamSection onNavigateToTab={context.navigateToConcern} /> : null,
+      },
+      {
+        id: 'connection-policy',
+        label: 'Connection Policy',
+        description: 'Tenant-wide connection behavior and safety defaults.',
+        keywords: ['policy', 'connection policy'],
+        content: context.hasTenant && context.isAdmin && context.anyConnectionFeature ? <TenantConnectionPolicySection /> : null,
+      },
+      {
+        id: 'danger-zone',
+        label: 'Danger Zone',
+        description: 'Irreversible organization-level actions.',
+        keywords: ['delete', 'danger zone'],
+        content: context.hasTenant && context.isOwner ? <OrganizationDangerZone deleteOrgTrigger={context.deleteOrgTrigger} /> : null,
+      },
+    ].filter((section) => section.content !== null) as SettingsSection[],
+  });
 
   concerns.push({
     id: 'infrastructure',

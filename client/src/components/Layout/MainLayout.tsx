@@ -96,7 +96,6 @@ export default function MainLayout() {
   const databaseProxyEnabled = useFeatureFlagsStore((state) => state.databaseProxyEnabled);
   const ipGeolocationEnabled = useFeatureFlagsStore((state) => state.ipGeolocationEnabled);
   const keychainEnabled = useFeatureFlagsStore((state) => state.keychainEnabled);
-  const multiTenancyEnabled = useFeatureFlagsStore((state) => state.multiTenancyEnabled);
   const featureFlagsLoaded = useFeatureFlagsStore((state) => state.loaded);
   const recordingsEnabled = useFeatureFlagsStore((state) => state.recordingsEnabled);
   const sharingApprovalsEnabled = useFeatureFlagsStore((state) => state.sharingApprovalsEnabled);
@@ -292,8 +291,8 @@ export default function MainLayout() {
               Arsenale
             </div>
 
-            {featureFlagsLoaded && multiTenancyEnabled ? (
-              <TenantSwitcher onCreateOrg={() => handleOpenSettings('organization')} />
+            {featureFlagsLoaded ? (
+              <TenantSwitcher />
             ) : null}
 
             {featureFlagsLoaded && keychainEnabled ? (

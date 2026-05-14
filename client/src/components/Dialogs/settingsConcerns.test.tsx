@@ -92,6 +92,7 @@ describe('buildSettingsConcerns', () => {
     expect(concerns.map((concern) => concern.id)).toEqual([
       'personal',
       'security',
+      'organization',
       'integrations',
     ]);
 
@@ -109,6 +110,11 @@ describe('buildSettingsConcerns', () => {
       'sms-mfa',
       'webauthn',
       'trusted-domains',
+    ]);
+
+    const organization = concerns.find((concern) => concern.id === 'organization');
+    expect(organization?.sections.map((section) => section.id)).toEqual([
+      'organization-profile',
     ]);
 
     const integrations = concerns.find((concern) => concern.id === 'integrations');

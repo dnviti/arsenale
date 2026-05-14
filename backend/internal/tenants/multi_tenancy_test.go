@@ -15,35 +15,16 @@ func TestFilterTenantMembershipsForRuntimeReturnsAllWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestFilterTenantMembershipsForRuntimePrefersActiveAccepted(t *testing.T) {
+func TestFilterTenantMembershipsForRuntimeReturnsAllWhenDisabled(t *testing.T) {
 	t.Parallel()
 
-	filtered := filterTenantMembershipsForRuntime([]tenantMembershipResponse{
+	items := []tenantMembershipResponse{
 		{TenantID: "pending", Status: "PENDING"},
 		{TenantID: "active", Status: "ACCEPTED", IsActive: true},
 		{TenantID: "accepted", Status: "ACCEPTED"},
-	}, false)
-	if len(filtered) != 1 || filtered[0].TenantID != "active" {
-		t.Fatalf("expected active membership, got %#v", filtered)
 	}
-}
-
-func TestFilterTenantMembershipsForRuntimeFallsBackToAcceptedThenFirst(t *testing.T) {
-	t.Parallel()
-
-	accepted := filterTenantMembershipsForRuntime([]tenantMembershipResponse{
-		{TenantID: "pending", Status: "PENDING"},
-		{TenantID: "accepted", Status: "ACCEPTED"},
-	}, false)
-	if len(accepted) != 1 || accepted[0].TenantID != "accepted" {
-		t.Fatalf("expected accepted membership, got %#v", accepted)
-	}
-
-	first := filterTenantMembershipsForRuntime([]tenantMembershipResponse{
-		{TenantID: "pending-a", Status: "PENDING"},
-		{TenantID: "pending-b", Status: "PENDING"},
-	}, false)
-	if len(first) != 1 || first[0].TenantID != "pending-a" {
-		t.Fatalf("expected first membership, got %#v", first)
+	filtered := filterTenantMembershipsForRuntime(items, false)
+	if len(filtered) != len(items) {
+		t.Fatalf("expected all memberships, got %#v", filtered)
 	}
 }

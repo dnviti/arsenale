@@ -84,6 +84,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
     const { tenant, accessToken, csrfToken, user } = await createTenantApi(name);
     set({ tenant });
     useAuthStore.getState().setAuth(accessToken, csrfToken, user);
+    await get().fetchMemberships();
     return tenant;
   },
 

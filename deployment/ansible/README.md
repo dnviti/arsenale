@@ -461,7 +461,7 @@ Capabilities control which services are included in the rendered runtime. They a
 |------------|-------|---------|-------------|-------------|
 | `core` | Core Platform | **Required** | Base platform services plus the tenant vault/keychain | -- |
 | `keychain` | Keychain | **Required** | Tenant vault, secret storage, external vault integration, password rotation | -- |
-| `multi_tenancy` | Multi-Tenancy | Enabled | Multiple organizations per platform with tenant switching and self-service organization creation | -- |
+| `multi_tenancy` | Multi-Tenancy | Enabled | Compatibility capability; multiple organizations, tenant switching, and self-service organization creation remain available | -- |
 | `connections` | Connections | Enabled | SSH, RDP, VNC connections and folders | -- |
 | `ip_geolocation` | IP Geolocation | Enabled | External IP lookups, geolocation audit overlays, and the dedicated `map-assets` OSM tile proxy/cache | -- |
 | `databases` | Databases | Enabled | Database proxy and SQL tooling | `connections` |
@@ -477,7 +477,7 @@ When a capability is disabled:
 - Its services are removed from the rendered Compose/Helm output.
 - Backend routes and frontend affordances for that capability are removed.
 - Persistent data is **not** deleted during capability removal or recovery.
-- When `multi_tenancy` is disabled, setup and `dev-bootstrap` can still provision the initial organization, but tenant creation and tenant switching are removed from the product surface afterward.
+- `multi_tenancy` is retained for profile compatibility. Tenant creation, tenant switching, and multi-organization invitations remain available after install.
 
 In **development mode**, capability selection and routing resolve exactly like production; the development-specific difference is local Podman execution with source-built images.
 
@@ -791,7 +791,7 @@ make dev DEV_CAPABILITIES=cli DEV_DIRECT_GATEWAY=false DEV_ZERO_TRUST=false
 ```
 
 `keychain` is part of the required core profile, so minimal installs still include the vault even when `DEV_CAPABILITIES` is only `cli`.
-Omit `multi_tenancy` to keep the platform in single-tenant mode; the initial organization is still created by setup or `dev-bootstrap`, but users cannot create or switch organizations afterward.
+Omitting `multi_tenancy` only affects the compatibility capability list; users can still create organizations, switch tenants, and receive invitations.
 
 ### deploy.yml -- Unified Apply Engine
 

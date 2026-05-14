@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '../../store/authStore';
 import { useTenantStore } from '../../store/tenantStore';
@@ -64,6 +64,8 @@ describe('TenantSection', () => {
   });
 
   it('renders split organization and member panels without embedding vault providers', async () => {
+    const createTenant = vi.fn().mockResolvedValue(undefined);
+
     useTenantStore.setState({
       tenant: {
         id: 'tenant-1',
@@ -140,7 +142,7 @@ describe('TenantSection', () => {
       fetchTenant: vi.fn().mockResolvedValue(undefined),
       fetchMemberships: vi.fn().mockResolvedValue(undefined),
       switchTenant: vi.fn().mockResolvedValue(undefined),
-      createTenant: vi.fn().mockResolvedValue(undefined),
+      createTenant,
       updateTenant: vi.fn().mockResolvedValue(undefined),
       deleteTenant: vi.fn().mockResolvedValue(undefined),
       fetchUsers: vi.fn().mockResolvedValue(undefined),
@@ -160,10 +162,23 @@ describe('TenantSection', () => {
     });
 
     expect(screen.getByText('Workspace identity')).toBeInTheDocument();
+    expect(screen.getByText('Create another organization')).toBeInTheDocument();
     expect(screen.getAllByText('Members').length).toBeGreaterThan(0);
     expect(screen.getByText('Security & Session Policy')).toBeInTheDocument();
     expect(screen.getByText('jamie@example.com')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Permissions' }).length).toBeGreaterThan(0);
     expect(screen.queryByText('External Vault Providers')).not.toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByLabelText('Organization name', {
+        selector: 'input#tenant-create-additional-name',
+      }),
+      { target: { value: 'Second Org' } },
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Create Organization' }));
+
+    await waitFor(() => {
+      expect(createTenant).toHaveBeenCalledWith('Second Org');
+    });
   });
 });

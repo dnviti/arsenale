@@ -85,16 +85,6 @@ func ensureBootstrapTenant(ctx context.Context, deps *apiDependencies, userID, t
 	if err != nil && err != pgx.ErrNoRows {
 		return "", fmt.Errorf("resolve bootstrap tenant: %w", err)
 	}
-	if !deps.features.MultiTenancyEnabled {
-		err = deps.db.QueryRow(ctx, `SELECT id FROM "Tenant" ORDER BY "createdAt" ASC LIMIT 1`).Scan(&tenantID)
-		if err == nil {
-			return tenantID, nil
-		}
-		if err != nil && err != pgx.ErrNoRows {
-			return "", fmt.Errorf("resolve single-tenant bootstrap tenant: %w", err)
-		}
-	}
-
 	created, err := deps.tenantService.CreateTenant(ctx, userID, tenantName, devBootstrapIP)
 	if err != nil {
 		return "", fmt.Errorf("ensure bootstrap tenant: %w", err)

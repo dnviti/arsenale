@@ -101,10 +101,6 @@ func ensurePublicFeatureEnabled(cfg *CLIConfig, feature publicConfigFeature, lab
 	return nil
 }
 
-func ensureMultiTenancyEnabled(cfg *CLIConfig) error {
-	return ensurePublicFeatureEnabled(cfg, publicFeatureMultiTenancy, "multi-tenancy")
-}
-
 func ensureIPGeolocationEnabled(cfg *CLIConfig) error {
 	return ensurePublicFeatureEnabled(cfg, publicFeatureIPGeolocation, "IP geolocation")
 }
