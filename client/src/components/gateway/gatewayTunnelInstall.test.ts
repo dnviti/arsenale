@@ -37,7 +37,10 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.envContent).toContain('TUNNEL_GATEWAY_ID="gateway-1"');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
     expect(bundle.envContent).toContain('SSH_PORT="2222"');
+    expect(bundle.dockerCompose).not.toContain('container_name:');
     expect(bundle.installCommands).toContain('umask 077');
+    expect(bundle.installCommands).toContain("mkdir -p 'arsenale-gateway-gateway-1/certs'");
+    expect(bundle.installCommands).toContain("cd 'arsenale-gateway-gateway-1'");
     expect(bundle.installCommands).toContain('chmod 600 tunnel.env');
     expect(bundle.installCommands).toContain('docker compose --env-file tunnel.env up -d');
     expect(bundle.installCommands).toContain('-----BEGIN CERTIFICATE-----');
@@ -57,6 +60,18 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.dockerCompose).toContain('SSH_PORT: "${SSH_PORT:-2022}"');
     expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2022"');
     expect(bundle.envContent).toContain('SSH_PORT="2022"');
+  });
+
+  it('uses a gateway-specific install directory for multiple remote enrollments', () => {
+    const bundle = buildTunnelInstallBundle({
+      gateway: { ...gateway, id: 'tenant/gateway two', port: 2222 },
+      tokenBundle: { ...tokenBundle, gatewayId: 'tenant/gateway two' },
+      serverUrl: 'https://arsenale.example.com',
+    });
+
+    expect(bundle.envContent).toContain('TUNNEL_GATEWAY_ID="tenant/gateway two"');
+    expect(bundle.installCommands).toContain("mkdir -p 'arsenale-gateway-tenant-gateway-two/certs'");
+    expect(bundle.installCommands).toContain("cd 'arsenale-gateway-tenant-gateway-two'");
   });
 
   it('points GUACD bundles at the configured tunnel listener', () => {

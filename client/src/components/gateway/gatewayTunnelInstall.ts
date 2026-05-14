@@ -41,10 +41,11 @@ export function buildTunnelInstallBundle({
   const runtime = gatewayRuntimeInstall(gateway.type);
   const localHost = tokenBundle.tunnelLocalHost || '127.0.0.1';
   const localPort = tokenBundle.tunnelLocalPort || gateway.port || runtime.defaultLocalPort;
+  const gatewayID = tokenBundle.gatewayId || gateway.id;
   const envContent = [
     envLine('TUNNEL_SERVER_URL', trimServerUrl(serverUrl)),
     envLine('TUNNEL_TOKEN', tokenBundle.token),
-    envLine('TUNNEL_GATEWAY_ID', tokenBundle.gatewayId || gateway.id),
+    envLine('TUNNEL_GATEWAY_ID', gatewayID),
     envLine('TUNNEL_LOCAL_HOST', localHost),
     envLine('TUNNEL_LOCAL_PORT', String(localPort)),
     envLine('TUNNEL_CLIENT_CERT_FILE', containerCertPath),
@@ -58,6 +59,7 @@ export function buildTunnelInstallBundle({
     envContent,
     dockerCompose,
     runtime.setupCommands,
+    gatewayInstallDirectory(gatewayID, runtime.serviceName),
   );
 
   return {
@@ -153,7 +155,6 @@ function buildDockerCompose(runtime: GatewayRuntimeInstall, localPort: number): 
     'services:',
     `  ${runtime.serviceName}:`,
     `    image: ${runtime.image}`,
-    `    container_name: arsenale-${runtime.serviceName}`,
     '    restart: unless-stopped',
     '    env_file:',
     '      - tunnel.env',
@@ -191,11 +192,14 @@ function buildInstallCommands(
   envContent: string,
   dockerCompose: string,
   setupCommands: string[],
+  installDirectory: string,
 ): string {
+  const quotedInstallDirectory = shellQuote(installDirectory);
+  const quotedCertsDirectory = shellQuote(`${installDirectory}/certs`);
   return [
     'umask 077',
-    'mkdir -p arsenale-gateway/certs',
-    'cd arsenale-gateway',
+    `mkdir -p ${quotedCertsDirectory}`,
+    `cd ${quotedInstallDirectory}`,
     ...setupCommands,
     `cat > ${certPath} <<'EOF'`,
     stringsTrimWithNewline(tokenBundle.tunnelClientCert),
@@ -213,6 +217,19 @@ function buildInstallCommands(
     'EOF',
     'docker compose --env-file tunnel.env up -d',
   ].join('\n');
+}
+
+function gatewayInstallDirectory(gatewayID: string, serviceName: string): string {
+  const raw = (gatewayID || serviceName || 'remote').trim().toLowerCase();
+  const slug = raw
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return `arsenale-gateway-${slug || 'remote'}`;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function envLine(key: string, value: string): string {
