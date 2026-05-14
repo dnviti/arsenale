@@ -2,12 +2,18 @@ services:
   guacd:
     image: ${GUACD_IMAGE:-ghcr.io/dnviti/arsenale/guacd:latest}
     container_name: ${GUACD_CONTAINER_NAME:-arsenale-guacd}
+    user: "0:0"
     restart: unless-stopped
     read_only: true
     tmpfs:
       - /tmp
     cap_drop:
       - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
     security_opt:
       - no-new-privileges:true
     environment:

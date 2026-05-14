@@ -5,34 +5,34 @@ if [ "$(id -u)" = "0" ]; then
   TUNNEL_RUNTIME_DIR="/tmp/arsenale-tunnel"
   TLS_RUNTIME_DIR="/tmp/guacd-tls"
   mkdir -p "$TUNNEL_RUNTIME_DIR" "$TLS_RUNTIME_DIR"
-  chown guacd:guacd "$TUNNEL_RUNTIME_DIR" "$TLS_RUNTIME_DIR"
   chmod 700 "$TUNNEL_RUNTIME_DIR" "$TLS_RUNTIME_DIR"
+  chown guacd:guacd "$TUNNEL_RUNTIME_DIR" "$TLS_RUNTIME_DIR"
 
   if [ -n "${TUNNEL_CLIENT_CERT_FILE:-}" ] && [ -f "$TUNNEL_CLIENT_CERT_FILE" ]; then
     cp "$TUNNEL_CLIENT_CERT_FILE" "$TUNNEL_RUNTIME_DIR/client-cert.pem"
-    chown guacd:guacd "$TUNNEL_RUNTIME_DIR/client-cert.pem"
     chmod 644 "$TUNNEL_RUNTIME_DIR/client-cert.pem"
+    chown guacd:guacd "$TUNNEL_RUNTIME_DIR/client-cert.pem"
     export TUNNEL_CLIENT_CERT_FILE="$TUNNEL_RUNTIME_DIR/client-cert.pem"
   fi
 
   if [ -n "${TUNNEL_CLIENT_KEY_FILE:-}" ] && [ -f "$TUNNEL_CLIENT_KEY_FILE" ]; then
     cp "$TUNNEL_CLIENT_KEY_FILE" "$TUNNEL_RUNTIME_DIR/client-key.pem"
-    chown guacd:guacd "$TUNNEL_RUNTIME_DIR/client-key.pem"
     chmod 600 "$TUNNEL_RUNTIME_DIR/client-key.pem"
+    chown guacd:guacd "$TUNNEL_RUNTIME_DIR/client-key.pem"
     export TUNNEL_CLIENT_KEY_FILE="$TUNNEL_RUNTIME_DIR/client-key.pem"
   fi
 
   if [ -n "${GUACD_SSL_CERT:-}" ] && [ -f "$GUACD_SSL_CERT" ]; then
     cp "$GUACD_SSL_CERT" "$TLS_RUNTIME_DIR/server-cert.pem"
-    chown guacd:guacd "$TLS_RUNTIME_DIR/server-cert.pem"
     chmod 644 "$TLS_RUNTIME_DIR/server-cert.pem"
+    chown guacd:guacd "$TLS_RUNTIME_DIR/server-cert.pem"
     export GUACD_SSL_CERT="$TLS_RUNTIME_DIR/server-cert.pem"
   fi
 
   if [ -n "${GUACD_SSL_KEY:-}" ] && [ -f "$GUACD_SSL_KEY" ]; then
     cp "$GUACD_SSL_KEY" "$TLS_RUNTIME_DIR/server-key.pem"
-    chown guacd:guacd "$TLS_RUNTIME_DIR/server-key.pem"
     chmod 600 "$TLS_RUNTIME_DIR/server-key.pem"
+    chown guacd:guacd "$TLS_RUNTIME_DIR/server-key.pem"
     export GUACD_SSL_KEY="$TLS_RUNTIME_DIR/server-key.pem"
   fi
 

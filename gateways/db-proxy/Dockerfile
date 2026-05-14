@@ -58,7 +58,7 @@ COPY --from=tunnel-builder /out/tunnel-agent /usr/local/bin/tunnel-agent
 COPY gateways/db-proxy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-USER root
+USER dbproxy
 
 ENV DB_LISTEN_PORT=5432
 
