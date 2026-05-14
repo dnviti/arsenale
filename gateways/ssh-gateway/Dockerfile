@@ -60,7 +60,7 @@ COPY --from=grpc-builder /key-mgmt-server /usr/local/bin/key-mgmt-server
 # Embed pre-built tunnel agent
 COPY --from=tunnel-builder /out/tunnel-agent /usr/local/bin/tunnel-agent
 
-USER root
+USER tunnel
 
 EXPOSE 2222 9022
 

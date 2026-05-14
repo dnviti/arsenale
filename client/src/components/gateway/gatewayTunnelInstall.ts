@@ -161,6 +161,7 @@ function buildDockerCompose(runtime: GatewayRuntimeInstall, _localPort: number):
     'services:',
     `  ${runtime.serviceName}:`,
     `    image: ${runtime.image}`,
+    '    user: "0:0"',
     '    restart: unless-stopped',
     '    env_file:',
     '      - tunnel.env',
