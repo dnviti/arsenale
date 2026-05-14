@@ -116,6 +116,8 @@ services:
         condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+    group_add:
+      - keep-groups
     restart: "no"
     networks:
       - net-db
@@ -361,6 +363,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - server_encryption_key
@@ -406,6 +410,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
     environment:
@@ -445,6 +451,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - guacamole_secret
@@ -494,6 +502,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - guacamole_secret
@@ -547,7 +557,17 @@ services:
       - net-cache
 {% endif %}
 
-{% if _is_dev | default(false) | bool %}
+{% if
+  (_is_dev | default(false) | bool)
+  or ('authz-pdp' in (installer_services | default([])))
+  or ('control-plane-controller' in (installer_services | default([])))
+  or ('model-gateway' in (installer_services | default([])))
+  or ('tool-gateway' in (installer_services | default([])))
+  or ('map-assets' in (installer_services | default([])))
+  or ('memory-service' in (installer_services | default([])))
+  or ('agent-orchestrator' in (installer_services | default([])))
+  or ('runtime-agent' in (installer_services | default([])))
+%}
   # ---------------------------------------------------------------------------
   # Go backend foundation services — active development runtime
   # ---------------------------------------------------------------------------
@@ -752,6 +772,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
     environment:
@@ -821,6 +843,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - server_encryption_key
@@ -861,6 +885,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - guacamole_secret
@@ -904,6 +930,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - server_encryption_key
@@ -987,6 +1015,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
     environment:
@@ -1060,6 +1090,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
       - guacamole_secret
@@ -1109,6 +1141,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
     environment:
@@ -1147,6 +1181,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     secrets:
       - database_url
     environment:

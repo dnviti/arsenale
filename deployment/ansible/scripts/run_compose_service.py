@@ -133,6 +133,8 @@ def build_podman_create_command(
         command.extend(["--cap-add", str(cap)])
     for security_opt in service.get("security_opt", []) or []:
         command.extend(["--security-opt", str(security_opt)])
+    for group in service.get("group_add", []) or []:
+        command.extend(["--group-add", str(group)])
 
     entrypoint = service.get("entrypoint")
     if entrypoint:

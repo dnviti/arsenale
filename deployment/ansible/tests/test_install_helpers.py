@@ -830,6 +830,7 @@ class RunComposeServiceTest(unittest.TestCase):
                     "tmpfs": ["/tmp"],
                     "cap_drop": ["ALL"],
                     "security_opt": ["no-new-privileges:true"],
+                    "group_add": ["keep-groups"],
                     "environment": {
                         "DATABASE_URL_FILE": "/run/secrets/database_url",
                         "DATABASE_SSL_ROOT_CERT": "/certs/postgres/ca.pem",
@@ -857,6 +858,8 @@ class RunComposeServiceTest(unittest.TestCase):
             self.assertIn("--read-only", command)
             self.assertIn("--secret", command)
             self.assertIn("database_url", command)
+            self.assertIn("--group-add", command)
+            self.assertIn("keep-groups", command)
             self.assertIn("--network", command)
             self.assertTrue(any(item.endswith("-net-db") for item in command))
             self.assertIn("localhost", "".join(command))

@@ -169,7 +169,7 @@
 
     compose = yaml.safe_load(Path("{{ _home }}/docker-compose.yml").read_text(encoding="utf-8")) or {}
     services = compose.get("services") or {}
-    for service_name, service in services.items():
+    for service_name, service in reversed(list(services.items())):
         if service_name == "migrate":
             continue
         print(service.get("container_name") or service_name)
