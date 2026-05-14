@@ -35,6 +35,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/client/node_modules ./client/node_modules
 COPY package.json ./
+
+ARG BUILD_SOURCE_SHA=unknown
+RUN printf '%s\n' "$BUILD_SOURCE_SHA" > .build-source-sha
+
 COPY client/ ./client/
 
 WORKDIR /app/client
