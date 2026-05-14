@@ -61,6 +61,11 @@ describe('TenantSwitcher', () => {
 
     render(<TenantSwitcher />);
 
+    await waitFor(() => {
+      expect(fetchMemberships).toHaveBeenCalledTimes(1);
+    });
+    fetchMemberships.mockClear();
+
     await user.click(screen.getByRole('button', { name: /First Org/i }));
     await user.click(await screen.findByText('Create organization'));
     fireEvent.change(await screen.findByLabelText('Organization name'), {
@@ -71,6 +76,40 @@ describe('TenantSwitcher', () => {
     await waitFor(() => {
       expect(createTenant).toHaveBeenCalledWith('Second Org');
     });
-    expect(fetchMemberships).toHaveBeenCalled();
+    expect(fetchMemberships).not.toHaveBeenCalled();
+  });
+
+  it('keeps the create dialog open while creation is in flight', async () => {
+    const user = userEvent.setup();
+    let resolveCreate: (value: { id: string; name: string; slug: string }) => void = () => {};
+    const createTenant = vi.fn().mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve;
+    }));
+    useTenantStore.setState({
+      memberships: [],
+      createTenant,
+    });
+
+    render(<TenantSwitcher />);
+
+    await user.click(screen.getByRole('button', { name: /Create organization/i }));
+    fireEvent.change(await screen.findByLabelText('Organization name'), {
+      target: { value: 'Second Org' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Organization' }));
+
+    expect(await screen.findByRole('button', { name: 'Creating...' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+
+    resolveCreate({
+      id: 'tenant-2',
+      name: 'Second Org',
+      slug: 'second-org',
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Organization name')).not.toBeInTheDocument();
+    });
   });
 });

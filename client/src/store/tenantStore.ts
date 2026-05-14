@@ -38,6 +38,11 @@ interface TenantState {
   reset: () => void;
 }
 
+async function resetTenantWorkspace() {
+  await useTabsStore.getState().clearAll();
+  useConnectionsStore.getState().reset();
+}
+
 export const useTenantStore = create<TenantState>((set, get) => ({
   tenant: null,
   users: [],
@@ -57,8 +62,7 @@ export const useTenantStore = create<TenantState>((set, get) => ({
   switchTenant: async (tenantId) => {
     const { accessToken, csrfToken, user } = await switchTenantApi(tenantId);
     useAuthStore.getState().setAuth(accessToken, csrfToken, user);
-    await useTabsStore.getState().clearAll();
-    useConnectionsStore.getState().reset();
+    await resetTenantWorkspace();
     await get().fetchTenant();
     await get().fetchMemberships();
     await useConnectionsStore.getState().fetchConnections();
@@ -82,9 +86,11 @@ export const useTenantStore = create<TenantState>((set, get) => ({
 
   createTenant: async (name) => {
     const { tenant, accessToken, csrfToken, user } = await createTenantApi(name);
-    set({ tenant });
     useAuthStore.getState().setAuth(accessToken, csrfToken, user);
+    await resetTenantWorkspace();
+    set({ tenant, users: [] });
     await get().fetchMemberships();
+    await useConnectionsStore.getState().fetchConnections();
     return tenant;
   },
 

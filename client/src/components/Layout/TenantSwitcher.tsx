@@ -56,7 +56,8 @@ export default function TenantSwitcher() {
     }
   };
 
-  const closeCreateDialog = () => {
+  const closeCreateDialog = (force = false) => {
+    if (creating && !force) return;
     setCreateOpen(false);
     setCreateName('');
     setCreateError('');
@@ -64,6 +65,7 @@ export default function TenantSwitcher() {
   };
 
   const handleCreateTenant = async () => {
+    if (creating) return;
     const name = createName.trim();
     if (name.length < 2) {
       setCreateError('Organization name must be at least 2 characters.');
@@ -75,8 +77,7 @@ export default function TenantSwitcher() {
     try {
       const tenant = await createTenant(name);
       useUiPreferencesStore.getState().set('lastActiveTenantId', tenant.id);
-      await fetchMemberships();
-      closeCreateDialog();
+      closeCreateDialog(true);
     } catch (err: unknown) {
       setCreateError(extractApiError(err, 'Failed to create organization.'));
       setCreating(false);
@@ -84,8 +85,8 @@ export default function TenantSwitcher() {
   };
 
   const createDialog = (
-    <Dialog open={createOpen} onOpenChange={(next) => { if (!next) closeCreateDialog(); else setCreateOpen(true); }}>
-      <DialogContent className="sm:max-w-md">
+    <Dialog open={createOpen} onOpenChange={(next) => { if (next) setCreateOpen(true); else closeCreateDialog(); }}>
+      <DialogContent className="sm:max-w-md" showCloseButton={!creating}>
         <DialogHeader>
           <DialogTitle>Create Organization</DialogTitle>
           <DialogDescription className="sr-only">
@@ -105,6 +106,7 @@ export default function TenantSwitcher() {
               value={createName}
               maxLength={100}
               autoFocus
+              disabled={creating}
               onChange={(event) => {
                 setCreateName(event.target.value);
                 setCreateError('');
@@ -119,7 +121,7 @@ export default function TenantSwitcher() {
           </div>
         </div>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={closeCreateDialog}>
+          <Button type="button" variant="outline" disabled={creating} onClick={() => closeCreateDialog()}>
             Cancel
           </Button>
           <Button type="button" disabled={creating || !createName.trim()} onClick={() => void handleCreateTenant()}>
