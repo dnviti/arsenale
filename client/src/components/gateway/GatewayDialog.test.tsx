@@ -137,7 +137,7 @@ describe('GatewayDialog', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(await screen.findByText(/Copy these values now/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/TUNNEL_TOKEN="tok-secret"/i)).toBeInTheDocument();
-    expect(screen.getByDisplayValue(/docker compose --env-file tunnel.env up -d/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue(/\$compose_cmd --env-file tunnel.env up -d/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/-----BEGIN PRIVATE KEY-----/i)).toBeInTheDocument();
   });
 
