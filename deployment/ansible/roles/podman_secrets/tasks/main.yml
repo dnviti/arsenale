@@ -1,4 +1,12 @@
 ---
+- name: Require shared-files S3 secret for bundled production storage
+  fail:
+    msg: "Set vault_shared_files_s3_secret_access_key when enabling bundled shared-files-s3 outside development."
+  when:
+    - not (_is_dev | default(false) | bool)
+    - "'shared-files-s3' in (installer_services | default([]))"
+    - (vault_shared_files_s3_secret_access_key | default('') | length) == 0
+
 - name: Define secret mappings
   set_fact:
     podman_secrets:
@@ -9,7 +17,7 @@
       - { name: database_url, value: "{{ vault_database_url }}" }
       - { name: postgres_password, value: "{{ vault_postgres_password }}" }
       - { name: guacenc_auth_token, value: "{{ vault_guacenc_auth_token }}" }
-      - { name: shared_files_s3_secret_access_key, value: "{{ (arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev | default(false) | bool) and ((vault_shared_files_s3_secret_access_key | default('')) | length == 0)) else vault_shared_files_s3_secret_access_key) }}" }
+      - { name: shared_files_s3_secret_access_key, value: "{{ (arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev | default(false) | bool) and ((vault_shared_files_s3_secret_access_key | default('')) | length == 0)) else (vault_shared_files_s3_secret_access_key | default(''))) }}" }
       # Optional secrets (only create if non-empty)
       - { name: runtime_egress_principal_signing_key, value: "{{ vault_runtime_egress_principal_signing_key | default('') }}" }
       - { name: smtp_pass, value: "{{ vault_smtp_pass }}" }

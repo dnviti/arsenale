@@ -155,8 +155,8 @@ WHERE LOWER(email) = LOWER($1)
 		defer func() { _ = tx.Rollback(ctx) }()
 
 		if err := tx.QueryRow(ctx, `
-INSERT INTO "User" (id, email, username, "vaultSetupComplete", "emailVerified")
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO "User" (id, email, username, "vaultSetupComplete", "emailVerified", "updatedAt")
+VALUES ($1, $2, $3, $4, $5, NOW())
 RETURNING id
 `, uuid.NewString(), ldapUser.Email, nullableString(displayName), false, true).Scan(&userID); err != nil {
 			return err

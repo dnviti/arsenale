@@ -1,13 +1,17 @@
 server {
-    listen 8080;
-    server_name localhost arsenale.home.arpa.viti;
+    listen 8080 ssl;
+    server_name localhost {{ arsenale_domain | default('_') }};
     root /usr/share/nginx/html;
     index index.html;
     resolver ${NGINX_RESOLVER} valid=10s ipv6=off;
     resolver_timeout 5s;
     client_max_body_size 128m;
 
-    # Security headers
+    ssl_certificate /certs/server-cert.pem;
+    ssl_certificate_key /certs/server-key.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
     add_header X-Frame-Options "DENY" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
@@ -15,7 +19,6 @@ server {
     add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:; font-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests" always;
 
-    # SSE stream endpoints — disable buffering so events are pushed immediately
     location ~ ^/api/.*stream$ {
         set $api_upstream http://${API_UPSTREAM_HOST}:8080$request_uri;
         proxy_pass $api_upstream;
@@ -120,7 +123,6 @@ server {
         try_files $uri =404;
     }
 
-    # Immutable cache for content-hashed assets (Vite output)
     location /assets/ {
         add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;
@@ -132,7 +134,6 @@ server {
         add_header Last-Modified "" always;
     }
 
-    # No-cache for root HTML to ensure users get latest version
     location = /index.html {
         add_header X-Frame-Options "DENY" always;
         add_header X-Content-Type-Options "nosniff" always;

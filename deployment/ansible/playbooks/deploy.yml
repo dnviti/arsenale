@@ -427,7 +427,7 @@
         set -euo pipefail
         curl --silent --show-error --fail {{ _dev_client_url }}/api/auth/config \
           --cacert {{ arsenale_cert_dir }}/client/ca.pem \
-          | jq -e '.selfSignupEnabled == false and .features.databaseProxyEnabled == true and .features.connectionsEnabled == true and .features.keychainEnabled == true' >/dev/null
+          | jq -e '.selfSignupEnabled == {{ 'true' if (arsenale_self_signup_enabled | default(false) | bool) else 'false' }} and .features.databaseProxyEnabled == true and .features.connectionsEnabled == true and .features.keychainEnabled == true' >/dev/null
       args:
         executable: /bin/bash
       retries: 24

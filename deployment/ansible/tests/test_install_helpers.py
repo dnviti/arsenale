@@ -10,7 +10,7 @@ from pathlib import Path
 import jsonschema
 import yaml
 
-from deployment.ansible.scripts import compose_to_k8s, install_crypto, install_failure, install_model, run_compose_service
+from deployment.ansible.scripts import compose_ps_status, compose_to_k8s, install_crypto, install_failure, install_model, run_compose_service
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -142,6 +142,33 @@ class InstallModelTest(unittest.TestCase):
         self.assertNotIn("dev-tunnel-ssh-gateway", resolved["services"])
         self.assertNotIn("dev-tunnel-guacd", resolved["services"])
         self.assertNotIn("dev-tunnel-db-proxy", resolved["services"])
+
+    def test_resolve_production_connections_include_shared_file_storage(self) -> None:
+        profile = {
+            "schemaVersion": "1.0.0",
+            "mode": "production",
+            "backend": "podman",
+            "capabilities": {
+                "core": True,
+                "keychain": True,
+                "multi_tenancy": True,
+                "connections": True,
+                "ip_geolocation": False,
+                "databases": False,
+                "recordings": False,
+                "zero_trust": False,
+                "agentic_ai": False,
+                "enterprise_auth": False,
+                "sharing_approvals": True,
+                "cli": True,
+            },
+            "routing": {"directGateway": False, "zeroTrust": False},
+        }
+
+        resolved = install_model.resolve_profile(profile, self.catalog)
+
+        self.assertIn("shared-files-s3", resolved["services"])
+        self.assertIn("control-plane-api", resolved["services"])
 
     def test_resolve_dev_includes_zero_trust_fixtures_when_enabled(self) -> None:
         profile = {
@@ -489,6 +516,33 @@ class InstallModelTest(unittest.TestCase):
             {"control-plane-api": {"condition": "service_healthy"}},
         )
         self.assertEqual(set(pruned["networks"].keys()), {"net-edge"})
+
+    def test_prune_compose_can_strip_healthchecks(self) -> None:
+        compose = {
+            "services": {
+                "postgres": {
+                    "image": "postgres",
+                    "healthcheck": {"test": ["CMD-SHELL", "pg_isready"]},
+                    "networks": ["net-db"],
+                }
+            },
+            "networks": {"net-db": {}},
+        }
+
+        pruned = install_model.prune_compose(compose, {"postgres"}, disable_healthchecks=True)
+
+        self.assertNotIn("healthcheck", pruned["services"]["postgres"])
+
+    def test_compose_status_treats_running_without_healthcheck_as_healthy(self) -> None:
+        item = compose_ps_status.normalize_item(
+            {
+                "Name": "arsenale-control-plane-api",
+                "State": "running",
+                "Status": "Up 10 seconds",
+            }
+        )
+
+        self.assertEqual(item["health"], "healthy")
 
     def test_compose_to_k8s_generates_expected_manifests(self) -> None:
         compose = {

@@ -1,17 +1,29 @@
 package authservice
 
 import (
+	"context"
 	"net/http"
 	"time"
 
 	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 	"github.com/dnviti/arsenale/backend/internal/tenantvaultapi"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
+type authDB interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+}
+
+var _ authDB = (*pgxpool.Pool)(nil)
+
 type Service struct {
-	DB                 *pgxpool.Pool
+	DB                 authDB
 	Redis              *redis.Client
 	JWTSecret          []byte
 	ServerKey          []byte

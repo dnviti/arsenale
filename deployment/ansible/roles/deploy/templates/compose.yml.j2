@@ -12,6 +12,8 @@
 {% set _dev_fixture_targets_enabled = arsenale_dev_fixture_targets_enabled | default(_is_dev | default(false) | bool) %}
 {% set _dev_demo_databases_enabled = arsenale_dev_demo_databases_enabled | default(_is_dev | default(false) | bool) %}
 {% set _dev_tunnel_fixtures_enabled = arsenale_dev_tunnel_fixtures_enabled | default(_is_dev | default(false) | bool) %}
+{% set _compose_dependency_condition = 'service_started' if ((container_runtime | default('podman')) == 'podman' and not (_is_dev | default(false) | bool)) else 'service_healthy' %}
+{% set _client_tls_enabled = (_is_dev | default(false) | bool) or ((_public_url | default('', true) | lower).startswith('https://')) %}
 {% macro local_image(service_name) -%}
 localhost/{{ _compose_project_name }}_{{ service_name }}:latest
 {%- endmacro %}
@@ -38,6 +40,7 @@ image: {{ remote_image(service_name, image_service_name) }}
 pull_policy: always
 {% endif %}
 {%- endmacro %}
+{% set _local_shared_files_s3_enabled = (_is_dev | default(false) | bool) or ('shared-files-s3' in (installer_services | default([]))) %}
 
 services:
 
@@ -110,7 +113,7 @@ services:
       ARSENALE_SKIP_MIGRATION_CHECK: "true"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     restart: "no"
@@ -142,6 +145,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     healthcheck:
       test: ["CMD-SHELL", "netstat -tln | grep -q ':4822 ' || exit 1"]
       interval: 10s
@@ -179,6 +184,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     healthcheck:
       test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://127.0.0.1:3003/health >/dev/null || exit 1"]
       interval: 10s
@@ -289,6 +296,7 @@ services:
       FEATURE_AGENTIC_AI_ENABLED: "${FEATURE_AGENTIC_AI_ENABLED:-true}"
       FEATURE_ENTERPRISE_AUTH_ENABLED: "${FEATURE_ENTERPRISE_AUTH_ENABLED:-true}"
       FEATURE_SHARING_APPROVALS_ENABLED: "${FEATURE_SHARING_APPROVALS_ENABLED:-true}"
+      SELF_SIGNUP_ENABLED: "${SELF_SIGNUP_ENABLED:-false}"
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
@@ -317,9 +325,9 @@ services:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_ssh_port }}:2222"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       redis:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - arsenale_drive:/guacd-drive
       - arsenale_recordings:/recordings
@@ -369,7 +377,7 @@ services:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_tunnel_broker_port | default(18092) }}:8092"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -409,7 +417,7 @@ services:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_query_runner_port | default(18093) }}:8093"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -454,9 +462,9 @@ services:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_desktop_broker_port | default(18091) }}:8091"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       guacd:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
@@ -499,7 +507,7 @@ services:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_terminal_broker_port | default(18090) }}:8090"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
@@ -515,14 +523,16 @@ services:
       - net-db
 {% endif %}
 
-{% if _is_dev | default(false) | bool %}
+{% if _local_shared_files_s3_enabled %}
   shared-files-s3:
     image: {{ arsenale_dev_shared_files_s3_image | default('quay.io/minio/minio:latest') }}
     container_name: arsenale-shared-files-s3
     command: ["server", "/data", "--console-address", ":9001"]
+    secrets:
+      - shared_files_s3_secret_access_key
     environment:
       MINIO_ROOT_USER: "${SHARED_FILES_S3_ACCESS_KEY_ID:-arsenale}"
-      MINIO_ROOT_PASSWORD: "${SHARED_FILES_S3_SECRET_ACCESS_KEY:-arsenale-dev-shared-files}"
+      MINIO_ROOT_PASSWORD_FILE: /run/secrets/shared_files_s3_secret_access_key
       MINIO_REGION_NAME: "${SHARED_FILES_S3_REGION:-us-east-1}"
     volumes:
       - shared_files_s3_data:/data
@@ -535,9 +545,11 @@ services:
     restart: always
     networks:
       - net-cache
+{% endif %}
 
+{% if _is_dev | default(false) | bool %}
   # ---------------------------------------------------------------------------
-  # Go backend foundation services — active public runtime
+  # Go backend foundation services — active development runtime
   # ---------------------------------------------------------------------------
   control-plane-api:
 {{ compose_service_source('control-plane-api', 'backend/Dockerfile', build_args={'SERVICE': 'control-plane-api'}) | indent(4, true) }}
@@ -597,32 +609,32 @@ services:
       DEV_TUNNEL_CERT_DIR: "{{ '/certs' if _dev_tunnel_fixtures_enabled else '' }}"
       DEV_BOOTSTRAP_TUNNEL_FIXTURES_ENABLED: "{{ 'true' if _dev_tunnel_fixtures_enabled else 'false' }}"
       DEV_BOOTSTRAP_DEMO_DATABASES_ENABLED: "{{ 'true' if _dev_demo_databases_enabled else 'false' }}"
-      DEV_SAMPLE_POSTGRES_HOST: "{{ dev_sample_postgres_host }}"
-      DEV_SAMPLE_POSTGRES_PORT: "{{ dev_sample_postgres_port }}"
-      DEV_SAMPLE_POSTGRES_DATABASE: "{{ dev_sample_postgres_database }}"
-      DEV_SAMPLE_POSTGRES_USER: "{{ dev_sample_postgres_user }}"
-      DEV_SAMPLE_POSTGRES_PASSWORD: "{{ dev_sample_postgres_password }}"
-      DEV_SAMPLE_POSTGRES_SSL_MODE: "{{ dev_sample_postgres_ssl_mode }}"
-      DEV_SAMPLE_MYSQL_HOST: "{{ dev_sample_mysql_host }}"
-      DEV_SAMPLE_MYSQL_PORT: "{{ dev_sample_mysql_port }}"
-      DEV_SAMPLE_MYSQL_DATABASE: "{{ dev_sample_mysql_database }}"
-      DEV_SAMPLE_MYSQL_USER: "{{ dev_sample_mysql_user }}"
-      DEV_SAMPLE_MYSQL_PASSWORD: "{{ dev_sample_mysql_password }}"
-      DEV_SAMPLE_MONGODB_HOST: "{{ dev_sample_mongodb_host }}"
-      DEV_SAMPLE_MONGODB_PORT: "{{ dev_sample_mongodb_port }}"
-      DEV_SAMPLE_MONGODB_DATABASE: "{{ dev_sample_mongodb_database }}"
-      DEV_SAMPLE_MONGODB_USER: "{{ dev_sample_mongodb_user }}"
-      DEV_SAMPLE_MONGODB_PASSWORD: "{{ dev_sample_mongodb_password }}"
-      DEV_SAMPLE_ORACLE_HOST: "{{ dev_sample_oracle_host }}"
-      DEV_SAMPLE_ORACLE_PORT: "{{ dev_sample_oracle_port }}"
-      DEV_SAMPLE_ORACLE_SERVICE_NAME: "{{ dev_sample_oracle_service_name }}"
-      DEV_SAMPLE_ORACLE_USER: "{{ dev_sample_oracle_user }}"
-      DEV_SAMPLE_ORACLE_PASSWORD: "{{ dev_sample_oracle_password }}"
-      DEV_SAMPLE_MSSQL_HOST: "{{ dev_sample_mssql_host }}"
-      DEV_SAMPLE_MSSQL_PORT: "{{ dev_sample_mssql_port }}"
-      DEV_SAMPLE_MSSQL_DATABASE: "{{ dev_sample_mssql_database }}"
-      DEV_SAMPLE_MSSQL_USER: "{{ dev_sample_mssql_user }}"
-      DEV_SAMPLE_MSSQL_PASSWORD: "{{ dev_sample_mssql_password }}"
+      DEV_SAMPLE_POSTGRES_HOST: "{{ dev_sample_postgres_host | default('') }}"
+      DEV_SAMPLE_POSTGRES_PORT: "{{ dev_sample_postgres_port | default('') }}"
+      DEV_SAMPLE_POSTGRES_DATABASE: "{{ dev_sample_postgres_database | default('') }}"
+      DEV_SAMPLE_POSTGRES_USER: "{{ dev_sample_postgres_user | default('') }}"
+      DEV_SAMPLE_POSTGRES_PASSWORD: "{{ dev_sample_postgres_password | default('') }}"
+      DEV_SAMPLE_POSTGRES_SSL_MODE: "{{ dev_sample_postgres_ssl_mode | default('') }}"
+      DEV_SAMPLE_MYSQL_HOST: "{{ dev_sample_mysql_host | default('') }}"
+      DEV_SAMPLE_MYSQL_PORT: "{{ dev_sample_mysql_port | default('') }}"
+      DEV_SAMPLE_MYSQL_DATABASE: "{{ dev_sample_mysql_database | default('') }}"
+      DEV_SAMPLE_MYSQL_USER: "{{ dev_sample_mysql_user | default('') }}"
+      DEV_SAMPLE_MYSQL_PASSWORD: "{{ dev_sample_mysql_password | default('') }}"
+      DEV_SAMPLE_MONGODB_HOST: "{{ dev_sample_mongodb_host | default('') }}"
+      DEV_SAMPLE_MONGODB_PORT: "{{ dev_sample_mongodb_port | default('') }}"
+      DEV_SAMPLE_MONGODB_DATABASE: "{{ dev_sample_mongodb_database | default('') }}"
+      DEV_SAMPLE_MONGODB_USER: "{{ dev_sample_mongodb_user | default('') }}"
+      DEV_SAMPLE_MONGODB_PASSWORD: "{{ dev_sample_mongodb_password | default('') }}"
+      DEV_SAMPLE_ORACLE_HOST: "{{ dev_sample_oracle_host | default('') }}"
+      DEV_SAMPLE_ORACLE_PORT: "{{ dev_sample_oracle_port | default('') }}"
+      DEV_SAMPLE_ORACLE_SERVICE_NAME: "{{ dev_sample_oracle_service_name | default('') }}"
+      DEV_SAMPLE_ORACLE_USER: "{{ dev_sample_oracle_user | default('') }}"
+      DEV_SAMPLE_ORACLE_PASSWORD: "{{ dev_sample_oracle_password | default('') }}"
+      DEV_SAMPLE_MSSQL_HOST: "{{ dev_sample_mssql_host | default('') }}"
+      DEV_SAMPLE_MSSQL_PORT: "{{ dev_sample_mssql_port | default('') }}"
+      DEV_SAMPLE_MSSQL_DATABASE: "{{ dev_sample_mssql_database | default('') }}"
+      DEV_SAMPLE_MSSQL_USER: "{{ dev_sample_mssql_user | default('') }}"
+      DEV_SAMPLE_MSSQL_PASSWORD: "{{ dev_sample_mssql_password | default('') }}"
       DRIVE_BASE_PATH: "/guacd-drive"
       FILE_UPLOAD_MAX_SIZE: "104857600"
       USER_DRIVE_QUOTA: "104857600"
@@ -655,6 +667,7 @@ services:
       FEATURE_AGENTIC_AI_ENABLED: "${FEATURE_AGENTIC_AI_ENABLED:-true}"
       FEATURE_ENTERPRISE_AUTH_ENABLED: "${FEATURE_ENTERPRISE_AUTH_ENABLED:-true}"
       FEATURE_SHARING_APPROVALS_ENABLED: "${FEATURE_SHARING_APPROVALS_ENABLED:-true}"
+      SELF_SIGNUP_ENABLED: "${SELF_SIGNUP_ENABLED:-false}"
       GATEWAY_ROUTING_MODE: "${GATEWAY_ROUTING_MODE:-gateway-mandatory}"
       ALLOW_EXTERNAL_SHARING: "${ALLOW_EXTERNAL_SHARING:-false}"
       CLI_ENABLED: "${CLI_ENABLED:-true}"
@@ -689,9 +702,9 @@ services:
       - "{{ arsenale_ssh_proxy_bind_host | default('0.0.0.0') }}:{{ arsenale_ssh_port }}:2222"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       redis:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       shared-files-s3:
         condition: service_started
     volumes:
@@ -751,9 +764,9 @@ services:
       - "127.0.0.1:{{ arsenale_control_plane_controller_port | default(18081) }}:8081"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       runtime-agent:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -821,7 +834,7 @@ services:
       - "127.0.0.1:{{ arsenale_model_gateway_port | default(18083) }}:8083"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -861,9 +874,9 @@ services:
       - "127.0.0.1:{{ arsenale_terminal_broker_port | default(18090) }}:8090"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       terminal-target:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
@@ -907,7 +920,7 @@ services:
       - "127.0.0.1:{{ arsenale_tunnel_broker_port | default(18092) }}:8092"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -946,11 +959,11 @@ services:
       - "127.0.0.1:{{ arsenale_tool_gateway_port | default(18084) }}:8084"
     depends_on:
       terminal-broker:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       query-runner:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       memory-service:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8084/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -985,7 +998,7 @@ services:
       - "127.0.0.1:{{ arsenale_query_runner_port | default(18093) }}:8093"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -1064,9 +1077,9 @@ services:
       - "127.0.0.1:{{ arsenale_desktop_broker_port | default(18091) }}:8091"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       guacd:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
@@ -1107,7 +1120,7 @@ services:
       - "127.0.0.1:{{ arsenale_memory_service_port | default(18086) }}:8086"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -1145,7 +1158,7 @@ services:
       - "127.0.0.1:{{ arsenale_agent_orchestrator_port | default(18085) }}:8085"
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
     healthcheck:
@@ -1402,6 +1415,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     ports:
       - "{{ _client_bind_host }}:{{ arsenale_client_port }}:8080"
     environment:
@@ -1409,13 +1424,17 @@ services:
       DESKTOP_UPSTREAM_HOST: "${DESKTOP_UPSTREAM_HOST:-desktop-broker}"
       MAP_ASSETS_UPSTREAM_HOST: "${MAP_ASSETS_UPSTREAM_HOST:-map-assets}"
       TERMINAL_UPSTREAM_HOST: "${TERMINAL_UPSTREAM_HOST:-terminal-broker}"
-{% if _is_dev | default(false) | bool %}
+{% if _client_tls_enabled %}
     volumes:
       - {{ arsenale_cert_dir }}/client:/certs:ro
+{% if _is_dev | default(false) | bool %}
       - {{ _compose_repo_root }}/client/nginx.dev.conf:/etc/nginx/templates/default.conf.template:ro
+{% else %}
+      - {{ _runtime_assets_root }}/client/nginx.https.conf:/etc/nginx/templates/default.conf.template:ro
+{% endif %}
 {% endif %}
     healthcheck:
-{% if _is_dev | default(false) | bool %}
+{% if _client_tls_enabled %}
       test: ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://localhost:8080/health >/dev/null || exit 1"]
 {% else %}
       test: ["CMD-SHELL", "curl --silent --show-error --fail http://127.0.0.1:8080/health >/dev/null || exit 1"]
@@ -1426,13 +1445,13 @@ services:
       start_period: 5s
     depends_on:
       control-plane-api:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       desktop-broker:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       map-assets:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
       terminal-broker:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     restart: always
     networks:
       - net-edge
@@ -1453,6 +1472,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       GATEWAY_API_TLS_CERT: /certs/server-cert.pem
@@ -1493,6 +1514,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
@@ -1515,7 +1538,7 @@ services:
       - {{ arsenale_cert_dir }}/tunnel-managed-ssh:/tunnel-certs:ro
     depends_on:
       tunnel-broker:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     healthcheck:
       test: ["CMD-SHELL", "nc -z localhost 2222 || exit 1"]
       interval: 10s
@@ -1545,6 +1568,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       GUACD_SSL: "true"
       GUACD_SSL_CERT: /certs/server-cert.pem
@@ -1564,7 +1589,7 @@ services:
       - {{ arsenale_cert_dir }}/tunnel-guacd:/tunnel-certs:ro
     depends_on:
       tunnel-broker:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 4822 || exit 1"]
       interval: 10s
@@ -1595,6 +1620,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    group_add:
+      - keep-groups
     environment:
       DB_LISTEN_PORT: "5432"
       TUNNEL_SERVER_URL: "ws://tunnel-broker:8092/api/tunnel/connect"
@@ -1610,7 +1637,7 @@ services:
       - {{ arsenale_cert_dir }}/tunnel-db-proxy:/tunnel-certs:ro
     depends_on:
       tunnel-broker:
-        condition: service_healthy
+        condition: {{ _compose_dependency_condition }}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5432/healthz >/dev/null || exit 1"]
       interval: 10s

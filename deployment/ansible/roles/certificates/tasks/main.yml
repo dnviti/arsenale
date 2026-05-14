@@ -19,15 +19,26 @@
 
 - name: Set runtime private key mode
   set_fact:
-    _runtime_key_mode: "{{ '0644' if (_is_dev | default(false) | bool) else '0600' }}"
-    _guacd_runtime_key_mode: "0644"
+    _runtime_key_mode: "0640"
+    _guacd_runtime_key_mode: "0640"
     _spiffe_trust_domain: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
     _dev_tunnel_fixtures_enabled: "{{ arsenale_dev_tunnel_fixtures_enabled | default(_is_dev | default(false) | bool) }}"
+
+- name: Ensure certificate root is private to the runtime owner
+  file:
+    path: "{{ arsenale_cert_dir }}"
+    state: directory
+    mode: "0750"
 
 - name: Derive development client extra IPv4 SANs
   set_fact:
     _dev_client_extra_ipv4s: "{{ (ansible_all_ipv4_addresses | default([])) | difference(['127.0.0.1']) | unique | sort }}"
   when: _is_dev | default(false) | bool
+
+- name: Normalize client certificate host
+  set_fact:
+    _client_certificate_host: "{{ arsenale_domain | default('localhost') | trim }}"
+    _client_certificate_host_is_ipv4: "{{ ((arsenale_domain | default('localhost') | trim) | regex_search('^\\d+\\.\\d+\\.\\d+\\.\\d+$')) is not none }}"
 
 - name: Build client certificate SAN entries
   set_fact:
@@ -37,12 +48,12 @@
           ['DNS:arsenale-client', 'DNS:localhost', 'IP:127.0.0.1', 'IP:::1']
           + (
             []
-            if (arsenale_domain | default('localhost') | trim) in ['', 'localhost']
+            if _client_certificate_host in ['', 'localhost']
             else [
               (
-                'IP:' ~ (arsenale_domain | trim)
-              ) if (arsenale_domain | trim is match('^\\d+\\.\\d+\\.\\d+\\.\\d+$'))
-                else ('DNS:' ~ (arsenale_domain | trim))
+                'IP:' ~ _client_certificate_host
+              ) if (_client_certificate_host_is_ipv4 | bool)
+                else ('DNS:' ~ _client_certificate_host)
             ]
           )
           + ((_dev_client_extra_ipv4s | default([])) | map('regex_replace', '^', 'IP:') | list)
@@ -56,34 +67,32 @@
   failed_when: false
   when: _is_dev | default(false) | bool
 
-- name: Inspect client certificate SANs in development
+- name: Inspect client certificate SANs
   command: openssl x509 -in "{{ arsenale_cert_dir }}/client/server-cert.pem" -noout -ext subjectAltName
-  register: _dev_client_cert_sans
+  register: _client_cert_sans
   changed_when: false
   failed_when: false
-  when: _is_dev | default(false) | bool
 
-- name: Determine missing development client SANs
+- name: Determine missing client SANs
   set_fact:
-    _dev_client_missing_sans: >-
+    _client_missing_sans: >-
       {{
         (
           (
             []
-            if (arsenale_domain | default('localhost') | trim) in ['', 'localhost']
+            if _client_certificate_host in ['', 'localhost']
             else [
               (
-                'IP Address:' ~ (arsenale_domain | trim)
-              ) if (arsenale_domain | trim is match('^\\d+\\.\\d+\\.\\d+\\.\\d+$'))
-                else ('DNS:' ~ (arsenale_domain | trim))
+                'IP Address:' ~ _client_certificate_host
+              ) if (_client_certificate_host_is_ipv4 | bool)
+                else ('DNS:' ~ _client_certificate_host)
             ]
           )
           + ((_dev_client_extra_ipv4s | default([])) | map('regex_replace', '^', 'IP Address:') | list)
         )
-        | reject('in', _dev_client_cert_sans.stdout | default(''))
+        | reject('in', _client_cert_sans.stdout | default(''))
         | list
       }}
-  when: _is_dev | default(false) | bool
 
 - name: Inspect existing CA certificate extensions
   command: openssl x509 -in "{{ _ca_cert_path }}" -noout -text
@@ -125,7 +134,7 @@
     - _dev_ssh_gateway_cert_sans.rc == 0
     - "'DNS:dev-tunnel-ssh-gateway' not in _dev_ssh_gateway_cert_sans.stdout"
 
-- name: Remove stale dev client certificate missing host SANs
+- name: Remove stale client certificate missing host SANs
   file:
     path: "{{ arsenale_cert_dir }}/client/{{ item }}"
     state: absent
@@ -134,9 +143,8 @@
     - server-key.pem
     - server.csr
   when:
-    - _is_dev | default(false) | bool
-    - _dev_client_cert_sans.rc == 0
-    - (_dev_client_missing_sans | default([]) | length) > 0
+    - _client_cert_sans.rc == 0
+    - (_client_missing_sans | default([]) | length) > 0
 
 - name: Generate CA private key
   community.crypto.openssl_privatekey:
@@ -210,14 +218,14 @@
   file:
     path: "{{ arsenale_cert_dir }}/{{ item.name }}"
     state: directory
-    mode: "0755"
+    mode: "0750"
   loop: "{{ _services_need_certs }}"
   when: _services_need_certs | length > 0
 
-- name: Ensure existing cert directories are traversable (rootless Podman UID mapping)
+- name: Ensure existing cert directories are private to the runtime owner
   file:
     path: "{{ arsenale_cert_dir }}/{{ item.name }}"
-    mode: "0755"
+    mode: "0750"
   loop: "{{ cert_services }}"
   failed_when: false
 

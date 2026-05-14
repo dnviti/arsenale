@@ -6,14 +6,18 @@ import unittest
 from pathlib import Path
 
 import yaml
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 
 ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_TEMPLATE = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "templates" / "compose.yml.j2"
+ENV_TEMPLATE = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "templates" / "env.j2"
 BROWSER_EXTENSION_WORKFLOW = ROOT / ".github" / "workflows" / "browser-extension.yml"
 INSTALL_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "install.yml"
 INSTALL_APPLY_TASKS = ROOT / "deployment" / "ansible" / "playbooks" / "tasks" / "install_apply.yml"
+CERTIFICATE_TASKS = ROOT / "deployment" / "ansible" / "roles" / "certificates" / "tasks" / "main.yml"
+PODMAN_SECRETS_TASKS = ROOT / "deployment" / "ansible" / "roles" / "podman_secrets" / "tasks" / "main.yml"
+DEPLOY_APPLY_TASKS = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "tasks" / "apply.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
 DEV_REFRESH_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "dev_refresh.yml"
 DOCKER_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "docker-build.yml"
@@ -46,6 +50,7 @@ def _realpath(value: object) -> str:
 def _render_compose(**overrides: object) -> dict[str, object]:
     env = Environment(
         loader=FileSystemLoader(str(COMPOSE_TEMPLATE.parent)),
+        undefined=StrictUndefined,
         keep_trailing_newline=True,
         trim_blocks=False,
         lstrip_blocks=False,
@@ -160,10 +165,66 @@ def _render_compose(**overrides: object) -> dict[str, object]:
             "db_proxy": {"cpus": "0.5", "memory": "256m", "pids": 128},
         },
     }
+    omit_keys = set(overrides.pop("_omit_keys", []))
     context.update(overrides)
+    for key in omit_keys:
+        context.pop(str(key), None)
 
     rendered = env.get_template(COMPOSE_TEMPLATE.name).render(**context)
     return yaml.safe_load(rendered)
+
+
+def _render_env(**overrides: object) -> dict[str, str]:
+    env = Environment(
+        loader=FileSystemLoader(str(ENV_TEMPLATE.parent)),
+        undefined=StrictUndefined,
+        keep_trailing_newline=True,
+        trim_blocks=False,
+        lstrip_blocks=False,
+    )
+    env.filters["bool"] = _bool_filter
+
+    context: dict[str, object] = {
+        "arsenale_db_user": "arsenale",
+        "arsenale_db_name": "arsenale",
+        "arsenale_node_env": "production",
+        "arsenale_recording_enabled": True,
+        "arsenale_self_signup_enabled": False,
+        "arsenale_file_threat_scanner_mode": "builtin",
+        "arsenale_shared_files_s3_bucket": "",
+        "arsenale_shared_files_s3_region": "us-east-1",
+        "arsenale_shared_files_s3_endpoint": "",
+        "arsenale_shared_files_s3_access_key_id": "",
+        "arsenale_shared_files_s3_prefix": "",
+        "arsenale_shared_files_s3_force_path_style": False,
+        "arsenale_shared_files_s3_auto_create_bucket": False,
+        "arsenale_dev_shared_files_s3_bucket": "arsenale-shared-files",
+        "arsenale_dev_shared_files_s3_region": "us-east-1",
+        "arsenale_dev_shared_files_s3_endpoint": "http://shared-files-s3:9000",
+        "arsenale_dev_shared_files_s3_access_key_id": "arsenale",
+        "arsenale_dev_shared_files_s3_secret_access_key": "arsenale-dev-shared-files",
+        "arsenale_dev_shared_files_s3_prefix": "staged",
+        "arsenale_dev_shared_files_s3_force_path_style": True,
+        "arsenale_dev_shared_files_s3_auto_create_bucket": True,
+        "arsenale_dev_bootstrap_admin_email": "admin@example.com",
+        "arsenale_dev_bootstrap_admin_password": "ArsenaleTemp91Qx",
+        "arsenale_dev_bootstrap_admin_username": "admin",
+        "arsenale_dev_bootstrap_tenant_name": "Development Environment",
+        "arsenale_cert_dir": "/opt/arsenale/certs",
+        "arsenale_dev_tunnel_fixtures_enabled": False,
+        "arsenale_dev_demo_databases_enabled": False,
+        "installer_runtime_env": {},
+        "installer_services": [],
+        "_is_dev": False,
+    }
+    context.update(overrides)
+
+    rendered = env.get_template(ENV_TEMPLATE.name).render(**context)
+    return dict(
+        line.split("=", 1)
+        for line in rendered.splitlines()
+        if line.strip() and not line.lstrip().startswith("#") and "=" in line
+    )
 
 
 class StandaloneInstallerTemplateTest(unittest.TestCase):
@@ -183,6 +244,7 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PUBLIC_HOST"], "")
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PUBLIC_PORT"], "")
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_TOKEN_TTL_SECONDS"], "300")
+        self.assertEqual(services["control-plane-api"]["environment"]["SELF_SIGNUP_ENABLED"], "${SELF_SIGNUP_ENABLED:-false}")
         self.assertIn("0.0.0.0:2222:2222", services["control-plane-api"]["ports"])
         self.assertNotIn("ports", services["ssh-gateway"])
 
@@ -196,9 +258,22 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             postgres_volumes,
         )
         self.assertTrue(all("/opt/arsenale/arsenale/" not in entry for entry in postgres_volumes))
+        self.assertEqual(
+            services["client"]["volumes"],
+            [
+                "/opt/arsenale/certs/client:/certs:ro",
+                "/opt/arsenale/config/installer-assets/client/nginx.https.conf:/etc/nginx/templates/default.conf.template:ro",
+            ],
+        )
+        self.assertEqual(
+            services["client"]["healthcheck"]["test"],
+            ["CMD-SHELL", "curl --silent --show-error --fail --insecure https://localhost:8080/health >/dev/null || exit 1"],
+        )
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
+        for service_name in ["client", "guacd", "guacenc", "ssh-gateway"]:
+            self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_production_compose_honors_pinned_release_image_tag(self) -> None:
         compose = _render_compose(arsenale_image_tag="1.8.0")
@@ -208,6 +283,77 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker:1.8.0")
         self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:1.8.0")
         self.assertEqual(services["guacd"]["image"], "ghcr.io/dnviti/arsenale/guacd:1.8.0")
+
+    def test_production_podman_compose_dependencies_do_not_block_on_health_wait(self) -> None:
+        compose = _render_compose(installer_services=["shared-files-s3"])
+        services = compose["services"]
+
+        self.assertEqual(services["control-plane-api"]["depends_on"]["postgres"]["condition"], "service_started")
+        self.assertEqual(services["control-plane-api"]["depends_on"]["redis"]["condition"], "service_started")
+        self.assertEqual(services["client"]["depends_on"]["control-plane-api"]["condition"], "service_started")
+
+    def test_production_http_public_url_keeps_plain_client_listener(self) -> None:
+        compose = _render_compose(_public_url="http://arsenale.example.com:3000")
+        client = compose["services"]["client"]
+
+        self.assertNotIn("volumes", client)
+        self.assertEqual(
+            client["healthcheck"]["test"],
+            ["CMD-SHELL", "curl --silent --show-error --fail http://127.0.0.1:8080/health >/dev/null || exit 1"],
+        )
+
+    def test_production_compose_can_render_bundled_shared_file_storage(self) -> None:
+        compose = _render_compose(installer_services=["shared-files-s3"])
+        services = compose["services"]
+        env = services["shared-files-s3"]["environment"]
+
+        self.assertIn("shared-files-s3", services)
+        self.assertEqual(services["shared-files-s3"]["image"], "quay.io/minio/minio:latest")
+        self.assertEqual(services["shared-files-s3"]["volumes"], ["shared_files_s3_data:/data"])
+        self.assertEqual(services["shared-files-s3"]["secrets"], ["shared_files_s3_secret_access_key"])
+        self.assertEqual(env["MINIO_ROOT_PASSWORD_FILE"], "/run/secrets/shared_files_s3_secret_access_key")
+        self.assertNotIn("MINIO_ROOT_PASSWORD", env)
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["ARSENALE_INSTALL_MODE"],
+            "${ARSENALE_INSTALL_MODE:-production}",
+        )
+        self.assertNotIn("control-plane-controller", services)
+
+    def test_production_compose_does_not_require_dev_demo_database_vars(self) -> None:
+        dev_demo_keys = [
+            "dev_sample_postgres_host",
+            "dev_sample_postgres_port",
+            "dev_sample_postgres_database",
+            "dev_sample_postgres_user",
+            "dev_sample_postgres_password",
+            "dev_sample_postgres_ssl_mode",
+            "dev_sample_mysql_host",
+            "dev_sample_mysql_port",
+            "dev_sample_mysql_database",
+            "dev_sample_mysql_user",
+            "dev_sample_mysql_password",
+            "dev_sample_mongodb_host",
+            "dev_sample_mongodb_port",
+            "dev_sample_mongodb_database",
+            "dev_sample_mongodb_user",
+            "dev_sample_mongodb_password",
+            "dev_sample_oracle_host",
+            "dev_sample_oracle_port",
+            "dev_sample_oracle_service_name",
+            "dev_sample_oracle_user",
+            "dev_sample_oracle_password",
+            "dev_sample_mssql_host",
+            "dev_sample_mssql_port",
+            "dev_sample_mssql_database",
+            "dev_sample_mssql_user",
+            "dev_sample_mssql_password",
+        ]
+
+        compose = _render_compose(installer_services=["shared-files-s3"], _omit_keys=dev_demo_keys)
+        env = compose["services"]["control-plane-api"]["environment"]
+
+        self.assertNotIn("DEV_SAMPLE_POSTGRES_HOST", env)
+        self.assertNotIn("dev-demo-postgres", compose["services"])
 
     def test_development_compose_keeps_local_builds(self) -> None:
         compose = _render_compose(
@@ -243,12 +389,15 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PUBLIC_HOST"], "")
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PUBLIC_PORT"], "")
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_TOKEN_TTL_SECONDS"], "300")
+        self.assertEqual(services["control-plane-api"]["environment"]["SELF_SIGNUP_ENABLED"], "${SELF_SIGNUP_ENABLED:-false}")
         self.assertEqual(services["control-plane-api"]["environment"]["SHARED_FILES_S3_BUCKET"], "${SHARED_FILES_S3_BUCKET:-}")
         self.assertEqual(services["control-plane-api"]["environment"]["SHARED_FILES_S3_ENDPOINT"], "${SHARED_FILES_S3_ENDPOINT:-}")
         self.assertIn("0.0.0.0:2222:2222", services["control-plane-api"]["ports"])
         self.assertIn("shared-files-s3", services)
         self.assertEqual(services["shared-files-s3"]["image"], "quay.io/minio/minio:latest")
         self.assertEqual(services["shared-files-s3"]["volumes"], ["shared_files_s3_data:/data"])
+        self.assertEqual(services["shared-files-s3"]["secrets"], ["shared_files_s3_secret_access_key"])
+        self.assertNotIn("MINIO_ROOT_PASSWORD", services["shared-files-s3"]["environment"])
         self.assertEqual(
             services["shared-files-s3"]["healthcheck"]["test"],
             ["CMD-SHELL", "curl --silent --fail http://127.0.0.1:9000/minio/health/live >/dev/null || exit 1"],
@@ -263,6 +412,8 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertIn("net-egress", services["guacd"]["networks"])
         self.assertIn("net-egress", services["ssh-gateway"]["networks"])
         self.assertIn("net-egress", services["query-runner"]["networks"])
+        for service_name in ["client", "guacd", "guacenc", "ssh-gateway", "dev-tunnel-ssh-gateway", "dev-tunnel-guacd", "dev-tunnel-db-proxy"]:
+            self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_development_compose_can_disable_dev_fixtures(self) -> None:
         compose = _render_compose(
@@ -289,6 +440,17 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["control-plane-api"]["environment"]["DEV_BOOTSTRAP_TUNNEL_FIXTURES_ENABLED"], "false")
         self.assertEqual(services["control-plane-api"]["environment"]["DEV_BOOTSTRAP_DEMO_DATABASES_ENABLED"], "false")
 
+    def test_env_file_renders_self_signup_toggle(self) -> None:
+        self.assertEqual(_render_env()["SELF_SIGNUP_ENABLED"], "false")
+        self.assertEqual(_render_env(arsenale_self_signup_enabled=True)["SELF_SIGNUP_ENABLED"], "true")
+        self.assertEqual(
+            _render_env(installer_runtime_env={"SELF_SIGNUP_ENABLED": "true"})["SELF_SIGNUP_ENABLED"],
+            "true",
+        )
+
+    def test_env_file_does_not_render_shared_files_secret(self) -> None:
+        self.assertNotIn("SHARED_FILES_S3_SECRET_ACCESS_KEY", _render_env(installer_services=["shared-files-s3"]))
+
 
 class StandaloneInstallerConfigTest(unittest.TestCase):
     def test_non_dev_playbooks_default_to_prebuilt_images(self) -> None:
@@ -297,6 +459,54 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
 
         self.assertIn('_build: "{{ arsenale_build_images | default(false) }}"', install_text)
         self.assertIn('_build: "{{ true if _is_dev | bool else (arsenale_build_images | default(false)) }}"', deploy_text)
+
+    def test_install_profile_maps_ip_geolocation_capability(self) -> None:
+        install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
+        capabilities_section = install_text[
+            install_text.index("'capabilities': {") : install_text.index("'routing': {")
+        ]
+
+        self.assertIn("'ip_geolocation': ('ip_geolocation' in installer_capability_selection)", capabilities_section)
+
+    def test_runtime_service_private_keys_stay_group_scoped(self) -> None:
+        cert_text = CERTIFICATE_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn('_runtime_key_mode: "0640"', cert_text)
+        self.assertIn('_guacd_runtime_key_mode: "0640"', cert_text)
+        self.assertIn("name: Ensure certificate root is private to the runtime owner", cert_text)
+        self.assertNotIn('_runtime_key_mode: "0644"', cert_text)
+        self.assertIn("_client_certificate_host_is_ipv4", cert_text)
+        self.assertIn("regex_search('^\\\\d+\\\\.\\\\d+\\\\.\\\\d+\\\\.\\\\d+$')", cert_text)
+
+    def test_bundled_production_shared_files_secret_requires_vault_value(self) -> None:
+        secret_text = PODMAN_SECRETS_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn("name: Require shared-files S3 secret for bundled production storage", secret_text)
+        self.assertIn("Set vault_shared_files_s3_secret_access_key", secret_text)
+        self.assertIn("arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev", secret_text)
+        self.assertNotIn("or ('shared-files-s3' in (installer_services", secret_text)
+
+    def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
+        apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")
+
+        self.assertLess(
+            apply_text.index("name: Recreate PostgreSQL before schema bootstrap on full force-recreate applies"),
+            apply_text.index("name: Run database migrations via Podman service runner"),
+        )
+        self.assertIn("{{ _compose_cmd }} up -d --force-recreate postgres", apply_text)
+        self.assertIn("compose_force_recreate | default(false) | bool", apply_text)
+
+    def test_full_force_recreate_removes_containers_before_plain_stack_up(self) -> None:
+        apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")
+
+        self.assertLess(
+            apply_text.index("name: Remove existing compose containers before full force-recreate applies"),
+            apply_text.index("name: Deploy Arsenale stack"),
+        )
+        deploy_section = apply_text[apply_text.index("name: Deploy Arsenale stack") :]
+        deploy_section = deploy_section[: deploy_section.index("- name: Refresh selected Arsenale services")]
+        self.assertIn("{{ _compose_cmd }} up -d --remove-orphans", deploy_section)
+        self.assertNotIn("--force-recreate", deploy_section)
 
     def test_install_playbook_failure_path_uses_one_summary_variable(self) -> None:
         install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
