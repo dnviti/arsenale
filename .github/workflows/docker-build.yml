@@ -243,7 +243,9 @@ jobs:
         with:
           context: .
           file: ${{ matrix.service.dockerfile }}
-          build-args: ${{ matrix.service.build_args }}
+          build-args: |
+            BUILD_SOURCE_SHA=${{ github.sha }}
+            ${{ matrix.service.build_args }}
           push: false
           load: true
           tags: arsenale-${{ matrix.service.name }}:scan
@@ -273,7 +275,9 @@ jobs:
         with:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
-          build-args: ${{ matrix.service.build_args }}
+          build-args: |
+            BUILD_SOURCE_SHA=${{ github.sha }}
+            ${{ matrix.service.build_args }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
