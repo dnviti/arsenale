@@ -110,11 +110,11 @@ func (s Service) resolveDesktopObserveRoute(ctx context.Context, gatewayID, inst
 	}
 
 	if gateway.TunnelEnabled {
-		tunnelPort := gatewayruntime.TunnelLocalPort(gateway.Type, route.GuacdPort)
-		if tunnelPort <= 0 {
-			tunnelPort = route.GuacdPort
+		tunnelPorts := gatewayruntime.TunnelLocalPortCandidates(gateway.Type, route.GuacdPort)
+		if len(tunnelPorts) == 0 {
+			tunnelPorts = []int{route.GuacdPort}
 		}
-		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPort)
+		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPorts[0], tunnelPorts[1:]...)
 		if err != nil {
 			return desktopRoute{}, err
 		}

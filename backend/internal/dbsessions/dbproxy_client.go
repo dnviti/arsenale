@@ -191,11 +191,11 @@ func (s Service) dbProxyBaseURL(ctx context.Context, gatewayID, instanceID strin
 		return "", &requestError{status: http.StatusBadGateway, message: "database session gateway port is unavailable"}
 	}
 	if gateway.TunnelEnabled {
-		tunnelPort := gatewayruntime.TunnelLocalPort(gateway.Type, port)
-		if tunnelPort <= 0 {
-			tunnelPort = port
+		tunnelPorts := gatewayruntime.TunnelLocalPortCandidates(gateway.Type, port)
+		if len(tunnelPorts) == 0 {
+			tunnelPorts = []int{port}
 		}
-		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPort)
+		proxy, err := s.ConnectionResolver.CreateTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPorts[0], tunnelPorts[1:]...)
 		if err != nil {
 			return "", err
 		}

@@ -75,7 +75,7 @@ Get a tunnel-connected gateway running in under 5 minutes:
    - **Name** -- descriptive label (e.g. "DC-East guacd").
    - **Type** -- `GUACD` for RDP/VNC, `SSH_BASTION` for SSH.
    - **Host** -- leave as `localhost` (the tunnel agent handles routing).
-   - **Port** -- the local port of the proxied service (`4822` for guacd, `2222` for sshd).
+   - **Port** -- the local port of the proxied service. Generated bundles preserve this value in `TUNNEL_LOCAL_PORT` and set the bundled runtime listener variable to match it.
 3. Save the gateway.
 4. Expand the **Zero-Trust Tunnel** section and click **Enable Zero-Trust Tunnel**.
 
@@ -434,7 +434,7 @@ Use this when:
 | `Missing required environment variables` in agent logs | One or more of the four required env vars is not set | Set all of `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, `TUNNEL_GATEWAY_ID`, and `TUNNEL_LOCAL_PORT` |
 | Agent connects then immediately disconnects | Token was revoked or rotated | Generate a new token and redeploy the agent |
 | High RTT values (>200ms) | Network latency between agent and server | Consider a server instance closer to the remote site, or check for network congestion |
-| `TUNNEL_LOCAL_PORT must be a valid port number` | Port value is outside 1--65535 or not a number | Verify the `TUNNEL_LOCAL_PORT` value is correct (4822 for guacd, 2222 for sshd) |
+| `TUNNEL_LOCAL_PORT must be a valid port number` | Port value is outside 1--65535 or not a number | Verify the `TUNNEL_LOCAL_PORT` value matches the gateway's configured listener port |
 | Agent running but sessions fail | `TUNNEL_LOCAL_HOST` points to wrong address | Ensure the target service is reachable from the agent at the configured host and port |
 | Session returns `403` with an egress policy message | The gateway `egressPolicy` has no matching allow rule or a matching disallow rule for the requested protocol, host/subnet, port, user, or team | Review rule order and add or adjust a narrow allow rule for that target, then inspect `TUNNEL_EGRESS_DENIED` audit events |
 | Certificate expiry warning | mTLS client certificate approaching expiration | Rotate the tunnel token to trigger certificate renewal |
@@ -450,7 +450,7 @@ All tunnel agent configuration is read from environment variables. If none of th
 | `TUNNEL_SERVER_URL` | WSS URL of the Arsenale Tunnel Broker endpoint | `wss://arsenale.example.com/tunnel` |
 | `TUNNEL_TOKEN` | Bearer token for authentication (generated in the UI) | `a1b2c3d4e5f6...` |
 | `TUNNEL_GATEWAY_ID` | UUID of the gateway this agent represents | `550e8400-e29b-41d4-a716-446655440000` |
-| `TUNNEL_LOCAL_PORT` | TCP port of the local service to proxy | `4822` (guacd) or `2222` (sshd) |
+| `TUNNEL_LOCAL_PORT` | TCP port of the local service to proxy | Gateway configured listener port |
 
 ### Optional Variables
 

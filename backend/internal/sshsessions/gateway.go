@@ -59,11 +59,11 @@ func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access
 		if err := s.enforceTunnelEgress(ctx, claims.UserID, gateway, access.Connection.ID, access.Connection.Host, access.Connection.Port, "SSH", ipAddress); err != nil {
 			return nil, "", "", err
 		}
-		tunnelPort := gatewayruntime.TunnelLocalPort(gateway.Type, port)
-		if tunnelPort <= 0 {
-			tunnelPort = port
+		tunnelPorts := gatewayruntime.TunnelLocalPortCandidates(gateway.Type, port)
+		if len(tunnelPorts) == 0 {
+			tunnelPorts = []int{port}
 		}
-		proxy, err := s.createTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPort)
+		proxy, err := s.createTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPorts[0], tunnelPorts[1:]...)
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -222,12 +222,16 @@ WHERE "tenantId" = $1
 	return privateKey, nil
 }
 
-func (s Service) createTunnelProxy(ctx context.Context, gatewayID, targetHost string, targetPort int) (tunnelProxyResponse, error) {
-	body, err := json.Marshal(map[string]any{
+func (s Service) createTunnelProxy(ctx context.Context, gatewayID, targetHost string, targetPort int, fallbackPorts ...int) (tunnelProxyResponse, error) {
+	payload := map[string]any{
 		"gatewayId":  gatewayID,
 		"targetHost": targetHost,
 		"targetPort": targetPort,
-	})
+	}
+	if len(fallbackPorts) > 0 {
+		payload["targetPorts"] = append([]int{targetPort}, fallbackPorts...)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return tunnelProxyResponse{}, err
 	}

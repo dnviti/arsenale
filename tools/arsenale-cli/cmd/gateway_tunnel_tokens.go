@@ -82,9 +82,6 @@ func tunnelTokenEnvContent(bundle tunnelTokenBundle, serverURL, certFile, keyFil
 		localHost = "127.0.0.1"
 	}
 	localPort := bundle.TunnelLocalPort
-	if runtimePort := gatewayruntime.PrimaryPort(bundle.GatewayType); runtimePort > 0 {
-		localPort = runtimePort
-	}
 	if localPort <= 0 {
 		localPort = gatewayruntime.TunnelLocalPort(bundle.GatewayType, 0)
 	}
@@ -99,6 +96,9 @@ func tunnelTokenEnvContent(bundle tunnelTokenBundle, serverURL, certFile, keyFil
 		envLine("TUNNEL_LOCAL_PORT", strconv.Itoa(localPort)),
 		envLine("TUNNEL_CLIENT_CERT_FILE", certFile),
 		envLine("TUNNEL_CLIENT_KEY_FILE", keyFile),
+	}
+	if listenerEnv := gatewayruntime.ListenerEnvVar(bundle.GatewayType); listenerEnv != "" {
+		lines = append(lines, envLine(listenerEnv, strconv.Itoa(localPort)))
 	}
 	return strings.Join(lines, "\n") + "\n"
 }

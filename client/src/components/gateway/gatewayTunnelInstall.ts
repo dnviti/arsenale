@@ -17,7 +17,8 @@ interface BuildTunnelInstallBundleOptions {
 interface GatewayRuntimeInstall {
   serviceName: string;
   image: string;
-  localPort: number;
+  defaultLocalPort: number;
+  listenerEnvKey: string;
   setupCommands: string[];
   extraEnvironment: string[];
   volumes: string[];
@@ -39,7 +40,7 @@ export function buildTunnelInstallBundle({
 }: BuildTunnelInstallBundleOptions): TunnelInstallBundle {
   const runtime = gatewayRuntimeInstall(gateway.type);
   const localHost = tokenBundle.tunnelLocalHost || '127.0.0.1';
-  const localPort = runtime.localPort || tokenBundle.tunnelLocalPort || gateway.port;
+  const localPort = tokenBundle.tunnelLocalPort || gateway.port || runtime.defaultLocalPort;
   const envContent = [
     envLine('TUNNEL_SERVER_URL', trimServerUrl(serverUrl)),
     envLine('TUNNEL_TOKEN', tokenBundle.token),
@@ -48,9 +49,10 @@ export function buildTunnelInstallBundle({
     envLine('TUNNEL_LOCAL_PORT', String(localPort)),
     envLine('TUNNEL_CLIENT_CERT_FILE', containerCertPath),
     envLine('TUNNEL_CLIENT_KEY_FILE', containerKeyPath),
+    envLine(runtime.listenerEnvKey, String(localPort)),
   ].join('\n') + '\n';
 
-  const dockerCompose = buildDockerCompose(runtime);
+  const dockerCompose = buildDockerCompose(runtime, localPort);
   const installCommands = buildInstallCommands(
     tokenBundle,
     envContent,
@@ -73,27 +75,30 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
       return {
         serviceName: 'ssh-gateway',
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
-        localPort: 2222,
+        defaultLocalPort: 2222,
+        listenerEnvKey: 'SSH_PORT',
         setupCommands: [],
-        extraEnvironment: ['SSH_PORT: "${SSH_PORT:-2222}"'],
+        extraEnvironment: [],
         volumes: [],
       };
     case 'DB_PROXY':
       return {
         serviceName: 'db-proxy',
         image: 'ghcr.io/dnviti/arsenale/db-proxy:stable',
-        localPort: 5432,
+        defaultLocalPort: 5432,
+        listenerEnvKey: 'DB_LISTEN_PORT',
         setupCommands: [],
-        extraEnvironment: ['DB_LISTEN_PORT: "${DB_LISTEN_PORT:-5432}"'],
+        extraEnvironment: [],
         volumes: [],
       };
     case 'SSH_BASTION':
       return {
         serviceName: 'ssh-gateway',
         image: 'ghcr.io/dnviti/arsenale/ssh-gateway:stable',
-        localPort: 2222,
+        defaultLocalPort: 2222,
+        listenerEnvKey: 'SSH_PORT',
         setupCommands: [],
-        extraEnvironment: ['SSH_PORT: "${SSH_PORT:-2222}"'],
+        extraEnvironment: [],
         volumes: [],
       };
     case 'GUACD':
@@ -101,7 +106,8 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
       return {
         serviceName: 'guacd',
         image: 'ghcr.io/dnviti/arsenale/guacd:stable',
-        localPort: 4822,
+        defaultLocalPort: 4822,
+        listenerEnvKey: 'GUACD_PORT',
         setupCommands: [
           `if [ ! -f ${guacdCertPath} ] || [ ! -f ${guacdKeyPath} ]; then`,
           '  command -v openssl >/dev/null || { echo "openssl is required to generate GUACD TLS certificates" >&2; exit 1; }',
@@ -125,7 +131,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
   }
 }
 
-function buildDockerCompose(runtime: GatewayRuntimeInstall): string {
+function buildDockerCompose(runtime: GatewayRuntimeInstall, localPort: number): string {
   const environmentLines = [
     'TUNNEL_SERVER_URL: "${TUNNEL_SERVER_URL}"',
     'TUNNEL_TOKEN: "${TUNNEL_TOKEN}"',
@@ -134,6 +140,7 @@ function buildDockerCompose(runtime: GatewayRuntimeInstall): string {
     'TUNNEL_LOCAL_PORT: "${TUNNEL_LOCAL_PORT}"',
     'TUNNEL_CLIENT_CERT_FILE: "${TUNNEL_CLIENT_CERT_FILE}"',
     'TUNNEL_CLIENT_KEY_FILE: "${TUNNEL_CLIENT_KEY_FILE}"',
+    `${runtime.listenerEnvKey}: "\${${runtime.listenerEnvKey}:-${localPort}}"`,
     ...runtime.extraEnvironment,
   ];
   const volumeLines = [

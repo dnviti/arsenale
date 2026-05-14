@@ -11,6 +11,7 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      GUACD_PORT: "${GUACD_PORT:-4822}"
       GUACD_SSL: "true"
       GUACD_SSL_CERT: /certs/server-cert.pem
       GUACD_SSL_KEY: /certs/server-key.pem
@@ -29,7 +30,7 @@ services:
       - ${TUNNEL_CLIENT_CERT_FILE:?set TUNNEL_CLIENT_CERT_FILE from arsenale-cli bundle output}:/tunnel-certs/client-cert.pem:ro
       - ${TUNNEL_CLIENT_KEY_FILE:?set TUNNEL_CLIENT_KEY_FILE from arsenale-cli bundle output}:/tunnel-certs/client-key.pem:ro
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 4822 || exit 1"]
+      test: ["CMD", "nc", "-z", "localhost", "${GUACD_PORT:-4822}"]
       interval: 10s
       timeout: 5s
       retries: 3
