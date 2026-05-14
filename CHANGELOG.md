@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Password self-signup now generates a user ID and sets `updatedAt`, resolving the `null value in column "id" of relation "User"` registration failure.
 - OAuth and LDAP auto-provisioning paths now set `updatedAt` consistently when creating users.
 - Client nginx startup no longer fails when `ip_geolocation` disables the `map-assets` service.
+- Production TLS private keys are no longer made world-readable for rootless Podman installs.
+- Bundled production shared-file storage no longer persists the S3 secret in the generated env file or falls back to development credentials.
 
 ### Removed
 - Legacy RDGW service, CLI command, settings UI, API routes, and deployment wiring.

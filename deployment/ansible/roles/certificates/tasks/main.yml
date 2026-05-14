@@ -19,16 +19,16 @@
 
 - name: Set runtime private key mode
   set_fact:
-    _runtime_key_mode: "0644"
-    _guacd_runtime_key_mode: "0644"
+    _runtime_key_mode: "0640"
+    _guacd_runtime_key_mode: "0640"
     _spiffe_trust_domain: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
     _dev_tunnel_fixtures_enabled: "{{ arsenale_dev_tunnel_fixtures_enabled | default(_is_dev | default(false) | bool) }}"
 
-- name: Ensure certificate root is traversable by rootless containers
+- name: Ensure certificate root is private to the runtime owner
   file:
     path: "{{ arsenale_cert_dir }}"
     state: directory
-    mode: "0755"
+    mode: "0750"
 
 - name: Derive development client extra IPv4 SANs
   set_fact:
@@ -218,14 +218,14 @@
   file:
     path: "{{ arsenale_cert_dir }}/{{ item.name }}"
     state: directory
-    mode: "0755"
+    mode: "0750"
   loop: "{{ _services_need_certs }}"
   when: _services_need_certs | length > 0
 
-- name: Ensure existing cert directories are traversable (rootless Podman UID mapping)
+- name: Ensure existing cert directories are private to the runtime owner
   file:
     path: "{{ arsenale_cert_dir }}/{{ item.name }}"
-    mode: "0755"
+    mode: "0750"
   loop: "{{ cert_services }}"
   failed_when: false
 

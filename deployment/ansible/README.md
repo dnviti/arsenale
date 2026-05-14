@@ -251,7 +251,7 @@ Production-specific behaviors:
 - Secrets are verified to be mounted via Podman secrets, not environment variables.
 - Images can be built from source or pulled from a registry.
 - When `arsenale_public_url` starts with `https://`, the production Podman client mounts the generated client certificate and an installer-managed HTTPS nginx template so the exposed web port speaks TLS directly.
-- RDP shared drives and SSH staged upload/download flows require S3-compatible object storage. Production Podman profiles that include the bundled `shared-files-s3` service use installer-managed MinIO defaults; otherwise set `arsenale_shared_files_s3_bucket` and related `arsenale_shared_files_s3_*` vars, plus `vault_shared_files_s3_secret_access_key` when static credentials are needed.
+- RDP shared drives and SSH staged upload/download flows require S3-compatible object storage. Production Podman profiles that include the bundled `shared-files-s3` service use installer-managed MinIO endpoint and bucket defaults, but must set `vault_shared_files_s3_secret_access_key`; otherwise set `arsenale_shared_files_s3_bucket` and related `arsenale_shared_files_s3_*` vars, plus `vault_shared_files_s3_secret_access_key` when static credentials are needed.
 
 ---
 
