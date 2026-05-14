@@ -545,9 +545,11 @@ services:
     restart: always
     networks:
       - net-cache
+{% endif %}
 
+{% if _is_dev | default(false) | bool %}
   # ---------------------------------------------------------------------------
-  # Go backend foundation services — active public runtime
+  # Go backend foundation services — active development runtime
   # ---------------------------------------------------------------------------
   control-plane-api:
 {{ compose_service_source('control-plane-api', 'backend/Dockerfile', build_args={'SERVICE': 'control-plane-api'}) | indent(4, true) }}

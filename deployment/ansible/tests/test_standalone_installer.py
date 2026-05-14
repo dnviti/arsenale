@@ -313,6 +313,11 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["shared-files-s3"]["secrets"], ["shared_files_s3_secret_access_key"])
         self.assertEqual(env["MINIO_ROOT_PASSWORD_FILE"], "/run/secrets/shared_files_s3_secret_access_key")
         self.assertNotIn("MINIO_ROOT_PASSWORD", env)
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["ARSENALE_INSTALL_MODE"],
+            "${ARSENALE_INSTALL_MODE:-production}",
+        )
+        self.assertNotIn("control-plane-controller", services)
 
     def test_production_compose_does_not_require_dev_demo_database_vars(self) -> None:
         dev_demo_keys = [
@@ -347,7 +352,7 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         compose = _render_compose(installer_services=["shared-files-s3"], _omit_keys=dev_demo_keys)
         env = compose["services"]["control-plane-api"]["environment"]
 
-        self.assertEqual(env["DEV_SAMPLE_POSTGRES_HOST"], "")
+        self.assertNotIn("DEV_SAMPLE_POSTGRES_HOST", env)
         self.assertNotIn("dev-demo-postgres", compose["services"])
 
     def test_development_compose_keeps_local_builds(self) -> None:
