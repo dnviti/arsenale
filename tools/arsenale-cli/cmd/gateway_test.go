@@ -173,13 +173,18 @@ func TestWriteTunnelTokenBundle(t *testing.T) {
 		t.Fatalf("unexpected env path %q", envPath)
 	}
 
-	for _, path := range []string{
-		filepath.Join(tempDir, "certs", "tunnel-client-cert.pem"),
-		filepath.Join(tempDir, "certs", "tunnel-client-key.pem"),
-		filepath.Join(tempDir, "tunnel.env"),
-	} {
-		if _, err := os.Stat(path); err != nil {
+	expectedModes := map[string]os.FileMode{
+		filepath.Join(tempDir, "certs", "tunnel-client-cert.pem"): 0644,
+		filepath.Join(tempDir, "certs", "tunnel-client-key.pem"):  0600,
+		filepath.Join(tempDir, "tunnel.env"):                      0600,
+	}
+	for path, wantMode := range expectedModes {
+		info, err := os.Stat(path)
+		if err != nil {
 			t.Fatalf("expected %s to exist: %v", path, err)
+		}
+		if got := info.Mode().Perm(); got != wantMode {
+			t.Fatalf("%s mode = %o, want %o", path, got, wantMode)
 		}
 	}
 }

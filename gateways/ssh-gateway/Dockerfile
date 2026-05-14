@@ -43,7 +43,7 @@ LABEL org.opencontainers.image.description="Lightweight SSH tunnel for TCP port 
 LABEL org.opencontainers.image.source="https://github.com/dnviti/arsenale"
 LABEL org.opencontainers.image.licenses="MIT"
 
-RUN apk add --no-cache openssh-server netcat-openbsd busybox-extras \
+RUN apk add --no-cache openssh-server netcat-openbsd busybox-extras su-exec \
     && adduser -D -s /sbin/nologin tunnel \
     && sed -i 's/^tunnel:!/tunnel:*/' /etc/shadow \
     && mkdir -p /config
@@ -60,7 +60,7 @@ COPY --from=grpc-builder /key-mgmt-server /usr/local/bin/key-mgmt-server
 # Embed pre-built tunnel agent
 COPY --from=tunnel-builder /out/tunnel-agent /usr/local/bin/tunnel-agent
 
-USER tunnel
+USER root
 
 EXPOSE 2222 9022
 

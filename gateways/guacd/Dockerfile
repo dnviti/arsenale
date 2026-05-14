@@ -49,6 +49,7 @@ RUN apk add --no-cache \
     guacamole-server-libs \
     netcat-openbsd \
     shadow \
+    su-exec \
     && mkdir -p /home/guacd \
     && chown guacd:guacd /home/guacd \
     && usermod -d /home/guacd guacd \
@@ -65,7 +66,7 @@ COPY --from=tunnel-builder /out/tunnel-agent /usr/local/bin/tunnel-agent
 COPY gateways/guacd/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-USER guacd
+USER root
 
 EXPOSE 4822
 
