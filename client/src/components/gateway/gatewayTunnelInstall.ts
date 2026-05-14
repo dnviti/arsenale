@@ -156,15 +156,27 @@ function buildDockerCompose(runtime: GatewayRuntimeInstall): string {
     ...volumeLines.map((line) => `      - ${line}`),
   ];
 
-  if (runtime.volumes.length > 0) {
+  const namedVolumes = collectNamedVolumeMounts(runtime.volumes);
+  if (namedVolumes.length > 0) {
     compose.push('', 'volumes:');
-    for (const volume of runtime.volumes) {
-      const volumeName = volume.split(':', 1)[0];
+    for (const volumeName of namedVolumes) {
       compose.push(`  ${volumeName}:`);
     }
   }
 
   return compose.join('\n') + '\n';
+}
+
+function collectNamedVolumeMounts(volumes: string[]): string[] {
+  const namedVolumes = new Set<string>();
+  for (const volume of volumes) {
+    const source = volume.split(':', 1)[0]?.trim();
+    if (!source || source.startsWith('.') || source.startsWith('/') || source.startsWith('~') || source.includes('$')) {
+      continue;
+    }
+    namedVolumes.add(source);
+  }
+  return Array.from(namedVolumes);
 }
 
 function buildInstallCommands(

@@ -71,6 +71,11 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.dockerCompose).toContain('GUACD_SSL: "${GUACD_SSL:-true}"');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-cert.pem:/certs/guacd-server-cert.pem:ro');
     expect(bundle.dockerCompose).toContain('./certs/guacd-server-key.pem:/certs/guacd-server-key.pem:ro');
+    const topLevelVolumes = bundle.dockerCompose.split('\nvolumes:\n')[1] ?? '';
+    expect(topLevelVolumes).toContain('  guacd-drive:');
+    expect(topLevelVolumes).toContain('  guacd-recordings:');
+    expect(topLevelVolumes).not.toContain('./certs/guacd-server-cert.pem');
+    expect(topLevelVolumes).not.toContain('./certs/guacd-server-key.pem');
     expect(bundle.installCommands).toContain('openssl req -x509');
     expect(bundle.installCommands).toContain('chmod 600 ./certs/guacd-server-key.pem');
   });
