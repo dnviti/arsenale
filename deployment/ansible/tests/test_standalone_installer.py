@@ -245,6 +245,14 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_PUBLIC_PORT"], "")
         self.assertEqual(services["control-plane-api"]["environment"]["SSH_PROXY_TOKEN_TTL_SECONDS"], "300")
         self.assertEqual(services["control-plane-api"]["environment"]["SELF_SIGNUP_ENABLED"], "${SELF_SIGNUP_ENABLED:-false}")
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["ARSENALE_DIRECT_ROUTING_ENABLED"],
+            "${ARSENALE_DIRECT_ROUTING_ENABLED:-false}",
+        )
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["GATEWAY_ROUTING_MODE"],
+            "${GATEWAY_ROUTING_MODE:-gateway-mandatory}",
+        )
         self.assertIn("0.0.0.0:2222:2222", services["control-plane-api"]["ports"])
         self.assertNotIn("ports", services["ssh-gateway"])
 
@@ -342,6 +350,8 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["control-plane-api"]["depends_on"]["postgres"]["condition"], "service_started")
         self.assertEqual(services["control-plane-api"]["depends_on"]["redis"]["condition"], "service_started")
         self.assertEqual(services["client"]["depends_on"]["control-plane-api"]["condition"], "service_started")
+        self.assertNotIn("terminal-target", services)
+        self.assertNotIn("terminal-target", services["terminal-broker"]["depends_on"])
 
     def test_production_http_public_url_keeps_plain_client_listener(self) -> None:
         compose = _render_compose(_public_url="http://arsenale.example.com:3000")
@@ -516,6 +526,21 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             "true",
         )
 
+    def test_env_file_defaults_to_gateway_mandatory_routing(self) -> None:
+        env = _render_env()
+        self.assertEqual(env["ARSENALE_DIRECT_ROUTING_ENABLED"], "false")
+        self.assertEqual(env["ARSENALE_ZERO_TRUST_ENABLED"], "true")
+        self.assertEqual(env["GATEWAY_ROUTING_MODE"], "gateway-mandatory")
+
+        direct_env = _render_env(
+            installer_runtime_env={
+                "ARSENALE_DIRECT_ROUTING_ENABLED": "true",
+                "GATEWAY_ROUTING_MODE": "direct-allowed",
+            }
+        )
+        self.assertEqual(direct_env["ARSENALE_DIRECT_ROUTING_ENABLED"], "true")
+        self.assertEqual(direct_env["GATEWAY_ROUTING_MODE"], "direct-allowed")
+
     def test_env_file_does_not_render_shared_files_secret(self) -> None:
         self.assertNotIn("SHARED_FILES_S3_SECRET_ACCESS_KEY", _render_env(installer_services=["shared-files-s3"]))
 
@@ -576,6 +601,29 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         self.assertIn("reversed(list(services.items()))", apply_text)
         self.assertIn("{{ _compose_cmd }} up -d --remove-orphans", deploy_section)
         self.assertNotIn("--force-recreate", deploy_section)
+
+    def test_targeted_force_recreate_removes_selected_containers_before_refresh(self) -> None:
+        apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")
+
+        self.assertLess(
+            apply_text.index("name: Remove selected compose containers before targeted force-recreate applies"),
+            apply_text.index("name: Refresh selected Arsenale services"),
+        )
+        targeted_section = apply_text[
+            apply_text.index("name: Remove selected compose containers before targeted force-recreate applies") :
+            apply_text.index("name: Refresh selected Arsenale services")
+        ]
+        self.assertIn("targets = set(json.loads(sys.argv[1]))", targeted_section)
+        self.assertIn("if service_name in targets:", targeted_section)
+        self.assertIn("rm -f --depend", targeted_section)
+        self.assertIn("compose_force_recreate | default(false) | bool", targeted_section)
+        self.assertIn("(compose_target_services | default([]) | length) > 0", targeted_section)
+        self.assertLess(
+            apply_text.index("name: Restore compose stack after targeted force-recreate removal"),
+            apply_text.index("name: Refresh selected Arsenale services"),
+        )
+        refresh_section = apply_text[apply_text.index("name: Refresh selected Arsenale services") :]
+        self.assertIn("not (compose_force_recreate | default(false) | bool)", refresh_section)
 
     def test_install_playbook_failure_path_uses_one_summary_variable(self) -> None:
         install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
