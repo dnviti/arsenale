@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generated GUACD and CLI tunnel bundles, plus backend tunnel proxy routes, now target the embedded gateway listener port instead of a configured external host port.
 - Generated GUACD install bundles now default to TLS and create local guacd certificate material for the remote container.
 - Generated GUACD compose bundles now declare only named persistence volumes at top level while keeping certificate bind mounts scoped to the service.
+- Revoking a tunnel token from the post-create gateway dialog now clears the local enabled state immediately.
 
 ## [1.8.3] - 2026-05-14
 
