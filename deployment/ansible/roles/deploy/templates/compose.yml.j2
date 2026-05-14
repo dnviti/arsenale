@@ -286,7 +286,7 @@ services:
       ARSENALE_INSTALL_MODE: "${ARSENALE_INSTALL_MODE:-production}"
       ARSENALE_INSTALL_BACKEND: "${ARSENALE_INSTALL_BACKEND:-podman}"
       ARSENALE_INSTALL_CAPABILITIES: "${ARSENALE_INSTALL_CAPABILITIES:-core,keychain,multi_tenancy,connections,ip_geolocation,databases,recordings,zero_trust,agentic_ai,enterprise_auth,sharing_approvals,cli}"
-      ARSENALE_DIRECT_ROUTING_ENABLED: "${ARSENALE_DIRECT_ROUTING_ENABLED:-true}"
+      ARSENALE_DIRECT_ROUTING_ENABLED: "${ARSENALE_DIRECT_ROUTING_ENABLED:-false}"
       ARSENALE_ZERO_TRUST_ENABLED: "${ARSENALE_ZERO_TRUST_ENABLED:-true}"
       FEATURE_CONNECTIONS_ENABLED: "${FEATURE_CONNECTIONS_ENABLED:-true}"
       FEATURE_IP_GEOLOCATION_ENABLED: "${FEATURE_IP_GEOLOCATION_ENABLED:-true}"
@@ -675,7 +675,7 @@ services:
       ARSENALE_INSTALL_MODE: "${ARSENALE_INSTALL_MODE:-development}"
       ARSENALE_INSTALL_BACKEND: "${ARSENALE_INSTALL_BACKEND:-podman}"
       ARSENALE_INSTALL_CAPABILITIES: "${ARSENALE_INSTALL_CAPABILITIES:-core,keychain,multi_tenancy,connections,ip_geolocation,databases,recordings,zero_trust,agentic_ai,enterprise_auth,sharing_approvals,cli}"
-      ARSENALE_DIRECT_ROUTING_ENABLED: "${ARSENALE_DIRECT_ROUTING_ENABLED:-true}"
+      ARSENALE_DIRECT_ROUTING_ENABLED: "${ARSENALE_DIRECT_ROUTING_ENABLED:-false}"
       ARSENALE_ZERO_TRUST_ENABLED: "${ARSENALE_ZERO_TRUST_ENABLED:-true}"
       FEATURE_CONNECTIONS_ENABLED: "${FEATURE_CONNECTIONS_ENABLED:-true}"
       FEATURE_IP_GEOLOCATION_ENABLED: "${FEATURE_IP_GEOLOCATION_ENABLED:-true}"
@@ -901,8 +901,10 @@ services:
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
+{% if _dev_fixture_targets_enabled %}
       terminal-target:
         condition: {{ _compose_dependency_condition }}
+{% endif %}
     volumes:
       - arsenale_recordings:/recordings
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
