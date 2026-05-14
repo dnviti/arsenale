@@ -114,16 +114,25 @@ func writeTunnelTokenBundle(bundleDir string, bundle tunnelTokenBundle, serverUR
 	}
 	certPath := filepath.Join(certsDir, "tunnel-client-cert.pem")
 	keyPath := filepath.Join(certsDir, "tunnel-client-key.pem")
-	if err := os.WriteFile(certPath, []byte(strings.TrimSpace(bundle.TunnelClientCert)+"\n"), 0600); err != nil {
+	if err := os.WriteFile(certPath, []byte(strings.TrimSpace(bundle.TunnelClientCert)+"\n"), 0644); err != nil {
 		return "", fmt.Errorf("write tunnel client cert: %w", err)
+	}
+	if err := os.Chmod(certPath, 0644); err != nil {
+		return "", fmt.Errorf("chmod tunnel client cert: %w", err)
 	}
 	if err := os.WriteFile(keyPath, []byte(strings.TrimSpace(bundle.TunnelClientKey)+"\n"), 0600); err != nil {
 		return "", fmt.Errorf("write tunnel client key: %w", err)
+	}
+	if err := os.Chmod(keyPath, 0600); err != nil {
+		return "", fmt.Errorf("chmod tunnel client key: %w", err)
 	}
 	envPath := filepath.Join(bundleDir, "tunnel.env")
 	envContent := tunnelTokenEnvContent(bundle, serverURL, "./certs/tunnel-client-cert.pem", "./certs/tunnel-client-key.pem")
 	if err := os.WriteFile(envPath, []byte(envContent), 0600); err != nil {
 		return "", fmt.Errorf("write tunnel env file: %w", err)
+	}
+	if err := os.Chmod(envPath, 0600); err != nil {
+		return "", fmt.Errorf("chmod tunnel env file: %w", err)
 	}
 	return envPath, nil
 }
