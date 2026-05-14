@@ -73,6 +73,17 @@
   failed_when: false
   environment: "{{ _podman_runtime_env }}"
 
+- name: Recreate PostgreSQL before schema bootstrap on full force-recreate applies
+  command: >
+    {{ _compose_cmd }} up -d --force-recreate postgres
+  when:
+    - _state == 'present'
+    - compose_run_migrations | default(true) | bool
+    - compose_force_recreate | default(false) | bool
+    - (compose_target_services | default([]) | length) == 0
+  changed_when: true
+  environment: "{{ _podman_runtime_env }}"
+
 - name: Inspect PostgreSQL container state
   command:
     argv:
@@ -148,9 +159,37 @@
   until: schema_bootstrap.rc == 0
   environment: "{{ _podman_runtime_env | combine({'ARSENALE_DATABASE_URL_OVERRIDE': (vault_database_url | trim)}) }}"
 
+- name: Remove existing compose containers before full force-recreate applies
+  shell: |
+    set -euo pipefail
+    containers="$(
+      python3 - <<'PY'
+    import yaml
+    from pathlib import Path
+
+    compose = yaml.safe_load(Path("{{ _home }}/docker-compose.yml").read_text(encoding="utf-8")) or {}
+    services = compose.get("services") or {}
+    for service_name, service in services.items():
+        if service_name == "migrate":
+            continue
+        print(service.get("container_name") or service_name)
+    PY
+    )"
+    for container in ${containers}; do
+      {{ container_runtime | default('podman') }} rm -f "${container}" || true
+    done
+  args:
+    executable: /bin/bash
+  when:
+    - _state == 'present'
+    - compose_force_recreate | default(false) | bool
+    - (compose_target_services | default([]) | length) == 0
+  changed_when: true
+  environment: "{{ _podman_runtime_env }}"
+
 - name: Deploy Arsenale stack
   command: >
-    {{ _compose_cmd }} up -d --remove-orphans{% if compose_force_recreate | default(false) | bool %} --force-recreate{% endif %}
+    {{ _compose_cmd }} up -d --remove-orphans
   when:
     - _state == 'present'
     - (compose_target_services | default([]) | length) == 0

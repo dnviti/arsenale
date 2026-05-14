@@ -62,10 +62,13 @@
           else '/run/user/' + ((arsenale_uid | default(ansible_user_uid | default('1000'))) | string)
         }}
 
+- name: Set public UI URL for health checks
+  set_fact:
+    _public_ui_url: "{{ arsenale_public_url | default('http://' ~ arsenale_domain ~ ':' ~ (arsenale_client_port | string), true) }}"
+
 - name: Set compose health endpoint URL
   set_fact:
-    _compose_health_url: "http://127.0.0.1:{{ arsenale_client_port }}/api/health"
-    _public_ui_url: "{{ arsenale_public_url | default('http://' ~ arsenale_domain ~ ':' ~ (arsenale_client_port | string), true) }}"
+    _compose_health_url: "{{ 'https' if ((_public_ui_url | lower).startswith('https://')) else 'http' }}://127.0.0.1:{{ arsenale_client_port }}/api/health"
 
 - name: Get expected compose service count
   command: >

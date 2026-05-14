@@ -250,7 +250,8 @@ Production-specific behaviors:
 - API health endpoints are validated after deploy.
 - Secrets are verified to be mounted via Podman secrets, not environment variables.
 - Images can be built from source or pulled from a registry.
-- RDP shared drives and SSH staged upload/download flows require S3-compatible object storage. Production installs must set `arsenale_shared_files_s3_bucket` and related `arsenale_shared_files_s3_*` vars, plus `vault_shared_files_s3_secret_access_key` when static credentials are needed.
+- When `arsenale_public_url` starts with `https://`, the production Podman client mounts the generated client certificate and an installer-managed HTTPS nginx template so the exposed web port speaks TLS directly.
+- RDP shared drives and SSH staged upload/download flows require S3-compatible object storage. Production Podman profiles that include the bundled `shared-files-s3` service use installer-managed MinIO defaults; otherwise set `arsenale_shared_files_s3_bucket` and related `arsenale_shared_files_s3_*` vars, plus `vault_shared_files_s3_secret_access_key` when static credentials are needed.
 
 ---
 
@@ -683,7 +684,7 @@ Comprehensive post-deploy validation for Compose backends.
 
 1. **Container health**: Waits for all containers (except `migrate`) to report `healthy` via `compose_ps_status.py`. Retries up to 72 times in dev (6 min), 24 times in prod (2 min), with 5s delay.
 2. **Migration verification**: Confirms the `arsenale-migrate` container exited with code 0.
-3. **API health endpoint**: Validates `http://127.0.0.1:<client_port>/api/health` returns HTTP 200 (production only).
+3. **API health endpoint**: Validates `<public-url-scheme>://127.0.0.1:<client_port>/api/health` returns HTTP 200 (production only; certificate validation is disabled for the loopback probe).
 4. **Secret isolation**: Verifies `JWT_SECRET`, `GUACAMOLE_SECRET`, and `SERVER_ENCRYPTION_KEY` are **not** present in container environment variables.
 5. **Secret mounting**: Verifies Podman secrets are mounted at `/run/secrets/` in the control-plane-api container.
 6. **Postgres isolation**: Verifies the postgres container only has `postgres_password` mounted, not other application secrets.
@@ -1009,7 +1010,7 @@ All non-secret configuration is in `inventory/group_vars/all/vars.yml`.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `arsenale_self_signup_enabled` | `false` | Allow self-registration |
+| `arsenale_self_signup_enabled` | `false` | Render `SELF_SIGNUP_ENABLED` for the control plane and allow self-registration when the app-level toggle is enabled |
 | `arsenale_email_verify_required` | `false` | Require email verification |
 | `arsenale_recording_enabled` | `true` | Enable session recording |
 | `arsenale_email_provider` | `smtp` | Email provider |
@@ -1026,9 +1027,9 @@ All non-secret configuration is in `inventory/group_vars/all/vars.yml`.
 | `arsenale_shared_files_s3_prefix` | `""` | Optional object key prefix for staged file storage |
 | `arsenale_shared_files_s3_force_path_style` | `false` | Force path-style requests for MinIO or compatible endpoints |
 | `arsenale_shared_files_s3_auto_create_bucket` | `false` | Auto-create the staged file bucket if it does not exist |
-| `arsenale_dev_shared_files_s3_image` | `quay.io/minio/minio:latest` | Development-only MinIO image |
-| `arsenale_dev_shared_files_s3_bucket` | `arsenale-shared-files` | Development bucket name |
-| `arsenale_dev_shared_files_s3_endpoint` | `http://shared-files-s3:9000` | Development S3 endpoint exposed inside the compose network |
+| `arsenale_dev_shared_files_s3_image` | `quay.io/minio/minio:latest` | Installer-managed MinIO image for development and bundled Podman storage profiles |
+| `arsenale_dev_shared_files_s3_bucket` | `arsenale-shared-files` | Bucket name for installer-managed MinIO |
+| `arsenale_dev_shared_files_s3_endpoint` | `http://shared-files-s3:9000` | S3 endpoint exposed inside the compose network for installer-managed MinIO |
 
 ### Container Images
 

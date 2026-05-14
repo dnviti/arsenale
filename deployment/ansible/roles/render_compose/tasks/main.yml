@@ -6,13 +6,23 @@
 
 - name: Prune rendered compose to installer-selected services
   command:
-    argv:
-      - "{{ installer_scripts_dir }}/install_model.py"
-      - prune-compose
-      - --input
-      - "{{ _home }}/docker-compose.yml"
-      - --services
-      - "{{ (installer_services | default([])) | join(',') }}"
-      - --output
-      - "{{ _home }}/docker-compose.yml"
+    argv: >-
+      {{
+        [
+          installer_scripts_dir ~ '/install_model.py',
+          'prune-compose',
+          '--input',
+          _home ~ '/docker-compose.yml',
+          '--services',
+          (installer_services | default([])) | join(','),
+          '--output',
+          _home ~ '/docker-compose.yml'
+        ]
+        +
+        (
+          ['--disable-healthchecks']
+          if ((container_runtime | default('podman')) == 'podman' and not (_is_dev | default(false) | bool))
+          else []
+        )
+      }}
   when: (installer_services | default([]) | length) > 0

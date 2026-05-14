@@ -225,6 +225,7 @@
             'keychain': true,
             'multi_tenancy': ('multi_tenancy' in installer_capability_selection),
             'connections': ('connections' in installer_capability_selection),
+            'ip_geolocation': ('ip_geolocation' in installer_capability_selection),
             'databases': ('databases' in installer_capability_selection),
             'recordings': ('recordings' in installer_capability_selection),
             'zero_trust': ('zero_trust' in installer_capability_selection),
@@ -344,11 +345,23 @@
         name: render_helm
       when: installer_backend_value == 'kubernetes'
 
+    - name: Capture current rendered compose for hashing
+      slurp:
+        src: "{{ _home }}/docker-compose.yml"
+      register: installer_current_compose_render
+      when: installer_backend_value == 'podman'
+
+    - name: Capture current rendered env for hashing
+      slurp:
+        src: "{{ installer_compose_env_file }}"
+      register: installer_current_env_render
+      when: installer_backend_value == 'podman'
+
     - name: Capture current rendered artifact hashes
       set_fact:
         installer_current_render_hashes:
-          compose: "{{ lookup('file', _home + '/docker-compose.yml') | hash('sha256') if installer_backend_value == 'podman' else '' }}"
-          env: "{{ lookup('file', installer_compose_env_file) | hash('sha256') if installer_backend_value == 'podman' else '' }}"
+          compose: "{{ (installer_current_compose_render.content | b64decode) | hash('sha256') if installer_backend_value == 'podman' else '' }}"
+          env: "{{ (installer_current_env_render.content | b64decode) | hash('sha256') if installer_backend_value == 'podman' else '' }}"
           helmManifests: "{{ lookup('file', installer_helm_manifest_file) | hash('sha256') if installer_backend_value == 'kubernetes' else '' }}"
           helmValues: "{{ lookup('file', installer_helm_values_file) | hash('sha256') if installer_backend_value == 'kubernetes' else '' }}"
 
