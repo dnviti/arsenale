@@ -236,6 +236,10 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     if (ok && (isEditMode || !enableTunnelOnCreate)) handleClose();
   };
 
+  const updateCreatedGatewayTunnelState = useCallback((id: string, updates: Partial<GatewayData>) => {
+    setCreatedGateway((current) => (current?.id === id ? { ...current, ...updates } : current));
+  }, []);
+
   const handleEnableTunnel = async () => {
     if (!activeGateway) {
       setTunnelError('');
@@ -247,14 +251,11 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     const ok = await runTunnelAction(async () => {
       const result = await generateTunnelTokenAction(activeGateway.id);
       setTunnelBundle(result);
-      if (createdGateway?.id === activeGateway.id) {
-        setCreatedGateway({
-          ...createdGateway,
-          tunnelEnabled: result.tunnelEnabled,
-          tunnelConnected: result.tunnelConnected,
-          tunnelClientCertExp: result.tunnelClientCertExp ?? createdGateway.tunnelClientCertExp,
-        });
-      }
+      updateCreatedGatewayTunnelState(activeGateway.id, {
+        tunnelEnabled: result.tunnelEnabled,
+        tunnelConnected: result.tunnelConnected,
+        tunnelClientCertExp: result.tunnelClientCertExp ?? activeGateway.tunnelClientCertExp,
+      });
     }, 'Failed to enable tunnel');
     setTunnelDeploying(false);
     if (!ok) setTunnelError('Failed to generate tunnel token');
@@ -266,6 +267,11 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     const ok = await runTunnelAction(async () => {
       const result = await generateTunnelTokenAction(activeGateway.id);
       setTunnelBundle(result);
+      updateCreatedGatewayTunnelState(activeGateway.id, {
+        tunnelEnabled: result.tunnelEnabled,
+        tunnelConnected: result.tunnelConnected,
+        tunnelClientCertExp: result.tunnelClientCertExp ?? activeGateway.tunnelClientCertExp,
+      });
     }, 'Failed to rotate tunnel token');
     if (!ok) setTunnelError('Failed to rotate tunnel token');
   };
@@ -276,6 +282,13 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     const ok = await runTunnelAction(async () => {
       await revokeTunnelTokenAction(activeGateway.id);
       setTunnelBundle(null);
+      setTunnelMetrics(null);
+      updateCreatedGatewayTunnelState(activeGateway.id, {
+        tunnelEnabled: false,
+        tunnelConnected: false,
+        tunnelConnectedAt: null,
+        tunnelClientCertExp: null,
+      });
     }, 'Failed to revoke tunnel token');
     if (!ok) setTunnelError('Failed to revoke tunnel token');
   };

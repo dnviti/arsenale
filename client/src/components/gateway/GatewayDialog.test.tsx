@@ -69,6 +69,7 @@ describe('GatewayDialog', () => {
       gateways: [],
       createGateway: vi.fn().mockResolvedValue(baseGateway),
       generateTunnelToken: vi.fn().mockResolvedValue(tunnelBundle),
+      revokeTunnelToken: vi.fn().mockResolvedValue(undefined),
     });
     useUiPreferencesStore.setState({
       tunnelSectionOpen: true,
@@ -138,6 +139,30 @@ describe('GatewayDialog', () => {
     expect(screen.getByDisplayValue(/TUNNEL_TOKEN="tok-secret"/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/docker compose --env-file tunnel.env up -d/i)).toBeInTheDocument();
     expect(screen.getByDisplayValue(/-----BEGIN PRIVATE KEY-----/i)).toBeInTheDocument();
+  });
+
+  it('clears post-create tunnel state after revoking the token', async () => {
+    const user = userEvent.setup();
+    const createGateway = vi.fn().mockResolvedValue(baseGateway);
+    const generateTunnelToken = vi.fn().mockResolvedValue(tunnelBundle);
+    const revokeTunnelToken = vi.fn().mockResolvedValue(undefined);
+    useGatewayStore.setState({ createGateway, generateTunnelToken, revokeTunnelToken });
+
+    render(<GatewayDialog open onClose={vi.fn()} gateway={null} />);
+
+    await user.type(screen.getByLabelText('Name'), 'Remote GUACD');
+    await user.type(screen.getByLabelText('Host'), 'remote-guacd.local');
+    await user.type(screen.getByLabelText('Port'), '4822');
+    await user.click(screen.getByRole('button', { name: 'Enable Zero-Trust Tunnel' }));
+    await user.click(screen.getByRole('button', { name: 'Create and Enable Tunnel' }));
+
+    expect(await screen.findByText(/Copy these values now/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Revoke Token' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, Revoke' }));
+
+    await waitFor(() => expect(revokeTunnelToken).toHaveBeenCalledWith('gateway-1'));
+    expect(screen.getByRole('button', { name: 'Enable Zero-Trust Tunnel' })).toBeInTheDocument();
+    expect(screen.queryByText(/Tunnel is enabled/i)).not.toBeInTheDocument();
   });
 
   it('keeps the created gateway open when tunnel activation fails after create', async () => {
