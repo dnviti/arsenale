@@ -173,10 +173,6 @@ func runTenantCreate(cmd *cobra.Command, args []string) {
 	if err := ensureAuthenticated(cfg); err != nil {
 		fatal("%v", err)
 	}
-	if err := ensureMultiTenancyEnabled(cfg); err != nil {
-		fatal("%v", err)
-	}
-
 	var data []byte
 	var err error
 
@@ -259,10 +255,6 @@ func runTenantSwitch(cmd *cobra.Command, args []string) {
 	if err := ensureAuthenticated(cfg); err != nil {
 		fatal("%v", err)
 	}
-	if err := ensureMultiTenancyEnabled(cfg); err != nil {
-		fatal("%v", err)
-	}
-
 	payload := map[string]string{
 		"tenantId": tenantSwitchID,
 	}

@@ -246,7 +246,7 @@ make dev DEV_CAPABILITIES=cli DEV_DIRECT_GATEWAY=false DEV_ZERO_TRUST=false
 ```
 
 The vault/keychain remains enabled in that minimal profile because it is part of the required core install.
-Because `multi_tenancy` is optional, that minimal example also runs in single-tenant mode. Add `multi_tenancy` to `DEV_CAPABILITIES` if you want tenant switching and self-service organization creation enabled.
+Organization creation, tenant switching, and invitations remain available even when `multi_tenancy` is omitted from `DEV_CAPABILITIES`; the capability name is retained for older installer profiles.
 
 When you enable `connections`, the development bootstrap registers the built-in
 `ssh-gateway` and `guacd` containers in the tenant so they appear in the Gateways UI, and the installer keeps the SSH target fixtures needed for local smoke tests.

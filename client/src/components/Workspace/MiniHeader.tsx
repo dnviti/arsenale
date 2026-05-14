@@ -12,7 +12,6 @@ import { Separator } from '@/components/ui/separator';
 import { logoutApi } from '@/api/auth.api';
 import { useAuthStore } from '@/store/authStore';
 import { useTabsStore } from '@/store/tabsStore';
-import { useFeatureFlagsStore } from '@/store/featureFlagsStore';
 import NotificationBell from '../Layout/NotificationBell';
 import TenantSwitcher from '../Layout/TenantSwitcher';
 import type { NavigationActions } from '@/utils/notificationActions';
@@ -29,8 +28,6 @@ interface MiniHeaderProps {
 export default function MiniHeader({ navigationActions, onOpenSettings }: MiniHeaderProps) {
   const user = useAuthStore((s) => s.user);
   const authLogout = useAuthStore((s) => s.logout);
-  const multiTenancyEnabled = useFeatureFlagsStore((s) => s.multiTenancyEnabled);
-  const featureFlagsLoaded = useFeatureFlagsStore((s) => s.loaded);
 
   const handleLogout = async () => {
     try {
@@ -51,9 +48,7 @@ export default function MiniHeader({ navigationActions, onOpenSettings }: MiniHe
         Arsenale
       </div>
 
-      {featureFlagsLoaded && multiTenancyEnabled ? (
-        <TenantSwitcher onCreateOrg={() => onOpenSettings('organization')} />
-      ) : null}
+      <TenantSwitcher />
 
       <div className="ml-auto flex items-center gap-1">
         <NotificationBell navigationActions={navigationActions} />

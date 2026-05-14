@@ -38,8 +38,8 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 	if manifest.KeychainEnabled {
 		t.Fatal("expected keychain to be disabled")
 	}
-	if manifest.MultiTenancyEnabled {
-		t.Fatal("expected multi-tenancy to be disabled")
+	if !manifest.MultiTenancyEnabled {
+		t.Fatal("expected multi-tenancy to stay enabled")
 	}
 	if manifest.RecordingsEnabled {
 		t.Fatal("expected recordings to be disabled")
@@ -57,6 +57,7 @@ func TestFromEnvDefaultsAndOverrides(t *testing.T) {
 		t.Fatal("expected feature lookup to follow resolved booleans")
 	}
 	wantCapabilities := []Feature{
+		FeatureMultiTenancy,
 		FeatureDatabases,
 		FeatureZeroTrust,
 		FeatureSharingApprovals,

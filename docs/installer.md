@@ -201,7 +201,7 @@ Capabilities control which services are included in the rendered runtime. They a
 |------------|-------|---------|-------------|-------------|
 | `core` | Core Platform | **Required** | Base platform services plus the tenant vault/keychain | -- |
 | `keychain` | Keychain | **Required** | Tenant vault, secret storage, external vault integration, password rotation | -- |
-| `multi_tenancy` | Multi-Tenancy | Enabled | Multiple organizations per platform with tenant switching and self-service organization creation | -- |
+| `multi_tenancy` | Multi-Tenancy | Enabled | Compatibility capability; multiple organizations, tenant switching, and self-service organization creation remain available | -- |
 | `connections` | Connections | Enabled | SSH, RDP, VNC connections and folders | -- |
 | `ip_geolocation` | IP Geolocation | Enabled | External IP lookups, geolocation audit overlays, and the dedicated `map-assets` OSM tile proxy/cache | -- |
 | `databases` | Databases | Enabled | Database proxy and SQL tooling | `connections` |
@@ -217,7 +217,7 @@ When a capability is disabled:
 - Its services are removed from the rendered Compose/Helm output via `install_model.py prune-compose`.
 - Backend routes and frontend affordances for that capability are removed.
 - Persistent data (database volumes) is **not** deleted during removal or recovery.
-- When `multi_tenancy` is disabled, setup and `dev-bootstrap` may still create the initial organization, but tenant creation and tenant switching are removed after install.
+- `multi_tenancy` is retained for profile compatibility. Tenant creation, tenant switching, and multi-organization invitations remain available after install.
 
 In development mode, capabilities and routing resolve exactly like production. The development-specific difference is local Podman execution with source-built images.
 
@@ -397,7 +397,7 @@ make dev DEV_CAPABILITIES=cli DEV_DIRECT_GATEWAY=false DEV_ZERO_TRUST=false
 ```
 
 `keychain` is part of the required core profile, so minimal installs still include vault routes and lock enforcement even when `DEV_CAPABILITIES` only lists optional modules such as `cli`.
-Omitting `multi_tenancy` keeps the install in single-tenant mode, where the initial organization is seeded during setup/bootstrap and end users no longer see tenant create or switch flows.
+Omitting `multi_tenancy` only affects the compatibility capability list; end users can still create organizations, switch tenants, and receive invitations.
 
 For Kubernetes:
 
