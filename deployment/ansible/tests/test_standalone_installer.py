@@ -18,6 +18,7 @@ INSTALL_APPLY_TASKS = ROOT / "deployment" / "ansible" / "playbooks" / "tasks" / 
 CERTIFICATE_TASKS = ROOT / "deployment" / "ansible" / "roles" / "certificates" / "tasks" / "main.yml"
 PODMAN_SECRETS_TASKS = ROOT / "deployment" / "ansible" / "roles" / "podman_secrets" / "tasks" / "main.yml"
 DEPLOY_APPLY_TASKS = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "tasks" / "apply.yml"
+DEPLOY_BUILD_TASKS = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "tasks" / "build.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
 DEV_REFRESH_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "dev_refresh.yml"
 DOCKER_BUILD_WORKFLOW = ROOT / ".github" / "workflows" / "docker-build.yml"
@@ -619,6 +620,11 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         )
         self.assertIn('pkill -f "[p]odman healthcheck run" || true', install_text)
         self.assertIn("podman_container_remove_timeout_seconds | default(45)", install_text)
+
+    def test_source_build_capacity_does_not_require_full_memory_facts(self) -> None:
+        build_text = DEPLOY_BUILD_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn("ansible_memtotal_mb | default(4096)", build_text)
 
     def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
         apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")

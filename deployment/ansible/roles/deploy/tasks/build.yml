@@ -86,7 +86,7 @@
   set_fact:
     _build_parallelism: "{{ arsenale_build_parallelism | default([compose_services_for_build | length, 4] | min) | int }}"
     _build_total_cpus: "{{ ansible_processor_vcpus | default(ansible_processor_count | default(4)) | int }}"
-    _build_memory_mb_total: "{{ ansible_memtotal_mb | int }}"
+    _build_memory_mb_total: "{{ ansible_memtotal_mb | default(4096) | int }}"
   when: _state == 'present' and _build | bool and (compose_services_for_build | length > 0)
 
 - name: Derive per-build resource limits
