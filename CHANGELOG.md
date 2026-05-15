@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.8.4] - 2026-05-14
+## [1.8.4] - 2026-05-15
 
 ### Added
 - Gateway creation now returns a zero-trust tunnel enrollment panel with the one-time tunnel token, client certificate, client key, `tunnel.env`, `docker-compose.yml`, and remote install commands.
@@ -15,13 +15,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Release metadata, CLI version output, browser extension manifest, and package manifests now target `1.8.4`.
 - Generated remote gateway compose bundles now use published `stable` gateway images.
+- Tunnel agent binaries embedded in all gateway images now report `1.8.4`.
 
 ### Fixed
 - The `Enable Zero-Trust Tunnel` action now works while creating a gateway and automatically generates the remote gateway enrollment bundle after creation.
 - Gateway creation remains retryable without creating duplicates if tunnel token generation fails after the gateway record is saved.
 - Remote install commands now lock down `tunnel.env` because it contains the tunnel connection token.
 - Generated SSH bastion bundles now deploy the `ssh-gateway` runtime instead of a standalone tunnel agent with no SSH listener.
-- Generated tunnel bundles and CLI env output now preserve each gateway's configured listener port, generated runtime containers set `GUACD_PORT`, `SSH_PORT`, or `DB_LISTEN_PORT` to match, and backend tunnel proxy routes fall back to runtime-default ports for already-deployed bundles.
+- Generated tunnel bundles and CLI env output now use runtime-managed listener ports by gateway type, and backend tunnel proxy routes keep configured ports only as compatibility fallbacks for older bundles.
+- RDP/VNC, SSH, and database tunnel routes now consistently flow through the platform-managed tunnel endpoint instead of operator-entered direct gateway host/port settings.
 - Generated GUACD install bundles now default to TLS and create local guacd certificate material for the remote container.
 - Generated GUACD compose bundles now declare only named persistence volumes at top level while keeping certificate bind mounts scoped to the service.
 - Generated remote install commands now use a gateway-specific Compose directory and omit fixed container names so multiple gateway enrollments can coexist on one host.

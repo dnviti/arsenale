@@ -335,13 +335,13 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             self.assertEqual(services[service_name]["group_add"], ["keep-groups"])
 
     def test_production_compose_honors_pinned_release_image_tag(self) -> None:
-        compose = _render_compose(arsenale_image_tag="1.8.0")
+        compose = _render_compose(arsenale_image_tag="1.8.4")
         services = compose["services"]
 
-        self.assertEqual(services["control-plane-api"]["image"], "ghcr.io/dnviti/arsenale/control-plane-api:1.8.0")
-        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker:1.8.0")
-        self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:1.8.0")
-        self.assertEqual(services["guacd"]["image"], "ghcr.io/dnviti/arsenale/guacd:1.8.0")
+        self.assertEqual(services["control-plane-api"]["image"], "ghcr.io/dnviti/arsenale/control-plane-api:1.8.4")
+        self.assertEqual(services["tunnel-broker"]["image"], "ghcr.io/dnviti/arsenale/tunnel-broker:1.8.4")
+        self.assertEqual(services["client"]["image"], "ghcr.io/dnviti/arsenale/client:1.8.4")
+        self.assertEqual(services["guacd"]["image"], "ghcr.io/dnviti/arsenale/guacd:1.8.4")
 
     def test_production_podman_compose_dependencies_do_not_block_on_health_wait(self) -> None:
         compose = _render_compose(installer_services=["shared-files-s3"])

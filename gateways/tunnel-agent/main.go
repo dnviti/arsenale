@@ -10,7 +10,7 @@ import (
 	"syscall"
 )
 
-var version = "1.7.1"
+var version = "1.8.4"
 
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "exit 0 when the tunnel-agent binary is runnable")
