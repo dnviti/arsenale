@@ -221,6 +221,12 @@
   tasks:
     - name: Gather production target facts
       setup:
+        gather_subset:
+          - "!all"
+          - min
+          - distribution
+          - pkg_mgr
+        gather_timeout: "{{ installer_fact_gather_timeout_seconds | default(30) }}"
       when:
         - hostvars['localhost'].installer_mode_value != 'development'
         - hostvars['localhost'].installer_backend_value | default(installer_backend | default('podman')) != 'kubernetes'

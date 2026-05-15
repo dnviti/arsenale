@@ -565,6 +565,15 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         self.assertIn('_build: "{{ arsenale_build_images | default(false) }}"', install_text)
         self.assertIn('_build: "{{ true if _is_dev | bool else (arsenale_build_images | default(false)) }}"', deploy_text)
 
+    def test_production_install_bounds_fact_gathering(self) -> None:
+        install_text = INSTALL_PLAYBOOK.read_text(encoding="utf-8")
+        setup_section = install_text[install_text.index("name: Gather production target facts") :]
+        setup_section = setup_section[: setup_section.index("- block:")]
+
+        self.assertIn("- \"!all\"", setup_section)
+        self.assertIn("- distribution", setup_section)
+        self.assertIn("installer_fact_gather_timeout_seconds | default(30)", setup_section)
+
     def test_install_profile_maps_ip_geolocation_capability(self) -> None:
         install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
         capabilities_section = install_text[
