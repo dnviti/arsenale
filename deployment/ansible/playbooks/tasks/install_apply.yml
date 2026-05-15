@@ -339,7 +339,7 @@
     - name: Quiesce existing compose containers before Podman secret reconciliation
       shell: |
         set -euo pipefail
-        pkill -f "podman healthcheck run" || true
+        pkill -f "[p]odman healthcheck run" || true
         containers="$(
           python3 - <<'PY'
         import yaml

@@ -617,7 +617,7 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
             install_text.index("name: Quiesce existing compose containers before Podman secret reconciliation"),
             install_text.index("name: Install Podman secrets"),
         )
-        self.assertIn('pkill -f "podman healthcheck run" || true', install_text)
+        self.assertIn('pkill -f "[p]odman healthcheck run" || true', install_text)
         self.assertIn("podman_container_remove_timeout_seconds | default(45)", install_text)
 
     def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
