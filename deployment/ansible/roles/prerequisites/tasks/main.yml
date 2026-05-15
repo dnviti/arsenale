@@ -129,6 +129,17 @@
     - _build | default(true) | bool
     - not _arsenale_source_tree.stat.exists
 
+- name: Update Arsenale repository
+  git:
+    repo: "{{ arsenale_repo }}"
+    dest: "{{ arsenale_home }}/arsenale"
+    version: "{{ arsenale_version }}"
+    force: "{{ arsenale_source_force_update | default(false) }}"
+    update: true
+  when:
+    - _build | default(true) | bool
+    - _arsenale_source_tree.stat.exists
+
 - name: Create empty authorized_keys
   stat:
     path: "{{ arsenale_home }}/config/ssh-gateway/authorized_keys"

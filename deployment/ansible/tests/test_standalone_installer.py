@@ -17,6 +17,7 @@ INSTALL_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "install.yml"
 INSTALL_APPLY_TASKS = ROOT / "deployment" / "ansible" / "playbooks" / "tasks" / "install_apply.yml"
 CERTIFICATE_TASKS = ROOT / "deployment" / "ansible" / "roles" / "certificates" / "tasks" / "main.yml"
 PODMAN_SECRETS_TASKS = ROOT / "deployment" / "ansible" / "roles" / "podman_secrets" / "tasks" / "main.yml"
+PREREQUISITES_TASKS = ROOT / "deployment" / "ansible" / "roles" / "prerequisites" / "tasks" / "main.yml"
 DEPLOY_APPLY_TASKS = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "tasks" / "apply.yml"
 DEPLOY_BUILD_TASKS = ROOT / "deployment" / "ansible" / "roles" / "deploy" / "tasks" / "build.yml"
 DEPLOY_PLAYBOOK = ROOT / "deployment" / "ansible" / "playbooks" / "deploy.yml"
@@ -574,6 +575,14 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         self.assertIn("- \"!all\"", setup_section)
         self.assertIn("- distribution", setup_section)
         self.assertIn("installer_fact_gather_timeout_seconds | default(30)", setup_section)
+
+    def test_source_build_updates_existing_checkout(self) -> None:
+        prerequisite_text = PREREQUISITES_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn("name: Update Arsenale repository", prerequisite_text)
+        self.assertIn("update: true", prerequisite_text)
+        self.assertIn("_arsenale_source_tree.stat.exists", prerequisite_text)
+        self.assertIn("arsenale_source_force_update | default(false)", prerequisite_text)
 
     def test_install_profile_maps_ip_geolocation_capability(self) -> None:
         install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
