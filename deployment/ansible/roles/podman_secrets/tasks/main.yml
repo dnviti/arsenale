@@ -11,29 +11,34 @@
   set_fact:
     podman_secrets:
       # Required secrets
-      - { name: jwt_secret, value: "{{ vault_jwt_secret }}" }
-      - { name: guacamole_secret, value: "{{ vault_guacamole_secret }}" }
-      - { name: server_encryption_key, value: "{{ vault_server_encryption_key }}" }
-      - { name: database_url, value: "{{ vault_database_url }}" }
-      - { name: postgres_password, value: "{{ vault_postgres_password }}" }
-      - { name: guacenc_auth_token, value: "{{ vault_guacenc_auth_token }}" }
-      - { name: shared_files_s3_secret_access_key, value: "{{ (arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev | default(false) | bool) and ((vault_shared_files_s3_secret_access_key | default('')) | length == 0)) else (vault_shared_files_s3_secret_access_key | default(''))) }}" }
+      - { name: jwt_secret, value: "{{ vault_jwt_secret }}", required: true }
+      - { name: guacamole_secret, value: "{{ vault_guacamole_secret }}", required: true }
+      - { name: server_encryption_key, value: "{{ vault_server_encryption_key }}", required: true }
+      - { name: database_url, value: "{{ vault_database_url }}", required: true }
+      - { name: postgres_password, value: "{{ vault_postgres_password }}", required: true }
+      - { name: guacenc_auth_token, value: "{{ vault_guacenc_auth_token }}", required: true }
+      - { name: shared_files_s3_secret_access_key, value: "{{ (arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev | default(false) | bool) and ((vault_shared_files_s3_secret_access_key | default('')) | length == 0)) else (vault_shared_files_s3_secret_access_key | default(''))) }}", required: true }
       # Optional secrets (only create if non-empty)
-      - { name: runtime_egress_principal_signing_key, value: "{{ vault_runtime_egress_principal_signing_key | default('') }}" }
-      - { name: smtp_pass, value: "{{ vault_smtp_pass }}" }
-      - { name: sendgrid_api_key, value: "{{ vault_sendgrid_api_key }}" }
-      - { name: ses_secret_access_key, value: "{{ vault_ses_secret_access_key }}" }
-      - { name: resend_api_key, value: "{{ vault_resend_api_key }}" }
-      - { name: mailgun_api_key, value: "{{ vault_mailgun_api_key }}" }
-      - { name: twilio_auth_token, value: "{{ vault_twilio_auth_token }}" }
-      - { name: sns_secret_access_key, value: "{{ vault_sns_secret_access_key }}" }
-      - { name: vonage_api_secret, value: "{{ vault_vonage_api_secret }}" }
-      - { name: google_client_secret, value: "{{ vault_google_client_secret }}" }
-      - { name: microsoft_client_secret, value: "{{ vault_microsoft_client_secret }}" }
-      - { name: github_client_secret, value: "{{ vault_github_client_secret }}" }
-      - { name: oidc_client_secret, value: "{{ vault_oidc_client_secret }}" }
-      - { name: ldap_bind_password, value: "{{ vault_ldap_bind_password }}" }
-      - { name: ai_api_key, value: "{{ vault_ai_api_key }}" }
+      - { name: runtime_egress_principal_signing_key, value: "{{ vault_runtime_egress_principal_signing_key | default('') }}", required: false }
+      - { name: smtp_pass, value: "{{ vault_smtp_pass | default('') }}", required: false }
+      - { name: sendgrid_api_key, value: "{{ vault_sendgrid_api_key | default('') }}", required: false }
+      - { name: ses_secret_access_key, value: "{{ vault_ses_secret_access_key | default('') }}", required: false }
+      - { name: resend_api_key, value: "{{ vault_resend_api_key | default('') }}", required: false }
+      - { name: mailgun_api_key, value: "{{ vault_mailgun_api_key | default('') }}", required: false }
+      - { name: twilio_auth_token, value: "{{ vault_twilio_auth_token | default('') }}", required: false }
+      - { name: sns_secret_access_key, value: "{{ vault_sns_secret_access_key | default('') }}", required: false }
+      - { name: vonage_api_secret, value: "{{ vault_vonage_api_secret | default('') }}", required: false }
+      - { name: google_client_secret, value: "{{ vault_google_client_secret | default('') }}", required: false }
+      - { name: microsoft_client_secret, value: "{{ vault_microsoft_client_secret | default('') }}", required: false }
+      - { name: github_client_secret, value: "{{ vault_github_client_secret | default('') }}", required: false }
+      - { name: oidc_client_secret, value: "{{ vault_oidc_client_secret | default('') }}", required: false }
+      - { name: ldap_bind_password, value: "{{ vault_ldap_bind_password | default('') }}", required: false }
+      - { name: ai_api_key, value: "{{ vault_ai_api_key | default('') }}", required: false }
+
+- name: Reset normalized Podman secret specs
+  set_fact:
+    podman_secret_specs: []
+  no_log: true
 
 - name: Normalize desired Podman secret values
   set_fact:
@@ -43,17 +48,20 @@
         + [
             {
               'name': item.name,
-              'rendered_value': (item.value if (item.value | length > 0) else '\n'),
-              'digest': ((item.value if (item.value | length > 0) else '\n') | hash('sha256'))
+              'rendered_value': item.value,
+              'digest': (item.value | hash('sha256'))
             }
           ]
       }}
   loop: "{{ podman_secrets }}"
+  when: item.required | default(false) | bool or (item.value | default('') | length) > 0
   no_log: true
 
 - name: Inspect existing Podman secrets
   command:
     argv:
+      - timeout
+      - "{{ podman_secret_inspect_timeout_seconds | default(10) | string }}"
       - podman
       - secret
       - inspect

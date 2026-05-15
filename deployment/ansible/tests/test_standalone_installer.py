@@ -380,6 +380,18 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         )
         self.assertNotIn("control-plane-controller", services)
 
+    def test_production_compose_omits_empty_optional_external_secrets(self) -> None:
+        compose = _render_compose()
+        secrets = compose["secrets"]
+
+        self.assertIn("jwt_secret", secrets)
+        self.assertNotIn("smtp_pass", secrets)
+        self.assertNotIn("resend_api_key", secrets)
+        self.assertNotIn("ai_api_key", secrets)
+
+        with_optional_secret = _render_compose(vault_resend_api_key="configured")
+        self.assertIn("resend_api_key", with_optional_secret["secrets"])
+
     def test_production_compose_does_not_require_dev_demo_database_vars(self) -> None:
         dev_demo_keys = [
             "dev_sample_postgres_host",
@@ -578,6 +590,15 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         self.assertIn("Set vault_shared_files_s3_secret_access_key", secret_text)
         self.assertIn("arsenale_dev_shared_files_s3_secret_access_key if ((_is_dev", secret_text)
         self.assertNotIn("or ('shared-files-s3' in (installer_services", secret_text)
+
+    def test_podman_secret_role_skips_empty_optional_values_and_bounds_inspect(self) -> None:
+        secret_text = PODMAN_SECRETS_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn("podman_secret_inspect_timeout_seconds | default(10)", secret_text)
+        self.assertIn("when: item.required | default(false) | bool or (item.value | default('') | length) > 0", secret_text)
+        self.assertIn("required: true", secret_text)
+        self.assertIn("required: false", secret_text)
+        self.assertNotIn("else '\\n'", secret_text)
 
     def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
         apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")

@@ -1717,34 +1717,62 @@ secrets:
   runtime_egress_principal_signing_key:
     external: true
 {% endif %}
+{% if (vault_smtp_pass | default('') | length) > 0 %}
   smtp_pass:
     external: true
+{% endif %}
+{% if (vault_sendgrid_api_key | default('') | length) > 0 %}
   sendgrid_api_key:
     external: true
+{% endif %}
+{% if (vault_ses_secret_access_key | default('') | length) > 0 %}
   ses_secret_access_key:
     external: true
+{% endif %}
+{% if (vault_resend_api_key | default('') | length) > 0 %}
   resend_api_key:
     external: true
+{% endif %}
+{% if (vault_mailgun_api_key | default('') | length) > 0 %}
   mailgun_api_key:
     external: true
+{% endif %}
+{% if (vault_twilio_auth_token | default('') | length) > 0 %}
   twilio_auth_token:
     external: true
+{% endif %}
+{% if (vault_sns_secret_access_key | default('') | length) > 0 %}
   sns_secret_access_key:
     external: true
+{% endif %}
+{% if (vault_vonage_api_secret | default('') | length) > 0 %}
   vonage_api_secret:
     external: true
+{% endif %}
+{% if (vault_google_client_secret | default('') | length) > 0 %}
   google_client_secret:
     external: true
+{% endif %}
+{% if (vault_microsoft_client_secret | default('') | length) > 0 %}
   microsoft_client_secret:
     external: true
+{% endif %}
+{% if (vault_github_client_secret | default('') | length) > 0 %}
   github_client_secret:
     external: true
+{% endif %}
+{% if (vault_oidc_client_secret | default('') | length) > 0 %}
   oidc_client_secret:
     external: true
+{% endif %}
+{% if (vault_ldap_bind_password | default('') | length) > 0 %}
   ldap_bind_password:
     external: true
+{% endif %}
+{% if (vault_ai_api_key | default('') | length) > 0 %}
   ai_api_key:
     external: true
+{% endif %}
 
 # =============================================================================
 # Volumes — Persistent data storage
