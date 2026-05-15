@@ -626,6 +626,14 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
 
         self.assertIn("ansible_memtotal_mb | default(4096)", build_text)
 
+    def test_source_builds_default_to_sequential_outside_development(self) -> None:
+        build_text = DEPLOY_BUILD_TASKS.read_text(encoding="utf-8")
+
+        self.assertIn("_build_async_enabled", build_text)
+        self.assertIn("arsenale_build_async_enabled | default(_is_dev | default(false))", build_text)
+        self.assertIn("name: Build images sequentially", build_text)
+        self.assertIn("not (_build_async_enabled | default(false) | bool)", build_text)
+
     def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
         apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")
 

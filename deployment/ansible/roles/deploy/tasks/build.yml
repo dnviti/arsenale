@@ -111,6 +111,11 @@
       }}
   when: _state == 'present' and _build | bool and (compose_services_for_build | length > 0)
 
+- name: Set image build launch mode
+  set_fact:
+    _build_async_enabled: "{{ arsenale_build_async_enabled | default(_is_dev | default(false)) | bool }}"
+  when: _state == 'present' and _build | bool and (compose_services_for_build | length > 0)
+
 - name: Define build base images
   set_fact:
     _build_base_images:
@@ -166,7 +171,11 @@
       | default('localhost/' ~ _compose_project_name ~ '_' ~ item ~ ':latest')
     }}
     {{ compose_definition.services[item].build.context }}
-  when: _state == 'present' and _build | bool and (compose_services_for_build | length > 0)
+  when:
+    - _state == 'present'
+    - _build | bool
+    - compose_services_for_build | length > 0
+    - _build_async_enabled | default(false) | bool
   changed_when: true
   loop: "{{ compose_services_for_build }}"
   loop_control:
@@ -179,7 +188,11 @@
 - name: Wait for image builds to finish
   async_status:
     jid: "{{ item.ansible_job_id }}"
-  when: _state == 'present' and _build | bool and (compose_services_for_build | length > 0)
+  when:
+    - _state == 'present'
+    - _build | bool
+    - compose_services_for_build | length > 0
+    - _build_async_enabled | default(false) | bool
   changed_when: true
   loop: "{{ compose_build_jobs.results }}"
   loop_control:
@@ -188,6 +201,34 @@
   until: compose_build_result.finished
   retries: 720
   delay: 10
+  environment: "{{ _podman_runtime_env }}"
+
+- name: Build images sequentially
+  command: >-
+    {{ container_runtime | default('podman') }} build
+    {{ _runtime_build_args }}
+    {% for build_arg in (compose_definition.services[item].build.args | default({}) | dict2items) %}
+    --build-arg {{ build_arg.key }}={{ build_arg.value }}
+    {% endfor %}
+    -f {{
+      compose_definition.services[item].build.dockerfile
+      if (compose_definition.services[item].build.dockerfile | regex_search('^/'))
+      else (compose_definition.services[item].build.context ~ '/' ~ compose_definition.services[item].build.dockerfile)
+    }}
+    -t {{
+      compose_definition.services[item].image
+      | default('localhost/' ~ _compose_project_name ~ '_' ~ item ~ ':latest')
+    }}
+    {{ compose_definition.services[item].build.context }}
+  when:
+    - _state == 'present'
+    - _build | bool
+    - compose_services_for_build | length > 0
+    - not (_build_async_enabled | default(false) | bool)
+  changed_when: true
+  loop: "{{ compose_services_for_build }}"
+  loop_control:
+    label: "{{ item }}"
   environment: "{{ _podman_runtime_env }}"
 
 - name: Pull pre-built images
