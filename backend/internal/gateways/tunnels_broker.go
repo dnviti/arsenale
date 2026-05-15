@@ -93,12 +93,16 @@ type tunnelTCPProxy struct {
 	Port int    `json:"port"`
 }
 
-func (s Service) createTunnelTCPProxy(ctx context.Context, gatewayID, targetHost string, targetPort int) (tunnelTCPProxy, error) {
-	body, err := json.Marshal(map[string]any{
+func (s Service) createTunnelTCPProxy(ctx context.Context, gatewayID, targetHost string, targetPort int, fallbackPorts ...int) (tunnelTCPProxy, error) {
+	payload := map[string]any{
 		"gatewayId":  gatewayID,
 		"targetHost": targetHost,
 		"targetPort": targetPort,
-	})
+	}
+	if len(fallbackPorts) > 0 {
+		payload["targetPorts"] = append([]int{targetPort}, fallbackPorts...)
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return tunnelTCPProxy{}, err
 	}

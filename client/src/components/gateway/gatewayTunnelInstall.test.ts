@@ -85,17 +85,17 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.installCommands).toContain("cd 'arsenale-gateway-tenant-gateway-two'");
   });
 
-  it('points GUACD bundles at the configured tunnel listener', () => {
+  it('points GUACD bundles at the runtime-managed tunnel listener', () => {
     const bundle = buildTunnelInstallBundle({
       gateway: { ...gateway, type: 'GUACD', port: 14822 },
-      tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 14822 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 4822 },
       serverUrl: 'https://arsenale.example.com',
     });
 
     expect(bundle.serviceName).toBe('guacd');
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/guacd:stable');
-    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="14822"');
-    expect(bundle.envContent).toContain('GUACD_PORT="14822"');
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="4822"');
+    expect(bundle.envContent).toContain('GUACD_PORT="4822"');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/guacd:stable');
     expect(bundle.dockerCompose).toContain('pull_policy: always');
     expect(bundle.dockerCompose).toContain('user: "0:0"');
@@ -113,6 +113,17 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/tunnel-client-key.pem');
     expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/guacd-server-key.pem');
     expect(bundle.installCommands).not.toContain('podman unshare chown 1000:1000 ./certs/tunnel-client-key.pem');
+  });
+
+  it('does not use the gateway direct port when the token omits a managed tunnel port', () => {
+    const bundle = buildTunnelInstallBundle({
+      gateway: { ...gateway, type: 'GUACD', port: 3389 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 0 },
+      serverUrl: 'https://arsenale.example.com',
+    });
+
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="4822"');
+    expect(bundle.envContent).toContain('GUACD_PORT="4822"');
   });
 
   it('uses the DB proxy runtime user for database tunnel bundles', () => {

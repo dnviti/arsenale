@@ -44,7 +44,7 @@ export function buildTunnelInstallBundle({
 }: BuildTunnelInstallBundleOptions): TunnelInstallBundle {
   const runtime = gatewayRuntimeInstall(gateway.type);
   const localHost = tokenBundle.tunnelLocalHost || '127.0.0.1';
-  const localPort = tokenBundle.tunnelLocalPort || gateway.port || runtime.defaultLocalPort;
+  const localPort = tokenBundle.tunnelLocalPort || runtime.defaultLocalPort || gateway.port;
   const gatewayID = tokenBundle.gatewayId || gateway.id;
   const envContent = [
     envLine('TUNNEL_SERVER_URL', trimServerUrl(serverUrl)),

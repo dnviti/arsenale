@@ -141,6 +141,53 @@ describe('GatewayDialog', () => {
     expect(screen.getByDisplayValue(/-----BEGIN PRIVATE KEY-----/i)).toBeInTheDocument();
   });
 
+  it('auto-manages the endpoint while creating a tunnel gateway', async () => {
+    const user = userEvent.setup();
+    const createGateway = vi.fn().mockResolvedValue(baseGateway);
+    const generateTunnelToken = vi.fn().mockResolvedValue(tunnelBundle);
+    useGatewayStore.setState({ createGateway, generateTunnelToken });
+
+    render(<GatewayDialog open onClose={vi.fn()} gateway={null} />);
+
+    await user.type(screen.getByLabelText('Name'), 'Remote GUACD');
+    await user.click(screen.getByRole('button', { name: 'Enable Zero-Trust Tunnel' }));
+    await user.click(screen.getByRole('button', { name: 'Create and Enable Tunnel' }));
+
+    await waitFor(() => expect(createGateway).toHaveBeenCalledTimes(1));
+    expect(createGateway).toHaveBeenCalledWith(expect.objectContaining({
+      host: '127.0.0.1',
+      port: 4822,
+      type: 'GUACD',
+    }));
+    expect(generateTunnelToken).toHaveBeenCalledWith('gateway-1');
+  });
+
+  it('uses the SSH runtime listener when creating a tunnel SSH bastion', async () => {
+    const user = userEvent.setup();
+    const createGateway = vi.fn().mockResolvedValue({ ...baseGateway, type: 'SSH_BASTION', port: 2222 });
+    const generateTunnelToken = vi.fn().mockResolvedValue({
+      ...tunnelBundle,
+      gatewayType: 'SSH_BASTION',
+      tunnelLocalPort: 2222,
+    });
+    useGatewayStore.setState({ createGateway, generateTunnelToken });
+
+    render(<GatewayDialog open onClose={vi.fn()} gateway={null} />);
+
+    await user.type(screen.getByLabelText('Name'), 'Remote SSH');
+    await user.click(screen.getAllByRole('combobox')[0]);
+    await user.click(await screen.findByRole('option', { name: 'SSH Bastion (Jump Host)' }));
+    await user.click(screen.getByRole('button', { name: 'Enable Zero-Trust Tunnel' }));
+    await user.click(screen.getByRole('button', { name: 'Create and Enable Tunnel' }));
+
+    await waitFor(() => expect(createGateway).toHaveBeenCalledTimes(1));
+    expect(createGateway).toHaveBeenCalledWith(expect.objectContaining({
+      host: '127.0.0.1',
+      port: 2222,
+      type: 'SSH_BASTION',
+    }));
+  });
+
   it('clears post-create tunnel state after revoking the token', async () => {
     const user = userEvent.setup();
     const createGateway = vi.fn().mockResolvedValue(baseGateway);

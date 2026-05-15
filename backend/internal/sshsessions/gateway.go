@@ -63,7 +63,7 @@ func (s Service) resolveBastion(ctx context.Context, claims authn.Claims, access
 		if len(tunnelPorts) == 0 {
 			tunnelPorts = []int{port}
 		}
-		proxy, err := s.createTunnelProxy(ctx, gateway.ID, "127.0.0.1", tunnelPorts[0], tunnelPorts[1:]...)
+		proxy, err := s.createTunnelProxy(ctx, gateway.ID, gatewayruntime.TunnelLocalHost(gateway.Type), tunnelPorts[0], tunnelPorts[1:]...)
 		if err != nil {
 			return nil, "", "", err
 		}
