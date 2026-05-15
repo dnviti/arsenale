@@ -595,10 +595,21 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         secret_text = PODMAN_SECRETS_TASKS.read_text(encoding="utf-8")
 
         self.assertIn("podman_secret_inspect_timeout_seconds | default(10)", secret_text)
+        self.assertIn("podman_secret_create_timeout_seconds | default(60)", secret_text)
         self.assertIn("when: item.required | default(false) | bool or (item.value | default('') | length) > 0", secret_text)
         self.assertIn("required: true", secret_text)
         self.assertIn("required: false", secret_text)
         self.assertNotIn("else '\\n'", secret_text)
+
+    def test_install_quiesces_compose_before_podman_secret_reconciliation(self) -> None:
+        install_text = INSTALL_APPLY_TASKS.read_text(encoding="utf-8")
+
+        self.assertLess(
+            install_text.index("name: Quiesce existing compose containers before Podman secret reconciliation"),
+            install_text.index("name: Install Podman secrets"),
+        )
+        self.assertIn('pkill -f "podman healthcheck run" || true', install_text)
+        self.assertIn("podman_container_remove_timeout_seconds | default(45)", install_text)
 
     def test_full_force_recreate_refreshes_postgres_before_migrations(self) -> None:
         apply_text = DEPLOY_APPLY_TASKS.read_text(encoding="utf-8")

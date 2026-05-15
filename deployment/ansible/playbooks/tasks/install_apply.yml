@@ -330,6 +330,42 @@
         name: certificates
       when: installer_backend_value == 'podman'
 
+    - name: Check existing compose file before Podman secret reconciliation
+      stat:
+        path: "{{ _home }}/docker-compose.yml"
+      register: installer_existing_compose_file
+      when: installer_backend_value == 'podman'
+
+    - name: Quiesce existing compose containers before Podman secret reconciliation
+      shell: |
+        set -euo pipefail
+        pkill -f "podman healthcheck run" || true
+        containers="$(
+          python3 - <<'PY'
+        import yaml
+        from pathlib import Path
+
+        compose = yaml.safe_load(Path("{{ _home }}/docker-compose.yml").read_text(encoding="utf-8")) or {}
+        services = compose.get("services") or {}
+        for service_name, service in reversed(list(services.items())):
+            if service_name == "migrate":
+                continue
+            print(service.get("container_name") or service_name)
+        PY
+        )"
+        for container in ${containers}; do
+          timeout {{ podman_container_remove_timeout_seconds | default(45) | quote }} {{ container_runtime | default('podman') }} rm -f --depend "${container}" || true
+        done
+      args:
+        executable: /bin/bash
+      when:
+        - installer_backend_value == 'podman'
+        - installer_should_apply | bool
+        - installer_existing_compose_file.stat.exists | default(false)
+      changed_when: true
+      environment:
+        XDG_RUNTIME_DIR: "/run/user/{{ arsenale_uid | default(ansible_user_uid | default('1000')) }}"
+
     - name: Install Podman secrets
       include_role:
         name: podman_secrets

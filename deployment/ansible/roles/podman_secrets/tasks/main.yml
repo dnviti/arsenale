@@ -92,6 +92,8 @@
 - name: Create Podman secrets
   command:
     argv:
+      - timeout
+      - "{{ podman_secret_create_timeout_seconds | default(60) | string }}"
       - podman
       - secret
       - create
