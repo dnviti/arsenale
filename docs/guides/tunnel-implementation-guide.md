@@ -327,6 +327,8 @@ Configuration is entirely environment-driven (`gateways/tunnel-agent/config.go`)
 
 **Dormant mode:** If none of `TUNNEL_SERVER_URL`, `TUNNEL_TOKEN`, or `TUNNEL_GATEWAY_ID` are set, `loadConfig()` returns a dormant result and the agent exits cleanly. This allows the same Docker image to be deployed with or without tunnel functionality. However, if some but not all required vars are set, the agent exits with an error code -- partial configuration is treated as a misconfiguration.
 
+Embedded gateway bundles set `TUNNEL_LOCAL_HOST` and `TUNNEL_LOCAL_PORT` from the gateway runtime definition, not from operator-entered direct gateway routing fields. The managed listener ports are `4822` for `GUACD`, `2222` for `SSH_BASTION` and `MANAGED_SSH`, and `5432` for `DB_PROXY`.
+
 ### Connection Lifecycle & Reconnection
 
 The Go agent (`gateways/tunnel-agent/agent.go`) manages a single WebSocket connection with automatic reconnection:
@@ -446,25 +448,32 @@ This is the key design insight: by exposing tunnel streams as standard Node.js `
 
 ### RDP/VNC: createTcpProxy -> local net.Server -> guacamole
 
-**File:** `server/src/controllers/session.controller.ts`
+**File:** `backend/internal/desktopsessions/create_route.go`
 
-For RDP and VNC, guacamole-lite connects to a `host:port` via TCP, so the tunnel integration uses `createTcpProxy()` to create a local proxy:
+For RDP and VNC, guacamole clients connect to a `host:port` via TCP, so the tunnel integration asks the tunnel broker to create a local proxy:
 
-```typescript
-// session.controller.ts (lines 92-101, RDP path; 324-333, VNC path)
-if (gateway.tunnelEnabled) {
-  if (!isTunnelConnected(gateway.id)) {
-    throw new AppError('Gateway tunnel is disconnected — the gateway may be unreachable', 503);
-  }
-  const targetHost = guacdHost ?? gateway.host;
-  const targetPort = guacdPort ?? gateway.port;
-  const { server: _proxyServer, localPort } = await createTcpProxy(gateway.id, targetHost, targetPort);
-  guacdHost = '127.0.0.1';
-  guacdPort = localPort;
+```go
+if gateway.TunnelEnabled {
+	tunnelPorts := gatewayruntime.TunnelLocalPortCandidates(gateway.Type, route.GuacdPort)
+	if len(tunnelPorts) == 0 {
+		tunnelPorts = []int{route.GuacdPort}
+	}
+	proxy, err := s.ConnectionResolver.CreateTunnelProxy(
+		ctx,
+		gateway.ID,
+		gatewayruntime.TunnelLocalHost(gateway.Type),
+		tunnelPorts[0],
+		tunnelPorts[1:]...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	guacdHost = proxy.Host
+	guacdPort = proxy.Port
 }
 ```
 
-After this, `guacdHost` and `guacdPort` point to `127.0.0.1:<ephemeral>`, and the rest of the guacamole token generation proceeds as normal. The proxy server accepts one connection (from guacd), pipes it through a tunnel stream, and then closes.
+After this, `guacdHost` and `guacdPort` point to the broker-local proxy, and the rest of the guacamole token generation proceeds as normal. The broker opens tunnel streams to the runtime-managed local service port first, with the configured gateway port retained only as a fallback for old install bundles.
 
 ---
 
@@ -699,15 +708,16 @@ The raw tunnel token is never written to the audit log.
 To support a new protocol beyond SSH/RDP/VNC:
 
 1. **Session service** -- add a new session creation path following the Go SSH, desktop, or database session services. Include the tunnel routing block:
-   ```typescript
+   ```text
    if (gateway.tunnelEnabled) {
      if (!isTunnelConnected(gateway.id)) {
-       throw new AppError('Gateway tunnel is disconnected', 503);
+       return gateway-tunnel-disconnected
      }
-     // For stream-based protocols (like SSH):
-     const sock = await openStream(gateway.id, host, port);
-     // For TCP-address-based protocols (like guacd):
-     const { localPort } = await createTcpProxy(gateway.id, host, port);
+     // Use the runtime-managed local listener for the gateway type.
+     targetHost = gatewayruntime.TunnelLocalHost(gateway.type)
+     targetPorts = gatewayruntime.TunnelLocalPortCandidates(gateway.type, gateway.port)
+     // For stream-based protocols (like SSH), open a tunnel stream.
+     // For TCP-address-based protocols (like guacd), create a broker-local proxy.
    }
    ```
 

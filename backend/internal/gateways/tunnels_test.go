@@ -155,9 +155,9 @@ func TestTunnelLocalPortForGateway(t *testing.T) {
 		configuredPort int
 		want           int
 	}{
-		{name: "guacd uses configured listener port", gatewayType: "GUACD", configuredPort: 14822, want: 14822},
-		{name: "managed ssh uses configured listener port", gatewayType: "MANAGED_SSH", configuredPort: 2022, want: 2022},
-		{name: "db proxy uses configured listener port", gatewayType: "DB_PROXY", configuredPort: 15432, want: 15432},
+		{name: "guacd uses runtime-managed listener port", gatewayType: "GUACD", configuredPort: 14822, want: 4822},
+		{name: "managed ssh uses runtime-managed listener port", gatewayType: "MANAGED_SSH", configuredPort: 2022, want: 2222},
+		{name: "db proxy uses runtime-managed listener port", gatewayType: "DB_PROXY", configuredPort: 15432, want: 5432},
 		{name: "managed ssh fallback", gatewayType: "MANAGED_SSH", want: 2222},
 		{name: "ssh bastion fallback", gatewayType: "SSH_BASTION", want: 2222},
 		{name: "guacd fallback", gatewayType: "GUACD", want: 4822},

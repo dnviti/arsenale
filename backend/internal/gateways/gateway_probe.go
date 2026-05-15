@@ -6,6 +6,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
 
 type gatewayProbeTarget struct {
@@ -61,7 +63,11 @@ SELECT host, port, "containerId", "containerName"
 }
 
 func (s Service) probeTunnelGatewayConnectivity(ctx context.Context, record gatewayRecord, timeout time.Duration) connectivityResult {
-	proxy, err := s.createTunnelTCPProxy(ctx, record.ID, "127.0.0.1", record.Port)
+	tunnelPorts := gatewayruntime.TunnelLocalPortCandidates(record.Type, record.Port)
+	if len(tunnelPorts) == 0 {
+		tunnelPorts = []int{record.Port}
+	}
+	proxy, err := s.createTunnelTCPProxy(ctx, record.ID, gatewayruntime.TunnelLocalHost(record.Type), tunnelPorts[0], tunnelPorts[1:]...)
 	if err != nil {
 		message := err.Error()
 		return connectivityResult{

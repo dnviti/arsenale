@@ -47,9 +47,9 @@ The tunnel agent runs alongside the gateway service (guacd or sshd) either as an
 
 Get a tunnel-connected gateway running in under 5 minutes:
 
-1. **Create a gateway** in the Arsenale UI: navigate to **Settings > Gateways > Add Gateway**. Choose type `GUACD` or `SSH_BASTION`, fill in a name, and save.
+1. **Create a gateway** in the Arsenale UI: navigate to **Settings > Gateways > Add Gateway**. Choose type `GUACD`, `SSH_BASTION`, `MANAGED_SSH`, or `DB_PROXY`, fill in a name, enable **Zero-Trust Tunnel**, and save. The platform manages the tunnel endpoint from the selected gateway type.
 
-2. **Enable the tunnel**: in the gateway edit dialog, expand the **Zero-Trust Tunnel** accordion and click **Enable Zero-Trust Tunnel**. The UI generates a one-time token.
+2. **Generate the token**: when the gateway is saved with the tunnel enabled, the UI generates a one-time token. For an existing gateway, edit it, expand the **Zero-Trust Tunnel** accordion, and click **Enable Zero-Trust Tunnel**.
 
 3. **Copy the install script**: the UI presents a ready-to-paste remote install script. Copy it.
 
@@ -72,13 +72,14 @@ Get a tunnel-connected gateway running in under 5 minutes:
 1. Open **Settings > Gateways** and click **Add Gateway**.
 2. Fill in:
    - **Name** -- descriptive label (e.g. "DC-East guacd").
-   - **Type** -- `GUACD` for RDP/VNC, `SSH_BASTION` for SSH.
-   - **Host** -- leave as `localhost` (the tunnel agent handles routing).
-   - **Port** -- the local port of the proxied service. Generated bundles preserve this value in `TUNNEL_LOCAL_PORT` and set the bundled runtime listener variable to match it.
+   - **Type** -- `GUACD` for RDP/VNC, `SSH_BASTION` or `MANAGED_SSH` for SSH, and `DB_PROXY` for database access.
+   - **Host** -- managed by the tunnel when tunnel mode is enabled.
+   - **Port** -- managed by the selected gateway type when tunnel mode is enabled.
 3. Save the gateway.
 4. Expand the **Zero-Trust Tunnel** section and click **Enable Zero-Trust Tunnel**.
 
 When a tunnel is enabled, the **Host** field becomes read-only (labeled "Managed by tunnel") and the **Port** source shows "Tunnel".
+The platform opens tunnel streams to the runtime-managed local listener for the gateway type: `GUACD` uses `4822`, `SSH_BASTION` and `MANAGED_SSH` use `2222`, and `DB_PROXY` uses `5432`. Existing configured gateway ports are kept only as fallback candidates for older copied bundles.
 Before using the tunnel for production traffic, configure the gateway egress policy so only expected target hosts, subnets, protocols, and ports can be reached.
 
 ### Enabling Tunnel on an Existing Gateway
@@ -123,7 +124,7 @@ docker run -d --restart=unless-stopped \
   arsenale/tunnel-agent:latest
 ```
 
-For an SSH gateway, change `TUNNEL_LOCAL_PORT` to `2222` and ensure an sshd is reachable on that port from the container's network.
+For standalone agents, set `TUNNEL_LOCAL_PORT` to the local service listener for the gateway type: `4822` for guacd, `2222` for SSH gateways, and `5432` for database proxy gateways. Generated embedded gateway bundles set these values automatically.
 
 The container runs as a non-root user (`agent`) and requires no volumes or capabilities.
 
