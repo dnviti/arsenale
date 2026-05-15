@@ -22,7 +22,7 @@ WORKDIR /src/gateways/tunnel-agent
 
 ARG TARGETOS
 ARG TARGETARCH
-ARG AGENT_VERSION=1.7.1
+ARG AGENT_VERSION=1.8.4
 RUN GOWORK=off CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath -ldflags="-s -w -X main.version=${AGENT_VERSION}" \
     -o /out/tunnel-agent .
