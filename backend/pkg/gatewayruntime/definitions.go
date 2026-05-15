@@ -17,6 +17,10 @@ type Definition struct {
 	TunnelLocalHost     string
 	StandaloneDirectory string
 	ComposeService      string
+	StableImage         string
+	ContainerUID        int
+	ContainerGID        int
+	ServiceTLSRequired  bool
 }
 
 var definitions = []Definition{
@@ -28,6 +32,10 @@ var definitions = []Definition{
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/guacd",
 		ComposeService:      "guacd",
+		StableImage:         "ghcr.io/dnviti/arsenale/guacd:stable",
+		ContainerUID:        100,
+		ContainerGID:        101,
+		ServiceTLSRequired:  true,
 	},
 	{
 		Type:                TypeSSHBastion,
@@ -37,6 +45,9 @@ var definitions = []Definition{
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/ssh-gateway",
 		ComposeService:      "ssh-gateway",
+		StableImage:         "ghcr.io/dnviti/arsenale/ssh-gateway:stable",
+		ContainerUID:        1000,
+		ContainerGID:        1000,
 	},
 	{
 		Type:                TypeManagedSSH,
@@ -46,6 +57,9 @@ var definitions = []Definition{
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/ssh-gateway",
 		ComposeService:      "ssh-gateway",
+		StableImage:         "ghcr.io/dnviti/arsenale/ssh-gateway:stable",
+		ContainerUID:        1000,
+		ContainerGID:        1000,
 	},
 	{
 		Type:                TypeDBProxy,
@@ -55,6 +69,9 @@ var definitions = []Definition{
 		TunnelLocalHost:     "127.0.0.1",
 		StandaloneDirectory: "gateways/db-proxy",
 		ComposeService:      "db-proxy",
+		StableImage:         "ghcr.io/dnviti/arsenale/db-proxy:stable",
+		ContainerUID:        100,
+		ContainerGID:        101,
 	},
 }
 
@@ -102,6 +119,35 @@ func ListenerEnvVar(gatewayType string) string {
 		return ""
 	}
 	return def.ListenerEnvVar
+}
+
+func StableImage(gatewayType string) string {
+	def, ok := Lookup(gatewayType)
+	if !ok {
+		return ""
+	}
+	return def.StableImage
+}
+
+func ComposeService(gatewayType string) string {
+	def, ok := Lookup(gatewayType)
+	if !ok {
+		return ""
+	}
+	return def.ComposeService
+}
+
+func ContainerUser(gatewayType string) (int, int) {
+	def, ok := Lookup(gatewayType)
+	if !ok {
+		return 0, 0
+	}
+	return def.ContainerUID, def.ContainerGID
+}
+
+func ServiceTLSRequired(gatewayType string) bool {
+	def, ok := Lookup(gatewayType)
+	return ok && def.ServiceTLSRequired
 }
 
 func TunnelLocalHost(gatewayType string) string {

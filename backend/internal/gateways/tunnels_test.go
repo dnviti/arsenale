@@ -115,11 +115,16 @@ func TestGenerateTunnelCertificates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("generate client cert: %v", err)
 	}
+	serviceCertPEM, _, serviceExpiry, err := generateGatewayServiceCertificate(caCertPEM, caKeyPEM, "gw-1", "GUACD", "arsenale.local")
+	if err != nil {
+		t.Fatalf("generate service cert: %v", err)
+	}
 
 	caBlock, _ := pem.Decode([]byte(caCertPEM))
 	clientBlock, _ := pem.Decode([]byte(clientCertPEM))
-	if caBlock == nil || clientBlock == nil {
-		t.Fatal("expected PEM blocks for CA and client certs")
+	serviceBlock, _ := pem.Decode([]byte(serviceCertPEM))
+	if caBlock == nil || clientBlock == nil || serviceBlock == nil {
+		t.Fatal("expected PEM blocks for CA, client, and service certs")
 	}
 
 	caCert, err := x509.ParseCertificate(caBlock.Bytes)
@@ -129,6 +134,10 @@ func TestGenerateTunnelCertificates(t *testing.T) {
 	clientCert, err := x509.ParseCertificate(clientBlock.Bytes)
 	if err != nil {
 		t.Fatalf("parse client cert: %v", err)
+	}
+	serviceCert, err := x509.ParseCertificate(serviceBlock.Bytes)
+	if err != nil {
+		t.Fatalf("parse service cert: %v", err)
 	}
 
 	roots := x509.NewCertPool()
@@ -145,6 +154,22 @@ func TestGenerateTunnelCertificates(t *testing.T) {
 	}
 	if !expiry.After(time.Now().UTC().Add(89 * 24 * time.Hour)) {
 		t.Fatalf("unexpected client cert expiry: %s", expiry)
+	}
+	if _, err := serviceCert.Verify(x509.VerifyOptions{
+		Roots:       roots,
+		CurrentTime: time.Now().UTC(),
+		KeyUsages:   []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}); err != nil {
+		t.Fatalf("verify service cert chain: %v", err)
+	}
+	if len(serviceCert.DNSNames) == 0 || serviceCert.DNSNames[0] != "arsenale-guacd" {
+		t.Fatalf("unexpected service cert DNS SANs: %#v", serviceCert.DNSNames)
+	}
+	if len(serviceCert.URIs) != 1 || serviceCert.URIs[0].String() != "spiffe://arsenale.local/gateway/gw-1/service/guacd" {
+		t.Fatalf("unexpected service cert URIs: %#v", serviceCert.URIs)
+	}
+	if !serviceExpiry.After(time.Now().UTC().Add(89 * 24 * time.Hour)) {
+		t.Fatalf("unexpected service cert expiry: %s", serviceExpiry)
 	}
 }
 

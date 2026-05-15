@@ -2,11 +2,15 @@ package gateways
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -25,14 +29,36 @@ FOR UPDATE
 		return nil, fmt.Errorf("load tenant tunnel CA: %w", err)
 	}
 
-	var tunnelClientCert, tunnelClientKey, tunnelClientKeyIV, tunnelClientKeyTag *string
+	var (
+		gatewayType                             string
+		tunnelClientCert, tunnelClientKey       *string
+		tunnelClientKeyIV, tunnelClientKeyTag   *string
+		tunnelClientCertExp                     sql.NullTime
+		tunnelServiceCert, tunnelServiceKey     *string
+		tunnelServiceKeyIV, tunnelServiceKeyTag *string
+		tunnelServiceCertExp                    sql.NullTime
+	)
 	if err := tx.QueryRow(ctx, `
-SELECT "tunnelClientCert", "tunnelClientKey", "tunnelClientKeyIV", "tunnelClientKeyTag"
+SELECT type::text,
+       "tunnelClientCert", "tunnelClientKey", "tunnelClientKeyIV", "tunnelClientKeyTag", "tunnelClientCertExp",
+       "tunnelServiceCert", "tunnelServiceKey", "tunnelServiceKeyIV", "tunnelServiceKeyTag", "tunnelServiceCertExp"
 FROM "Gateway"
 WHERE id = $1
   AND "tenantId" = $2
 FOR UPDATE
-`, gatewayID, tenantID).Scan(&tunnelClientCert, &tunnelClientKey, &tunnelClientKeyIV, &tunnelClientKeyTag); err != nil {
+`, gatewayID, tenantID).Scan(
+		&gatewayType,
+		&tunnelClientCert,
+		&tunnelClientKey,
+		&tunnelClientKeyIV,
+		&tunnelClientKeyTag,
+		&tunnelClientCertExp,
+		&tunnelServiceCert,
+		&tunnelServiceKey,
+		&tunnelServiceKeyIV,
+		&tunnelServiceKeyTag,
+		&tunnelServiceCertExp,
+	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &requestError{status: http.StatusNotFound, message: "Gateway not found"}
 		}
@@ -92,23 +118,21 @@ WHERE id = $1
 		}
 	}
 
-	needsClientCert := strings.TrimSpace(derefString(tunnelClientCert)) == "" ||
-		strings.TrimSpace(derefString(tunnelClientKey)) == "" ||
-		strings.TrimSpace(derefString(tunnelClientKeyIV)) == "" ||
-		strings.TrimSpace(derefString(tunnelClientKeyTag)) == ""
-	if !needsClientCert {
-		return nil, nil
+	details := &mtlsAuditDetails{
+		tenantCAGenerated: tenantGenerated,
+		caFingerprint:     caFingerprint,
 	}
 
-	clientCertPEM, clientKeyPEM, clientExpiry, err := generateClientCertificate(caCertPEM, caKeyPEM, gatewayID, buildGatewaySPIFFEID(s.tunnelTrustDomain(), gatewayID))
-	if err != nil {
-		return nil, fmt.Errorf("generate tunnel client certificate: %w", err)
-	}
-	encClientKey, err := encryptValue(s.ServerEncryptionKey, clientKeyPEM)
-	if err != nil {
-		return nil, fmt.Errorf("encrypt tunnel client key: %w", err)
-	}
-	if _, err := tx.Exec(ctx, `
+	if tenantGenerated || tunnelCertMaterialNeedsRefresh(tunnelClientCert, tunnelClientKey, tunnelClientKeyIV, tunnelClientKeyTag, tunnelClientCertExp) {
+		clientCertPEM, clientKeyPEM, clientExpiry, err := generateClientCertificate(caCertPEM, caKeyPEM, gatewayID, buildGatewaySPIFFEID(s.tunnelTrustDomain(), gatewayID))
+		if err != nil {
+			return nil, fmt.Errorf("generate tunnel client certificate: %w", err)
+		}
+		encClientKey, err := encryptValue(s.ServerEncryptionKey, clientKeyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt tunnel client key: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
 UPDATE "Gateway"
 SET "tunnelClientCert" = $2,
     "tunnelClientKey" = $3,
@@ -118,14 +142,74 @@ SET "tunnelClientCert" = $2,
     "updatedAt" = NOW()
 WHERE id = $1
 `, gatewayID, clientCertPEM, encClientKey.Ciphertext, encClientKey.IV, encClientKey.Tag, clientExpiry.UTC()); err != nil {
-		return nil, fmt.Errorf("store tunnel client certificate: %w", err)
+			return nil, fmt.Errorf("store tunnel client certificate: %w", err)
+		}
+		details.clientGenerated = true
+		details.clientExpiry = clientExpiry
 	}
 
-	return &mtlsAuditDetails{
-		tenantCAGenerated: tenantGenerated,
-		caFingerprint:     caFingerprint,
-		clientExpiry:      clientExpiry,
-	}, nil
+	if gatewayruntime.ServiceTLSRequired(gatewayType) && (tenantGenerated || tunnelCertMaterialNeedsRefresh(tunnelServiceCert, tunnelServiceKey, tunnelServiceKeyIV, tunnelServiceKeyTag, tunnelServiceCertExp)) {
+		serviceCertPEM, serviceKeyPEM, serviceExpiry, err := generateGatewayServiceCertificate(caCertPEM, caKeyPEM, gatewayID, gatewayType, s.tunnelTrustDomain())
+		if err != nil {
+			return nil, err
+		}
+		encServiceKey, err := encryptValue(s.ServerEncryptionKey, serviceKeyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt tunnel service key: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `
+UPDATE "Gateway"
+SET "tunnelServiceCert" = $2,
+    "tunnelServiceKey" = $3,
+    "tunnelServiceKeyIV" = $4,
+    "tunnelServiceKeyTag" = $5,
+    "tunnelServiceCertExp" = $6,
+    "updatedAt" = NOW()
+WHERE id = $1
+`, gatewayID, serviceCertPEM, encServiceKey.Ciphertext, encServiceKey.IV, encServiceKey.Tag, serviceExpiry.UTC()); err != nil {
+			return nil, fmt.Errorf("store tunnel service certificate: %w", err)
+		}
+		details.serviceGenerated = true
+		details.serviceExpiry = serviceExpiry
+	}
+
+	if !details.clientGenerated && !details.serviceGenerated && !details.tenantCAGenerated {
+		return nil, nil
+	}
+	return details, nil
+}
+
+func tunnelCertMaterialNeedsRefresh(cert, key, keyIV, keyTag *string, exp sql.NullTime) bool {
+	if strings.TrimSpace(derefString(cert)) == "" ||
+		strings.TrimSpace(derefString(key)) == "" ||
+		strings.TrimSpace(derefString(keyIV)) == "" ||
+		strings.TrimSpace(derefString(keyTag)) == "" {
+		return true
+	}
+	if !exp.Valid {
+		return true
+	}
+	return !exp.Time.After(time.Now().UTC().Add(7 * 24 * time.Hour))
+}
+
+func generateGatewayServiceCertificate(caCertPEM, caKeyPEM, gatewayID, gatewayType, trustDomain string) (string, string, time.Time, error) {
+	switch gatewayruntime.NormalizeType(gatewayType) {
+	case gatewayruntime.TypeGuacd:
+		certPEM, keyPEM, expiry, err := generateServerCertificate(
+			caCertPEM,
+			caKeyPEM,
+			"arsenale-guacd",
+			[]string{"arsenale-guacd", "guacd", "localhost"},
+			[]net.IP{net.ParseIP("127.0.0.1")},
+			[]string{buildGatewayServiceSPIFFEID(trustDomain, gatewayID, "guacd")},
+		)
+		if err != nil {
+			return "", "", time.Time{}, fmt.Errorf("generate guacd service certificate: %w", err)
+		}
+		return certPEM, keyPEM, expiry, nil
+	default:
+		return "", "", time.Time{}, fmt.Errorf("gateway type %q does not require tunnel service TLS", gatewayType)
+	}
 }
 
 func lockGatewayForTenant(ctx context.Context, tx pgx.Tx, tenantID, gatewayID string) error {

@@ -8,19 +8,24 @@ const (
 	tunnelTokenBytes           = 32
 	tunnelCAValidityDays       = 3650
 	tunnelClientValidityDays   = 90
+	tunnelServiceValidityDays  = 90
 )
 
 type tunnelTokenResponse struct {
-	Token            string     `json:"token"`
-	TunnelEnabled    bool       `json:"tunnelEnabled"`
-	TunnelConnected  bool       `json:"tunnelConnected"`
-	GatewayID        string     `json:"gatewayId"`
-	GatewayType      string     `json:"gatewayType"`
-	TunnelLocalHost  string     `json:"tunnelLocalHost"`
-	TunnelLocalPort  int        `json:"tunnelLocalPort"`
-	TunnelClientCert string     `json:"tunnelClientCert"`
-	TunnelClientKey  string     `json:"tunnelClientKey"`
-	TunnelClientExp  *time.Time `json:"tunnelClientCertExp,omitempty"`
+	Token             string     `json:"token"`
+	TunnelEnabled     bool       `json:"tunnelEnabled"`
+	TunnelConnected   bool       `json:"tunnelConnected"`
+	GatewayID         string     `json:"gatewayId"`
+	GatewayType       string     `json:"gatewayType"`
+	TunnelLocalHost   string     `json:"tunnelLocalHost"`
+	TunnelLocalPort   int        `json:"tunnelLocalPort"`
+	TunnelClientCert  string     `json:"tunnelClientCert"`
+	TunnelClientKey   string     `json:"tunnelClientKey"`
+	TunnelClientExp   *time.Time `json:"tunnelClientCertExp,omitempty"`
+	TunnelServiceCert string     `json:"tunnelServiceCert,omitempty"`
+	TunnelServiceKey  string     `json:"tunnelServiceKey,omitempty"`
+	TunnelServiceCA   string     `json:"tunnelServiceCaCert,omitempty"`
+	TunnelServiceExp  *time.Time `json:"tunnelServiceCertExp,omitempty"`
 }
 
 type revokeTunnelTokenResponse struct {
@@ -72,4 +77,7 @@ type mtlsAuditDetails struct {
 	tenantCAGenerated bool
 	caFingerprint     string
 	clientExpiry      time.Time
+	clientGenerated   bool
+	serviceExpiry     time.Time
+	serviceGenerated  bool
 }

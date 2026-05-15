@@ -32,10 +32,11 @@ type GrantIssueRequest struct {
 }
 
 type DesktopTokenRequest struct {
-	GuacdHost string         `json:"guacdHost,omitempty"`
-	GuacdPort int            `json:"guacdPort,omitempty"`
-	Settings  map[string]any `json:"settings"`
-	Metadata  map[string]any `json:"metadata,omitempty"`
+	GuacdHost  string         `json:"guacdHost,omitempty"`
+	GuacdPort  int            `json:"guacdPort,omitempty"`
+	GuacdCAPEM string         `json:"guacdCaPem,omitempty"`
+	Settings   map[string]any `json:"settings"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
 type GrantIssueResponse struct {
@@ -216,6 +217,7 @@ func buildConnectionToken(protocol string, req DesktopTokenRequest) desktopbroke
 	token.Connection.Type = strings.ToLower(strings.TrimSpace(protocol))
 	token.Connection.GuacdHost = strings.TrimSpace(req.GuacdHost)
 	token.Connection.GuacdPort = req.GuacdPort
+	token.Connection.GuacdCAPEM = strings.TrimSpace(req.GuacdCAPEM)
 	token.Connection.Settings = normalizeMetadata(req.Settings)
 	if len(req.Metadata) > 0 {
 		token.Metadata = normalizeMetadata(req.Metadata)

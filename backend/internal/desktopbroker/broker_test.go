@@ -2,6 +2,13 @@ package desktopbroker
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -200,6 +207,43 @@ func TestBrokerAcceptsNodeCompatibleTokenAndFlushesBufferedClientMessages(t *tes
 	}
 }
 
+func TestConnectGuacdUsesTokenCA(t *testing.T) {
+	t.Parallel()
+
+	caPEM, serverCert := testGuacdCertificate(t)
+	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{Certificates: []tls.Certificate{serverCert}})
+	if err != nil {
+		t.Fatalf("listen tls guacd: %v", err)
+	}
+	defer listener.Close()
+
+	accepted := make(chan struct{})
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		if tlsConn, ok := conn.(*tls.Conn); ok {
+			_ = tlsConn.Handshake()
+		}
+		close(accepted)
+	}()
+
+	broker := NewBroker(BrokerConfig{GuacdTLS: true})
+	conn, err := broker.connectGuacd(strings.Split(listener.Addr().String(), ":")[0], listener.Addr().(*net.TCPAddr).Port, string(caPEM))
+	if err != nil {
+		t.Fatalf("connectGuacd returned error: %v", err)
+	}
+	_ = conn.Close()
+
+	select {
+	case <-accepted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for guacd tls accept")
+	}
+}
+
 func TestBrokerRejectsExpiredObserverToken(t *testing.T) {
 	t.Parallel()
 
@@ -231,4 +275,58 @@ func TestBrokerRejectsExpiredObserverToken(t *testing.T) {
 	if string(payload) != EncodeInstruction("error", "Token validation failed", "INVALID_TOKEN") {
 		t.Fatalf("unexpected expired-token payload: %q", string(payload))
 	}
+}
+
+func testGuacdCertificate(t *testing.T) ([]byte, tls.Certificate) {
+	t.Helper()
+
+	caKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate ca key: %v", err)
+	}
+	now := time.Now().UTC()
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test-ca"},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, caKey.Public(), caKey)
+	if err != nil {
+		t.Fatalf("create ca cert: %v", err)
+	}
+
+	serverKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate server key: %v", err)
+	}
+	serverTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(2),
+		Subject:               pkix.Name{CommonName: "arsenale-guacd"},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              now.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+	}
+	serverDER, err := x509.CreateCertificate(rand.Reader, serverTemplate, caTemplate, serverKey.Public(), caKey)
+	if err != nil {
+		t.Fatalf("create server cert: %v", err)
+	}
+
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	serverPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: serverDER})
+	serverKeyDER, err := x509.MarshalPKCS8PrivateKey(serverKey)
+	if err != nil {
+		t.Fatalf("marshal server key: %v", err)
+	}
+	serverKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: serverKeyDER})
+	cert, err := tls.X509KeyPair(serverPEM, serverKeyPEM)
+	if err != nil {
+		t.Fatalf("parse server key pair: %v", err)
+	}
+	return caPEM, cert
 }

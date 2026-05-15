@@ -89,13 +89,21 @@ WHERE id = $1
 	}
 
 	if mtlsDetails != nil {
-		if err := s.insertAuditLogTx(ctx, tx, claims.UserID, "TUNNEL_TOKEN_GENERATE", gatewayID, map[string]any{
-			"mtlsCertsGenerated": true,
-			"tenantId":           claims.TenantID,
-			"tenantCaGenerated":  mtlsDetails.tenantCAGenerated,
-			"caFingerprint":      truncateString(mtlsDetails.caFingerprint, 16),
-			"clientCertExpiry":   mtlsDetails.clientExpiry.UTC().Format(time.RFC3339),
-		}, ipAddress); err != nil {
+		details := map[string]any{
+			"mtlsCertsGenerated":   true,
+			"tenantId":             claims.TenantID,
+			"tenantCaGenerated":    mtlsDetails.tenantCAGenerated,
+			"caFingerprint":        truncateString(mtlsDetails.caFingerprint, 16),
+			"clientCertGenerated":  mtlsDetails.clientGenerated,
+			"serviceCertGenerated": mtlsDetails.serviceGenerated,
+		}
+		if !mtlsDetails.clientExpiry.IsZero() {
+			details["clientCertExpiry"] = mtlsDetails.clientExpiry.UTC().Format(time.RFC3339)
+		}
+		if !mtlsDetails.serviceExpiry.IsZero() {
+			details["serviceCertExpiry"] = mtlsDetails.serviceExpiry.UTC().Format(time.RFC3339)
+		}
+		if err := s.insertAuditLogTx(ctx, tx, claims.UserID, "TUNNEL_TOKEN_GENERATE", gatewayID, details, ipAddress); err != nil {
 			return tunnelTokenResponse{}, err
 		}
 	}
@@ -120,27 +128,52 @@ WHERE id = $1
 
 func (s Service) loadTunnelTokenBundleTx(ctx context.Context, tx pgx.Tx, tenantID, gatewayID string) (tunnelTokenResponse, error) {
 	var (
-		gatewayType         string
-		gatewayPort         int
-		tunnelClientCert    *string
-		tunnelClientKey     *string
-		tunnelClientKeyIV   *string
-		tunnelClientKeyTag  *string
-		tunnelClientCertExp sql.NullTime
+		gatewayType          string
+		gatewayPort          int
+		tenantCACert         *string
+		tunnelClientCert     *string
+		tunnelClientKey      *string
+		tunnelClientKeyIV    *string
+		tunnelClientKeyTag   *string
+		tunnelClientCertExp  sql.NullTime
+		tunnelServiceCert    *string
+		tunnelServiceKey     *string
+		tunnelServiceKeyIV   *string
+		tunnelServiceKeyTag  *string
+		tunnelServiceCertExp sql.NullTime
 	)
 	if err := tx.QueryRow(ctx, `
-SELECT type::text, port, "tunnelClientCert", "tunnelClientKey", "tunnelClientKeyIV", "tunnelClientKeyTag", "tunnelClientCertExp"
-FROM "Gateway"
-WHERE id = $1
-  AND "tenantId" = $2
+SELECT g.type::text,
+       g.port,
+       t."tunnelCaCert",
+       g."tunnelClientCert",
+       g."tunnelClientKey",
+       g."tunnelClientKeyIV",
+       g."tunnelClientKeyTag",
+       g."tunnelClientCertExp",
+       g."tunnelServiceCert",
+       g."tunnelServiceKey",
+       g."tunnelServiceKeyIV",
+       g."tunnelServiceKeyTag",
+       g."tunnelServiceCertExp"
+FROM "Gateway" g
+JOIN "Tenant" t ON t.id = g."tenantId"
+WHERE g.id = $1
+  AND g."tenantId" = $2
 `, gatewayID, tenantID).Scan(
 		&gatewayType,
 		&gatewayPort,
+		&tenantCACert,
 		&tunnelClientCert,
 		&tunnelClientKey,
 		&tunnelClientKeyIV,
 		&tunnelClientKeyTag,
 		&tunnelClientCertExp,
+		&tunnelServiceCert,
+		&tunnelServiceKey,
+		&tunnelServiceKeyIV,
+		&tunnelServiceKeyTag,
+		&tunnelServiceCertExp,
 	); err != nil {
 		return tunnelTokenResponse{}, mapLoadGatewayError(err)
 	}
@@ -159,7 +192,7 @@ WHERE id = $1
 		certExp = &tunnelClientCertExp.Time
 	}
 
-	return tunnelTokenResponse{
+	response := tunnelTokenResponse{
 		GatewayID:        gatewayID,
 		GatewayType:      gatewayType,
 		TunnelLocalHost:  gatewayruntime.TunnelLocalHost(gatewayType),
@@ -167,7 +200,26 @@ WHERE id = $1
 		TunnelClientCert: strings.TrimSpace(derefString(tunnelClientCert)),
 		TunnelClientKey:  strings.TrimSpace(clientKey),
 		TunnelClientExp:  certExp,
-	}, nil
+	}
+
+	if gatewayruntime.ServiceTLSRequired(gatewayType) {
+		serviceKey, err := decryptEncryptedField(s.ServerEncryptionKey, encryptedField{
+			Ciphertext: derefString(tunnelServiceKey),
+			IV:         derefString(tunnelServiceKeyIV),
+			Tag:        derefString(tunnelServiceKeyTag),
+		})
+		if err != nil {
+			return tunnelTokenResponse{}, fmt.Errorf("decrypt tunnel service key: %w", err)
+		}
+		response.TunnelServiceCert = strings.TrimSpace(derefString(tunnelServiceCert))
+		response.TunnelServiceKey = strings.TrimSpace(serviceKey)
+		response.TunnelServiceCA = strings.TrimSpace(derefString(tenantCACert))
+		if tunnelServiceCertExp.Valid {
+			response.TunnelServiceExp = &tunnelServiceCertExp.Time
+		}
+	}
+
+	return response, nil
 }
 
 func tunnelLocalPortForGateway(gatewayType string, configuredPort int) int {

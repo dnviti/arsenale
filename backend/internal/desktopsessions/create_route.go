@@ -83,6 +83,7 @@ func (s Service) resolveDesktopRoute(ctx context.Context, tenantID string, expli
 		}
 		route.GuacdHost = strings.TrimSpace(proxy.Host)
 		route.GuacdPort = proxy.Port
+		route.GuacdCAPEM = strings.TrimSpace(gateway.TunnelCAPEM)
 	}
 
 	return route, nil
@@ -105,9 +106,20 @@ func (s Service) loadRoutingGateway(ctx context.Context, tenantID string, explic
 func (s Service) loadGatewayByID(ctx context.Context, gatewayID string) (*gatewaySnapshot, error) {
 	var gateway gatewaySnapshot
 	if err := s.DB.QueryRow(ctx, `
-SELECT id, "tenantId", type::text, host, port, "isManaged", "deploymentMode"::text, "tunnelEnabled", COALESCE("lbStrategy"::text, 'ROUND_ROBIN'), COALESCE("egressPolicy", '{"rules":[]}'::jsonb)
-FROM "Gateway"
-WHERE id = $1
+SELECT g.id,
+       g."tenantId",
+       g.type::text,
+       g.host,
+       g.port,
+       g."isManaged",
+       g."deploymentMode"::text,
+       g."tunnelEnabled",
+       COALESCE(t."tunnelCaCert", ''),
+       COALESCE(g."lbStrategy"::text, 'ROUND_ROBIN'),
+       COALESCE(g."egressPolicy", '{"rules":[]}'::jsonb)
+FROM "Gateway" g
+JOIN "Tenant" t ON t.id = g."tenantId"
+WHERE g.id = $1
 `, gatewayID).Scan(
 		&gateway.ID,
 		&gateway.TenantID,
@@ -117,6 +129,7 @@ WHERE id = $1
 		&gateway.IsManaged,
 		&gateway.DeploymentMode,
 		&gateway.TunnelEnabled,
+		&gateway.TunnelCAPEM,
 		&gateway.LBStrategy,
 		&gateway.EgressPolicy,
 	); err != nil {
@@ -135,11 +148,22 @@ func (s Service) loadDefaultGateway(ctx context.Context, tenantID string) (*gate
 
 	var gateway gatewaySnapshot
 	if err := s.DB.QueryRow(ctx, `
-SELECT id, "tenantId", type::text, host, port, "isManaged", "deploymentMode"::text, "tunnelEnabled", COALESCE("lbStrategy"::text, 'ROUND_ROBIN'), COALESCE("egressPolicy", '{"rules":[]}'::jsonb)
-FROM "Gateway"
-WHERE "tenantId" = $1
-  AND type = 'GUACD'::"GatewayType"
-  AND "isDefault" = true
+SELECT g.id,
+       g."tenantId",
+       g.type::text,
+       g.host,
+       g.port,
+       g."isManaged",
+       g."deploymentMode"::text,
+       g."tunnelEnabled",
+       COALESCE(t."tunnelCaCert", ''),
+       COALESCE(g."lbStrategy"::text, 'ROUND_ROBIN'),
+       COALESCE(g."egressPolicy", '{"rules":[]}'::jsonb)
+FROM "Gateway" g
+JOIN "Tenant" t ON t.id = g."tenantId"
+WHERE g."tenantId" = $1
+  AND g.type = 'GUACD'::"GatewayType"
+  AND g."isDefault" = true
 LIMIT 1
 `, tenantID).Scan(
 		&gateway.ID,
@@ -150,6 +174,7 @@ LIMIT 1
 		&gateway.IsManaged,
 		&gateway.DeploymentMode,
 		&gateway.TunnelEnabled,
+		&gateway.TunnelCAPEM,
 		&gateway.LBStrategy,
 		&gateway.EgressPolicy,
 	); err != nil {

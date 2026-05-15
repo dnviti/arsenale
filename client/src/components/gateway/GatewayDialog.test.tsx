@@ -61,6 +61,10 @@ const tunnelBundle: TunnelTokenResponse = {
   tunnelClientCert: '-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----',
   tunnelClientKey: '-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----',
   tunnelClientCertExp: '2026-08-14T00:00:00.000Z',
+  tunnelServiceCert: '-----BEGIN CERTIFICATE-----\nguacd-cert\n-----END CERTIFICATE-----',
+  tunnelServiceKey: '-----BEGIN PRIVATE KEY-----\nguacd-key\n-----END PRIVATE KEY-----',
+  tunnelServiceCaCert: '-----BEGIN CERTIFICATE-----\nguacd-ca\n-----END CERTIFICATE-----',
+  tunnelServiceCertExp: '2026-08-14T00:00:00.000Z',
 };
 
 describe('GatewayDialog', () => {

@@ -94,6 +94,7 @@ func TestTunnelTokenEnvContent(t *testing.T) {
 	bundle := tunnelTokenBundle{
 		Token:            "tok",
 		GatewayID:        "gw-1",
+		GatewayType:      "MANAGED_SSH",
 		TunnelLocalHost:  "127.0.0.1",
 		TunnelLocalPort:  2222,
 		TunnelClientCert: "cert",
@@ -159,8 +160,9 @@ func TestWriteTunnelTokenBundle(t *testing.T) {
 	bundle := tunnelTokenBundle{
 		Token:            "tok",
 		GatewayID:        "gw-1",
+		GatewayType:      "MANAGED_SSH",
 		TunnelLocalHost:  "127.0.0.1",
-		TunnelLocalPort:  4822,
+		TunnelLocalPort:  2222,
 		TunnelClientCert: "-----BEGIN CERTIFICATE-----\ncert\n-----END CERTIFICATE-----",
 		TunnelClientKey:  "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----",
 	}
@@ -177,6 +179,8 @@ func TestWriteTunnelTokenBundle(t *testing.T) {
 		filepath.Join(tempDir, "certs", "tunnel-client-cert.pem"): 0644,
 		filepath.Join(tempDir, "certs", "tunnel-client-key.pem"):  0600,
 		filepath.Join(tempDir, "tunnel.env"):                      0600,
+		filepath.Join(tempDir, "docker-compose.yml"):              0600,
+		filepath.Join(tempDir, "install.sh"):                      0700,
 	}
 	for path, wantMode := range expectedModes {
 		info, err := os.Stat(path)
@@ -185,6 +189,68 @@ func TestWriteTunnelTokenBundle(t *testing.T) {
 		}
 		if got := info.Mode().Perm(); got != wantMode {
 			t.Fatalf("%s mode = %o, want %o", path, got, wantMode)
+		}
+	}
+
+	compose, err := os.ReadFile(filepath.Join(tempDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatalf("read docker-compose.yml: %v", err)
+	}
+	if !strings.Contains(string(compose), "pull_policy: always") {
+		t.Fatalf("expected docker compose to include pull_policy: always, got:\n%s", compose)
+	}
+	if !strings.Contains(string(compose), "image: ghcr.io/dnviti/arsenale/ssh-gateway:stable") {
+		t.Fatalf("expected ssh gateway image in compose, got:\n%s", compose)
+	}
+}
+
+func TestWriteTunnelTokenBundleIncludesGuacdServiceTLS(t *testing.T) {
+	tempDir := t.TempDir()
+	bundle := tunnelTokenBundle{
+		Token:               "tok",
+		GatewayID:           "gw-guacd",
+		GatewayType:         "GUACD",
+		TunnelLocalHost:     "127.0.0.1",
+		TunnelLocalPort:     4822,
+		TunnelClientCert:    "-----BEGIN CERTIFICATE-----\nclient-cert\n-----END CERTIFICATE-----",
+		TunnelClientKey:     "-----BEGIN PRIVATE KEY-----\nclient-key\n-----END PRIVATE KEY-----",
+		TunnelServiceCert:   "-----BEGIN CERTIFICATE-----\nguacd-cert\n-----END CERTIFICATE-----",
+		TunnelServiceKey:    "-----BEGIN PRIVATE KEY-----\nguacd-key\n-----END PRIVATE KEY-----",
+		TunnelServiceCACert: "-----BEGIN CERTIFICATE-----\nguacd-ca\n-----END CERTIFICATE-----",
+	}
+
+	if _, err := writeTunnelTokenBundle(tempDir, bundle, "https://arsenale.example.com"); err != nil {
+		t.Fatalf("writeTunnelTokenBundle returned error: %v", err)
+	}
+
+	expectedFiles := map[string]string{
+		filepath.Join(tempDir, "certs", "guacd-server-cert.pem"): "guacd-cert",
+		filepath.Join(tempDir, "certs", "guacd-server-key.pem"):  "guacd-key",
+		filepath.Join(tempDir, "certs", "guacd-ca.pem"):          "guacd-ca",
+	}
+	for path, want := range expectedFiles {
+		payload, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("expected %s to exist: %v", path, err)
+		}
+		if !strings.Contains(string(payload), want) {
+			t.Fatalf("%s did not contain %q: %s", path, want, payload)
+		}
+	}
+
+	compose, err := os.ReadFile(filepath.Join(tempDir, "docker-compose.yml"))
+	if err != nil {
+		t.Fatalf("read docker-compose.yml: %v", err)
+	}
+	for _, want := range []string{
+		"image: ghcr.io/dnviti/arsenale/guacd:stable",
+		"pull_policy: always",
+		"GUACD_SSL: \"true\"",
+		"./certs/guacd-server-cert.pem:/certs/guacd-server-cert.pem:ro",
+		"./certs/guacd-server-key.pem:/certs/guacd-server-key.pem:ro",
+	} {
+		if !strings.Contains(string(compose), want) {
+			t.Fatalf("expected compose to include %q, got:\n%s", want, compose)
 		}
 	}
 }

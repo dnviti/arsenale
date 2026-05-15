@@ -4,6 +4,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -12,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -64,22 +66,9 @@ func generateCACert(commonName string) (string, string, error) {
 }
 
 func generateClientCertificate(caCertPEM, caKeyPEM, commonName, spiffeID string) (string, string, time.Time, error) {
-	caCertBlock, _ := pem.Decode([]byte(caCertPEM))
-	if caCertBlock == nil {
-		return "", "", time.Time{}, errors.New("decode CA certificate PEM")
-	}
-	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+	caCert, caKey, err := parseTunnelCA(caCertPEM, caKeyPEM)
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("parse CA certificate: %w", err)
-	}
-
-	caKeyBlock, _ := pem.Decode([]byte(caKeyPEM))
-	if caKeyBlock == nil {
-		return "", "", time.Time{}, errors.New("decode CA private key PEM")
-	}
-	caKey, err := parseTunnelCAPrivateKey(caKeyBlock)
-	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("parse CA private key: %w", err)
+		return "", "", time.Time{}, err
 	}
 
 	uri, err := url.Parse(spiffeID)
@@ -118,6 +107,77 @@ func generateClientCertificate(caCertPEM, caKeyPEM, commonName, spiffeID string)
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	return string(certPEM), string(keyPEM), expiry, nil
+}
+
+func generateServerCertificate(caCertPEM, caKeyPEM, commonName string, dnsNames []string, ipAddresses []net.IP, uriSANs []string) (string, string, time.Time, error) {
+	caCert, caKey, err := parseTunnelCA(caCertPEM, caKeyPEM)
+	if err != nil {
+		return "", "", time.Time{}, err
+	}
+
+	uris := make([]*url.URL, 0, len(uriSANs))
+	for _, rawURI := range uriSANs {
+		uri, err := url.Parse(rawURI)
+		if err != nil {
+			return "", "", time.Time{}, fmt.Errorf("parse service URI SAN: %w", err)
+		}
+		uris = append(uris, uri)
+	}
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		return "", "", time.Time{}, fmt.Errorf("generate server key pair: %w", err)
+	}
+
+	now := time.Now().UTC()
+	expiry := now.Add(tunnelServiceValidityDays * 24 * time.Hour)
+	template := &x509.Certificate{
+		SerialNumber:          randomSerialNumber(),
+		Subject:               pkix.Name{CommonName: commonName, Organization: []string{"Arsenale"}},
+		NotBefore:             now.Add(-time.Minute),
+		NotAfter:              expiry,
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              dnsNames,
+		IPAddresses:           ipAddresses,
+		URIs:                  uris,
+	}
+
+	der, err := x509.CreateCertificate(rand.Reader, template, caCert, privateKey.Public(), caKey)
+	if err != nil {
+		return "", "", time.Time{}, fmt.Errorf("create server certificate: %w", err)
+	}
+
+	keyDER, err := x509.MarshalPKCS8PrivateKey(privateKey)
+	if err != nil {
+		return "", "", time.Time{}, fmt.Errorf("marshal server private key: %w", err)
+	}
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	return string(certPEM), string(keyPEM), expiry, nil
+}
+
+func parseTunnelCA(caCertPEM, caKeyPEM string) (*x509.Certificate, crypto.Signer, error) {
+	caCertBlock, _ := pem.Decode([]byte(caCertPEM))
+	if caCertBlock == nil {
+		return nil, nil, errors.New("decode CA certificate PEM")
+	}
+	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse CA certificate: %w", err)
+	}
+
+	caKeyBlock, _ := pem.Decode([]byte(caKeyPEM))
+	if caKeyBlock == nil {
+		return nil, nil, errors.New("decode CA private key PEM")
+	}
+	caKey, err := parseTunnelCAPrivateKey(caKeyBlock)
+	if err != nil {
+		return nil, nil, fmt.Errorf("parse CA private key: %w", err)
+	}
+	return caCert, caKey, nil
 }
 
 func parseTunnelCAPrivateKey(block *pem.Block) (crypto.Signer, error) {
@@ -168,6 +228,14 @@ func buildGatewaySPIFFEID(trustDomain, gatewayID string) string {
 		domain = defaultTunnelTrustDomain
 	}
 	return fmt.Sprintf("spiffe://%s/gateway/%s", domain, url.PathEscape(strings.TrimSpace(gatewayID)))
+}
+
+func buildGatewayServiceSPIFFEID(trustDomain, gatewayID, serviceName string) string {
+	domain := strings.ToLower(strings.TrimSpace(trustDomain))
+	if domain == "" {
+		domain = defaultTunnelTrustDomain
+	}
+	return fmt.Sprintf("spiffe://%s/gateway/%s/service/%s", domain, url.PathEscape(strings.TrimSpace(gatewayID)), url.PathEscape(strings.TrimSpace(serviceName)))
 }
 
 func truncateString(value string, limit int) string {

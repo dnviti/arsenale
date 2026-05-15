@@ -88,10 +88,11 @@ func (s Service) createVNCSession(ctx context.Context, claims authn.Claims, payl
 		RoutingDecision: route.RoutingDecision,
 		RecordingID:     recordingID,
 		Token: DesktopTokenRequest{
-			GuacdHost: route.GuacdHost,
-			GuacdPort: route.GuacdPort,
-			Settings:  tokenSettings,
-			Metadata:  tokenMetadata,
+			GuacdHost:  route.GuacdHost,
+			GuacdPort:  route.GuacdPort,
+			GuacdCAPEM: route.GuacdCAPEM,
+			Settings:   tokenSettings,
+			Metadata:   tokenMetadata,
 		},
 	})
 	if err != nil {

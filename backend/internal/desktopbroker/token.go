@@ -33,11 +33,12 @@ type TokenEnvelope struct {
 type ConnectionToken struct {
 	ExpiresAt  time.Time `json:"expiresAt,omitempty"`
 	Connection struct {
-		Type      string         `json:"type"`
-		Join      string         `json:"join,omitempty"`
-		GuacdHost string         `json:"guacdHost,omitempty"`
-		GuacdPort int            `json:"guacdPort,omitempty"`
-		Settings  map[string]any `json:"settings"`
+		Type       string         `json:"type"`
+		Join       string         `json:"join,omitempty"`
+		GuacdHost  string         `json:"guacdHost,omitempty"`
+		GuacdPort  int            `json:"guacdPort,omitempty"`
+		GuacdCAPEM string         `json:"guacdCaPem,omitempty"`
+		Settings   map[string]any `json:"settings"`
 	} `json:"connection"`
 	Metadata map[string]any `json:"metadata,omitempty"`
 }

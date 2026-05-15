@@ -21,6 +21,7 @@ interface GatewayRuntimeInstall {
   listenerEnvKey: string;
   containerUid: number;
   containerGid: number;
+  requiresServiceTLS: boolean;
   setupCommands: string[];
   extraEnvironment: string[];
   publicMountPaths: string[];
@@ -32,6 +33,7 @@ const certPath = './certs/tunnel-client-cert.pem';
 const keyPath = './certs/tunnel-client-key.pem';
 const guacdCertPath = './certs/guacd-server-cert.pem';
 const guacdKeyPath = './certs/guacd-server-key.pem';
+const guacdCAPath = './certs/guacd-ca.pem';
 const containerCertPath = '/tunnel-certs/client-cert.pem';
 const containerKeyPath = '/tunnel-certs/client-key.pem';
 const containerGuacdCertPath = '/certs/guacd-server-cert.pem';
@@ -46,6 +48,7 @@ export function buildTunnelInstallBundle({
   const localHost = tokenBundle.tunnelLocalHost || '127.0.0.1';
   const localPort = tokenBundle.tunnelLocalPort || runtime.defaultLocalPort || gateway.port;
   const gatewayID = tokenBundle.gatewayId || gateway.id;
+  assertServiceTLSMaterial(runtime, tokenBundle);
   const envContent = [
     envLine('TUNNEL_SERVER_URL', trimServerUrl(serverUrl)),
     envLine('TUNNEL_TOKEN', tokenBundle.token),
@@ -85,6 +88,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         listenerEnvKey: 'SSH_PORT',
         containerUid: 1000,
         containerGid: 1000,
+        requiresServiceTLS: false,
         setupCommands: [],
         extraEnvironment: [],
         publicMountPaths: [],
@@ -99,6 +103,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         listenerEnvKey: 'DB_LISTEN_PORT',
         containerUid: 100,
         containerGid: 101,
+        requiresServiceTLS: false,
         setupCommands: [],
         extraEnvironment: [],
         publicMountPaths: [],
@@ -113,6 +118,7 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         listenerEnvKey: 'SSH_PORT',
         containerUid: 1000,
         containerGid: 1000,
+        requiresServiceTLS: false,
         setupCommands: [],
         extraEnvironment: [],
         publicMountPaths: [],
@@ -128,16 +134,10 @@ function gatewayRuntimeInstall(type: GatewayData['type']): GatewayRuntimeInstall
         listenerEnvKey: 'GUACD_PORT',
         containerUid: 100,
         containerGid: 101,
-        setupCommands: [
-          `if [ ! -f ${guacdCertPath} ] || [ ! -f ${guacdKeyPath} ]; then`,
-          '  command -v openssl >/dev/null || { echo "openssl is required to generate GUACD TLS certificates" >&2; exit 1; }',
-          `  openssl req -x509 -newkey rsa:3072 -nodes -days 365 -subj "/CN=arsenale-guacd" -keyout ${guacdKeyPath} -out ${guacdCertPath}`,
-          'fi',
-          `chmod 644 ${guacdCertPath}`,
-          `chmod 600 ${guacdKeyPath}`,
-        ],
+        requiresServiceTLS: true,
+        setupCommands: [],
         extraEnvironment: ['GUACD_SSL: "true"', `GUACD_SSL_CERT: ${containerGuacdCertPath}`, `GUACD_SSL_KEY: ${containerGuacdKeyPath}`],
-        publicMountPaths: [guacdCertPath],
+        publicMountPaths: [guacdCertPath, guacdCAPath],
         privateMountPaths: [guacdKeyPath],
         volumes: [
           'guacd-drive:/guacd-drive',
@@ -220,6 +220,7 @@ function buildInstallCommands(
     'EOF',
     `chmod 644 ${certPath}`,
     `chmod 600 ${keyPath}`,
+    ...serviceTLSFileCommands(tokenBundle, runtime),
     'if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then',
     '  compose_cmd="docker compose"',
     'elif command -v podman-compose >/dev/null 2>&1; then',
@@ -229,6 +230,7 @@ function buildInstallCommands(
     '  exit 1',
     'fi',
     ...podmanRootlessPrivateFileCommands(privateMountPaths, runtime),
+    ...serviceTLSVerifyCommands(runtime),
     "cat > tunnel.env <<'EOF'",
     stringsTrimWithNewline(envContent),
     'EOF',
@@ -238,6 +240,46 @@ function buildInstallCommands(
     'EOF',
     '$compose_cmd --env-file tunnel.env up -d',
   ].join('\n');
+}
+
+function assertServiceTLSMaterial(runtime: GatewayRuntimeInstall, tokenBundle: TunnelTokenResponse): void {
+  if (!runtime.requiresServiceTLS) {
+    return;
+  }
+  if (!tokenBundle.tunnelServiceCert || !tokenBundle.tunnelServiceKey || !tokenBundle.tunnelServiceCaCert) {
+    throw new Error('GUACD tunnel token response did not include platform-issued service TLS material');
+  }
+}
+
+function serviceTLSFileCommands(tokenBundle: TunnelTokenResponse, runtime: GatewayRuntimeInstall): string[] {
+  if (!runtime.requiresServiceTLS) {
+    return [];
+  }
+  return [
+    `cat > ${guacdCertPath} <<'EOF'`,
+    stringsTrimWithNewline(tokenBundle.tunnelServiceCert ?? ''),
+    'EOF',
+    `cat > ${guacdKeyPath} <<'EOF'`,
+    stringsTrimWithNewline(tokenBundle.tunnelServiceKey ?? ''),
+    'EOF',
+    `cat > ${guacdCAPath} <<'EOF'`,
+    stringsTrimWithNewline(tokenBundle.tunnelServiceCaCert ?? ''),
+    'EOF',
+    `chmod 644 ${guacdCertPath}`,
+    `chmod 600 ${guacdKeyPath}`,
+    `chmod 644 ${guacdCAPath}`,
+  ];
+}
+
+function serviceTLSVerifyCommands(runtime: GatewayRuntimeInstall): string[] {
+  if (!runtime.requiresServiceTLS) {
+    return [];
+  }
+  return [
+    'if command -v openssl >/dev/null 2>&1; then',
+    `  openssl verify -CAfile ${guacdCAPath} ${guacdCertPath} >/dev/null`,
+    'fi',
+  ];
 }
 
 function restorePodmanRootlessOwnershipCommands(paths: string[]): string[] {

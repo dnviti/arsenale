@@ -15,6 +15,13 @@ const tokenBundle: TunnelTokenResponse = {
   tunnelClientCertExp: '2026-08-14T00:00:00.000Z',
 };
 
+const guacdServiceTLS = {
+  tunnelServiceCert: '-----BEGIN CERTIFICATE-----\nguacd-cert\n-----END CERTIFICATE-----',
+  tunnelServiceKey: '-----BEGIN PRIVATE KEY-----\nguacd-key\n-----END PRIVATE KEY-----',
+  tunnelServiceCaCert: '-----BEGIN CERTIFICATE-----\nguacd-ca\n-----END CERTIFICATE-----',
+  tunnelServiceCertExp: '2026-08-14T00:00:00.000Z',
+};
+
 const gateway: Pick<GatewayData, 'id' | 'type' | 'host' | 'port'> = {
   id: 'gateway-1',
   type: 'MANAGED_SSH',
@@ -61,7 +68,7 @@ describe('buildTunnelInstallBundle', () => {
   it('uses the SSH gateway runtime for SSH bastion bundles', () => {
     const bundle = buildTunnelInstallBundle({
       gateway: { ...gateway, type: 'SSH_BASTION', port: 2022 },
-      tokenBundle: { ...tokenBundle, gatewayType: 'SSH_BASTION', tunnelLocalPort: 2022 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'SSH_BASTION', tunnelLocalPort: 2222 },
       serverUrl: 'https://arsenale.example.com',
     });
 
@@ -69,8 +76,8 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/ssh-gateway:stable');
     expect(bundle.dockerCompose).toContain('image: ghcr.io/dnviti/arsenale/ssh-gateway:stable');
     expect(bundle.dockerCompose).not.toContain('SSH_PORT: "${SSH_PORT:-2022}"');
-    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2022"');
-    expect(bundle.envContent).toContain('SSH_PORT="2022"');
+    expect(bundle.envContent).toContain('TUNNEL_LOCAL_PORT="2222"');
+    expect(bundle.envContent).toContain('SSH_PORT="2222"');
   });
 
   it('uses a gateway-specific install directory for multiple remote enrollments', () => {
@@ -88,7 +95,7 @@ describe('buildTunnelInstallBundle', () => {
   it('points GUACD bundles at the runtime-managed tunnel listener', () => {
     const bundle = buildTunnelInstallBundle({
       gateway: { ...gateway, type: 'GUACD', port: 14822 },
-      tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 4822 },
+      tokenBundle: { ...tokenBundle, ...guacdServiceTLS, gatewayType: 'GUACD', tunnelLocalPort: 4822 },
       serverUrl: 'https://arsenale.example.com',
     });
 
@@ -108,7 +115,11 @@ describe('buildTunnelInstallBundle', () => {
     expect(topLevelVolumes).toContain('  guacd-recordings:');
     expect(topLevelVolumes).not.toContain('./certs/guacd-server-cert.pem');
     expect(topLevelVolumes).not.toContain('./certs/guacd-server-key.pem');
-    expect(bundle.installCommands).toContain('openssl req -x509');
+    expect(bundle.installCommands).not.toContain('openssl req -x509');
+    expect(bundle.installCommands).toContain('guacd-cert');
+    expect(bundle.installCommands).toContain('guacd-key');
+    expect(bundle.installCommands).toContain('guacd-ca');
+    expect(bundle.installCommands).toContain('openssl verify -CAfile ./certs/guacd-ca.pem ./certs/guacd-server-cert.pem');
     expect(bundle.installCommands).toContain('chmod 600 ./certs/guacd-server-key.pem');
     expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/tunnel-client-key.pem');
     expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/guacd-server-key.pem');
@@ -118,7 +129,7 @@ describe('buildTunnelInstallBundle', () => {
   it('does not use the gateway direct port when the token omits a managed tunnel port', () => {
     const bundle = buildTunnelInstallBundle({
       gateway: { ...gateway, type: 'GUACD', port: 3389 },
-      tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 0 },
+      tokenBundle: { ...tokenBundle, ...guacdServiceTLS, gatewayType: 'GUACD', tunnelLocalPort: 0 },
       serverUrl: 'https://arsenale.example.com',
     });
 
@@ -129,7 +140,7 @@ describe('buildTunnelInstallBundle', () => {
   it('uses the DB proxy runtime user for database tunnel bundles', () => {
     const bundle = buildTunnelInstallBundle({
       gateway: { ...gateway, type: 'DB_PROXY', port: 15432 },
-      tokenBundle: { ...tokenBundle, gatewayType: 'DB_PROXY', tunnelLocalPort: 15432 },
+      tokenBundle: { ...tokenBundle, gatewayType: 'DB_PROXY', tunnelLocalPort: 5432 },
       serverUrl: 'https://arsenale.example.com',
     });
 
@@ -137,7 +148,17 @@ describe('buildTunnelInstallBundle', () => {
     expect(bundle.gatewayImage).toBe('ghcr.io/dnviti/arsenale/db-proxy:stable');
     expect(bundle.dockerCompose).toContain('pull_policy: always');
     expect(bundle.dockerCompose).toContain('user: "0:0"');
-    expect(bundle.envContent).toContain('DB_LISTEN_PORT="15432"');
+    expect(bundle.envContent).toContain('DB_LISTEN_PORT="5432"');
     expect(bundle.installCommands).toContain('podman unshare chown 100:101 ./certs/tunnel-client-key.pem');
+  });
+
+  it('requires platform-issued service TLS for GUACD bundles', () => {
+    expect(() =>
+      buildTunnelInstallBundle({
+        gateway: { ...gateway, type: 'GUACD', port: 3389 },
+        tokenBundle: { ...tokenBundle, gatewayType: 'GUACD', tunnelLocalPort: 4822 },
+        serverUrl: 'https://arsenale.example.com',
+      }),
+    ).toThrow('service TLS material');
   });
 });

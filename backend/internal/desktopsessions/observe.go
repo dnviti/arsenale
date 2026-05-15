@@ -64,6 +64,7 @@ func buildDesktopObserverConnectionToken(protocol string, target sessions.Tenant
 	token.Connection.Join = strings.TrimSpace(target.GuacdConnectionID)
 	token.Connection.GuacdHost = strings.TrimSpace(route.GuacdHost)
 	token.Connection.GuacdPort = route.GuacdPort
+	token.Connection.GuacdCAPEM = strings.TrimSpace(route.GuacdCAPEM)
 	token.Connection.Settings = buildDesktopObserveSettings()
 	token.Metadata = normalizeMetadata(map[string]any{
 		"userId":           strings.TrimSpace(observerUserID),
@@ -120,6 +121,7 @@ func (s Service) resolveDesktopObserveRoute(ctx context.Context, gatewayID, inst
 		}
 		route.GuacdHost = strings.TrimSpace(proxy.Host)
 		route.GuacdPort = proxy.Port
+		route.GuacdCAPEM = strings.TrimSpace(gateway.TunnelCAPEM)
 	}
 
 	return route, nil

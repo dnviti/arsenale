@@ -1948,6 +1948,11 @@ type Gateway struct {
 	TunnelClientKeyIV        pgtype.Text
 	TunnelClientKeyTag       pgtype.Text
 	EgressPolicy             []byte
+	TunnelServiceCert        pgtype.Text
+	TunnelServiceCertExp     pgtype.Timestamp
+	TunnelServiceKey         pgtype.Text
+	TunnelServiceKeyIV       pgtype.Text
+	TunnelServiceKeyTag      pgtype.Text
 }
 
 type GatewayTemplate struct {

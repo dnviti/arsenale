@@ -13,14 +13,18 @@ import (
 )
 
 type tunnelTokenBundle struct {
-	Token               string `json:"token"`
-	GatewayID           string `json:"gatewayId"`
-	GatewayType         string `json:"gatewayType"`
-	TunnelLocalHost     string `json:"tunnelLocalHost"`
-	TunnelLocalPort     int    `json:"tunnelLocalPort"`
-	TunnelClientCert    string `json:"tunnelClientCert"`
-	TunnelClientKey     string `json:"tunnelClientKey"`
-	TunnelClientCertExp string `json:"tunnelClientCertExp"`
+	Token                string `json:"token"`
+	GatewayID            string `json:"gatewayId"`
+	GatewayType          string `json:"gatewayType"`
+	TunnelLocalHost      string `json:"tunnelLocalHost"`
+	TunnelLocalPort      int    `json:"tunnelLocalPort"`
+	TunnelClientCert     string `json:"tunnelClientCert"`
+	TunnelClientKey      string `json:"tunnelClientKey"`
+	TunnelClientCertExp  string `json:"tunnelClientCertExp"`
+	TunnelServiceCert    string `json:"tunnelServiceCert"`
+	TunnelServiceKey     string `json:"tunnelServiceKey"`
+	TunnelServiceCACert  string `json:"tunnelServiceCaCert"`
+	TunnelServiceCertExp string `json:"tunnelServiceCertExp"`
 }
 
 func runGwTunnelTokenCreate(cmd *cobra.Command, args []string) {
@@ -72,6 +76,12 @@ func parseTunnelTokenBundle(body []byte) (tunnelTokenBundle, error) {
 	}
 	if strings.TrimSpace(bundle.TunnelClientCert) == "" || strings.TrimSpace(bundle.TunnelClientKey) == "" {
 		return tunnelTokenBundle{}, fmt.Errorf("tunnel token response did not include client certificate material")
+	}
+	if gatewayruntime.ServiceTLSRequired(bundle.GatewayType) &&
+		(strings.TrimSpace(bundle.TunnelServiceCert) == "" ||
+			strings.TrimSpace(bundle.TunnelServiceKey) == "" ||
+			strings.TrimSpace(bundle.TunnelServiceCACert) == "") {
+		return tunnelTokenBundle{}, fmt.Errorf("tunnel token response did not include service TLS material")
 	}
 	return bundle, nil
 }
@@ -133,6 +143,9 @@ func writeTunnelTokenBundle(bundleDir string, bundle tunnelTokenBundle, serverUR
 	}
 	if err := os.Chmod(envPath, 0600); err != nil {
 		return "", fmt.Errorf("chmod tunnel env file: %w", err)
+	}
+	if err := writeTunnelComposeBundle(bundleDir, bundle, envContent); err != nil {
+		return "", err
 	}
 	return envPath, nil
 }

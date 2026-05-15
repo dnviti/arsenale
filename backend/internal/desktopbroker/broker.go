@@ -94,7 +94,7 @@ func (b *Broker) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		guacdPort = b.config.DefaultGuacdPort
 	}
 
-	guacdConn, err := b.connectGuacd(guacdHost, guacdPort)
+	guacdConn, err := b.connectGuacd(guacdHost, guacdPort, token.Connection.GuacdCAPEM)
 	if err != nil {
 		b.config.Logger.Warn("connect guacd failed", "host", guacdHost, "port", guacdPort, "error", err)
 		b.sendClientError(wsConn, mapGuacdError(err), "SERVICE_UNAVAILABLE")
@@ -116,7 +116,7 @@ func (b *Broker) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	session.run(r.Context())
 }
 
-func (b *Broker) connectGuacd(host string, port int) (net.Conn, error) {
+func (b *Broker) connectGuacd(host string, port int, tokenCAPEM string) (net.Conn, error) {
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	dialer := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 	if !b.config.GuacdTLS {
@@ -124,11 +124,15 @@ func (b *Broker) connectGuacd(host string, port int) (net.Conn, error) {
 	}
 
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if b.config.GuacdCAPath != "" {
-		caPEM, err := os.ReadFile(b.config.GuacdCAPath)
+	caPEM := []byte(strings.TrimSpace(tokenCAPEM))
+	if len(caPEM) == 0 && b.config.GuacdCAPath != "" {
+		payload, err := os.ReadFile(b.config.GuacdCAPath)
 		if err != nil {
 			return nil, fmt.Errorf("read guacd ca: %w", err)
 		}
+		caPEM = payload
+	}
+	if len(caPEM) > 0 {
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caPEM) {
 			return nil, errors.New("failed to append guacd ca certificate")
@@ -147,6 +151,7 @@ func (b *Broker) connectGuacd(host string, port int) (net.Conn, error) {
 				Roots:         pool,
 				CurrentTime:   time.Now(),
 				Intermediates: x509.NewCertPool(),
+				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}
 			for _, cert := range state.PeerCertificates[1:] {
 				opts.Intermediates.AddCert(cert)

@@ -36,6 +36,7 @@ type desktopRoute struct {
 	InstanceID          string
 	GuacdHost           string
 	GuacdPort           int
+	GuacdCAPEM          string
 	RoutingDecision     *sessions.RoutingDecision
 	RecordingGatewayDir string
 }
@@ -61,6 +62,7 @@ type gatewaySnapshot struct {
 	IsManaged      bool
 	DeploymentMode string
 	TunnelEnabled  bool
+	TunnelCAPEM    string
 	LBStrategy     string
 	EgressPolicy   json.RawMessage
 }

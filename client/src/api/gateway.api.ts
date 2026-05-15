@@ -471,6 +471,10 @@ export interface TunnelTokenResponse {
   tunnelClientCert: string;
   tunnelClientKey: string;
   tunnelClientCertExp?: string;
+  tunnelServiceCert?: string;
+  tunnelServiceKey?: string;
+  tunnelServiceCaCert?: string;
+  tunnelServiceCertExp?: string;
 }
 
 export interface TunnelOverviewData {
