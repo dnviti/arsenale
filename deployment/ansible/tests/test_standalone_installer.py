@@ -580,7 +580,8 @@ class StandaloneInstallerConfigTest(unittest.TestCase):
         prerequisite_text = PREREQUISITES_TASKS.read_text(encoding="utf-8")
 
         self.assertIn("name: Update Arsenale repository", prerequisite_text)
-        self.assertIn("update: true", prerequisite_text)
+        self.assertIn("git fetch --no-tags origin", prerequisite_text)
+        self.assertIn("git checkout --detach FETCH_HEAD", prerequisite_text)
         self.assertIn("_arsenale_source_tree.stat.exists", prerequisite_text)
         self.assertIn("arsenale_source_force_update | default(false)", prerequisite_text)
 

@@ -130,12 +130,18 @@
     - not _arsenale_source_tree.stat.exists
 
 - name: Update Arsenale repository
-  git:
-    repo: "{{ arsenale_repo }}"
-    dest: "{{ arsenale_home }}/arsenale"
-    version: "{{ arsenale_version }}"
-    force: "{{ arsenale_source_force_update | default(false) }}"
-    update: true
+  shell: |
+    set -euo pipefail
+    {% if arsenale_source_force_update | default(false) | bool %}
+    git reset --hard
+    git clean -fd
+    {% endif %}
+    git remote set-url origin {{ arsenale_repo | quote }}
+    git fetch --no-tags origin {{ arsenale_version | quote }}
+    git checkout --detach FETCH_HEAD
+  args:
+    chdir: "{{ arsenale_home }}/arsenale"
+    executable: /bin/bash
   when:
     - _build | default(true) | bool
     - _arsenale_source_tree.stat.exists
