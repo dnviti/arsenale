@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -100,6 +100,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const [tunnelEventsLoading, setTunnelEventsLoading] = useState(false);
   const [tunnelMetrics, setTunnelMetrics] = useState<TunnelMetricsData | null>(null);
   const [tunnelMetricsLoading, setTunnelMetricsLoading] = useState(false);
+  const preCreateTunnelEndpointRef = useRef<{ type: GatewayData['type']; host: string; port: string } | null>(null);
 
   const { loading, error, setError, run } = useAsyncAction();
   const { loading: scalingSaving, run: runScaling } = useAsyncAction();
@@ -150,6 +151,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     }
     setError(''); setTunnelBundle(null); setTunnelError(''); setTunnelDeploying(false);
     setEnableTunnelOnCreate(false); setCreatedGateway(null);
+    preCreateTunnelEndpointRef.current = null;
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
     setTunnelEvents([]); setTunnelMetrics(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -247,6 +249,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const handleEnableTunnel = async () => {
     if (!activeGateway) {
       setTunnelError('');
+      preCreateTunnelEndpointRef.current = { type, host, port };
       setEnableTunnelOnCreate(true);
       setHost('127.0.0.1');
       setPort(gatewayRuntimeDefaultPort(type));
@@ -265,6 +268,20 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     }, 'Failed to enable tunnel');
     setTunnelDeploying(false);
     if (!ok) setTunnelError('Failed to generate tunnel token');
+  };
+
+  const handleDisableTunnelOnCreate = () => {
+    setTunnelError('');
+    setEnableTunnelOnCreate(false);
+    const previousEndpoint = preCreateTunnelEndpointRef.current;
+    preCreateTunnelEndpointRef.current = null;
+    if (previousEndpoint?.type === type) {
+      setHost(previousEndpoint.host);
+      setPort(previousEndpoint.port || gatewayDirectDefaultPort(type));
+      return;
+    }
+    setHost('');
+    setPort(gatewayDirectDefaultPort(type));
   };
 
   const handleRotateTunnel = async () => {
@@ -528,7 +545,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                         <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
                           Tunnel will be enabled when the gateway is created. The one-time token and remote install commands will appear after creation.
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => setEnableTunnelOnCreate(false)}>
+                        <Button variant="outline" size="sm" onClick={handleDisableTunnelOnCreate}>
                           Disable Before Create
                         </Button>
                       </div>
