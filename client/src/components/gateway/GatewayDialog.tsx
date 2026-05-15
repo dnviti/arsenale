@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -100,6 +100,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const [tunnelEventsLoading, setTunnelEventsLoading] = useState(false);
   const [tunnelMetrics, setTunnelMetrics] = useState<TunnelMetricsData | null>(null);
   const [tunnelMetricsLoading, setTunnelMetricsLoading] = useState(false);
+  const preCreateTunnelEndpointRef = useRef<{ type: GatewayData['type']; host: string; port: string } | null>(null);
 
   const { loading, error, setError, run } = useAsyncAction();
   const { loading: scalingSaving, run: runScaling } = useAsyncAction();
@@ -150,6 +151,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     }
     setError(''); setTunnelBundle(null); setTunnelError(''); setTunnelDeploying(false);
     setEnableTunnelOnCreate(false); setCreatedGateway(null);
+    preCreateTunnelEndpointRef.current = null;
     setRotateConfirmOpen(false); setRevokeConfirmOpen(false); setDisconnectConfirmOpen(false);
     setTunnelEvents([]); setTunnelMetrics(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -157,24 +159,28 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
 
   const handleTypeChange = (newType: 'GUACD' | 'SSH_BASTION' | 'MANAGED_SSH' | 'DB_PROXY') => {
     setType(newType);
-    const defaultPort = newType === 'GUACD' ? '4822' : newType === 'MANAGED_SSH' ? '2222' : newType === 'DB_PROXY' ? '5432' : '22';
+    const defaultPort = enableTunnelOnCreate ? gatewayRuntimeDefaultPort(newType) : gatewayDirectDefaultPort(newType);
     if (!port || port === '4822' || port === '22' || port === '2222' || port === '5432') setPort(defaultPort);
     if (newType === 'MANAGED_SSH' && !apiPort) setApiPort('9022');
     else if (newType !== 'MANAGED_SSH') setApiPort('');
     if (newType === 'SSH_BASTION') setDeploymentMode('SINGLE_INSTANCE');
+    if (enableTunnelOnCreate) setHost('127.0.0.1');
   };
 
   const handleSubmit = async () => {
     setError('');
     if (!name.trim()) { setError('Gateway name is required'); return; }
-    if (!isGroupMode && !host.trim()) { setError('Host is required'); return; }
-    const portNum = parseInt(port, 10);
-    if (!port || isNaN(portNum) || portNum < 1 || portNum > 65535) { setError('Port must be between 1 and 65535'); return; }
+    const tunnelManagedCreate = !isEditMode && enableTunnelOnCreate && !isGroupMode;
+    const effectiveHost = tunnelManagedCreate ? '127.0.0.1' : host.trim();
+    const effectivePort = tunnelManagedCreate ? gatewayRuntimeDefaultPort(type) : port;
+    if (!isGroupMode && !tunnelManagedCreate && !host.trim()) { setError('Host is required'); return; }
+    const portNum = parseInt(effectivePort, 10);
+    if (!effectivePort || isNaN(portNum) || portNum < 1 || portNum > 65535) { setError('Port must be between 1 and 65535'); return; }
 
     const ok = await run(async () => {
       if (isEditMode && gateway) {
         const data: Record<string, unknown> = {};
-        const normalizedHost = isGroupMode ? '' : host.trim();
+        const normalizedHost = isGroupMode ? '' : effectiveHost;
         const existingDeploymentMode = gateway.deploymentMode ?? (gateway.isManaged ? 'MANAGED_GROUP' : 'SINGLE_INSTANCE');
         if (name.trim() !== gateway.name) data.name = name.trim();
         if (deploymentMode !== existingDeploymentMode) data.deploymentMode = deploymentMode;
@@ -203,7 +209,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
         const apiPortNum = apiPort ? parseInt(apiPort, 10) : undefined;
         const created = await createGateway({
           name: name.trim(), type, deploymentMode,
-          host: isGroupMode ? '' : host.trim(), port: portNum,
+          host: isGroupMode ? '' : effectiveHost, port: portNum,
           description: description.trim() || undefined, isDefault: isDefault || undefined,
           monitoringEnabled, monitorIntervalMs: parseInt(monitorIntervalMs, 10) || 5000,
           inactivityTimeoutSeconds: (parseInt(inactivityTimeout, 10) || 60) * 60,
@@ -243,7 +249,10 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
   const handleEnableTunnel = async () => {
     if (!activeGateway) {
       setTunnelError('');
+      preCreateTunnelEndpointRef.current = { type, host, port };
       setEnableTunnelOnCreate(true);
+      setHost('127.0.0.1');
+      setPort(gatewayRuntimeDefaultPort(type));
       setUiPref('tunnelSectionOpen', true);
       return;
     }
@@ -259,6 +268,20 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
     }, 'Failed to enable tunnel');
     setTunnelDeploying(false);
     if (!ok) setTunnelError('Failed to generate tunnel token');
+  };
+
+  const handleDisableTunnelOnCreate = () => {
+    setTunnelError('');
+    setEnableTunnelOnCreate(false);
+    const previousEndpoint = preCreateTunnelEndpointRef.current;
+    preCreateTunnelEndpointRef.current = null;
+    if (previousEndpoint?.type === type) {
+      setHost(previousEndpoint.host);
+      setPort(previousEndpoint.port || gatewayDirectDefaultPort(type));
+      return;
+    }
+    setHost('');
+    setPort(gatewayDirectDefaultPort(type));
   };
 
   const handleRotateTunnel = async () => {
@@ -438,8 +461,8 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
             </>
           ) : (
             <div className="flex gap-3">
-              <div className="flex-1 space-y-1.5"><Label htmlFor="gateway-host">Host</Label><Input id="gateway-host" value={host} onChange={(e) => setHost(e.target.value)} required readOnly={isTunnelEnabled && isEditMode} />{isTunnelEnabled && isEditMode && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
-              <div className="w-[120px] space-y-1.5"><Label htmlFor="gateway-port">Port</Label><Input id="gateway-port" value={port} onChange={(e) => setPort(e.target.value)} type="number" disabled={isTunnelEnabled && isEditMode} /></div>
+              <div className="flex-1 space-y-1.5"><Label htmlFor="gateway-host">Host</Label><Input id="gateway-host" value={host} onChange={(e) => setHost(e.target.value)} required readOnly={isTunnelEnabled} />{isTunnelEnabled && <p className="text-xs text-muted-foreground">Managed by tunnel</p>}</div>
+              <div className="w-[120px] space-y-1.5"><Label htmlFor="gateway-port">Port</Label><Input id="gateway-port" value={port} onChange={(e) => setPort(e.target.value)} type="number" disabled={isTunnelEnabled} /></div>
             </div>
           )}
           {type === 'SSH_BASTION' && (
@@ -522,7 +545,7 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
                         <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
                           Tunnel will be enabled when the gateway is created. The one-time token and remote install commands will appear after creation.
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => setEnableTunnelOnCreate(false)}>
+                        <Button variant="outline" size="sm" onClick={handleDisableTunnelOnCreate}>
                           Disable Before Create
                         </Button>
                       </div>
@@ -639,4 +662,32 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
       </DialogContent>
     </Dialog>
   );
+}
+
+function gatewayRuntimeDefaultPort(type: GatewayData['type']): string {
+  switch (type) {
+    case 'GUACD':
+      return '4822';
+    case 'MANAGED_SSH':
+    case 'SSH_BASTION':
+      return '2222';
+    case 'DB_PROXY':
+      return '5432';
+    default:
+      return '4822';
+  }
+}
+
+function gatewayDirectDefaultPort(type: GatewayData['type']): string {
+  switch (type) {
+    case 'GUACD':
+      return '4822';
+    case 'MANAGED_SSH':
+      return '2222';
+    case 'DB_PROXY':
+      return '5432';
+    case 'SSH_BASTION':
+    default:
+      return '22';
+  }
 }

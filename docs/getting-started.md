@@ -185,12 +185,12 @@ arsenale completion powershell
 Pin a version or install directory with environment variables:
 
 ```bash
-ARSENALE_VERSION=1.8.0 ARSENALE_INSTALL_DIR="$HOME/bin" \
+ARSENALE_VERSION=1.8.4 ARSENALE_INSTALL_DIR="$HOME/bin" \
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.sh)"
 ```
 
 ```powershell
-$env:ARSENALE_VERSION = "1.8.0"
+$env:ARSENALE_VERSION = "1.8.4"
 $env:ARSENALE_INSTALL_DIR = "$HOME\bin"
 irm https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale-cli/install.ps1 | iex
 ```

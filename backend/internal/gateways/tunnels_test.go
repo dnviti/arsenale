@@ -62,7 +62,7 @@ func TestTunnelMetricsFromStatus(t *testing.T) {
 		Connected:         true,
 		ConnectedAt:       "2026-03-31T01:02:03Z",
 		LastHeartbeatAt:   "2026-03-31T01:03:04Z",
-		ClientVersion:     "1.8.0",
+		ClientVersion:     "1.8.4",
 		ClientIP:          "10.0.0.9",
 		ActiveStreams:     5,
 		BytesTransferred:  4096,
@@ -94,7 +94,7 @@ func TestTunnelMetricsFromStatus(t *testing.T) {
 	if result.BytesTransferred == nil || *result.BytesTransferred != 4096 {
 		t.Fatalf("unexpected bytes transferred: %#v", result.BytesTransferred)
 	}
-	if result.ClientVersion == nil || *result.ClientVersion != "1.8.0" {
+	if result.ClientVersion == nil || *result.ClientVersion != "1.8.4" {
 		t.Fatalf("unexpected client version: %#v", result.ClientVersion)
 	}
 	if result.ClientIP == nil || *result.ClientIP != "10.0.0.9" {
@@ -155,9 +155,9 @@ func TestTunnelLocalPortForGateway(t *testing.T) {
 		configuredPort int
 		want           int
 	}{
-		{name: "guacd uses configured listener port", gatewayType: "GUACD", configuredPort: 14822, want: 14822},
-		{name: "managed ssh uses configured listener port", gatewayType: "MANAGED_SSH", configuredPort: 2022, want: 2022},
-		{name: "db proxy uses configured listener port", gatewayType: "DB_PROXY", configuredPort: 15432, want: 15432},
+		{name: "guacd uses runtime-managed listener port", gatewayType: "GUACD", configuredPort: 14822, want: 4822},
+		{name: "managed ssh uses runtime-managed listener port", gatewayType: "MANAGED_SSH", configuredPort: 2022, want: 2222},
+		{name: "db proxy uses runtime-managed listener port", gatewayType: "DB_PROXY", configuredPort: 15432, want: 5432},
 		{name: "managed ssh fallback", gatewayType: "MANAGED_SSH", want: 2222},
 		{name: "ssh bastion fallback", gatewayType: "SSH_BASTION", want: 2222},
 		{name: "guacd fallback", gatewayType: "GUACD", want: 4822},
