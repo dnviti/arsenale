@@ -323,7 +323,7 @@ services:
       RUNTIME_EGRESS_PRINCIPAL_SIGNING_KEY_FILE: /run/secrets/runtime_egress_principal_signing_key
 {% endif %}
     ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_control_plane_api_port | default(18080) }}:8080"
+      - "127.0.0.1:{{ arsenale_control_plane_api_port | default(18080) }}:8080"
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_ssh_port }}:2222"
     depends_on:
       postgres:
@@ -378,7 +378,7 @@ services:
       TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
       TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker"
     ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_tunnel_broker_port | default(18092) }}:8092"
+      - "127.0.0.1:{{ arsenale_tunnel_broker_port | default(18092) }}:8092"
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
@@ -420,7 +420,7 @@ services:
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
     ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_query_runner_port | default(18093) }}:8093"
+      - "127.0.0.1:{{ arsenale_query_runner_port | default(18093) }}:8093"
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
@@ -467,7 +467,7 @@ services:
       GUACD_SSL: "true"
       GUACD_CA_CERT: /certs/ca/ca.pem
     ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_desktop_broker_port | default(18091) }}:8091"
+      - "127.0.0.1:{{ arsenale_desktop_broker_port | default(18091) }}:8091"
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
@@ -514,7 +514,7 @@ services:
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
     ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_terminal_broker_port | default(18090) }}:8090"
+      - "127.0.0.1:{{ arsenale_terminal_broker_port | default(18090) }}:8090"
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
