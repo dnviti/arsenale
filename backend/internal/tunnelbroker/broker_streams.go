@@ -133,10 +133,16 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 }
 
 func targetPortCandidates(primary int, additional []int) []int {
+	const maxTargetPortCandidates = 2
+	const maxPortNumber = 65535
+
 	seen := map[int]struct{}{}
 	ports := make([]int, 0, len(additional)+1)
 	for _, port := range append([]int{primary}, additional...) {
-		if port <= 0 {
+		if len(ports) == maxTargetPortCandidates {
+			break
+		}
+		if port <= 0 || port > maxPortNumber {
 			continue
 		}
 		if _, ok := seen[port]; ok {
@@ -146,6 +152,13 @@ func targetPortCandidates(primary int, additional []int) []int {
 		ports = append(ports, port)
 	}
 	return ports
+}
+
+func isValidTargetPortRequest(primary int, additional []int) bool {
+	if len(additional) > 1 {
+		return false
+	}
+	return len(targetPortCandidates(primary, additional)) > 0
 }
 
 func (b *Broker) sendFrame(conn *tunnelConnection, frameType msgType, streamID uint16, payload []byte) error {
