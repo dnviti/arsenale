@@ -994,6 +994,7 @@ All non-secret configuration is in `inventory/group_vars/all/vars.yml`.
 | `arsenale_agent_orchestrator_port` | `18085` | Agent orchestrator |
 | `arsenale_memory_service_port` | `18086` | Memory service |
 | `arsenale_terminal_broker_port` | `18090` | Terminal broker |
+| `arsenale_terminal_broker_bind_host` | `127.0.0.1` | Terminal broker bind address |
 | `arsenale_desktop_broker_port` | `18091` | Desktop broker |
 | `arsenale_tunnel_broker_port` | `18092` | Tunnel broker |
 | `arsenale_query_runner_port` | `18093` | Query runner |

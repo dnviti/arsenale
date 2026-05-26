@@ -12,6 +12,7 @@ arsenale_tool_gateway_port: 18084
 arsenale_agent_orchestrator_port: 18085
 arsenale_memory_service_port: 18086
 arsenale_terminal_broker_port: 18090
+arsenale_terminal_broker_bind_host: 127.0.0.1
 arsenale_desktop_broker_port: 18091
 arsenale_tunnel_broker_port: 18092
 arsenale_query_runner_port: 18093

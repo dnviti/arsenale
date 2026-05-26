@@ -514,7 +514,7 @@ services:
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
       GUACAMOLE_SECRET_FILE: /run/secrets/guacamole_secret
     ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_terminal_broker_port | default(18090) }}:8090"
+      - "{{ arsenale_terminal_broker_bind_host | default('127.0.0.1') }}:{{ arsenale_terminal_broker_port | default(18090) }}:8090"
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
