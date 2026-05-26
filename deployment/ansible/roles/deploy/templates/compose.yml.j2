@@ -419,8 +419,6 @@ services:
       ARSENALE_VERSION: "{{ arsenale_image_tag }}"
       DATABASE_URL_FILE: /run/secrets/database_url
       DATABASE_SSL_ROOT_CERT: /certs/postgres/ca.pem
-    ports:
-      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_query_runner_port | default(18093) }}:8093"
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
