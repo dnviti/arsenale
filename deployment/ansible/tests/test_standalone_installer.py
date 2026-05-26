@@ -254,6 +254,11 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             "${GATEWAY_ROUTING_MODE:-gateway-mandatory}",
         )
         self.assertIn("0.0.0.0:2222:2222", services["control-plane-api"]["ports"])
+        self.assertIn("127.0.0.1:18080:8080", services["control-plane-api"]["ports"])
+        self.assertEqual(services["terminal-broker"]["ports"], ["127.0.0.1:18090:8090"])
+        self.assertEqual(services["desktop-broker"]["ports"], ["127.0.0.1:18091:8091"])
+        self.assertEqual(services["tunnel-broker"]["ports"], ["127.0.0.1:18092:8092"])
+        self.assertEqual(services["query-runner"]["ports"], ["127.0.0.1:18093:8093"])
         self.assertNotIn("ports", services["ssh-gateway"])
 
         postgres_volumes = services["postgres"]["volumes"]
