@@ -253,6 +253,19 @@ func (s Service) createSetupAdmin(
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Serialize one-time setup completion attempts for this database.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(84572133)); err != nil {
+		return "", fmt.Errorf("acquire setup lock: %w", err)
+	}
+
+	setupRequired, err := isSetupRequiredTx(ctx, tx)
+	if err != nil {
+		return "", err
+	}
+	if !setupRequired {
+		return "", &requestError{status: http.StatusConflict, message: "Setup has already been completed"}
+	}
+
 	userID := uuid.NewString()
 	if _, err := tx.Exec(ctx, `
 INSERT INTO "User" (
@@ -323,6 +336,23 @@ INSERT INTO "User" (
 		return "", fmt.Errorf("commit setup transaction: %w", err)
 	}
 	return userID, nil
+}
+
+func isSetupRequiredTx(ctx context.Context, tx pgx.Tx) (bool, error) {
+	var setupValue string
+	err := tx.QueryRow(ctx, `SELECT value FROM "AppConfig" WHERE key = 'setupCompleted'`).Scan(&setupValue)
+	if err == nil && strings.EqualFold(strings.TrimSpace(setupValue), "true") {
+		return false, nil
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return false, fmt.Errorf("read setup completed flag in transaction: %w", err)
+	}
+
+	var hasUsers bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM "User" LIMIT 1)`).Scan(&hasUsers); err != nil {
+		return false, fmt.Errorf("read setup users in transaction: %w", err)
+	}
+	return !hasUsers, nil
 }
 
 func upsertAppConfig(ctx context.Context, tx pgx.Tx, key, value string) error {
