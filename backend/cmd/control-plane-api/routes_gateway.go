@@ -14,6 +14,13 @@ func (d *apiDependencies) handleGatewayRoute(w http.ResponseWriter, r *http.Requ
 		gatewayRouteNotFound(w)
 		return
 	}
+	if path == "types" {
+		if !gatewayRouteMethod(w, r, http.MethodGet) {
+			return
+		}
+		d.gatewayService.HandleTypes(w, r, claims)
+		return
+	}
 	if path == "tunnel-overview" && !d.features.ZeroTrustEnabled {
 		gatewayRouteNotFound(w)
 		return

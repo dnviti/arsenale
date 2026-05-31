@@ -5,6 +5,7 @@ func init() {
 
 	// Basic CRUD
 	gatewayCmd.AddCommand(gwListCmd)
+	gatewayCmd.AddCommand(gwTypesCmd)
 	gatewayCmd.AddCommand(gwCreateCmd)
 	gatewayCmd.AddCommand(gwUpdateCmd)
 	gatewayCmd.AddCommand(gwDeleteCmd)

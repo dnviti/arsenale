@@ -118,6 +118,7 @@ tenant_id="${ARSENALE_TENANT_ID:-}"
 user_id=""
 auth_config_json=""
 multi_tenancy_enabled=""
+ip_geolocation_enabled=""
 token_file="${ARSENALE_TOKEN_FILE:-/tmp/arsenale-dev-access-token}"
 tenant_file="${ARSENALE_TENANT_FILE:-/tmp/arsenale-dev-tenant-id}"
 ssh_connection_id=""
@@ -885,6 +886,7 @@ auth_config_json="$(curl --silent --show-error --fail --cacert "${ca_cert}" "${a
 printf '%s' "${auth_config_json}" \
   | jq -e '.selfSignupEnabled == false and .features.databaseProxyEnabled == true and .features.connectionsEnabled == true and .features.keychainEnabled == true' >/dev/null
 multi_tenancy_enabled="$(printf '%s' "${auth_config_json}" | jq -r '.features.multiTenancyEnabled')"
+ip_geolocation_enabled="$(printf '%s' "${auth_config_json}" | jq -r '.features.ipGeolocationEnabled')"
 
 echo '1.3.1 /api/auth/oauth/providers'
 curl --silent --show-error --fail --cacert "${ca_cert}" "${api_base}/auth/oauth/providers" \
@@ -4961,36 +4963,40 @@ curl --silent --show-error --fail \
   "${api_base}/sessions/rdp/${rdp_session_id}/end" \
   | jq -e '.ok == true' >/dev/null
 
-echo '7.0.2 /api/audit gateways/countries/tenant geo'
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/audit/gateways" \
-  | jq -e 'type == "array"' >/dev/null
+if [[ "${ip_geolocation_enabled}" == "true" ]]; then
+  echo '7.0.2 /api/audit gateways/countries/tenant geo'
+  curl --silent --show-error --fail \
+    --cacert "${ca_cert}" \
+    -H "authorization: Bearer ${access_token}" \
+    "${api_base}/audit/gateways" \
+    | jq -e 'type == "array"' >/dev/null
 
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/audit/countries" \
-  | jq -e 'type == "array"' >/dev/null
+  curl --silent --show-error --fail \
+    --cacert "${ca_cert}" \
+    -H "authorization: Bearer ${access_token}" \
+    "${api_base}/audit/countries" \
+    | jq -e 'type == "array"' >/dev/null
 
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/audit/tenant/gateways" \
-  | jq -e 'type == "array"' >/dev/null
+  curl --silent --show-error --fail \
+    --cacert "${ca_cert}" \
+    -H "authorization: Bearer ${access_token}" \
+    "${api_base}/audit/tenant/gateways" \
+    | jq -e 'type == "array"' >/dev/null
 
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/audit/tenant/countries" \
-  | jq -e 'type == "array"' >/dev/null
+  curl --silent --show-error --fail \
+    --cacert "${ca_cert}" \
+    -H "authorization: Bearer ${access_token}" \
+    "${api_base}/audit/tenant/countries" \
+    | jq -e 'type == "array"' >/dev/null
 
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/audit/tenant/geo-summary?days=30" \
-  | jq -e '.points | type == "array"' >/dev/null
+  curl --silent --show-error --fail \
+    --cacert "${ca_cert}" \
+    -H "authorization: Bearer ${access_token}" \
+    "${api_base}/audit/tenant/geo-summary?days=30" \
+    | jq -e '.points | type == "array"' >/dev/null
+else
+  echo '7.0.2 /api/audit gateways/countries/tenant geo skipped (IP geolocation disabled)'
+fi
 
 echo '7.0.2.1 /api/audit list/tenant/connection'
 curl --silent --show-error --fail \
@@ -5017,19 +5023,23 @@ curl --silent --show-error --fail \
   "${api_base}/audit/connection/${connection_id}/users" \
   | jq -e --arg user_id "${user_id}" 'type == "array" and any(.id == $user_id)' >/dev/null
 
-echo '7.0.3 /api/geoip/{ip}'
-curl --silent --show-error --fail \
-  --cacert "${ca_cert}" \
-  -H "authorization: Bearer ${access_token}" \
-  "${api_base}/geoip/8.8.8.8" \
-  | jq -e '
-    .query == "8.8.8.8"
-    and (
-      (.status == "success" and (.country | type == "string" and length > 0))
-      or
-      (.status == "fail" and .message == "GeoIP lookup unavailable in this environment")
-    )
-  ' >/dev/null
+if [[ "${ip_geolocation_enabled}" == "true" ]]; then
+  echo '7.0.3 /api/geoip/{ip}'
+  curl --silent --show-error --fail \
+    --cacert "${ca_cert}" \
+    -H "authorization: Bearer ${access_token}" \
+    "${api_base}/geoip/8.8.8.8" \
+    | jq -e '
+      .query == "8.8.8.8"
+      and (
+        (.status == "success" and (.country | type == "string" and length > 0))
+        or
+        (.status == "fail" and .message == "GeoIP lookup unavailable in this environment")
+      )
+    ' >/dev/null
+else
+  echo '7.0.3 /api/geoip/{ip} skipped (IP geolocation disabled)'
+fi
 
 echo '7.0.4 /api/ldap/status'
 ldap_status_json="$(curl --silent --show-error --fail \

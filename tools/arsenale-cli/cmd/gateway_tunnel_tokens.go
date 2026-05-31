@@ -53,6 +53,7 @@ func runGwTunnelTokenCreate(cmd *cobra.Command, args []string) {
 			}
 			if !quiet && !gwTunnelTokenEnv {
 				fmt.Fprintf(os.Stdout, "Tunnel bundle written to %s\n", envPath)
+				fmt.Fprint(os.Stdout, gatewayDeploymentSummary(bundle))
 			}
 		}
 		if gwTunnelTokenEnv {

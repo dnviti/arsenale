@@ -10,15 +10,6 @@ import (
 )
 
 func (b *Broker) registerConnection(gatewayID string, wsConn *websocket.Conn, clientVersion, clientIP string) *tunnelConnection {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if existing := b.registry[gatewayID]; existing != nil {
-		_ = existing.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseGoingAway, "replaced"), time.Now().Add(5*time.Second))
-		_ = existing.ws.Close()
-		b.evictConnectionLocked(existing)
-	}
-
 	conn := &tunnelConnection{
 		broker:        b,
 		gatewayID:     gatewayID,
@@ -30,14 +21,27 @@ func (b *Broker) registerConnection(gatewayID string, wsConn *websocket.Conn, cl
 		pendingOpens:  make(map[uint16]*pendingOpen),
 		nextStreamID:  1,
 	}
+
+	b.mu.Lock()
+	existing := b.registry[gatewayID]
 	b.registry[gatewayID] = conn
+	b.mu.Unlock()
+
+	// Tear the previous connection down outside the lock: closeTransport
+	// re-acquires Broker.mu while destroying streams, so calling it under the
+	// lock would deadlock. The registry already points at the new connection,
+	// so the evicted one's read loop deregisters as a no-op.
+	if existing != nil {
+		existing.closeTransport("replaced")
+	}
+
 	go b.readLoop(conn)
 	return conn
 }
 
 func (b *Broker) readLoop(conn *tunnelConnection) {
 	defer func() {
-		b.cleanupConnection(conn, "client_closed")
+		b.deregister(conn, conn.gatewayID, conn.clientIP, "client_closed")
 	}()
 
 	for {
@@ -65,13 +69,16 @@ func (b *Broker) readLoop(conn *tunnelConnection) {
 			_ = b.sendFrame(conn, msgPong, frame.StreamID, nil)
 		case msgPong:
 			now := time.Now().UTC()
+			conn.statusMu.Lock()
 			if !conn.lastPingSentAt.IsZero() {
 				latency := now.Sub(conn.lastPingSentAt).Milliseconds()
 				conn.pingLatency = &latency
 				conn.lastPingSentAt = time.Time{}
 			}
 			conn.lastHeartbeat = now
-			_ = b.config.Store.MarkTunnelHeartbeat(context.Background(), conn.gatewayID, now, conn.heartbeat)
+			hb := conn.heartbeat
+			conn.statusMu.Unlock()
+			_ = b.config.Store.MarkTunnelHeartbeat(context.Background(), conn.gatewayID, now, hb)
 		case msgHeartbeat:
 			b.recordHeartbeat(conn, frame.Payload)
 		case msgCertRenew:
@@ -98,6 +105,7 @@ func (b *Broker) handleOpenAck(conn *tunnelConnection, streamID uint16) {
 	b.mu.Lock()
 	conn.streams[streamID] = stream
 	b.mu.Unlock()
+	conn.activeStreams.Add(1)
 
 	pending.resolve <- stream
 }
@@ -109,7 +117,7 @@ func (b *Broker) handleData(conn *tunnelConnection, streamID uint16, payload []b
 	if stream == nil {
 		return
 	}
-	conn.bytesTransferred += int64(len(payload))
+	conn.bytesTransferred.Add(int64(len(payload)))
 	_, _ = stream.writer.Write(payload)
 }
 
@@ -138,73 +146,80 @@ func (b *Broker) handleClose(conn *tunnelConnection, streamID uint16) {
 
 func (b *Broker) recordHeartbeat(conn *tunnelConnection, payload []byte) {
 	now := time.Now().UTC()
-	conn.lastHeartbeat = now
 
+	var heartbeat *HeartbeatMetadata
 	if len(payload) > 0 {
-		var heartbeat HeartbeatMetadata
-		if err := json.Unmarshal(payload, &heartbeat); err == nil {
-			conn.heartbeat = &heartbeat
+		var parsed HeartbeatMetadata
+		if err := json.Unmarshal(payload, &parsed); err == nil {
+			heartbeat = &parsed
 		} else {
-			conn.heartbeat = &HeartbeatMetadata{Healthy: true}
+			heartbeat = &HeartbeatMetadata{Healthy: true}
 		}
 	} else {
-		conn.heartbeat = &HeartbeatMetadata{Healthy: true}
+		heartbeat = &HeartbeatMetadata{Healthy: true}
 	}
 
-	if err := b.config.Store.MarkTunnelHeartbeat(context.Background(), conn.gatewayID, now, conn.heartbeat); err != nil {
+	conn.statusMu.Lock()
+	conn.lastHeartbeat = now
+	conn.heartbeat = heartbeat
+	conn.statusMu.Unlock()
+
+	if err := b.config.Store.MarkTunnelHeartbeat(context.Background(), conn.gatewayID, now, heartbeat); err != nil {
 		b.config.Logger.Warn("persist tunnel heartbeat failed", "gateway_id", conn.gatewayID, "error", err)
 	}
 }
 
-func (b *Broker) cleanupConnection(conn *tunnelConnection, reason string) {
+// deregister removes a connection from the registry (only if it is still the
+// current one for its gateway), tears its transport down, and persists the
+// disconnect. It is transport-agnostic and safe to call from any goroutine.
+func (b *Broker) deregister(conn tunnelConn, gatewayID, clientIP, reason string) {
 	b.mu.Lock()
-	if current := b.registry[conn.gatewayID]; current != conn {
+	if b.registry[gatewayID] != conn {
 		b.mu.Unlock()
 		return
 	}
-	delete(b.registry, conn.gatewayID)
-	pending := conn.pendingOpens
-	streams := conn.streams
-	conn.pendingOpens = make(map[uint16]*pendingOpen)
-	conn.streams = make(map[uint16]*streamConn)
+	delete(b.registry, gatewayID)
 	b.mu.Unlock()
 
-	for _, stream := range streams {
-		_ = stream.close(false)
-	}
-	for _, wait := range pending {
-		wait.timer.Stop()
-		select {
-		case wait.resolve <- nil:
-		default:
-		}
-	}
+	conn.closeTransport(reason)
 
-	_ = conn.ws.Close()
-	if err := b.config.Store.MarkTunnelDisconnected(context.Background(), conn.gatewayID); err != nil {
-		b.config.Logger.Warn("persist tunnel disconnect failed", "gateway_id", conn.gatewayID, "error", err)
+	if err := b.config.Store.MarkTunnelDisconnected(context.Background(), gatewayID); err != nil {
+		b.config.Logger.Warn("persist tunnel disconnect failed", "gateway_id", gatewayID, "error", err)
 	}
-	if err := b.config.Store.InsertTunnelAudit(context.Background(), "TUNNEL_DISCONNECT", conn.gatewayID, conn.clientIP, map[string]any{
+	if err := b.config.Store.InsertTunnelAudit(context.Background(), "TUNNEL_DISCONNECT", gatewayID, clientIP, map[string]any{
 		"reason": reason,
 	}); err != nil {
-		b.config.Logger.Warn("insert tunnel disconnect audit failed", "gateway_id", conn.gatewayID, "error", err)
+		b.config.Logger.Warn("insert tunnel disconnect audit failed", "gateway_id", gatewayID, "error", err)
 	}
 }
 
-func (b *Broker) evictConnectionLocked(conn *tunnelConnection) {
-	delete(b.registry, conn.gatewayID)
-	for streamID, stream := range conn.streams {
-		delete(conn.streams, streamID)
-		_ = stream.close(false)
-	}
-	for streamID, pending := range conn.pendingOpens {
-		delete(conn.pendingOpens, streamID)
-		pending.timer.Stop()
-		select {
-		case pending.resolve <- nil:
-		default:
+// closeTransport closes the WebSocket and destroys every logical stream. It is
+// idempotent (guarded by closeOnce) and must not be called while holding
+// Broker.mu, because stream teardown re-acquires it.
+func (c *tunnelConnection) closeTransport(reason string) {
+	c.closeOnce.Do(func() {
+		_ = c.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason), time.Now().Add(2*time.Second))
+
+		b := c.broker
+		b.mu.Lock()
+		streams := c.streams
+		pending := c.pendingOpens
+		c.streams = make(map[uint16]*streamConn)
+		c.pendingOpens = make(map[uint16]*pendingOpen)
+		b.mu.Unlock()
+
+		for _, stream := range streams {
+			_ = stream.close(false)
 		}
-	}
+		for _, wait := range pending {
+			wait.timer.Stop()
+			select {
+			case wait.resolve <- nil:
+			default:
+			}
+		}
+		_ = c.ws.Close()
+	})
 }
 
 func (b *Broker) getStatus(gatewayID string) (contracts.TunnelStatus, bool) {
@@ -214,7 +229,7 @@ func (b *Broker) getStatus(gatewayID string) (contracts.TunnelStatus, bool) {
 	if conn == nil {
 		return contracts.TunnelStatus{}, false
 	}
-	return describeConnection(conn), true
+	return conn.describe(), true
 }
 
 func (b *Broker) disconnectTunnel(gatewayID, reason string) bool {
@@ -224,33 +239,38 @@ func (b *Broker) disconnectTunnel(gatewayID, reason string) bool {
 	if conn == nil {
 		return false
 	}
-	_ = conn.ws.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason), time.Now().Add(5*time.Second))
-	b.cleanupConnection(conn, reason)
+	b.deregister(conn, gatewayID, conn.describe().ClientIP, reason)
 	return true
 }
 
-func describeConnection(conn *tunnelConnection) contracts.TunnelStatus {
+func (c *tunnelConnection) describe() contracts.TunnelStatus {
+	c.statusMu.Lock()
+	lastHB := c.lastHeartbeat
+	lat := c.pingLatency
+	hb := c.heartbeat
+	c.statusMu.Unlock()
+
 	status := contracts.TunnelStatus{
-		GatewayID:        conn.gatewayID,
+		GatewayID:        c.gatewayID,
 		Connected:        true,
-		ConnectedAt:      conn.connectedAt.Format(time.RFC3339),
-		ClientVersion:    conn.clientVersion,
-		ClientIP:         conn.clientIP,
-		ActiveStreams:    len(conn.streams),
-		BytesTransferred: conn.bytesTransferred,
+		ConnectedAt:      c.connectedAt.Format(time.RFC3339),
+		ClientVersion:    c.clientVersion,
+		ClientIP:         c.clientIP,
+		ActiveStreams:    int(c.activeStreams.Load()),
+		BytesTransferred: c.bytesTransferred.Load(),
 	}
-	if !conn.lastHeartbeat.IsZero() {
-		status.LastHeartbeatAt = conn.lastHeartbeat.Format(time.RFC3339)
+	if !lastHB.IsZero() {
+		status.LastHeartbeatAt = lastHB.Format(time.RFC3339)
 	}
-	if conn.pingLatency != nil {
-		value := *conn.pingLatency
+	if lat != nil {
+		value := *lat
 		status.PingPongLatencyMs = &value
 	}
-	if conn.heartbeat != nil {
+	if hb != nil {
 		status.Heartbeat = &contracts.TunnelHeartbeat{
-			Healthy:       conn.heartbeat.Healthy,
-			LatencyMs:     conn.heartbeat.LatencyMs,
-			ActiveStreams: conn.heartbeat.ActiveStreams,
+			Healthy:       hb.Healthy,
+			LatencyMs:     hb.LatencyMs,
+			ActiveStreams: hb.ActiveStreams,
 		}
 	}
 	return status

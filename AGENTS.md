@@ -20,7 +20,7 @@ Build from the repo root before relying on the CLI:
 ```bash
 go test ./tools/arsenale-cli/...
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ```
 
 Use the local dev stack at `https://localhost:3000`:
@@ -80,7 +80,7 @@ Baseline sequence:
 ```bash
 go test ./tools/arsenale-cli/...
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
 ./build/go/arsenale-cli --server https://localhost:3000 login
 ./build/go/arsenale-cli --server https://localhost:3000 whoami

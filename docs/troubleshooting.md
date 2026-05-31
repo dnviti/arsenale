@@ -182,7 +182,7 @@ This is the fastest way to determine whether the breakage is UI-only or a real p
 
 ```bash
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
 ./build/go/arsenale-cli --server https://localhost:3000 whoami
 ./build/go/arsenale-cli --server https://localhost:3000 gateway list

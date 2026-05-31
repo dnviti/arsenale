@@ -10,7 +10,10 @@ import (
 )
 
 type Config struct {
+	Transport        string
 	ServerURL        string
+	QUICServerAddr   string
+	QUICServerName   string
 	Token            string
 	GatewayID        string
 	CACert           string
@@ -24,19 +27,34 @@ type Config struct {
 	LocalServicePort int
 }
 
+const (
+	transportWSS  = "wss"
+	transportQUIC = "quic"
+	transportAuto = "auto"
+)
+
 func LoadConfigFromEnv(defaultVersion string) (*Config, bool, error) {
+	transport := normalizeTransport(os.Getenv("TUNNEL_TRANSPORT"))
 	serverURL := strings.TrimSpace(os.Getenv("TUNNEL_SERVER_URL"))
+	quicAddr := strings.TrimSpace(os.Getenv("TUNNEL_QUIC_SERVER_ADDR"))
 	token := strings.TrimSpace(os.Getenv("TUNNEL_TOKEN"))
 	gatewayID := strings.TrimSpace(os.Getenv("TUNNEL_GATEWAY_ID"))
 	localPortRaw := strings.TrimSpace(os.Getenv("TUNNEL_LOCAL_PORT"))
 
-	if serverURL == "" && token == "" && gatewayID == "" {
+	if serverURL == "" && quicAddr == "" && token == "" && gatewayID == "" {
 		return nil, true, nil
 	}
 
 	missing := make([]string, 0, 4)
-	if serverURL == "" {
-		missing = append(missing, "TUNNEL_SERVER_URL")
+	if transport == transportQUIC || transport == transportAuto {
+		if quicAddr == "" {
+			missing = append(missing, "TUNNEL_QUIC_SERVER_ADDR")
+		}
+	}
+	if transport == transportWSS || transport == transportAuto {
+		if serverURL == "" {
+			missing = append(missing, "TUNNEL_SERVER_URL")
+		}
 	}
 	if token == "" {
 		missing = append(missing, "TUNNEL_TOKEN")
@@ -70,7 +88,10 @@ func LoadConfigFromEnv(defaultVersion string) (*Config, bool, error) {
 	}
 
 	return &Config{
+		Transport:        transport,
 		ServerURL:        normalizeTunnelServerURL(serverURL),
+		QUICServerAddr:   quicAddr,
+		QUICServerName:   strings.TrimSpace(os.Getenv("TUNNEL_QUIC_SERVER_NAME")),
 		Token:            token,
 		GatewayID:        gatewayID,
 		CACert:           caCert,
@@ -83,6 +104,17 @@ func LoadConfigFromEnv(defaultVersion string) (*Config, bool, error) {
 		LocalServiceHost: envOrDefault("TUNNEL_LOCAL_HOST", "127.0.0.1"),
 		LocalServicePort: localPort,
 	}, false, nil
+}
+
+func normalizeTransport(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case transportQUIC:
+		return transportQUIC
+	case transportAuto:
+		return transportAuto
+	default:
+		return transportWSS
+	}
 }
 
 func readOptionalPEM(valueKey, fileKey string) (string, error) {

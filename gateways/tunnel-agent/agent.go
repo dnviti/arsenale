@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dnviti/arsenale/gateways/gateway-core/auth"
@@ -23,6 +24,7 @@ type Agent struct {
 	forwarder      *Forwarder
 	writeMu        sync.Mutex
 	reconnectDelay time.Duration
+	quicActive     atomic.Int64
 }
 
 type healthStatus struct {
@@ -40,6 +42,12 @@ func NewAgent(cfg Config) *Agent {
 }
 
 func (a *Agent) Run(ctx context.Context) error {
+	switch a.cfg.Transport {
+	case transportQUIC:
+		return a.runQUIC(ctx)
+	case transportAuto:
+		return a.runAuto(ctx)
+	}
 	for {
 		if err := ctx.Err(); err != nil {
 			a.forwarder.DestroyAll()

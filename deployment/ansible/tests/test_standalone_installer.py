@@ -380,6 +380,11 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
             services["control-plane-api"]["environment"]["ARSENALE_INSTALL_MODE"],
             "${ARSENALE_INSTALL_MODE:-production}",
         )
+        self.assertNotIn("SHARED_FILES_S3_SECRET_ACCESS_KEY", services["control-plane-api"]["environment"])
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["SHARED_FILES_S3_SECRET_ACCESS_KEY_FILE"],
+            "/run/secrets/shared_files_s3_secret_access_key",
+        )
         self.assertNotIn("control-plane-controller", services)
 
     def test_production_compose_omits_empty_optional_external_secrets(self) -> None:
@@ -467,6 +472,11 @@ class StandaloneInstallerTemplateTest(unittest.TestCase):
         self.assertEqual(services["control-plane-api"]["environment"]["SELF_SIGNUP_ENABLED"], "${SELF_SIGNUP_ENABLED:-false}")
         self.assertEqual(services["control-plane-api"]["environment"]["SHARED_FILES_S3_BUCKET"], "${SHARED_FILES_S3_BUCKET:-}")
         self.assertEqual(services["control-plane-api"]["environment"]["SHARED_FILES_S3_ENDPOINT"], "${SHARED_FILES_S3_ENDPOINT:-}")
+        self.assertNotIn("SHARED_FILES_S3_SECRET_ACCESS_KEY", services["control-plane-api"]["environment"])
+        self.assertEqual(
+            services["control-plane-api"]["environment"]["SHARED_FILES_S3_SECRET_ACCESS_KEY_FILE"],
+            "/run/secrets/shared_files_s3_secret_access_key",
+        )
         self.assertIn("0.0.0.0:2222:2222", services["control-plane-api"]["ports"])
         self.assertIn("shared-files-s3", services)
         self.assertEqual(services["shared-files-s3"]["image"], "quay.io/minio/minio:latest")

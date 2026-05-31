@@ -3,6 +3,7 @@ import type { TunnelStatusEvent } from "../../store/gatewayStore";
 import { downloadTextFile } from "../../utils/downloadFile";
 import { gatewayStatusTone } from "../../utils/gatewayStatus";
 import { gatewayModeLabel, isGatewayGroup } from "../../utils/gatewayMode";
+import { gatewayTypeLabel } from "../../utils/gatewayTypeCatalog";
 
 export interface GatewayTestState {
   gatewayId: string;
@@ -15,16 +16,7 @@ export function triggerTextDownload(content: string, filename: string) {
 }
 
 export function formatGatewayType(type: GatewayData["type"]) {
-  switch (type) {
-    case "GUACD":
-      return "GUACD";
-    case "MANAGED_SSH":
-      return "Managed SSH";
-    case "DB_PROXY":
-      return "DB Proxy";
-    default:
-      return "SSH Bastion";
-  }
+  return gatewayTypeLabel(type);
 }
 
 export function getGatewayEndpointValue(gateway: GatewayData) {

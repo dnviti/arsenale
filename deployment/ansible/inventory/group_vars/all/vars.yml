@@ -15,6 +15,12 @@ arsenale_terminal_broker_port: 18090
 arsenale_desktop_broker_port: 18091
 arsenale_tunnel_broker_port: 18092
 arsenale_query_runner_port: 18093
+# QUIC tunnel transport (opt-in). When enabled, the tunnel-broker terminates QUIC
+# on a published UDP port (default: the broker port) and is issued a server
+# certificate; agents may then use TUNNEL_TRANSPORT=quic|auto. Default off keeps
+# the WebSocket-only behaviour unchanged.
+arsenale_tunnel_quic_enabled: false
+arsenale_tunnel_quic_port: "{{ arsenale_tunnel_broker_port }}"
 arsenale_runtime_agent_port: 18095
 arsenale_map_assets_port: 18096
 arsenale_node_env: production

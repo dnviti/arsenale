@@ -231,7 +231,7 @@ From a source checkout, use the local build path when you want to test current c
 
 ```bash
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 install -m 0755 ./build/go/arsenale-cli "$HOME/.local/bin/arsenale"
 ```
 
@@ -288,7 +288,7 @@ curl http://127.0.0.1:18080/healthz
 
 ```bash
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
 ./build/go/arsenale-cli --server https://localhost:3000 login
 ./build/go/arsenale-cli --server https://localhost:3000 whoami
