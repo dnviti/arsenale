@@ -1,0 +1,70 @@
+# ============================================================================
+# Arsenale — Platform operations (bundle edition)
+# ============================================================================
+# Shipped inside the published installer bundle as `Makefile`, so post-install
+# operations work without cloning the repository. Run these from the bundle
+# directory (default: /opt/arsenale/installer).
+#
+#   make status   — Show encrypted installer status
+#   make deploy   — Re-apply / upgrade the production stack
+#   make backup   — Create a database backup
+#   make rotate   — Rotate system secrets
+#   make logs     — Follow service logs (pass SVC=<service>)
+#   make vault    — Edit the encrypted secrets vault
+#   make clean    — Stop and remove all containers and volumes
+# ============================================================================
+
+SHELL := /bin/bash
+ANSIBLE_DIR := $(abspath .)
+PLAYBOOK := ansible-playbook
+ARSENALE_HOME ?= /opt/arsenale
+
+# Reuse the credentials seeded by install-platform.sh.
+VAULT_PASS_FILE := $(ANSIBLE_DIR)/.vault-pass
+PASSWORD_FILE := $(ANSIBLE_DIR)/install/password.txt
+STATUS_FILE := $(ARSENALE_HOME)/install/install-status.enc
+
+VAULT_FLAG := $(if $(wildcard $(VAULT_PASS_FILE)),--vault-password-file $(VAULT_PASS_FILE),--ask-vault-pass)
+INSTALL_PASSWORD_FLAG := $(if $(wildcard $(PASSWORD_FILE)),-e install_password_file=$(PASSWORD_FILE),)
+STATUS_FLAG := $(if $(wildcard $(STATUS_FILE)),-e installer_status_file=$(STATUS_FILE),)
+
+.DEFAULT_GOAL := help
+
+.PHONY: status
+status:  ## Show encrypted installer status
+	$(PLAYBOOK) playbooks/status.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) $(STATUS_FLAG)
+
+.PHONY: deploy
+deploy:  ## Re-apply or upgrade the production stack
+	$(PLAYBOOK) playbooks/install.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e installer_mode=production -e installer_backend=podman
+
+.PHONY: backup
+backup:  ## Create a database backup
+	$(PLAYBOOK) playbooks/backup.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG)
+
+.PHONY: rotate
+rotate:  ## Rotate system secrets
+	$(PLAYBOOK) playbooks/rotate-secrets.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG)
+
+.PHONY: certs
+certs:  ## Regenerate TLS certificates
+	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) --tags certificates
+
+.PHONY: logs
+logs:  ## Follow service logs (pass SVC=<service>)
+	podman compose -f $$(find "$(ARSENALE_HOME)" -name docker-compose.yml 2>/dev/null | head -n1) logs -f $(SVC)
+
+.PHONY: vault
+vault:  ## Edit the encrypted secrets vault
+	ansible-vault edit $(VAULT_FLAG) inventory/group_vars/all/vault.yml
+
+.PHONY: clean
+clean:  ## Stop and remove all containers and volumes
+	$(PLAYBOOK) playbooks/deploy.yml $(VAULT_FLAG) $(INSTALL_PASSWORD_FLAG) -e arsenale_state=absent
+
+.PHONY: help
+help:  ## Show available targets
+	@printf "\033[1mArsenale Platform Operations\033[0m\n\n"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
+		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
+	@printf "\n"
