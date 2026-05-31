@@ -61,7 +61,7 @@ func (b *Broker) HandleTunnelList(w http.ResponseWriter, _ *http.Request) {
 	b.mu.RLock()
 	statuses := make([]contracts.TunnelStatus, 0, len(b.registry))
 	for _, conn := range b.registry {
-		statuses = append(statuses, describeConnection(conn))
+		statuses = append(statuses, conn.describe())
 	}
 	b.mu.RUnlock()
 	app.WriteJSON(w, http.StatusOK, contracts.TunnelStatusesResponse{Tunnels: statuses})

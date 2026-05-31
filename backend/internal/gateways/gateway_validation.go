@@ -13,7 +13,7 @@ func validateCreatePayload(input createPayload) error {
 	}
 	gatewayType := strings.ToUpper(strings.TrimSpace(input.Type))
 	if !gatewayruntime.IsAllowedType(gatewayType) {
-		return &requestError{status: http.StatusBadRequest, message: "type must be one of GUACD, SSH_BASTION, MANAGED_SSH, DB_PROXY"}
+		return &requestError{status: http.StatusBadRequest, message: "type must be one of " + strings.Join(gatewayruntime.Types(), ", ") + " — see GET /api/gateways/types for what each one deploys"}
 	}
 	deploymentMode, err := normalizeDeploymentMode(input.DeploymentMode, gatewayType, input.Host)
 	if err != nil {

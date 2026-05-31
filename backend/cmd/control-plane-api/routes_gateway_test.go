@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -8,6 +9,43 @@ import (
 	"github.com/dnviti/arsenale/backend/internal/authn"
 	"github.com/dnviti/arsenale/backend/internal/runtimefeatures"
 )
+
+func TestGatewayRouteTypesCatalog(t *testing.T) {
+	deps := &apiDependencies{features: runtimefeatures.Manifest{ZeroTrustEnabled: true}}
+
+	rec := runGatewayRoute(deps, http.MethodGet, "/api/gateways/types")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Types []struct {
+			Type            string   `json:"type"`
+			DisplayName     string   `json:"displayName"`
+			Summary         string   `json:"summary"`
+			DeploymentModel string   `json:"deploymentModel"`
+			DeploymentModes []string `json:"deploymentModes"`
+		} `json:"types"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Types) == 0 {
+		t.Fatal("empty type catalog")
+	}
+	for _, ti := range resp.Types {
+		if ti.DisplayName == "" || ti.Summary == "" || ti.DeploymentModel == "" || len(ti.DeploymentModes) == 0 {
+			t.Fatalf("type %q has incomplete metadata: %+v", ti.Type, ti)
+		}
+	}
+}
+
+func TestGatewayRouteTypesRequiresGET(t *testing.T) {
+	deps := &apiDependencies{features: runtimefeatures.Manifest{ZeroTrustEnabled: true}}
+	rec := runGatewayRoute(deps, http.MethodPost, "/api/gateways/types")
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
 
 func TestGatewayRouteFeatureGatesTunnelActions(t *testing.T) {
 	deps := &apiDependencies{

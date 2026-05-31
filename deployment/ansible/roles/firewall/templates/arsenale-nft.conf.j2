@@ -25,6 +25,11 @@ table inet arsenale {
     ip saddr {{ source }} tcp dport {{ arsenale_ssh_port }} accept
 {% endfor %}
 
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+    # Allow QUIC tunnel transport (UDP). Agents dial out; the broker terminates
+    # QUIC directly (it cannot sit behind the L7 ingress).
+    udp dport {{ arsenale_tunnel_quic_port | default(arsenale_tunnel_broker_port | default(18092)) }} accept
+{% endif %}
     # Allow ICMP ping
     ip protocol icmp accept
     ip6 nexthdr icmpv6 accept

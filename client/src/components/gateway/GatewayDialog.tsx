@@ -40,6 +40,11 @@ import {
 } from 'lucide-react';
 import { useGatewayStore } from '../../store/gatewayStore';
 import { useUiPreferencesStore } from '../../store/uiPreferencesStore';
+import {
+  GATEWAY_TYPE_ORDER,
+  GATEWAY_TYPE_CATALOG,
+  gatewayTypeInfo,
+} from '../../utils/gatewayTypeCatalog';
 import type {
   GatewayData,
   GatewayDeploymentMode,
@@ -416,12 +421,21 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
             <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)} disabled={isEditMode}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="GUACD">GUACD (RDP Gateway)</SelectItem>
-                <SelectItem value="SSH_BASTION">SSH Bastion (Jump Host)</SelectItem>
-                <SelectItem value="MANAGED_SSH">Managed SSH Gateway</SelectItem>
-                <SelectItem value="DB_PROXY">DB Proxy (Database Gateway)</SelectItem>
+                {GATEWAY_TYPE_ORDER.map((code) => (
+                  <SelectItem key={code} value={code}>{GATEWAY_TYPE_CATALOG[code].title}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {(() => {
+              const info = gatewayTypeInfo(type);
+              if (!info) return null;
+              return (
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
+                  <p>{info.description}</p>
+                  <p className="mt-1 text-xs opacity-80">{info.deploymentModel} · Protocols: {info.protocols.join(', ')}</p>
+                </div>
+              );
+            })()}
           </div>
           {supportsGroupMode && (
             <div className="space-y-1.5">
@@ -436,8 +450,6 @@ export default function GatewayDialog({ open, onClose, gateway }: GatewayDialogP
             </div>
           )}
           {!supportsGroupMode && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">SSH bastions are always single-instance gateways.</div>}
-          {type === 'MANAGED_SSH' && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">This gateway uses the server&apos;s SSH key pair for authentication. No credentials needed.</div>}
-          {type === 'DB_PROXY' && <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">Database proxy gateway. Credentials are injected per-session from the vault.</div>}
           {type === 'MANAGED_SSH' && (
             <div className="space-y-1.5"><Label>gRPC Port (key management)</Label><Input value={apiPort} onChange={(e) => setApiPort(e.target.value)} type="number" disabled={publishPorts} />{publishPorts ? <p className="text-xs text-muted-foreground">Auto-assigned at deploy</p> : <p className="text-xs text-muted-foreground">gRPC port for key management mTLS (default: 9022)</p>}</div>
           )}

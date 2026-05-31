@@ -197,6 +197,26 @@
       - { name: guacd, cn: arsenale-guacd, san: "DNS:arsenale-guacd,DNS:guacd,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/guacd", eku: ["serverAuth"], key_mode: "{{ _guacd_runtime_key_mode }}" }
       - { name: ssh-gateway, cn: arsenale-ssh-gateway, san: "DNS:arsenale-ssh-gateway,DNS:ssh-gateway,DNS:dev-tunnel-ssh-gateway,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/ssh-gateway", eku: ["serverAuth", "clientAuth"], key_mode: "{{ _runtime_key_mode }}" }
 
+# The QUIC tunnel listener terminates TLS in the broker itself (unlike the
+# WebSocket path, which is fronted by the mTLS-terminating ingress), so it needs
+# its own CA-signed server certificate. Agents verify it against the same CA.
+- name: Add tunnel-broker QUIC server certificate when QUIC is enabled
+  set_fact:
+    cert_services: "{{ cert_services + [_tunnel_broker_cert] }}"
+  vars:
+    _tunnel_broker_public_san: >-
+      {{ [] if _client_certificate_host in ['', 'localhost']
+         else ([('IP:' ~ _client_certificate_host)] if (_client_certificate_host_is_ipv4 | bool)
+               else [('DNS:' ~ _client_certificate_host)]) }}
+    _tunnel_broker_cert:
+      name: tunnel-broker
+      cn: arsenale-tunnel-broker
+      san: "{{ (['DNS:arsenale-tunnel-broker', 'DNS:tunnel-broker', 'DNS:localhost', 'IP:127.0.0.1'] + _tunnel_broker_public_san) | join(',') }}"
+      spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/tunnel-broker"
+      eku: ["serverAuth"]
+      key_mode: "{{ _runtime_key_mode }}"
+  when: arsenale_tunnel_quic_enabled | default(false) | bool
+
 - name: Remove service certificates signed by malformed root CA
   file:
     path: "{{ arsenale_cert_dir }}/{{ item.0.name }}/{{ item.1 }}"

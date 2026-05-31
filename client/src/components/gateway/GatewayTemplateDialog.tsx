@@ -20,6 +20,11 @@ import {
 } from '@/components/ui/select';
 import { useGatewayStore } from '../../store/gatewayStore';
 import type { GatewayDeploymentMode, GatewayTemplateData } from '../../api/gateway.api';
+import {
+  GATEWAY_TYPE_ORDER,
+  GATEWAY_TYPE_CATALOG,
+  gatewayTypeInfo,
+} from '../../utils/gatewayTypeCatalog';
 import SessionTimeoutConfig from '../orchestration/SessionTimeoutConfig';
 import { extractApiError } from '../../utils/apiError';
 
@@ -141,12 +146,21 @@ export default function GatewayTemplateDialog({ open, onClose, template }: Gatew
             <Select value={type} onValueChange={(v) => handleTypeChange(v as typeof type)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="GUACD">GUACD (RDP/VNC proxy)</SelectItem>
-                <SelectItem value="SSH_BASTION">SSH Bastion</SelectItem>
-                <SelectItem value="MANAGED_SSH">Managed SSH</SelectItem>
-                <SelectItem value="DB_PROXY">DB Proxy (Database Gateway)</SelectItem>
+                {GATEWAY_TYPE_ORDER.map((code) => (
+                  <SelectItem key={code} value={code}>{GATEWAY_TYPE_CATALOG[code].title}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {(() => {
+              const info = gatewayTypeInfo(type);
+              if (!info) return null;
+              return (
+                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-sm text-blue-400">
+                  <p>{info.description}</p>
+                  <p className="mt-1 text-xs opacity-80">{info.deploymentModel} · Protocols: {info.protocols.join(', ')}</p>
+                </div>
+              );
+            })()}
           </div>
 
           {isManagedType ? (
