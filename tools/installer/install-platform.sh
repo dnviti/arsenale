@@ -328,16 +328,51 @@ prepare_secrets() {
   fi
   export ANSIBLE_VAULT_PASSWORD_FILE="$vault_pass_file"
 
-  # Optional OAuth/SMTP secrets supplied by the user.
+  # Optional OAuth/SMTP secrets supplied by the user. Merge the non-empty values
+  # over the existing SECRETS.env (or the template on a fresh install) so the
+  # already-generated required secrets (JWT/postgres/...) are preserved rather
+  # than overwritten, then force a vault refresh so the new values take effect.
+  local secrets_updated=0
   if [ -n "${ARSENALE_SECRETS_FILE:-}" ]; then
     [ -f "$ARSENALE_SECRETS_FILE" ] || die "ARSENALE_SECRETS_FILE not found: $ARSENALE_SECRETS_FILE"
-    install -m 600 "$ARSENALE_SECRETS_FILE" "$secrets_file"
+    local base="$secrets_file"
+    [ -f "$base" ] || base="$install_dir/SECRETS.env.example"
+    python3 - "$base" "$ARSENALE_SECRETS_FILE" "$secrets_file" <<'PY'
+import sys
+base, overlay, out = sys.argv[1], sys.argv[2], sys.argv[3]
+def load(path):
+    pairs = {}
+    try:
+        with open(path) as fh:
+            for line in fh:
+                s = line.strip()
+                if not s or s.startswith("#") or "=" not in s:
+                    continue
+                k, v = s.split("=", 1)
+                pairs[k] = v
+    except FileNotFoundError:
+        pass
+    return pairs
+merged = load(base)
+for key, value in load(overlay).items():
+    if value != "":
+        merged[key] = value
+with open(out, "w") as fh:
+    for key, value in merged.items():
+        fh.write(f"{key}={value}\n")
+PY
+    chmod 600 "$secrets_file"
+    secrets_updated=1
   fi
 
-  # Generate the encrypted vault only on first run. Re-running must NOT rotate
-  # JWT/postgres/etc., which would break a live stack.
+  # Generate the encrypted vault on first run, or when new secrets were supplied.
+  # generate-vault.sh keeps non-empty required secrets as-is, so a refresh adds
+  # the new values without rotating JWT/postgres/... on a live stack.
   if [ ! -f "$vault_file" ]; then
     log "Generating secrets and encrypting the Ansible Vault..."
+    (cd "$install_dir" && ./scripts/generate-vault.sh)
+  elif [ "$secrets_updated" = "1" ]; then
+    log "Refreshing the encrypted vault with the supplied secrets..."
     (cd "$install_dir" && ./scripts/generate-vault.sh)
   else
     log "Existing vault found — reusing current secrets."

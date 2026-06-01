@@ -38,6 +38,11 @@ const (
 	// (TUNNEL_QUIC_LISTEN_ADDR) and the Ansible compose UDP publish.
 	quicDefaultListenAddr = ":8092"
 
+	// quicMaxHelloBytes bounds the unauthenticated hello line so a reachable UDP
+	// listener cannot be forced to buffer an unbounded newline-less payload
+	// before any token/certificate validation.
+	quicMaxHelloBytes = 4096
+
 	// quicStreamOK is the single-byte acknowledgement the agent writes back on a
 	// proxy stream once it has successfully dialed the local target. It must
 	// match the agent's constant of the same name. Any other byte (or a stream
@@ -234,20 +239,22 @@ func (b *Broker) quicConfig() *quic.Config {
 	}
 }
 
-// ListenQUIC runs the QUIC tunnel listener until ctx is cancelled. It is a no-op
-// (returns nil) when QUICTLSConfig is not configured, so the broker stays
-// WebSocket-only by default. Intended to run in its own goroutine alongside the
-// HTTP control surface.
-func (b *Broker) ListenQUIC(ctx context.Context) error {
+// StartQUIC binds the QUIC tunnel listener and returns a serve function to run
+// in the background. Binding happens synchronously so a failure (for example the
+// UDP port is already in use) is returned to the caller instead of being lost in
+// a goroutine — the broker can then refuse to start rather than appear healthy
+// with no QUIC socket. Returns (nil, nil) when QUICTLSConfig is not configured,
+// so the broker stays WebSocket-only by default.
+func (b *Broker) StartQUIC() (func(context.Context) error, error) {
 	listener, err := b.quicListener()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if listener == nil {
-		return nil
+		return nil, nil
 	}
 	b.config.Logger.Info("tunnel QUIC listener started", "addr", listener.Addr().String())
-	return b.serveQUIC(ctx, listener)
+	return func(ctx context.Context) error { return b.serveQUIC(ctx, listener) }, nil
 }
 
 // quicListener binds the QUIC listener, or returns (nil, nil) when the QUIC
@@ -300,8 +307,12 @@ func (b *Broker) handleQUICConn(ctx context.Context, qc *quic.Conn) {
 		return
 	}
 
-	reader := bufio.NewReader(ctrl)
-	line, err := reader.ReadBytes('\n')
+	// Bound the unauthenticated hello: an attacker who can reach the UDP listener
+	// could otherwise open the control stream and send a newline-less payload
+	// that ReadBytes buffers without limit, before any auth. A well-behaved agent
+	// sends only the small hello and then waits for the ack, so the bounded read
+	// never truncates a legitimate control stream.
+	line, err := bufio.NewReader(io.LimitReader(ctrl, quicMaxHelloBytes)).ReadBytes('\n')
 	if err != nil {
 		_ = qc.CloseWithError(quicErrAuth, "read hello failed")
 		return
@@ -354,7 +365,7 @@ func (b *Broker) handleQUICConn(ctx context.Context, qc *quic.Conn) {
 		b.config.Logger.Warn("insert tunnel connect audit failed", "gateway_id", conn.gatewayID, "error", err)
 	}
 
-	b.runQUICControl(conn, reader)
+	b.runQUICControl(conn, bufio.NewReader(ctrl))
 	b.deregister(conn, conn.gatewayID, clientIP, "client_closed")
 }
 

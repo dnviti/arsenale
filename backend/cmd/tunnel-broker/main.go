@@ -56,13 +56,21 @@ func main() {
 
 	// QUIC tunnel listener runs alongside the HTTP control surface. It is a
 	// no-op unless a server certificate is configured, so the broker stays
-	// WebSocket-only by default.
+	// WebSocket-only by default. Bind synchronously so a failed UDP bind aborts
+	// startup instead of leaving QUIC-enabled agents unable to connect to a
+	// broker that still reports healthy.
 	if quicTLS != nil {
-		go func() {
-			if err := broker.ListenQUIC(ctx); err != nil {
-				logger.Error("tunnel QUIC listener stopped", "error", err)
-			}
-		}()
+		serveQUIC, err := broker.StartQUIC()
+		if err != nil {
+			panic(fmt.Errorf("bind QUIC tunnel listener: %w", err))
+		}
+		if serveQUIC != nil {
+			go func() {
+				if err := serveQUIC(ctx); err != nil {
+					logger.Error("tunnel QUIC listener stopped", "error", err)
+				}
+			}()
+		}
 	}
 
 	service := app.StaticService{

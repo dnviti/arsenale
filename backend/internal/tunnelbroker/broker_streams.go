@@ -104,6 +104,16 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 		idleTimer.Stop()
 		defer socket.Close()
 
+		// Re-resolve the tunnel at accept time: the gateway may have reconnected
+		// (evicting the transport captured when this endpoint was created) before
+		// the client connected, so the captured conn could be closed.
+		b.mu.RLock()
+		conn := b.registry[req.GatewayID]
+		b.mu.RUnlock()
+		if conn == nil {
+			return
+		}
+
 		var stream io.ReadWriteCloser
 		for _, targetPort := range targetPortCandidates(req.TargetPort, req.TargetPorts) {
 			stream, err = conn.openStream(context.Background(), req.TargetHost, targetPort, timeout)
