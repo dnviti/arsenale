@@ -52,12 +52,12 @@ func TestQUICTransportEndToEnd(t *testing.T) {
 	}
 
 	broker := NewBroker(BrokerConfig{
-		Store:             fakeStore{record: GatewayAuthRecord{GatewayID: gatewayID, TenantID: "tenant-1", TunnelEnabled: true, TunnelTokenHash: hashToken(token), TenantTunnelCACertPEM: string(caCertPEM)}},
-		SpiffeTrustDomain: trustDomain,
-		ProxyBindHost:     "127.0.0.1",
+		Store:              fakeStore{record: GatewayAuthRecord{GatewayID: gatewayID, TenantID: "tenant-1", TunnelEnabled: true, TunnelTokenHash: hashToken(token), TenantTunnelCACertPEM: string(caCertPEM)}},
+		SpiffeTrustDomain:  trustDomain,
+		ProxyBindHost:      "127.0.0.1",
 		ProxyAdvertiseHost: "127.0.0.1",
-		QUICListenAddr:    "127.0.0.1:0",
-		QUICTLSConfig:     &tls.Config{Certificates: []tls.Certificate{serverPair}},
+		QUICListenAddr:     "127.0.0.1:0",
+		QUICTLSConfig:      &tls.Config{Certificates: []tls.Certificate{serverPair}},
 	})
 
 	listener, err := broker.quicListener()
@@ -321,6 +321,12 @@ func forwardTestStream(stream *quic.Stream) {
 	}
 	local, err := net.DialTimeout("tcp", string(trimLine(target)), 3*time.Second)
 	if err != nil {
+		stream.CancelWrite(0)
+		stream.CancelRead(0)
+		return
+	}
+	if _, err := stream.Write([]byte{quicStreamOK}); err != nil {
+		_ = local.Close()
 		stream.CancelWrite(0)
 		stream.CancelRead(0)
 		return

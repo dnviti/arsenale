@@ -33,6 +33,17 @@ const (
 	quicKeepAlivePeriod      = 15 * time.Second
 	quicMaxIdleTimeout       = 45 * time.Second
 	quicMaxIncomingStreams   = int64(maxStreamID)
+
+	// quicDefaultListenAddr matches the tunnel-broker command default
+	// (TUNNEL_QUIC_LISTEN_ADDR) and the Ansible compose UDP publish.
+	quicDefaultListenAddr = ":8092"
+
+	// quicStreamOK is the single-byte acknowledgement the agent writes back on a
+	// proxy stream once it has successfully dialed the local target. It must
+	// match the agent's constant of the same name. Any other byte (or a stream
+	// reset) signals the target was refused, so createTCPProxy can fall back to
+	// the next candidate port.
+	quicStreamOK = byte('1')
 )
 
 // quicHello is the first newline-delimited JSON message the agent sends on the
@@ -123,6 +134,27 @@ func (c *quicConnection) openStream(ctx context.Context, host string, port int, 
 		stream.CancelWrite(0)
 		return nil, fmt.Errorf("write tunnel target: %w", err)
 	}
+
+	// Wait for the agent to confirm it dialed the local target before treating
+	// the stream as open. This mirrors the WebSocket open-ack and lets
+	// createTCPProxy fall back to the next candidate port when this one is
+	// refused, instead of stopping at the first candidate.
+	if deadline, ok := octx.Deadline(); ok {
+		_ = stream.SetReadDeadline(deadline)
+	}
+	ack := make([]byte, 1)
+	if _, err := io.ReadFull(stream, ack); err != nil {
+		stream.CancelRead(0)
+		stream.CancelWrite(0)
+		return nil, fmt.Errorf("await tunnel target ack for %s:%d: %w", host, port, err)
+	}
+	_ = stream.SetReadDeadline(time.Time{})
+	if ack[0] != quicStreamOK {
+		stream.CancelRead(0)
+		stream.CancelWrite(0)
+		return nil, fmt.Errorf("agent refused tunnel target %s:%d", host, port)
+	}
+
 	c.activeStreams.Add(1)
 	return &quicStream{Stream: stream, conn: c}, nil
 }
@@ -184,9 +216,10 @@ func (c *quicConnection) sendCertRenew(certPEM, keyPEM string) error {
 func (b *Broker) quicServerConfig() *tls.Config {
 	cfg := b.config.QUICTLSConfig.Clone()
 	cfg.MinVersion = tls.VersionTLS13
-	if len(cfg.NextProtos) == 0 {
-		cfg.NextProtos = []string{TunnelALPN}
-	}
+	// Always negotiate the tunnel ALPN. A caller-supplied NextProtos that omits
+	// TunnelALPN would otherwise let the listener start but fail every agent
+	// handshake with an ALPN mismatch.
+	cfg.NextProtos = []string{TunnelALPN}
 	if cfg.ClientAuth < tls.RequireAnyClientCert {
 		cfg.ClientAuth = tls.RequireAnyClientCert
 	}
@@ -225,7 +258,7 @@ func (b *Broker) quicListener() (*quic.Listener, error) {
 	}
 	addr := b.config.QUICListenAddr
 	if addr == "" {
-		addr = ":8093"
+		addr = quicDefaultListenAddr
 	}
 	listener, err := quic.ListenAddr(addr, b.quicServerConfig(), b.quicConfig())
 	if err != nil {

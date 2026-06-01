@@ -33,6 +33,7 @@ domain="${ARSENALE_DOMAIN:-localhost}"
 target_host="${ARSENALE_HOST:-localhost}"
 noninteractive="${ARSENALE_NONINTERACTIVE:-0}"
 skip_prereqs="${ARSENALE_SKIP_PREREQS:-0}"
+need_become_pass=0
 tmp_dir="$(mktemp -d)"
 
 cleanup() {
@@ -184,7 +185,14 @@ ensure_prerequisites() {
   command -v podman >/dev/null 2>&1 || missing+=(podman)
   command -v openssl >/dev/null 2>&1 || missing+=(openssl)
   command -v git >/dev/null 2>&1 || missing+=(git)
-  command -v ssh >/dev/null 2>&1 || missing+=(openssh)
+  command -v ssh >/dev/null 2>&1 || missing+=(openssh-client)
+  # A localhost install connects over SSH to localhost, so it also needs an SSH
+  # server (sshd), not just the client.
+  if [ "$target_host" = "localhost" ] || [ "$target_host" = "127.0.0.1" ]; then
+    if ! command -v sshd >/dev/null 2>&1 && [ ! -x /usr/sbin/sshd ] && [ ! -x /usr/bin/sshd ]; then
+      missing+=(openssh-server)
+    fi
+  fi
 
   if [ "${#missing[@]}" -eq 0 ]; then
     log "All system prerequisites already present."
@@ -204,10 +212,14 @@ ensure_prerequisites() {
       ansible:dnf) pkgs+=(ansible-core) ;;
       ansible:pacman) pkgs+=(ansible) ;;
       ansible:brew) pkgs+=(ansible) ;;
-      openssh:apt-get) pkgs+=(openssh-client openssh-server) ;;
-      openssh:dnf) pkgs+=(openssh-clients openssh-server) ;;
-      openssh:pacman) pkgs+=(openssh) ;;
-      openssh:brew) pkgs+=(openssh) ;;
+      openssh-client:apt-get) pkgs+=(openssh-client) ;;
+      openssh-client:dnf) pkgs+=(openssh-clients) ;;
+      openssh-client:pacman) pkgs+=(openssh) ;;
+      openssh-client:brew) pkgs+=(openssh) ;;
+      openssh-server:apt-get) pkgs+=(openssh-server) ;;
+      openssh-server:dnf) pkgs+=(openssh-server) ;;
+      openssh-server:pacman) pkgs+=(openssh) ;;
+      openssh-server:brew) pkgs+=(openssh) ;;
       *) pkgs+=("$item") ;;
     esac
   done
@@ -253,18 +265,18 @@ ensure_local_ssh() {
 }
 
 ensure_sudo() {
-  if sudo -n true >/dev/null 2>&1; then
-    log "Passwordless sudo confirmed."
-    return
-  fi
-  if [ "$(id -u)" -eq 0 ]; then
+  if [ "$(id -u)" -eq 0 ] || sudo -n true >/dev/null 2>&1; then
+    log "Root privileges available without a password prompt."
     return
   fi
   if [ "$noninteractive" = "1" ]; then
-    die "passwordless sudo is required for the production install but is unavailable. Configure NOPASSWD sudo for $(id -un) and re-run."
+    die "passwordless sudo is required for a non-interactive install but is unavailable. Configure NOPASSWD sudo for $(id -un) and re-run."
   fi
   warn "The installer needs sudo to install Podman and create the arsenale user."
   sudo -v || die "sudo authentication failed"
+  # Ansible's become step runs under its own session, so a cached sudo timestamp
+  # is not enough — have ansible-playbook prompt for the become password too.
+  need_become_pass=1
 }
 
 # ── Download + extract bundle ────────────────────────────────────────────────
@@ -337,9 +349,11 @@ prepare_secrets() {
     if [ -n "${ARSENALE_INSTALL_PASSWORD:-}" ]; then
       printf '%s' "$ARSENALE_INSTALL_PASSWORD" >"$password_file"
     elif [ "$noninteractive" = "1" ]; then
-      openssl rand -hex 24 >"$password_file"
-      warn "Generated a random technician password: $(cat "$password_file")"
-      warn "Store it safely — it is required to reconfigure or recover this install."
+      (umask 177 && openssl rand -hex 24 >"$password_file")
+      # Do not echo the secret (it would land in shell history / CI logs); point
+      # the operator at the protected file instead.
+      warn "Generated a random technician password and saved it to ${password_file} (mode 0600)."
+      warn "Copy it somewhere safe — it is required to reconfigure or recover this install."
     else
       local pw1 pw2
       printf 'Set a technician password (encrypts installer state): '
@@ -369,6 +383,8 @@ run_installer() {
   [ -n "${ARSENALE_CAPABILITIES:-}" ] && extra+=(-e "installer_capabilities_csv=${ARSENALE_CAPABILITIES}")
   [ -n "${ARSENALE_DIRECT_GATEWAY:-}" ] && extra+=(-e "installer_direct_gateway=${ARSENALE_DIRECT_GATEWAY}")
   [ -n "${ARSENALE_ZERO_TRUST:-}" ] && extra+=(-e "installer_zero_trust=${ARSENALE_ZERO_TRUST}")
+  # Without passwordless sudo, ansible's become step needs the sudo password.
+  [ "$need_become_pass" = "1" ] && extra+=(--ask-become-pass)
 
   export ARSENALE_HOST="$target_host"
   [ -n "${ARSENALE_DEPLOY_USER:-}" ] && export ARSENALE_DEPLOY_USER
@@ -399,7 +415,9 @@ main() {
   ensure_local_ssh
   download_bundle
   log "Installing Ansible Galaxy collections..."
-  (cd "$install_dir" && ansible-galaxy collection install -r requirements.yml >/dev/null)
+  # Do not suppress output: on a network/auth failure the operator needs the
+  # error detail (set -e aborts the script otherwise with no context).
+  (cd "$install_dir" && ansible-galaxy collection install -r requirements.yml)
   prepare_secrets
   run_installer
 

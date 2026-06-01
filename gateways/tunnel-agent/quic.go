@@ -18,10 +18,21 @@ import (
 // quicALPN must match the broker's tunnelbroker.TunnelALPN.
 const quicALPN = "arsenale-tunnel/1"
 
+// quicStreamOK is the single-byte acknowledgement the agent writes back once it
+// has dialed the local target, before proxying data. It must match the broker's
+// constant of the same name; the broker waits for it so it can fall back to the
+// next candidate target port when a dial is refused.
+const quicStreamOK = byte('1')
+
 const (
 	quicKeepAlivePeriod = 15 * time.Second
 	quicMaxIdleTimeout  = 45 * time.Second
 	quicHandshakeWait   = 10 * time.Second
+	// quicMaxIncomingStreams bounds the proxy streams the broker may open to this
+	// agent concurrently. The broker is the stream initiator for proxied
+	// sessions, so the default (100) would stall new sessions under load; size it
+	// to the broker's stream-ID space.
+	quicMaxIncomingStreams = int64(1 << 16)
 	// autoQUICCooldown is how many WSS-fallback cycles to run after a failed QUIC
 	// dial before retrying QUIC, so a UDP-blocked network does not repeatedly pay
 	// the QUIC handshake timeout on every reconnect.
@@ -161,8 +172,9 @@ func (a *Agent) dialQUIC(ctx context.Context) (*quic.Conn, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, quicHandshakeWait)
 	defer cancel()
 	return quic.DialAddr(dialCtx, a.cfg.QUICServerAddr, tlsConfig, &quic.Config{
-		KeepAlivePeriod: quicKeepAlivePeriod,
-		MaxIdleTimeout:  quicMaxIdleTimeout,
+		KeepAlivePeriod:    quicKeepAlivePeriod,
+		MaxIdleTimeout:     quicMaxIdleTimeout,
+		MaxIncomingStreams: quicMaxIncomingStreams,
 	})
 }
 
@@ -276,7 +288,18 @@ func (a *Agent) handleQUICStream(stream *quic.Stream) {
 
 	local, err := net.Dial("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
+		// Reset the stream without an OK ack so the broker can try the next
+		// candidate target port instead of treating this stream as open.
 		a.warn("Local dial error for %s:%d: %v", host, port, err)
+		stream.CancelWrite(0)
+		stream.CancelRead(0)
+		return
+	}
+
+	// Acknowledge the successful dial before proxying so the broker only treats
+	// the stream as open once the local target is reachable.
+	if _, err := stream.Write([]byte{quicStreamOK}); err != nil {
+		_ = local.Close()
 		stream.CancelWrite(0)
 		stream.CancelRead(0)
 		return

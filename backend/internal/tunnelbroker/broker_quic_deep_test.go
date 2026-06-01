@@ -299,8 +299,8 @@ func TestQUICRejectsForeignCA(t *testing.T) {
 		gatewayID = "gw-foreign-ca"
 		token     = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	)
-	tenantCAPEM, _, _ := newTestCA(t)         // the CA the gateway is bound to
-	_, foreignKey, foreignCA := newTestCA(t)  // a different CA signs the client cert
+	tenantCAPEM, _, _ := newTestCA(t)        // the CA the gateway is bound to
+	_, foreignKey, foreignCA := newTestCA(t) // a different CA signs the client cert
 	clientCertPEM, clientKeyPEM := newTestLeaf(t, foreignCA, foreignKey, spiffeURI(deepTrustDomain, gatewayID), true)
 
 	broker, addr, _ := startBrokerQUIC(t, &recordingStore{record: authRecord(gatewayID, string(tenantCAPEM), token)})
@@ -318,9 +318,9 @@ func TestQUICRejectsForeignCA(t *testing.T) {
 // match the claimed gateway ID is rejected.
 func TestQUICRejectsSPIFFEMismatch(t *testing.T) {
 	const (
-		realGateway   = "gw-real"
+		realGateway    = "gw-real"
 		claimedGateway = "gw-claimed"
-		token         = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+		token          = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	)
 	caPEM, caKey, caCert := newTestCA(t)
 	// Cert carries the SPIFFE ID for realGateway, but the hello claims claimedGateway.
@@ -419,4 +419,65 @@ func contains(xs []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestQUICTargetPortFallback proves the broker falls back to the next candidate
+// target port over QUIC when the agent refuses the first one. The QUIC openStream
+// now waits for the agent's open-ack, so a refused dial returns an error and
+// createTCPProxy advances to the next candidate instead of stopping at the first.
+func TestQUICTargetPortFallback(t *testing.T) {
+	const (
+		gatewayID = "gw-fallback"
+		token     = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	)
+	caPEM, caKey, caCert := newTestCA(t)
+	clientCertPEM, clientKeyPEM := newTestLeaf(t, caCert, caKey, spiffeURI(deepTrustDomain, gatewayID), true)
+
+	broker, addr, _ := startBrokerQUIC(t, &recordingStore{record: authRecord(gatewayID, string(caPEM), token)})
+	echoAddr := startEchoServer(t)
+	_, echoPortStr, _ := net.SplitHostPort(echoAddr)
+	echoPort := atoiOrFail(t, echoPortStr)
+
+	// A port that refuses connections: bind to :0 then release it.
+	rl, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve closed port: %v", err)
+	}
+	closedPort := rl.Addr().(*net.TCPAddr).Port
+	_ = rl.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	dialTestAgent(t, ctx, addr, gatewayID, token, clientCertPEM, clientKeyPEM)
+	waitFor(t, 5*time.Second, func() bool { _, ok := broker.getStatus(gatewayID); return ok })
+
+	// First candidate (closedPort) is refused; the broker must fall back to echoPort.
+	resp, err := broker.createTCPProxy(contracts.TunnelProxyRequest{
+		GatewayID:   gatewayID,
+		TargetHost:  "127.0.0.1",
+		TargetPort:  closedPort,
+		TargetPorts: []int{echoPort},
+	})
+	if err != nil {
+		t.Fatalf("createTCPProxy: %v", err)
+	}
+
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(resp.Host, itoa(resp.Port)), 3*time.Second)
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	defer conn.Close()
+
+	payload := []byte("fallback-over-quic")
+	if _, err := conn.Write(payload); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	got := make([]byte, len(payload))
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatalf("read echo via fallback port: %v", err)
+	}
+	if string(got) != string(payload) {
+		t.Fatalf("echo mismatch: got %q want %q", got, payload)
+	}
 }

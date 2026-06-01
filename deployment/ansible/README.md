@@ -143,8 +143,8 @@ downloads and verifies that bundle, installs prerequisites, generates secrets vi
 `installer_direct_gateway` / `installer_zero_trust`):
 
 ```bash
-ARSENALE_DOMAIN=example.com \
-  curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh \
+  | ARSENALE_DOMAIN=example.com bash
 ```
 
 The bundle ships a trimmed `Makefile` (from [`Makefile.bundle`](Makefile.bundle)) so the

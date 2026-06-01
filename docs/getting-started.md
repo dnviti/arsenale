@@ -37,8 +37,8 @@ For detailed Ansible deployment documentation (all modes, backends, roles, capab
 To stand up a **production** stack on a Linux host without cloning the repo or installing anything first:
 
 ```bash
-ARSENALE_DOMAIN=example.com \
-  curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh \
+  | ARSENALE_DOMAIN=example.com bash
 ```
 
 This bootstrap ([`tools/installer/install-platform.sh`](../tools/installer/install-platform.sh)):

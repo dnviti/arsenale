@@ -226,8 +226,8 @@ On a fresh Linux host, install the full production stack with a single command â
 clone, no manual prerequisites:
 
 ```bash
-ARSENALE_DOMAIN=example.com \
-  curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh \
+  | ARSENALE_DOMAIN=example.com bash
 ```
 
 The bootstrap downloads the checksummed installer bundle published with each release,
