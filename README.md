@@ -220,6 +220,34 @@ npm run backend:test        # Run Go backend tests
 
 ## Production Deployment
 
+### One-command install (no repo clone)
+
+On a fresh Linux host, install the full production stack with a single command — no
+clone, no manual prerequisites:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh \
+  | ARSENALE_DOMAIN=example.com bash
+```
+
+The bootstrap downloads the checksummed installer bundle published with each release,
+installs prerequisites (Ansible, Podman, OpenSSL), generates and encrypts secrets, and
+runs the same Ansible installer described below — pulling prebuilt images from
+`ghcr.io/dnviti/arsenale`. Re-running upgrades the stack without rotating secrets.
+After install, operate it from the bundle dir with `cd /opt/arsenale/installer && make status`.
+
+Common overrides (all optional): `ARSENALE_INSTALL_PASSWORD`, `ARSENALE_VAULT_PASSWORD`,
+`ARSENALE_CAPABILITIES`, `ARSENALE_VERSION`, `ARSENALE_SECRETS_FILE` (a filled
+[`SECRETS.env`](deployment/ansible/SECRETS.env.example) for OAuth/SMTP), `ARSENALE_HOST`
+/ `ARSENALE_DEPLOY_USER` (target a remote host over SSH), `ARSENALE_NONINTERACTIVE=1`.
+
+> The production installer runs over SSH to the target host (localhost by default) and
+> uses `sudo` to install Podman and create the `arsenale` user. The bootstrap seeds
+> passwordless SSH-to-localhost and verifies `sudo`; on a remote target ensure key-based
+> SSH and passwordless sudo for the deploy user.
+
+### From a cloned repo (via Makefile)
+
 Deploy the full stack with the installer (via Makefile):
 
 ```bash

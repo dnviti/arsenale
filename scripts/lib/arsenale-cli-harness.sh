@@ -10,7 +10,7 @@ arsenale_cli_ensure_built() {
   local cli_bin="$2"
 
   mkdir -p "$(dirname "${cli_bin}")"
-  go build -o "${cli_bin}" "${repo_root}/tools/arsenale-cli"
+  go build -trimpath -o "${cli_bin}" "${repo_root}/tools/arsenale-cli"
 }
 
 arsenale_cli_run() {

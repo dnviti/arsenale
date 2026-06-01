@@ -6,7 +6,20 @@ import (
 
 	"github.com/dnviti/arsenale/backend/internal/app"
 	"github.com/dnviti/arsenale/backend/internal/authn"
+	"github.com/dnviti/arsenale/backend/pkg/gatewayruntime"
 )
+
+// gatewayTypesResponse is the catalog of gateway types with human-readable
+// metadata, so the UI and CLI can explain what each type deploys.
+type gatewayTypesResponse struct {
+	Types []gatewayruntime.TypeInfo `json:"types"`
+}
+
+// HandleTypes returns the gateway type catalog. It is tenant-independent (static
+// metadata), so any authenticated user may read it.
+func (s Service) HandleTypes(w http.ResponseWriter, _ *http.Request, _ authn.Claims) {
+	app.WriteJSON(w, http.StatusOK, gatewayTypesResponse{Types: gatewayruntime.Catalog()})
+}
 
 func (s Service) HandleList(w http.ResponseWriter, r *http.Request, claims authn.Claims) {
 	result, err := s.ListGateways(r.Context(), claims.TenantID)

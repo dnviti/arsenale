@@ -197,6 +197,68 @@
       - { name: guacd, cn: arsenale-guacd, san: "DNS:arsenale-guacd,DNS:guacd,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/guacd", eku: ["serverAuth"], key_mode: "{{ _guacd_runtime_key_mode }}" }
       - { name: ssh-gateway, cn: arsenale-ssh-gateway, san: "DNS:arsenale-ssh-gateway,DNS:ssh-gateway,DNS:dev-tunnel-ssh-gateway,DNS:localhost", spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/ssh-gateway", eku: ["serverAuth", "clientAuth"], key_mode: "{{ _runtime_key_mode }}" }
 
+# The QUIC tunnel listener terminates TLS in the broker itself (unlike the
+# WebSocket path, which is fronted by the mTLS-terminating ingress), so it needs
+# its own CA-signed server certificate. Agents verify it against the same CA.
+- name: Add tunnel-broker QUIC server certificate when QUIC is enabled
+  set_fact:
+    cert_services: "{{ cert_services + [_tunnel_broker_cert] }}"
+  vars:
+    _tunnel_broker_public_san: >-
+      {{ [] if _client_certificate_host in ['', 'localhost']
+         else ([('IP:' ~ _client_certificate_host)] if (_client_certificate_host_is_ipv4 | bool)
+               else [('DNS:' ~ _client_certificate_host)]) }}
+    _tunnel_broker_cert:
+      name: tunnel-broker
+      cn: arsenale-tunnel-broker
+      san: "{{ (['DNS:arsenale-tunnel-broker', 'DNS:tunnel-broker', 'DNS:localhost', 'IP:127.0.0.1'] + _tunnel_broker_public_san) | join(',') }}"
+      spiffe_id: "spiffe://{{ _spiffe_trust_domain }}/service/tunnel-broker"
+      eku: ["serverAuth"]
+      key_mode: "{{ _runtime_key_mode }}"
+  when: arsenale_tunnel_quic_enabled | default(false) | bool
+
+# Mirror the client-cert staleness handling: when the install is rerun with a
+# different public host, the existing tunnel-broker cert lacks the new SAN. The
+# generic "cert exists" check below would otherwise keep the stale cert, so agents
+# verifying the public hostname would fail. Drop it here so it is regenerated.
+- name: Inspect tunnel-broker QUIC server certificate SANs
+  command: openssl x509 -in "{{ arsenale_cert_dir }}/tunnel-broker/server-cert.pem" -noout -ext subjectAltName
+  register: _tunnel_broker_cert_sans
+  changed_when: false
+  failed_when: false
+  when: arsenale_tunnel_quic_enabled | default(false) | bool
+
+- name: Determine missing tunnel-broker SANs
+  set_fact:
+    _tunnel_broker_missing_sans: >-
+      {{
+        (
+          []
+          if _client_certificate_host in ['', 'localhost']
+          else [
+            ('IP Address:' ~ _client_certificate_host)
+            if (_client_certificate_host_is_ipv4 | bool)
+            else ('DNS:' ~ _client_certificate_host)
+          ]
+        )
+        | reject('in', _tunnel_broker_cert_sans.stdout | default(''))
+        | list
+      }}
+  when: arsenale_tunnel_quic_enabled | default(false) | bool
+
+- name: Remove stale tunnel-broker certificate missing public SANs
+  file:
+    path: "{{ arsenale_cert_dir }}/tunnel-broker/{{ item }}"
+    state: absent
+  loop:
+    - server-cert.pem
+    - server-key.pem
+    - server.csr
+  when:
+    - arsenale_tunnel_quic_enabled | default(false) | bool
+    - _tunnel_broker_cert_sans.rc | default(1) == 0
+    - _tunnel_broker_missing_sans | default([]) | length > 0
+
 - name: Remove service certificates signed by malformed root CA
   file:
     path: "{{ arsenale_cert_dir }}/{{ item.0.name }}/{{ item.1 }}"

@@ -51,6 +51,41 @@ The tunnel system connects remote gateway agents to the Arsenale server over a s
 
 ---
 
+## Transport Options: WebSocket and QUIC
+
+The tunnel supports two interchangeable transports behind the same per-gateway
+dial-out topology, identity model (mTLS + SPIFFE), and egress policy. The broker
+runs both listeners concurrently; the agent picks one via `TUNNEL_TRANSPORT`.
+
+| | WebSocket (`wss`, default) | QUIC (`quic`) |
+|---|---|---|
+| Multiplexing | Hand-rolled `uint16` binary-frame mux over one TCP/WS connection | Native `quic.Stream` per logical stream over one UDP connection |
+| Head-of-line blocking | Yes — one lost segment stalls all streams | No — streams are independent |
+| Auth | mTLS client cert forwarded as `X-Client-Cert` header by the ingress | TLS 1.3 client cert validated directly on the QUIC handshake (`PeerCertificates`) |
+| NAT rebind | Full reconnect | Connection-ID migration (automatic) |
+| Reachability | TCP/443 via L7 ingress | UDP; broker terminates QUIC directly (not behind the ingress) |
+
+Both reuse `authenticateTunnel` (token hash + SPIFFE URI + tenant-CA chain) and
+the `CreateTunnelProxy` → `io.Copy` seam unchanged — `quic.Stream` is an
+`io.ReadWriteCloser`, just like the WebSocket `streamConn`.
+
+**`TUNNEL_TRANSPORT=auto`** prefers QUIC and automatically falls back to WebSocket
+when the QUIC handshake fails (UDP-blocked networks), with a cooldown so the
+handshake timeout is paid at most once per cooldown window.
+
+**Broker config:** `TUNNEL_QUIC_SERVER_CERT_FILE` / `_KEY_FILE` enable the QUIC
+listener (`TUNNEL_QUIC_LISTEN_ADDR`, default `:8092` UDP). With no cert the broker
+is WebSocket-only. Provisioned via Ansible behind `arsenale_tunnel_quic_enabled`
+(off by default): it issues the broker a CA-signed `tunnel-broker` server cert,
+publishes the UDP port, and opens the firewall.
+
+**Agent config (QUIC/auto):** `TUNNEL_QUIC_SERVER_ADDR` (broker `host:port`),
+optional `TUNNEL_QUIC_SERVER_NAME`, and `TUNNEL_CA_CERT[_FILE]` to verify the
+broker's server certificate. Code: `gateways/tunnel-agent/quic.go`,
+`backend/internal/tunnelbroker/broker_quic.go`.
+
+---
+
 ## Binary Frame Protocol
 
 The wire protocol is identical on both broker (`backend/internal/tunnelbroker`) and agent (`gateways/tunnel-agent/protocol.go`). Every WebSocket message is a binary frame with the following layout:

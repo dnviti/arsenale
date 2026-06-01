@@ -73,6 +73,74 @@ func TestTunnelLocalPortCandidatesIncludeRuntimeFallback(t *testing.T) {
 	}
 }
 
+func TestCatalogHasCompleteMetadata(t *testing.T) {
+	catalog := Catalog()
+	if len(catalog) != len(definitions) {
+		t.Fatalf("catalog size = %d, want %d", len(catalog), len(definitions))
+	}
+	for _, info := range catalog {
+		if strings.TrimSpace(info.DisplayName) == "" {
+			t.Errorf("%s: empty DisplayName", info.Type)
+		}
+		if strings.TrimSpace(info.Summary) == "" {
+			t.Errorf("%s: empty Summary", info.Type)
+		}
+		if strings.TrimSpace(info.Description) == "" {
+			t.Errorf("%s: empty Description", info.Type)
+		}
+		if len(info.Protocols) == 0 {
+			t.Errorf("%s: no Protocols", info.Type)
+		}
+		if len(info.DeploymentModes) == 0 {
+			t.Errorf("%s: no DeploymentModes", info.Type)
+		}
+		// Managed types must allow the managed group mode; self-hosted must not.
+		hasGroup := false
+		for _, m := range info.DeploymentModes {
+			if m == DeploymentManagedGroup {
+				hasGroup = true
+			}
+		}
+		if info.Managed != hasGroup {
+			t.Errorf("%s: Managed=%v but MANAGED_GROUP allowed=%v (must match)", info.Type, info.Managed, hasGroup)
+		}
+		wantModel := DeploymentModelSelfHosted
+		if info.Managed {
+			wantModel = DeploymentModelManaged
+		}
+		if info.DeploymentModel != wantModel {
+			t.Errorf("%s: DeploymentModel=%q want %q", info.Type, info.DeploymentModel, wantModel)
+		}
+		// Only managed types are deployed by Arsenale, so only they advertise an image.
+		if info.Managed && info.Image == "" {
+			t.Errorf("%s: managed type missing image", info.Type)
+		}
+		if !info.Managed && info.Image != "" {
+			t.Errorf("%s: self-hosted type should not advertise an image, got %q", info.Type, info.Image)
+		}
+	}
+
+	if _, ok := Info(TypeGuacd); !ok {
+		t.Fatal("Info(GUACD) not found")
+	}
+	if _, ok := Info("NOPE"); ok {
+		t.Fatal("Info(unknown) should be false")
+	}
+	if DisplayName(TypeSSHBastion) != "SSH Bastion (Jump Host)" {
+		t.Fatalf("DisplayName(SSH_BASTION) = %q", DisplayName(TypeSSHBastion))
+	}
+	if DisplayName("UNKNOWN_TYPE") != "UNKNOWN_TYPE" {
+		t.Fatalf("DisplayName(unknown) = %q, want raw code", DisplayName("UNKNOWN_TYPE"))
+	}
+	// SSH_BASTION is the only type that takes credentials on the gateway.
+	if info, _ := Info(TypeSSHBastion); !info.RequiresCredentials {
+		t.Error("SSH_BASTION should require credentials")
+	}
+	if info, _ := Info(TypeManagedSSH); info.RequiresCredentials {
+		t.Error("MANAGED_SSH should not require credentials")
+	}
+}
+
 func TestLookupNormalizesType(t *testing.T) {
 	def, ok := Lookup(" managed_ssh ")
 	if !ok {

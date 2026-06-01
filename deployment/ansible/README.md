@@ -129,6 +129,30 @@ Docker is **not** a supported installer backend.
 
 ---
 
+## One-command install (published bundle)
+
+For production hosts you do not need to clone this repository. Every release publishes
+this `deployment/ansible/` tree as a checksummed `arsenale-installer_<version>.tar.gz`
+asset (built by `.github/workflows/release.yml`). The bootstrap
+[`tools/installer/install-platform.sh`](../../tools/installer/install-platform.sh)
+downloads and verifies that bundle, installs prerequisites, generates secrets via
+[`scripts/generate-vault.sh`](scripts/generate-vault.sh), and runs the same
+`playbooks/install.yml` non-interactively through its `-e` contract
+(`installer_mode=production`, `installer_backend=podman`, `install_password_file`,
+`arsenale_domain`, and the optional `installer_capabilities_csv` /
+`installer_direct_gateway` / `installer_zero_trust`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh \
+  | ARSENALE_DOMAIN=example.com bash
+```
+
+The bundle ships a trimmed `Makefile` (from [`Makefile.bundle`](Makefile.bundle)) so the
+operations below (`status`, `backup`, `rotate`, `deploy`, `logs`, `vault`, `certs`,
+`clean`) work from the extracted install directory (default `/opt/arsenale/installer`)
+without the repo. The bundle excludes dev-only files (`SECRETS.env`, `.vault-pass`,
+the encrypted `vault.yml`, and `tests/`).
+
 ## Quick Start via Makefile
 
 The preferred way to interact with Ansible is through the root `Makefile`. All commands are run from the repository root.

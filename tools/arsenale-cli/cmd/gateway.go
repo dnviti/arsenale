@@ -22,10 +22,17 @@ var gwListCmd = &cobra.Command{
 	Run:   runGwList,
 }
 
+var gwTypesCmd = &cobra.Command{
+	Use:   "types",
+	Short: "List gateway types and what each one deploys",
+	Long:  "Show the available gateway types with a plain-language description of what each deploys, which protocols it brokers, and whether Arsenale manages it or you host it yourself. Use --output json|yaml for the full machine-readable catalog.",
+	Run:   runGwTypes,
+}
+
 var gwCreateCmd = &cobra.Command{
 	Use:   "create",
 	Short: "Create a new gateway",
-	Long:  `Create a gateway from a JSON/YAML file: arsenale gateway create --from-file gw.yaml`,
+	Long:  gatewayCreateLongHelp(),
 	Run:   runGwCreate,
 }
 

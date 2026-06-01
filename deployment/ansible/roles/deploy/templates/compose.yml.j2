@@ -274,7 +274,6 @@ services:
       SHARED_FILES_S3_REGION: "${SHARED_FILES_S3_REGION:-us-east-1}"
       SHARED_FILES_S3_ENDPOINT: "${SHARED_FILES_S3_ENDPOINT:-}"
       SHARED_FILES_S3_ACCESS_KEY_ID: "${SHARED_FILES_S3_ACCESS_KEY_ID:-}"
-      SHARED_FILES_S3_SECRET_ACCESS_KEY: "${SHARED_FILES_S3_SECRET_ACCESS_KEY:-}"
       SHARED_FILES_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/shared_files_s3_secret_access_key
       SHARED_FILES_S3_PREFIX: "${SHARED_FILES_S3_PREFIX:-}"
       SHARED_FILES_S3_FORCE_PATH_STYLE: "${SHARED_FILES_S3_FORCE_PATH_STYLE:-false}"
@@ -377,13 +376,24 @@ services:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
       TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker"
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+      TUNNEL_QUIC_LISTEN_ADDR: ":8092"
+      TUNNEL_QUIC_SERVER_CERT_FILE: /certs/tunnel-broker/server-cert.pem
+      TUNNEL_QUIC_SERVER_KEY_FILE: /certs/tunnel-broker/server-key.pem
+{% endif %}
     ports:
       - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_tunnel_broker_port | default(18092) }}:8092"
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_tunnel_quic_port | default(arsenale_tunnel_broker_port | default(18092)) }}:8092/udp"
+{% endif %}
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+      - {{ arsenale_cert_dir }}/tunnel-broker:/certs/tunnel-broker:ro
+{% endif %}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8092/healthz >/dev/null || exit 1"]
       interval: 10s
@@ -663,7 +673,6 @@ services:
       SHARED_FILES_S3_REGION: "${SHARED_FILES_S3_REGION:-us-east-1}"
       SHARED_FILES_S3_ENDPOINT: "${SHARED_FILES_S3_ENDPOINT:-}"
       SHARED_FILES_S3_ACCESS_KEY_ID: "${SHARED_FILES_S3_ACCESS_KEY_ID:-}"
-      SHARED_FILES_S3_SECRET_ACCESS_KEY: "${SHARED_FILES_S3_SECRET_ACCESS_KEY:-}"
       SHARED_FILES_S3_SECRET_ACCESS_KEY_FILE: /run/secrets/shared_files_s3_secret_access_key
       SHARED_FILES_S3_PREFIX: "${SHARED_FILES_S3_PREFIX:-}"
       SHARED_FILES_S3_FORCE_PATH_STYLE: "${SHARED_FILES_S3_FORCE_PATH_STYLE:-false}"
@@ -946,13 +955,25 @@ services:
       SPIFFE_TRUST_DOMAIN: "{{ arsenale_spiffe_trust_domain | default('arsenale.local') }}"
       TUNNEL_TCP_PROXY_BIND_HOST: "0.0.0.0"
       TUNNEL_TCP_PROXY_ADVERTISE_HOST: "tunnel-broker"
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+      TUNNEL_QUIC_LISTEN_ADDR: ":8092"
+      TUNNEL_QUIC_SERVER_CERT_FILE: /certs/tunnel-broker/server-cert.pem
+      TUNNEL_QUIC_SERVER_KEY_FILE: /certs/tunnel-broker/server-key.pem
+{% endif %}
     ports:
       - "127.0.0.1:{{ arsenale_tunnel_broker_port | default(18092) }}:8092"
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+      # QUIC bypasses the L7 ingress, so its UDP port is published directly.
+      - "{{ arsenale_service_bind_host | default('0.0.0.0') }}:{{ arsenale_tunnel_quic_port | default(arsenale_tunnel_broker_port | default(18092)) }}:8092/udp"
+{% endif %}
     depends_on:
       postgres:
         condition: {{ _compose_dependency_condition }}
     volumes:
       - {{ arsenale_cert_dir }}/postgres:/certs/postgres:ro
+{% if arsenale_tunnel_quic_enabled | default(false) | bool %}
+      - {{ arsenale_cert_dir }}/tunnel-broker:/certs/tunnel-broker:ro
+{% endif %}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8092/healthz >/dev/null || exit 1"]
       interval: 10s

@@ -103,27 +103,76 @@ jobs:
           path: dist/arsenale-cli_*
           if-no-files-found: error
 
-  # ── Generate checksums ──────────────────────────────────────────
-  checksums:
-    name: Generate checksums
-    needs: build-cli
+  # ── Build platform installer bundle ─────────────────────────────
+  build-installer:
+    name: Build platform installer bundle
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
 
     steps:
-      - name: Download all artifacts
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Extract version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            archive_version="${GITHUB_REF_NAME#v}"
+          else
+            archive_version="develop"
+          fi
+          printf 'archive_version=%s\n' "$archive_version" >> "$GITHUB_OUTPUT"
+
+      - name: Package installer bundle
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar czf "dist/arsenale-installer_${{ steps.version.outputs.archive_version }}.tar.gz" \
+            --exclude='SECRETS.env' \
+            --exclude='.vault-pass' \
+            --exclude='inventory/group_vars/all/vault.yml' \
+            --exclude='tests' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            deployment/ansible
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arsenale-installer
+          path: dist/arsenale-installer_*
+          if-no-files-found: error
+
+  # ── Generate checksums ──────────────────────────────────────────
+  checksums:
+    name: Generate checksums
+    needs: [build-cli, build-installer]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - name: Download CLI artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: arsenale-cli-*
           merge-multiple: true
           path: dist
 
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arsenale-installer
+          path: dist
+
       - name: Generate SHA256 checksums
         run: |
           cd dist
-          sha256sum arsenale-cli_* > checksums_sha256.txt
+          sha256sum arsenale-cli_* arsenale-installer_* > checksums_sha256.txt
 
       - name: Upload checksums artifact
         uses: actions/upload-artifact@v4
@@ -135,7 +184,7 @@ jobs:
   release:
     name: Create GitHub Release
     if: ${{ github.ref == 'refs/heads/develop' || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-staging')) }}
-    needs: [build-cli, checksums]
+    needs: [build-cli, build-installer, checksums]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -195,6 +244,12 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: arsenale-installer
+          path: dist
+
       - name: Download checksums
         uses: actions/download-artifact@v4
         with:
@@ -214,4 +269,5 @@ jobs:
           overwrite_files: true
           files: |
             dist/arsenale-cli_*
+            dist/arsenale-installer_*
             dist/checksums_sha256.txt

@@ -51,6 +51,17 @@ make logs SVC=arsenale-dev-tunnel-db-proxy
 - PostgreSQL readiness
 - desktop broker readiness when connection features are enabled
 
+## 📦 One-Command Platform Installer
+
+The `install-platform.sh` bootstrap (`curl ... | bash`) wraps the same Ansible installer. Common issues:
+
+- **`cannot SSH to localhost non-interactively`** — the production play uses `connection: ssh` and `become`. The bootstrap seeds a key into `~/.ssh/authorized_keys`, but an SSH server must be running. Start it (`sudo systemctl enable --now sshd`) and re-run. For a remote target, set `ARSENALE_HOST` / `ARSENALE_DEPLOY_USER` and ensure key-based SSH works.
+- **`passwordless sudo is required`** — the installer needs `sudo` to install Podman and create the `arsenale` user. Configure `NOPASSWD` sudo for your user, or run as root. In `ARSENALE_NONINTERACTIVE=1` mode missing sudo fails fast.
+- **`checksum mismatch` / `checksum not found`** — a corrupted or partial download, or a version with no published bundle. Re-run, or pin a known release with `ARSENALE_VERSION=vX.Y.Z` (use `ARSENALE_VERSION=cli-dev` for the latest `develop` build).
+- **Podman-backend refused on macOS** — the server install is Linux-only. Use a Linux host, or the `make dev` development workflow on macOS.
+- **Re-runs and secrets** — re-running is idempotent and does **not** regenerate `.vault-pass`, `vault.yml`, or the technician password (`install/password.txt`) in the bundle dir (default `/opt/arsenale/installer`). To intentionally rotate, use `make rotate`. To add OAuth/SMTP secrets, point `ARSENALE_SECRETS_FILE` at a filled `SECRETS.env` and re-run.
+- **Prerequisite install fails** — set `ARSENALE_SKIP_PREREQS=1` and install Ansible/Podman/OpenSSL manually, then re-run.
+
 ## 🔐 TLS, Browser, And Hostname Issues
 
 | Symptom | Likely cause | Action |
@@ -171,7 +182,7 @@ This is the fastest way to determine whether the breakage is UI-only or a real p
 
 ```bash
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
 ./build/go/arsenale-cli --server https://localhost:3000 whoami
 ./build/go/arsenale-cli --server https://localhost:3000 gateway list

@@ -1,6 +1,7 @@
 package tunnelbroker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -13,15 +14,11 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-func (b *Broker) openStream(gatewayID, host string, port int, timeout time.Duration) (*streamConn, error) {
-	b.mu.Lock()
-	conn := b.registry[gatewayID]
-	if conn == nil {
-		b.mu.Unlock()
-		return nil, fmt.Errorf("no active tunnel for gateway %s", gatewayID)
-	}
+func (c *tunnelConnection) openStream(ctx context.Context, host string, port int, timeout time.Duration) (io.ReadWriteCloser, error) {
+	b := c.broker
 
-	streamID, ok := allocateStreamID(conn)
+	b.mu.Lock()
+	streamID, ok := allocateStreamID(c)
 	if !ok {
 		b.mu.Unlock()
 		return nil, errors.New("no available tunnel stream IDs")
@@ -30,9 +27,9 @@ func (b *Broker) openStream(gatewayID, host string, port int, timeout time.Durat
 	wait := &pendingOpen{resolve: make(chan *streamConn, 1)}
 	wait.timer = time.AfterFunc(timeout, func() {
 		b.mu.Lock()
-		current := conn.pendingOpens[streamID]
+		current := c.pendingOpens[streamID]
 		if current == wait {
-			delete(conn.pendingOpens, streamID)
+			delete(c.pendingOpens, streamID)
 		}
 		b.mu.Unlock()
 		if current == wait {
@@ -42,23 +39,31 @@ func (b *Broker) openStream(gatewayID, host string, port int, timeout time.Durat
 			}
 		}
 	})
-	conn.pendingOpens[streamID] = wait
+	c.pendingOpens[streamID] = wait
 	b.mu.Unlock()
 
 	target := []byte(net.JoinHostPort(host, strconv.Itoa(port)))
-	if err := b.sendFrame(conn, msgOpen, streamID, target); err != nil {
+	if err := b.sendFrame(c, msgOpen, streamID, target); err != nil {
 		wait.timer.Stop()
 		b.mu.Lock()
-		delete(conn.pendingOpens, streamID)
+		delete(c.pendingOpens, streamID)
 		b.mu.Unlock()
 		return nil, err
 	}
 
-	stream, ok := <-wait.resolve
-	if !ok || stream == nil {
-		return nil, fmt.Errorf("openStream timeout for gateway %s -> %s:%d", gatewayID, host, port)
+	select {
+	case stream := <-wait.resolve:
+		if stream == nil {
+			return nil, fmt.Errorf("openStream timeout for gateway %s -> %s:%d", c.gatewayID, host, port)
+		}
+		return stream, nil
+	case <-ctx.Done():
+		wait.timer.Stop()
+		b.mu.Lock()
+		delete(c.pendingOpens, streamID)
+		b.mu.Unlock()
+		return nil, ctx.Err()
 	}
-	return stream, nil
 }
 
 func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.TunnelProxyResponse, error) {
@@ -69,6 +74,13 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 	idleTimeout := defaultProxyIdleTimeout
 	if req.IdleTimeout > 0 {
 		idleTimeout = time.Duration(req.IdleTimeout) * time.Millisecond
+	}
+
+	b.mu.RLock()
+	conn := b.registry[req.GatewayID]
+	b.mu.RUnlock()
+	if conn == nil {
+		return contracts.TunnelProxyResponse{}, fmt.Errorf("no active tunnel for gateway %s", req.GatewayID)
 	}
 
 	listener, err := net.Listen("tcp", net.JoinHostPort(b.config.ProxyBindHost, "0"))
@@ -92,9 +104,19 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 		idleTimer.Stop()
 		defer socket.Close()
 
-		var stream *streamConn
+		// Re-resolve the tunnel at accept time: the gateway may have reconnected
+		// (evicting the transport captured when this endpoint was created) before
+		// the client connected, so the captured conn could be closed.
+		b.mu.RLock()
+		conn := b.registry[req.GatewayID]
+		b.mu.RUnlock()
+		if conn == nil {
+			return
+		}
+
+		var stream io.ReadWriteCloser
 		for _, targetPort := range targetPortCandidates(req.TargetPort, req.TargetPorts) {
-			stream, err = b.openStream(req.GatewayID, req.TargetHost, targetPort, timeout)
+			stream, err = conn.openStream(context.Background(), req.TargetHost, targetPort, timeout)
 			if err == nil {
 				break
 			}
@@ -102,12 +124,12 @@ func (b *Broker) createTCPProxy(req contracts.TunnelProxyRequest) (contracts.Tun
 		if stream == nil {
 			return
 		}
-		defer stream.close(true)
+		defer stream.Close()
 
 		done := make(chan struct{}, 2)
 		go func() {
 			_, _ = io.Copy(stream, socket)
-			_ = stream.close(true)
+			_ = stream.Close()
 			done <- struct{}{}
 		}()
 		go func() {
@@ -179,7 +201,7 @@ func (s *streamConn) Write(p []byte) (int, error) {
 	if err := s.parent.broker.sendFrame(s.parent, msgData, s.id, p); err != nil {
 		return 0, err
 	}
-	s.parent.bytesTransferred += int64(len(p))
+	s.parent.bytesTransferred.Add(int64(len(p)))
 	return len(p), nil
 }
 
@@ -197,6 +219,7 @@ func (s *streamConn) close(sendClose bool) error {
 		s.parent.broker.mu.Lock()
 		delete(s.parent.streams, s.id)
 		s.parent.broker.mu.Unlock()
+		s.parent.activeStreams.Add(-1)
 		_ = s.writer.Close()
 		_ = s.reader.Close()
 	})

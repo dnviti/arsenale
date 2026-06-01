@@ -262,9 +262,10 @@ describe('GatewaySection', () => {
     expect(screen.getByText('Gateway Inventory')).toBeInTheDocument();
     expect(screen.getByRole('table')).toBeInTheDocument();
     expect(screen.getByText('Tunnel SSH')).toBeInTheDocument();
-    expect(screen.getByText('Database Proxy')).toBeInTheDocument();
+    // gateway-2's name ("Database Proxy") and its DB_PROXY type label (the
+    // "Database Proxy" gateway type catalog label) both render in the row.
+    expect(screen.getAllByText('Database Proxy')).toHaveLength(2);
     expect(screen.getAllByText('Tunnel healthy')).toHaveLength(2);
-    expect(screen.getByText('DB Proxy')).toBeInTheDocument();
 
     const gatewaysTabPanel = screen.getByText('Gateway Inventory').closest('[role="tabpanel"]');
     const tabsRoot = gatewaysTabPanel?.parentElement;

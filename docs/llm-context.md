@@ -232,7 +232,7 @@ curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/arsenale
 # ARSENALE_VERSION=develop bash -c "$(curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/develop/tools/arsenale-cli/install.sh)"
 # installers also set up shell completions; use ARSENALE_SKIP_COMPLETIONS=1 to skip
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
 ```
 

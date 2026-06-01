@@ -32,6 +32,26 @@ The fastest way to work on Arsenale locally is to let the installer-aware Ansibl
 
 For detailed Ansible deployment documentation (all modes, backends, roles, capabilities, and walkthroughs), see [`deployment/ansible/README.md`](../deployment/ansible/README.md). For the installer model reference, see [`docs/installer.md`](installer.md).
 
+## ⚡ Install the platform in one command
+
+To stand up a **production** stack on a Linux host without cloning the repo or installing anything first:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dnviti/arsenale/main/tools/installer/install-platform.sh \
+  | ARSENALE_DOMAIN=example.com bash
+```
+
+This bootstrap ([`tools/installer/install-platform.sh`](../tools/installer/install-platform.sh)):
+
+1. Auto-installs prerequisites (Ansible, Podman, OpenSSL, Git) via the host package manager.
+2. Verifies passwordless SSH-to-localhost and `sudo` (the production play runs over SSH and `become`s the `arsenale` user).
+3. Downloads and SHA256-verifies the `arsenale-installer_<version>.tar.gz` bundle published with each release.
+4. Generates and encrypts secrets ([`generate-vault.sh`](../deployment/ansible/scripts/generate-vault.sh)), then runs `playbooks/install.yml -e installer_mode=production -e installer_backend=podman`, pulling prebuilt images from `ghcr.io/dnviti/arsenale`.
+
+It is **idempotent** — re-run it to upgrade or reconfigure without rotating live secrets. Configure it with environment variables (`ARSENALE_INSTALL_PASSWORD`, `ARSENALE_VAULT_PASSWORD`, `ARSENALE_CAPABILITIES`, `ARSENALE_VERSION`, `ARSENALE_SECRETS_FILE`, `ARSENALE_HOST`/`ARSENALE_DEPLOY_USER`, `ARSENALE_NONINTERACTIVE=1`, `ARSENALE_SKIP_PREREQS=1`). Post-install, operate the stack from the bundle directory: `cd /opt/arsenale/installer && make status`.
+
+The rest of this guide covers the **development** workflow, which builds images from a local checkout.
+
 ## ✅ Prerequisites
 
 | Requirement | Recommended Version | Why it is needed |
@@ -211,7 +231,7 @@ From a source checkout, use the local build path when you want to test current c
 
 ```bash
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 install -m 0755 ./build/go/arsenale-cli "$HOME/.local/bin/arsenale"
 ```
 
@@ -268,7 +288,7 @@ curl http://127.0.0.1:18080/healthz
 
 ```bash
 mkdir -p ./build/go
-go build -o ./build/go/arsenale-cli ./tools/arsenale-cli
+go build -trimpath -o ./build/go/arsenale-cli ./tools/arsenale-cli
 ./build/go/arsenale-cli --server https://localhost:3000 health
 ./build/go/arsenale-cli --server https://localhost:3000 login
 ./build/go/arsenale-cli --server https://localhost:3000 whoami
