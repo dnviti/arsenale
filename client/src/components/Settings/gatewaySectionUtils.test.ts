@@ -72,10 +72,10 @@ describe("getGatewayHealthMeta", () => {
       isManaged: false,
     });
 
-    expect(formatGatewayType(gateway.type)).toBe("DB Proxy");
+    expect(formatGatewayType(gateway.type)).toBe("Database Proxy");
     expect(getGatewayEndpointValue(gateway)).toBe("db-proxy.example.com:5432");
     expect(getGatewayInventorySearchText(gateway)).toContain("db-proxy.example.com");
-    expect(getGatewayInventorySearchText(gateway)).toContain("db proxy");
+    expect(getGatewayInventorySearchText(gateway)).toContain("database proxy");
   });
 
   it("formats managed group endpoints for inventory summaries", () => {
